@@ -1,4 +1,4 @@
-# agent-tuter
+# agent-tutor
 
 MCP-сервер для университетского ассистента на базе LLM. Даёт языковой модели доступ к данным об учебном процессе через набор инструментов — студенты, расписание, дисциплины, учебные материалы.
 
@@ -24,7 +24,7 @@ MCP-сервер для университетского ассистента н
 ## Структура
 
 ```
-agent-tuter/
+agent-tutor/
 ├── server.py           # MCP-сервер, точка входа
 ├── main.py             # REST-заглушка на FastAPI (отдельно от MCP)
 ├── db/
@@ -41,8 +41,8 @@ agent-tuter/
 ## Быстрый старт
 
 ```bash
-git clone https://github.com/ivan/agent-tuter
-cd agent-tuter
+git clone https://github.com/ivan/agent-tutor
+cd agent-tutor
 
 python -m venv .venv
 source .venv/bin/activate
