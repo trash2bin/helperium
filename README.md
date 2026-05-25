@@ -53,6 +53,11 @@ uv tool install .
 ```bash
 python fixtures/generate.py
 ```
+Пересобрать пакет после изменения кода:
+
+```bash
+uv tool install . --reinstall
+```
 
 Запустить через MCP Inspector для проверки инструментов:
 
