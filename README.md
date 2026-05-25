@@ -45,7 +45,7 @@ git clone https://github.com/ivan/agent-tutor
 cd agent-tutor
 
 uv sync
-uv run agent-tutor
+uv tool install .
 ```
 
 Сгенерировать тестовые данные если `fixtures.json` ещё нет:
