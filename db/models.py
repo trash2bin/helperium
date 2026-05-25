@@ -19,13 +19,16 @@ class Material(BaseModel):
     type: str
     content: str
 
+class Lesson(BaseModel):
+    discipline_id: str
+    discipline_name: str
+    room: int
+
 class ScheduleEntry(BaseModel):
     id: str
     group: str
     day: str
-    time: str
-    discipline_id: str
-    room: int
+    lessons: List[Lesson]
 
 class CoursePlan(BaseModel):
     id: str

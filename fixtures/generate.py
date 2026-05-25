@@ -2,7 +2,7 @@ from faker import Faker
 import json
 import random
 
-fake = Faker('ru_RU')  # ← вот и всё изменение для имён
+fake = Faker('ru_RU')  # ← вот и всё изменение для имён( -ZeMa-)) )
 
 # Пул русских текстов для описаний и контента
 TEXTS = [
@@ -84,19 +84,38 @@ def generate_grades(students, disciplines, num_grades=50):
     return grades
 
 
-def generate_schedule(groups, disciplines, num_entries=30):
+def generate_schedule(groups, disciplines):
     schedule = []
+
     days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница']
-    for _ in range(num_entries):
-        entry = {
-            "id": fake.uuid4(),
-            "group": random.choice(groups),
-            "day": random.choice(days),
-            "time": fake.time(),
-            "discipline_id": random.choice(disciplines)['id'],
-            "room": fake.random_int(min=100, max=300)
-        }
-        schedule.append(entry)
+
+    for group in groups:
+        for day in days:
+            lessons_count = random.randint(1, 3)
+
+            used_disciplines = set()
+            lessons = []
+
+            for _ in range(lessons_count):
+                discipline = random.choice(disciplines)
+
+                while discipline['id'] in used_disciplines:
+                    discipline = random.choice(disciplines)
+
+                used_disciplines.add(discipline['id'])
+
+                lessons.append({
+                    "discipline_id": discipline['id'],
+                    "room": fake.random_int(min=100, max=300)
+                })
+
+            schedule.append({
+                "id": fake.uuid4(),
+                "group": group,
+                "day": day,
+                "lessons": lessons
+            })
+
     return schedule
 
 
