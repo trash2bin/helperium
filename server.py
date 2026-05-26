@@ -47,7 +47,7 @@ def find_student_by_name(
 
 @mcp.tool()
 def get_schedule(
-    group_id: Annotated[str, Field(description="Название группы, например 'ИВТ-21'")],
+    group_id: Annotated[str, Field(description="ID группы, например uuid4 '123e4567-e89b-12d3-a456-426614174000'")],
     day: Annotated[str | None, Field(description="День недели на русском: 'Понедельник', 'Вторник' и т.д. Если не указан — вернётся всё расписание группы")] = None
 ) -> list[ScheduleEntry]:
     """

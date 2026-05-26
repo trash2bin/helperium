@@ -4,7 +4,7 @@ import sqlite3
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from .models import Student, Discipline, Material, ScheduleEntry, Lesson, Grade, Teacher
+from .models import Student, Discipline, Material, ScheduleEntry, Lesson, Grade, Teacher, Group
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -29,12 +29,20 @@ class Database:
         cursor = self.conn.cursor()
 
         cursor.execute("""
+        CREATE TABLE IF NOT EXISTS groups (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            speciality TEXT
+        )
+        """)
+
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS students (
             id TEXT PRIMARY KEY,
             name TEXT,
-            group_name TEXT,
+            group_id TEXT,
             course INTEGER,
-            specialty TEXT
+            FOREIGN KEY (group_id) REFERENCES groups (id)
         )
         """)
 
@@ -42,7 +50,7 @@ class Database:
         CREATE TABLE IF NOT EXISTS teachers (
             id TEXT PRIMARY KEY,
             name TEXT,
-            disciplines_json TEXT -- Храним список дисциплин учителя как JSON массив
+            disciplines_json TEXT
         )
         """)
 
@@ -79,9 +87,10 @@ class Database:
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS schedule (
             id TEXT PRIMARY KEY,
-            group_name TEXT,
             day TEXT,
-            lessons_json TEXT
+            group_id TEXT,
+            lessons_json TEXT,
+            FOREIGN KEY (group_id) REFERENCES groups (id)
         )
         """)
 
@@ -101,14 +110,21 @@ class Database:
 
         cursor = self.conn.cursor()
 
+        # Load groups
+        for group in data.get("groups", []):
+            cursor.execute(
+                "INSERT OR IGNORE INTO groups (id, name, speciality) VALUES (?, ?, ?)",
+                (group["id"], group["name"], group["specialty"])
+            )
+
         # Load students
         for student in data.get("students", []):
             cursor.execute(
-                "INSERT OR IGNORE INTO students (id, name, group_name, course, specialty) VALUES (?, ?, ?, ?, ?)",
-                (student["id"], student["name"], student["group"], student["course"], student["specialty"])
+                "INSERT OR IGNORE INTO students (id, name, group_id, course) VALUES (?, ?, ?, ?)",
+                (student["id"], student["name"], student["group_id"], student["course"])
             )
 
-        # Load teachers (NEW)
+        # Load teachers
         for teacher in data.get("teachers", []):
             cursor.execute(
                 "INSERT OR IGNORE INTO teachers (id, name, disciplines_json) VALUES (?, ?, ?)",
@@ -139,12 +155,24 @@ class Database:
         # Load schedule
         for entry in data.get("schedule", []):
             cursor.execute(
-                "INSERT OR IGNORE INTO schedule (id, group_name, day, lessons_json) VALUES (?, ?, ?, ?)",
-                (entry["id"], entry["group"], entry["day"], json.dumps(entry["lessons"], ensure_ascii=False))
+                "INSERT OR IGNORE INTO schedule (id, group_id, day, lessons_json) VALUES (?, ?, ?, ?)",
+                (entry["id"], entry["group_id"], entry["day"], json.dumps(entry["lessons"], ensure_ascii=False))
             )
 
         self.conn.commit()
         print("[DB] Fixtures loaded successfully.")
+
+    def get_group(self, group_id: str) -> Group | None:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM groups WHERE id = ?", (group_id,))
+        row = cursor.fetchone()
+        if row:
+            return Group(
+                id=row["id"],
+                name=row["name"],
+                speciality=row["speciality"],
+            )
+        return None
 
     def get_student(self, student_id: str) -> Optional[Student]:
         cursor = self.conn.cursor()
@@ -154,9 +182,8 @@ class Database:
             return Student(
                 id=row["id"],
                 name=row["name"],
-                group=row["group_name"],
+                group=self.get_group(row["group_id"]),
                 course=row["course"],
-                specialty=row["specialty"]
             )
         return None
 
@@ -171,9 +198,8 @@ class Database:
             return Student(
                 id=row["id"],
                 name=row["name"],
-                group=row["group_name"],
+                group=self.get_group(row["group_id"]),
                 course=row["course"],
-                specialty=row["specialty"]
             )
         return None
 
@@ -223,7 +249,7 @@ class Database:
             if teacher_lessons:
                 result_schedule.append(ScheduleEntry(
                     id=row["id"],
-                    group=row["group_name"],
+                    group=self.get_group(row["group_id"]),
                     day=row["day"],
                     lessons=teacher_lessons
                 ))
@@ -235,12 +261,12 @@ class Database:
 
         if day:
             cursor.execute(
-                "SELECT * FROM schedule WHERE group_name = ? AND day = ?",
+                "SELECT * FROM schedule WHERE group_id = ? AND day = ?",
                 (group_id, day)
             )
         else:
             cursor.execute(
-                "SELECT * FROM schedule WHERE group_name = ?",
+                "SELECT * FROM schedule WHERE group_id = ?",
                 (group_id,)
             )
 
@@ -262,7 +288,7 @@ class Database:
             result.append(
                 ScheduleEntry(
                     id=row["id"],
-                    group=row["group_name"],
+                    group=self.get_group(row["group_id"]),
                     day=row["day"],
                     lessons=lessons
                 )
@@ -271,13 +297,13 @@ class Database:
 
     def get_disciplines(self, student_id: str) -> List[Discipline]:
         cursor = self.conn.cursor()
-        cursor.execute("SELECT group_name FROM students WHERE id = ?", (student_id,))
+        cursor.execute("SELECT group_id FROM students WHERE id = ?", (student_id,))
         row = cursor.fetchone()
         if not row:
             return []
-        group_name = row["group_name"]
+        group_id = row["group_id"]
 
-        cursor.execute("SELECT lessons_json FROM schedule WHERE group_name = ?", (group_name,))
+        cursor.execute("SELECT lessons_json FROM schedule WHERE group_id = ?", (group_id,))
         rows = cursor.fetchall()
 
         discipline_ids = set()

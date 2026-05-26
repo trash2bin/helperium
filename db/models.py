@@ -1,12 +1,16 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
+class Group(BaseModel):
+    id: str
+    name: str
+    speciality: str
+
 class Student(BaseModel):
     id: str
     name: str
-    group: str
+    group: Group | None
     course: int
-    specialty: str
 
 class Teacher(BaseModel):
     id: str
@@ -40,6 +44,6 @@ class Lesson(BaseModel):
 
 class ScheduleEntry(BaseModel):
     id: str
-    group: str
+    group: Group | None
     day: str
     lessons: List[Lesson]
