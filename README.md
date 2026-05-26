@@ -16,17 +16,17 @@ MCP-сервер для университетского ассистента н
 
 ## Стек
 
-- Python 3.10+
+- Python 3.12+
 - [FastMCP](https://github.com/modelcontextprotocol/python-sdk) — транспортный слой MCP
 - SQLite — локальное хранилище
 - Pydantic — схемы ответов
+- Faker — генерация тестовых данных
 
 ## Структура
 
 ```
 agent-tutor/
 ├── server.py           # MCP-сервер, точка входа
-├── main.py             # REST-заглушка на FastAPI (отдельно от MCP)
 ├── db/
 │   ├── database.py     # SQLite, создание таблиц, загрузка фикстур
 │   └── models.py       # Pydantic-модели
@@ -43,16 +43,18 @@ agent-tutor/
 ```bash
 git clone https://github.com/trash2bin/agent-tutor
 cd agent-tutor
+```
 
+Усли необходима тестовая база данных (`fixtures.json`):
+```bash
+python fixtures/generate.py
+```
+
+```
 uv sync
 uv tool install .
 ```
 
-Сгенерировать тестовые данные если `fixtures.json` ещё нет:
-
-```bash
-python fixtures/generate.py
-```
 Пересобрать пакет после изменения кода:
 
 ```bash
@@ -68,7 +70,7 @@ mcp dev server.py
 В браузере выбрать транспорт **STDIO**, команда `python`, аргумент `server.py`, нажать Connect.
 
 
-Пример запроса к модели:
+### Пример запроса к модели:
 
 ```
 Какие материалы доступны студенту с id "456c4e68-290a-4f8b-b0d0-545534adaf3e" по его дисциплинам?
@@ -82,17 +84,4 @@ mcp dev server.py
 - MCP-сервер стартует и публикует все пять инструментов
 - SQLite-база инициализируется и загружает фикстуры при старте
 - Инструменты возвращают типизированные Pydantic-ответы
-- Проверено в MCP Inspector и Goose
-
-Не реализовано ещё:
-- `generate_course_plan` — есть схема `CoursePlan`, инструмента нет
-- Нормальный поиск — сейчас `LIKE '%query%'` без ранжирования
-- `get_exam_topics`, `get_teacher_info`, `get_university_news`
-- Структурированные ошибки (`StudentNotFound` и т.д.)
-- Конфигурация через env, сейчас `DB_PATH` зашит в `server.py`
-
-## Известные ограничения
-
-Параметр `day` в `get_schedule` фильтрует по названию дня недели (`"Понедельник"`), а не по номеру недели семестра — несмотря на историческое название `week` в коде.
-
-Дисциплины студента вычисляются через его группу и расписание, а не через прямую связь. Если дисциплина есть в учебном плане, но временно не стоит в расписании — она не вернётся.
+- Проверено в MCP Inspector и Goose, Cluade-code, Pi

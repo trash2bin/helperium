@@ -16,7 +16,7 @@ mcp = FastMCP("University Server")
 
 @mcp.tool()
 def get_student(
-    student_id: Annotated[str, Field(description="Числовой ID студента, например '1' или '42'")]
+    student_id: Annotated[str, Field(description="Числовой ID студента, например '1' или '42' или может быть uuid4 id например '3fa85f64-5717-4562-b3fc-2c963f66afa6'")]
 ) -> Student | None:
     """
     Получить карточку студента по его ID.
@@ -68,7 +68,7 @@ def get_disciplines(
 @mcp.tool()
 def get_materials(
     discipline_id: Annotated[str, Field(description="ID дисциплины из get_disciplines")],
-    material_type: Annotated[str | None, Field(description="Тип материала: 'lecture', 'practice', 'exam'. Если не указан — вернутся все типы")] = None
+    material_type: Annotated[str | None, Field(description="Тип материала: 'Лекция', 'Методичка', 'Задание'. Если не указан — вернутся все типы")] = None
 ) -> list[Material]:
     """
     Получить учебные материалы по дисциплине.

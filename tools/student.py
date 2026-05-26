@@ -14,6 +14,6 @@ class StudentTools:
         """Get student information by name"""
         return self.db.get_id_student(name)
 
-    def get_schedule(self, group_id: str, week: str | None = None) -> list[ScheduleEntry]:
+    def get_schedule(self, group_id: str, day: str | None = None) -> list[ScheduleEntry]:
         """Get schedule for a group"""
-        return self.db.get_schedule(group_id, week)
+        return self.db.get_schedule(group_id, day)

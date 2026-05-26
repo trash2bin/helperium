@@ -29,11 +29,3 @@ class ScheduleEntry(BaseModel):
     group: str
     day: str
     lessons: List[Lesson]
-
-class CoursePlan(BaseModel):
-    id: str
-    student_id: str
-    discipline_id: str
-    topics: List[str]
-    weeks: List[str]
-    materials: List[str]
