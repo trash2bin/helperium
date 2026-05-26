@@ -192,7 +192,7 @@ class Database:
             return None
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id FROM students WHERE name = ?", (name,))
+        cursor.execute("SELECT * FROM students WHERE name = ?", (name,))
         row = cursor.fetchone()
         if row:
             return Student(
