@@ -3,13 +3,15 @@ from mcp.server.fastmcp import FastMCP
 from typing import Annotated
 from pydantic import Field
 from db.database import Database
-from db.models import Student, ScheduleEntry, Discipline, Material
+from db.models import Student, ScheduleEntry, Discipline, Material, Grade
 from tools.student import StudentTools
 from tools.disciplines import DisciplineTools
+from tools.grades import GradeTools
 
 db = Database()
 student_tools = StudentTools(db)
 discipline_tools = DisciplineTools(db)
+grade_tools = GradeTools(db)
 
 mcp = FastMCP("University Server")
 
@@ -87,6 +89,19 @@ def search_materials(
     Можно искать по всем дисциплинам сразу или ограничить одной.
     """
     return discipline_tools.search_materials(query, discipline_id)
+
+
+@mcp.tool()
+def get_student_grades(
+    student_id: Annotated[str, Field(description="ID студента из get_student или find_student_by_name")],
+    discipline_id: Annotated[str | None, Field(description="Опциональный ID дисциплины из get_disciplines, если нужно получить оценки только по одному предмету")] = None
+) -> list[Grade]:
+    """
+    Получить все оценки студента.
+    Возвращает дату, саму оценку и название дисциплины.
+    Можно отфильтровать результат по конкретной дисциплине.
+    """
+    return grade_tools.get_student_grades(student_id, discipline_id)
 
 def main():
     mcp.run()

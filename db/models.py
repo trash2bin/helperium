@@ -19,6 +19,14 @@ class Material(BaseModel):
     type: str
     content: str
 
+class Grade(BaseModel):
+    id: str
+    student_id: str
+    discipline_id: str
+    discipline_name: str
+    grade: str
+    date: str
+
 class Lesson(BaseModel):
     discipline_id: str
     discipline_name: str

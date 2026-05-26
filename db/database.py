@@ -5,7 +5,7 @@ import sqlite3
 import json
 from pathlib import Path
 from typing import List, Dict, Any
-from .models import Student, Discipline, Material, ScheduleEntry, Lesson
+from .models import Student, Discipline, Material, ScheduleEntry, Lesson, Grade
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -123,6 +123,22 @@ class Database:
                     VALUES (?, ?, ?, ?)
                     """,
                     (material["id"], material["discipline_id"], material["type"], material["content"])
+                )
+
+            # Load grades
+            for grade in data.get("grades", []):
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO grades (id, student_id, discipline_id, grade, date)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        grade["id"],
+                        grade["student_id"],
+                        grade["discipline_id"],
+                        str(grade["grade"]),
+                        grade["date"],
+                    )
                 )
 
             # Load schedule
@@ -286,6 +302,44 @@ class Database:
                 discipline_id=row[1],
                 type=row[2],
                 content=row[3]
+            )
+            for row in rows
+        ]
+
+    def get_student_grades(self, student_id: str, discipline_id: str | None = None) -> List[Grade]:
+        cursor = self.conn.cursor()
+
+        query = """
+            SELECT
+                grades.id,
+                grades.student_id,
+                grades.discipline_id,
+                disciplines.name AS discipline_name,
+                grades.grade,
+                grades.date
+            FROM grades
+            LEFT JOIN disciplines ON disciplines.id = grades.discipline_id
+            WHERE grades.student_id = ?
+        """
+        params: list[str] = [student_id]
+
+        if discipline_id:
+            query += " AND grades.discipline_id = ?"
+            params.append(discipline_id)
+
+        query += " ORDER BY grades.date DESC, disciplines.name ASC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        return [
+            Grade(
+                id=row["id"],
+                student_id=row["student_id"],
+                discipline_id=row["discipline_id"],
+                discipline_name=row["discipline_name"] or "Неизвестная дисциплина",
+                grade=row["grade"],
+                date=row["date"],
             )
             for row in rows
         ]
