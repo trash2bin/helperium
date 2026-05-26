@@ -1,11 +1,10 @@
 import os
 import sys
-
 import sqlite3
 import json
 from pathlib import Path
-from typing import List, Dict, Any
-from .models import Student, Discipline, Material, ScheduleEntry, Lesson, Grade
+from typing import List, Dict, Any, Optional
+from .models import Student, Discipline, Material, ScheduleEntry, Lesson, Grade, Teacher
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -21,10 +20,9 @@ class Database:
             db_path,
             check_same_thread=False
         )
-        self.conn.row_factory = sqlite3.Row  # удобнее работать с результатами
+        self.conn.row_factory = sqlite3.Row
         self.create_tables()
         self.load_fixtures()
-        # Для закрытия соединения
         self._closed = False
 
     def create_tables(self):
@@ -37,6 +35,14 @@ class Database:
             group_name TEXT,
             course INTEGER,
             specialty TEXT
+        )
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS teachers (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            disciplines_json TEXT -- Храним список дисциплин учителя как JSON массив
         )
         """)
 
@@ -75,7 +81,7 @@ class Database:
             id TEXT PRIMARY KEY,
             group_name TEXT,
             day TEXT,
-            lessons TEXT
+            lessons_json TEXT
         )
         """)
 
@@ -85,104 +91,146 @@ class Database:
         fixtures_path = Path(__file__).parent.parent / "fixtures.json"
         print(f"[DB] Looking for fixtures at: {fixtures_path}", file=sys.stderr)
         print(f"[DB] Exists: {fixtures_path.exists()}", file=sys.stderr)
+
         if not fixtures_path.exists():
-            print(f"[DB] FIXTURES NOT FOUND — база будет пустой!", file=sys.stderr)
+            print(f"[DB] FIXTURES NOT FOUND at {fixtures_path}", file=sys.stderr)
             return
 
-        if fixtures_path.exists():
-            with open(fixtures_path, "r") as f:
-                data = json.load(f)
+        with open(fixtures_path, "r", encoding='utf-8') as f:
+            data = json.load(f)
 
-            cursor = self.conn.cursor()
+        cursor = self.conn.cursor()
 
-            # Load students
-            for student in data["students"]:
-                cursor.execute(
-                    """
-                    INSERT OR IGNORE INTO students (id, name, group_name, course, specialty)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (student["id"], student["name"], student["group"], student["course"], student["specialty"])
-                )
+        # Load students
+        for student in data.get("students", []):
+            cursor.execute(
+                "INSERT OR IGNORE INTO students (id, name, group_name, course, specialty) VALUES (?, ?, ?, ?, ?)",
+                (student["id"], student["name"], student["group"], student["course"], student["specialty"])
+            )
 
-            # Load disciplines
-            for discipline in data["disciplines"]:
-                cursor.execute(
-                    """
-                    INSERT OR IGNORE INTO disciplines (id, name, description)
-                    VALUES (?, ?, ?)
-                    """,
-                    (discipline["id"], discipline["name"], discipline["description"])
-                )
+        # Load teachers (NEW)
+        for teacher in data.get("teachers", []):
+            cursor.execute(
+                "INSERT OR IGNORE INTO teachers (id, name, disciplines_json) VALUES (?, ?, ?)",
+                (teacher["id"], teacher["name"], json.dumps(teacher["disciplines"], ensure_ascii=False))
+            )
 
-            # Load materials
-            for material in data["materials"]:
-                cursor.execute(
-                    """
-                    INSERT OR IGNORE INTO materials (id, discipline_id, type, content)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (material["id"], material["discipline_id"], material["type"], material["content"])
-                )
+        # Load disciplines
+        for discipline in data.get("disciplines", []):
+            cursor.execute(
+                "INSERT OR IGNORE INTO disciplines (id, name, description) VALUES (?, ?, ?)",
+                (discipline["id"], discipline["name"], discipline["description"])
+            )
 
-            # Load grades
-            for grade in data.get("grades", []):
-                cursor.execute(
-                    """
-                    INSERT OR IGNORE INTO grades (id, student_id, discipline_id, grade, date)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        grade["id"],
-                        grade["student_id"],
-                        grade["discipline_id"],
-                        str(grade["grade"]),
-                        grade["date"],
-                    )
-                )
+        # Load materials
+        for material in data.get("materials", []):
+            cursor.execute(
+                "INSERT OR IGNORE INTO materials (id, discipline_id, type, content) VALUES (?, ?, ?, ?)",
+                (material["id"], material["discipline_id"], material["type"], material["content"])
+            )
 
-            # Load schedule
-            for entry in data["schedule"]:
-                cursor.execute(
-                    """
-                    INSERT OR IGNORE INTO schedule
-                    (id, group_name, day, lessons)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (entry["id"], entry["group"], entry["day"], json.dumps(entry["lessons"], ensure_ascii=False))
-                )
+        # Load grades
+        for grade in data.get("grades", []):
+            cursor.execute(
+                "INSERT OR IGNORE INTO grades (id, student_id, discipline_id, grade, date) VALUES (?, ?, ?, ?, ?)",
+                (grade["id"], grade["student_id"], grade["discipline_id"], str(grade["grade"]), grade["date"])
+            )
 
-            self.conn.commit()
+        # Load schedule
+        for entry in data.get("schedule", []):
+            cursor.execute(
+                "INSERT OR IGNORE INTO schedule (id, group_name, day, lessons_json) VALUES (?, ?, ?, ?)",
+                (entry["id"], entry["group"], entry["day"], json.dumps(entry["lessons"], ensure_ascii=False))
+            )
 
-    def get_student(self, student_id: str) -> Student | None:
+        self.conn.commit()
+        print("[DB] Fixtures loaded successfully.")
+
+    def get_student(self, student_id: str) -> Optional[Student]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
         row = cursor.fetchone()
         if row:
             return Student(
-                id=row[0],
-                name=row[1],
-                group=row[2],
-                course=row[3],
-                specialty=row[4]
+                id=row["id"],
+                name=row["name"],
+                group=row["group_name"],
+                course=row["course"],
+                specialty=row["specialty"]
             )
         return None
 
-    def get_id_student(self, name: str) -> Student | None:
+    def get_id_student(self, name: str | None) -> Optional[Student]:
+        if name is None:
+            return None
+
         cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM students WHERE name = ?", (name,))
+        cursor.execute("SELECT id FROM students WHERE name = ?", (name,))
         row = cursor.fetchone()
         if row:
             return Student(
-                id=row[0],
-                name=row[1],
-                group=row[2],
-                course=row[3],
-                specialty=row[4]
+                id=row["id"],
+                name=row["name"],
+                group=row["group_name"],
+                course=row["course"],
+                specialty=row["specialty"]
             )
         return None
 
-    def get_schedule(self, group_id: str, day: str | None = None) -> List[ScheduleEntry]:
+    def get_teacher_by_name(self, name: str) -> Optional[Teacher]:
+        """Поиск учителя по имени"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM teachers WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        if row:
+            return Teacher(
+                id=row["id"],
+                name=row["name"],
+                disciplines=json.loads(row["disciplines_json"])
+            )
+        return None
+
+    def get_teacher_schedule(self, teacher_name: str, day: Optional[str] = None) -> List[ScheduleEntry]:
+        """
+        Получает расписание преподавателя.
+        Так как расписание нормализовано по группам, нам нужно пройти по всем записям
+        и найти те, где в lessons_json упоминается этот учитель.
+        """
+        cursor = self.conn.cursor()
+
+        # Сначала найдем ID учителя, если он есть в базе
+        teacher = self.get_teacher_by_name(teacher_name)
+        if not teacher:
+            return []
+
+        query = "SELECT * FROM schedule"
+        params = []
+
+        if day:
+            query += " WHERE day = ?"
+            params.append(day)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        result_schedule: List[ScheduleEntry] = []
+
+        for row in rows:
+            lessons_data = json.loads(row["lessons_json"])
+            # Фильтруем уроки, которые ведет этот учитель
+            teacher_lessons: List[Lesson] = [l for l in lessons_data if l.get("teacher_name") == teacher_name]
+
+            if teacher_lessons:
+                result_schedule.append(ScheduleEntry(
+                    id=row["id"],
+                    group=row["group_name"],
+                    day=row["day"],
+                    lessons=teacher_lessons
+                ))
+
+        return result_schedule
+
+    def get_schedule(self, group_id: str, day: Optional[str] = None) -> List[ScheduleEntry]:
         cursor = self.conn.cursor()
 
         if day:
@@ -197,38 +245,28 @@ class Database:
             )
 
         rows = cursor.fetchall()
-
-        cursor.execute("SELECT id, name FROM disciplines")
-        discipline_map = {row[0]: row[1] for row in cursor.fetchall()}
-
         result = []
 
         for row in rows:
-            raw_lessons = json.loads(row[3])
-
+            raw_lessons = json.loads(row["lessons_json"])
             lessons = []
-
             for lesson in raw_lessons:
                 lessons.append(
                     Lesson(
                         discipline_id=lesson["discipline_id"],
-                        discipline_name=discipline_map.get(
-                            lesson["discipline_id"],
-                            "Неизвестная дисциплина"
-                        ),
-                        room=lesson["room"]
+                        discipline_name=lesson.get("discipline_name", "Неизвестно"),
+                        teacher_name=lesson["teacher_name"],
+                        room=lesson["room"],
                     )
                 )
-
             result.append(
                 ScheduleEntry(
-                    id=row[0],
-                    group=row[1],
-                    day=row[2],
+                    id=row["id"],
+                    group=row["group_name"],
+                    day=row["day"],
                     lessons=lessons
                 )
             )
-
         return result
 
     def get_disciplines(self, student_id: str) -> List[Discipline]:
@@ -237,35 +275,35 @@ class Database:
         row = cursor.fetchone()
         if not row:
             return []
-        group_name = row[0]
+        group_name = row["group_name"]
 
-        cursor.execute("SELECT lessons FROM schedule WHERE group_name = ?", (group_name,))
+        cursor.execute("SELECT lessons_json FROM schedule WHERE group_name = ?", (group_name,))
         rows = cursor.fetchall()
 
         discipline_ids = set()
         for row in rows:
-            lessons = json.loads(row[0])
+            lessons = json.loads(row["lessons_json"])
             for lesson in lessons:
                 discipline_ids.add(lesson["discipline_id"])
 
         if not discipline_ids:
             return []
 
-        placeholders = ",".join("?" * len(discipline_ids))
+        placeholders = ", ".join("?" * len(discipline_ids))
         cursor.execute(
             f"SELECT * FROM disciplines WHERE id IN ({placeholders})",
             list(discipline_ids)
         )
         return [
             Discipline(
-                id=row[0],
-                name=row[1],
-                description=row[2]
+                id=row["id"],
+                name=row["name"],
+                description=row["description"]
             )
             for row in cursor.fetchall()
         ]
 
-    def get_materials(self, discipline_id: str, material_type: str | None = None) -> List[Material]:
+    def get_materials(self, discipline_id: str, material_type: Optional[str] = None) -> List[Material]:
         cursor = self.conn.cursor()
         if material_type:
             cursor.execute(
@@ -274,20 +312,20 @@ class Database:
             )
         else:
             cursor.execute("SELECT * FROM materials WHERE discipline_id = ?", (discipline_id,))
+
         rows = cursor.fetchall()
         return [
             Material(
-                id=row[0],
-                discipline_id=row[1],
-                type=row[2],
-                content=row[3]
+                id=row["id"],
+                discipline_id=row["discipline_id"],
+                type=row["type"],
+                content=row["content"]
             )
             for row in rows
         ]
 
-    def search_materials(self, query: str, discipline_id: str | None = None) -> List[Material]:
+    def search_materials(self, query: str, discipline_id: Optional[str] = None) -> List[Material]:
         cursor = self.conn.cursor()
-
         if discipline_id:
             cursor.execute(
                 "SELECT * FROM materials WHERE discipline_id = ? AND content LIKE ?",
@@ -295,20 +333,20 @@ class Database:
             )
         else:
             cursor.execute("SELECT * FROM materials WHERE content LIKE ?", (f"%{query}%",))
+
         rows = cursor.fetchall()
         return [
             Material(
-                id=row[0],
-                discipline_id=row[1],
-                type=row[2],
-                content=row[3]
+                id=row["id"],
+                discipline_id=row["discipline_id"],
+                type=row["type"],
+                content=row["content"]
             )
             for row in rows
         ]
 
-    def get_student_grades(self, student_id: str, discipline_id: str | None = None) -> List[Grade]:
+    def get_student_grades(self, student_id: str, discipline_id: Optional[str] = None) -> List[Grade]:
         cursor = self.conn.cursor()
-
         query = """
             SELECT
                 grades.id,
@@ -321,7 +359,7 @@ class Database:
             LEFT JOIN disciplines ON disciplines.id = grades.discipline_id
             WHERE grades.student_id = ?
         """
-        params: list[str] = [student_id]
+        params: list = [student_id]
 
         if discipline_id:
             query += " AND grades.discipline_id = ?"
@@ -344,14 +382,14 @@ class Database:
             for row in rows
         ]
 
+    def close(self):
+        if not self._closed:
+            self.conn.close()
+            self._closed = True
+
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
         return False
-
-    def close(self):
-        if not self._closed:
-            self.conn.close()
-            self._closed = True

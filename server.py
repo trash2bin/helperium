@@ -3,15 +3,18 @@ from mcp.server.fastmcp import FastMCP
 from typing import Annotated
 from pydantic import Field
 from db.database import Database
-from db.models import Student, ScheduleEntry, Discipline, Material, Grade
+from db.models import Student, ScheduleEntry, Discipline, Material, Grade, Teacher
 from tools.student import StudentTools
 from tools.disciplines import DisciplineTools
 from tools.grades import GradeTools
+from tools.teacher import TeacherTools
+
 
 db = Database()
 student_tools = StudentTools(db)
 discipline_tools = DisciplineTools(db)
 grade_tools = GradeTools(db)
+teacher_tools = TeacherTools(db)
 
 mcp = FastMCP("University Server")
 
@@ -31,7 +34,7 @@ def get_student(
 
 @mcp.tool()
 def find_student_by_name(
-    name: Annotated[str, Field(description="Полное имя студента, например 'Иван Петров'")]
+    name: Annotated[str, Field(description="Полное имя студента, например 'Иван Петров Иванович'")]
 ) -> Student | None:
     """
     Найти студента по имени и получить его ID и данные.
@@ -102,6 +105,27 @@ def get_student_grades(
     Можно отфильтровать результат по конкретной дисциплине.
     """
     return grade_tools.get_student_grades(student_id, discipline_id)
+
+@mcp.tool()
+def get_teacher_by_name(
+    name: Annotated[str, Field(description="Имя учителя, например 'Оксана Ниловна Константинова'")]
+) -> Teacher | None:
+    """
+    Найти учителя по имени.
+    """
+    return teacher_tools.get_teacher_by_name(name)
+
+
+@mcp.tool()
+def get_teacher_schedule(
+    teacher_name: Annotated[str, Field(description="Имя учителя")],
+    day: Annotated[str | None, Field(description="День недели (по умолчанию - текущий день)")] = None
+) -> list[ScheduleEntry]:
+    """
+    Получить расписание учителя.
+    """
+    return teacher_tools.get_teacher_schedule(teacher_name, day)
+
 
 def main():
     mcp.run()

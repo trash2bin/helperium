@@ -8,6 +8,11 @@ class Student(BaseModel):
     course: int
     specialty: str
 
+class Teacher(BaseModel):
+    id: str
+    name: str
+    disciplines: List[str]
+
 class Discipline(BaseModel):
     id: str
     name: str
@@ -30,6 +35,7 @@ class Grade(BaseModel):
 class Lesson(BaseModel):
     discipline_id: str
     discipline_name: str
+    teacher_name: str
     room: int
 
 class ScheduleEntry(BaseModel):
