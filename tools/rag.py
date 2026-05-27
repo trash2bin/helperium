@@ -503,6 +503,7 @@ class RagTools:
                 self._embedding_model = SentenceTransformer(
                     self.embedding_model_name,
                     local_files_only=self.local_files_only,
+                    device=self.device
                 )
             except Exception as exc:
                 raise RuntimeError(
