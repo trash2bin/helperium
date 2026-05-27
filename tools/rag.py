@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import logging
 import mimetypes
@@ -20,7 +18,7 @@ from sentence_transformers import SentenceTransformer
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling_core.types.doc.document import TextItem  # точный тип текстового элемента
+from docling_core.types.doc.document import TextItem,  TableItem # точный тип текстового элемента
 
 # Chunking
 from chonkie import SemanticChunker
@@ -302,10 +300,17 @@ class RagTools:
             # Сохраняем в ChromaDB
             self._save_chunks_to_chroma(chunk_ids, chunk_texts, chunk_metadatas)
             self.db.conn.commit()
-        except Exception:
+        except Exception as e:
             # Откатываем SQLite, если ChromaDB упал
             self.db.conn.rollback()
-            raise
+
+            # Пытаемся вычистить мусор из ChromaDB
+            try:
+                self.collection.delete(ids=chunk_ids)
+            except Exception as cleanup_exc:
+                logger.error("Failed to cleanup ChromaDB after SQLite failure: %s", cleanup_exc)
+
+            raise e
 
         return Document(
             id=document_id,
@@ -382,12 +387,19 @@ class RagTools:
         """Загрузить чанки в ChromaDB вместе с эмбеддингами."""
         if not chunk_texts:
             return
-        self.collection.add(
-            ids=chunk_ids,
-            documents=chunk_texts,
-            embeddings=self._embed_batch(chunk_texts),
-            metadatas=chunk_metadatas,
-        )
+
+        # Нарезка больших кусков текста
+        BATCH_SIZE = 128
+        for i in range(0, len(chunk_texts), BATCH_SIZE):
+            batch_ids = chunk_ids[i:i + BATCH_SIZE]
+            batch_texts = chunk_texts[i:i + BATCH_SIZE]
+            batch_metas = chunk_metadatas[i:i + BATCH_SIZE]
+
+            batch_embeddings = self._embed_batch(batch_texts)
+            self.collection.add(
+                ids=batch_ids, documents=batch_texts,
+                embeddings=batch_embeddings, metadatas=batch_metas
+            )
 
 
     def _extract_pages(self, source_path: Path) -> list[PageDict]:
@@ -406,9 +418,13 @@ class RagTools:
         page_lines: dict[int, list[str]] = {}
         for item in dl_doc.iterate_items():
             # Берём только реальные текстовые блоки
-            if not isinstance(item, TextItem):
+            if isinstance(item, TextItem):
+                text = item.text
+            elif isinstance(item, TableItem):
+                text = item.export_to_markdown() # или export_to_html()
+            else:
                 continue
-            text = item.text
+
             if not text.strip():
                 continue
 
@@ -436,43 +452,51 @@ class RagTools:
 
 
     def _chunk_pages(self, pages: Iterable[PageDict]) -> list[ChunkDict]:
-        """Склеить страницы, разбить на семантические чанки, привязать к страницам."""
-        # Собираем полный текст и параллельно — интервальный индекс страниц:
-        #   boundaries = [end_0, end_1, ..., end_N]
-        #   page_for_boundary[i] = page для символов [boundaries[i-1], boundaries[i])
-        parts: list[str] = []
-        boundaries: list[int] = []       # конечные индексы страниц в full_text
-        page_for_boundary: list[int | None] = []
+        """Чанкинг постранично с overlap между страницами."""
+        all_chunks: list[ChunkDict] = []
+        previous_page_tail: str | None = None  # Хвост предыдущей страницы для overlap
 
-        cursor_pos = 0
+        OVERLAP_TOKENS = 50  # ~50 токенов overlap между страницами
+
         for page in pages:
             text = self._normalize_text(str(page.get("text") or ""))
             if not text:
                 continue
-            parts.append(text)
-            cursor_pos += len(text) + 1   # +1 под разделитель
-            boundaries.append(cursor_pos)
-            page_for_boundary.append(page.get("page"))
 
-        if not parts:
-            return []
+            # Добавляем хвост предыдущей страницы в начало текущей
+            if previous_page_tail:
+                text = previous_page_tail + " " + text
 
-        full_text = " ".join(parts).strip()
-        if not full_text:
-            return []
+            # Чанкаем только эту страницу
+            page_chunks = self.chunker.chunk(text)
 
-        chonkie_chunks = self.chunker.chunk(full_text)
+            for ch in page_chunks:
+                content = ch.text.strip()
+                if not content:
+                    continue
 
-        chunks: list[ChunkDict] = []
-        for ch in chonkie_chunks:
-            content = ch.text.strip()
-            if not content:
-                continue
-            start = getattr(ch, "start_index", 0)
-            page = self._find_page_for_index(start, boundaries, page_for_boundary)
-            chunks.append({"page": page, "content": content})
+                # Убираем overlap-часть из результата, чтобы не дублировать
+                if previous_page_tail and content.startswith(previous_page_tail[:20]):
+                    # Это первый чанк, который содержит overlap
+                    # Обрезаем overlap-часть
+                    content = content[len(previous_page_tail):].strip()
+                    if not content:
+                        continue  # Чанк состоял только из overlap, пропускаем
 
-        return chunks
+                all_chunks.append({
+                    "page": page.get("page"),  # Точная привязка без бинарного поиска!
+                    "content": content
+                })
+
+            # Сохраняем хвост текущей страницы для следующей итерации
+            # Берем последние ~OVERLAP_TOKENS токенов (примерно 200-300 символов)
+            words = text.split()
+            if len(words) > OVERLAP_TOKENS:
+                previous_page_tail = " ".join(words[-OVERLAP_TOKENS:])
+            else:
+                previous_page_tail = text  # Вся страница короткая
+
+        return all_chunks
 
     @staticmethod
     def _find_page_for_index(
