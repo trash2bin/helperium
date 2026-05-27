@@ -3,11 +3,23 @@ from mcp.server.fastmcp import FastMCP
 from typing import Annotated
 from pydantic import Field
 from db.database import Database
-from db.models import Student, ScheduleEntry, Discipline, Material, Grade, Teacher
+from db.models import (
+    Document,
+    DocumentImportResult,
+    Grade,
+    Material,
+    RagContext,
+    RagSearchResult,
+    ScheduleEntry,
+    Discipline,
+    Student,
+    Teacher,
+)
 from tools.student import StudentTools
 from tools.disciplines import DisciplineTools
 from tools.grades import GradeTools
 from tools.teacher import TeacherTools
+from tools.rag import RagTools
 
 
 db = Database()
@@ -15,6 +27,7 @@ student_tools = StudentTools(db)
 discipline_tools = DisciplineTools(db)
 grade_tools = GradeTools(db)
 teacher_tools = TeacherTools(db)
+rag_tools = RagTools(db)
 
 mcp = FastMCP("University Server")
 
@@ -125,6 +138,56 @@ def get_teacher_schedule(
     Получить расписание учителя.
     """
     return teacher_tools.get_teacher_schedule(teacher_name, day)
+
+
+@mcp.tool()
+def import_document(
+    path: Annotated[str, Field(description="Путь к документу на сервере.")],
+    discipline_id: Annotated[str | None, Field(description="Опциональный ID дисциплины, если документ относится к конкретной дисциплине")] = None,
+    title: Annotated[str | None, Field(description="Опциональное название документа")] = None,
+) -> DocumentImportResult:
+    """
+    Импортировать документ в локальный RAG-индекс.
+    Документ будет прочитан, разбит на фрагменты, векторизован и сохранён в SQLite.
+    Если документ с тем же путём уже был импортирован, он будет переиндексирован.
+    """
+    return rag_tools.import_document(path, discipline_id, title)
+
+
+@mcp.tool()
+def list_documents(
+    discipline_id: Annotated[str | None, Field(description="Опциональный ID дисциплины для фильтрации документов")] = None
+) -> list[Document]:
+    """
+    Получить список документов, доступных RAG-поиску.
+    """
+    return rag_tools.list_documents(discipline_id)
+
+
+@mcp.tool()
+def search_documents(
+    query: Annotated[str, Field(description="Вопрос или поисковый запрос по загруженным документам")],
+    discipline_id: Annotated[str | None, Field(description="Опциональный ID дисциплины для сужения поиска")] = None,
+    limit: Annotated[int, Field(description="Сколько релевантных фрагментов вернуть, от 1 до 20")] = 5,
+) -> list[RagSearchResult]:
+    """
+    Найти релевантные фрагменты документов через локальный RAG-поиск.
+    Возвращает текст фрагмента, оценку релевантности и источник.
+    """
+    return rag_tools.search_documents(query, discipline_id, limit)
+
+
+@mcp.tool()
+def get_rag_context(
+    query: Annotated[str, Field(description="Вопрос пользователя, на который нужно ответить по документам")],
+    discipline_id: Annotated[str | None, Field(description="Опциональный ID дисциплины для сужения контекста")] = None,
+    limit: Annotated[int, Field(description="Сколько фрагментов включить в контекст, от 1 до 20")] = 5,
+) -> RagContext:
+    """
+    Получить готовый RAG-контекст для ответа модели.
+    Модель должна отвечать только по возвращённым фрагментам и явно говорить, если данных недостаточно.
+    """
+    return rag_tools.build_rag_context(query, discipline_id, limit)
 
 
 def main():

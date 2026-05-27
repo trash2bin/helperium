@@ -1,6 +1,6 @@
 [project]
 name = "agent-tutor"
-version = "0.0.1"
+version = "0.0.2"
 readme = "README.md"
 description = "University MCP server"
 requires-python = ">=3.12"
@@ -8,6 +8,10 @@ dependencies = [
     "mcp[cli]>=1.0.0",
     "pydantic>=2.0.0",
     "faker>=20.0.0",
+    "pypdf>=5.0.0",
+    "python-docx>=1.1.0",
+    "chromadb>=1.5.9",
+    "sentence-transformers>=5.5.1",
 ]
 
 [project.scripts]

@@ -28,6 +28,41 @@ class Material(BaseModel):
     type: str
     content: str
 
+class Document(BaseModel):
+    id: str
+    title: str
+    source_path: str
+    mime_type: str
+    discipline_id: str | None = None
+    created_at: str
+
+class DocumentChunk(BaseModel):
+    id: str
+    document_id: str
+    chunk_index: int
+    page: int | None = None
+    content: str
+
+class DocumentImportResult(BaseModel):
+    document: Document
+    chunks_count: int
+
+class RagSearchResult(BaseModel):
+    document_id: str
+    document_title: str
+    source_path: str
+    discipline_id: str | None = None
+    chunk_id: str
+    chunk_index: int
+    page: int | None = None
+    score: float
+    content: str
+
+class RagContext(BaseModel):
+    query: str
+    answer_instruction: str
+    chunks: List[RagSearchResult]
+
 class Grade(BaseModel):
     id: str
     student_id: str

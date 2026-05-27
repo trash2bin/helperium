@@ -73,6 +73,42 @@ class Database:
         """)
 
         cursor.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            source_path TEXT NOT NULL UNIQUE,
+            mime_type TEXT NOT NULL,
+            discipline_id TEXT,
+            created_at TEXT NOT NULL,
+            metadata_json TEXT,
+            FOREIGN KEY (discipline_id) REFERENCES disciplines (id)
+        )
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS document_chunks (
+            id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            page INTEGER,
+            content TEXT NOT NULL,
+            embedding_json TEXT NOT NULL,
+            token_count INTEGER NOT NULL,
+            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+        )
+        """)
+
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id
+        ON document_chunks (document_id)
+        """)
+
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_documents_discipline_id
+        ON documents (discipline_id)
+        """)
+
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS grades (
             id TEXT PRIMARY KEY,
             student_id TEXT,
