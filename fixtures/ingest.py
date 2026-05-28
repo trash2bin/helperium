@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from db.database import Database
-from tools.document_generator import MaterialDocumentGenerator
+from fixtures.document_generator import MaterialDocumentGenerator
 from tools.rag import RagTools
 
 # Settings

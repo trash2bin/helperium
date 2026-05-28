@@ -19,7 +19,6 @@ from tools.disciplines import DisciplineTools
 from tools.grades import GradeTools
 from tools.teacher import TeacherTools
 from tools.rag import RagTools
-from tools.document_generator import MaterialDocumentGenerator
 
 
 db = Database()
@@ -27,8 +26,7 @@ student_tools = StudentTools(db)
 grade_tools = GradeTools(db)
 teacher_tools = TeacherTools(db)
 rag_tools = RagTools(db)
-material_generator = MaterialDocumentGenerator(db, rag_tools)
-discipline_tools = DisciplineTools(db, material_generator)
+discipline_tools = DisciplineTools(db)
 
 mcp = FastMCP("University Server")
 
@@ -91,23 +89,9 @@ def get_materials(
 ) -> list[Material]:
     """
     Получить учебные материалы по дисциплине.
-    Если для дисциплины еще нет файлов, сервер локально сгенерирует PDF/DOCX,
-    привяжет их к дисциплине и вернет названия файлов.
     ID дисциплины можно получить через get_disciplines.
     """
     return discipline_tools.get_materials(discipline_id, material_type)
-
-
-@mcp.tool()
-def generate_materials(
-    discipline_id: Annotated[str, Field(description="ID дисциплины из get_disciplines")],
-    force: Annotated[bool, Field(description="true — пересоздать файлы даже если они уже есть; false — вернуть существующие")] = False,
-) -> list[Material]:
-    """
-    Сгенерировать реальные PDF/DOCX-файлы для дисциплины и привязать их к ней.
-    Возвращает материалы как список файлов: лекция, методичка, лабораторная работа.
-    """
-    return discipline_tools.generate_materials(discipline_id, force=force)
 
 
 @mcp.tool()
