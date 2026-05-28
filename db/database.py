@@ -2,6 +2,9 @@ import os
 import sys
 import sqlite3
 import json
+import mimetypes
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from .models import Student, Discipline, Material, ScheduleEntry, Lesson, Grade, Teacher, Group
@@ -365,47 +368,154 @@ class Database:
             for row in cursor.fetchall()
         ]
 
+    def get_discipline(self, discipline_id: str) -> Discipline | None:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM disciplines WHERE id = ?", (discipline_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return Discipline(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+        )
+
+    def get_all_disciplines(self) -> List[Discipline]:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM disciplines ORDER BY name ASC")
+        return [
+            Discipline(
+                id=row["id"],
+                name=row["name"],
+                description=row["description"],
+            )
+            for row in cursor.fetchall()
+        ]
+
+    @staticmethod
+    def _material_type_from_document_title(title: str, source_path: str = "") -> str:
+        lowered = f"{title} {Path(source_path).name}".lower()
+        if "лекц" in lowered:
+            return "Лекция"
+        if "метод" in lowered:
+            return "Методичка"
+        if "лаб" in lowered:
+            return "Лабораторная работа"
+        return "Документ"
+
+    def _material_from_document_row(self, row: sqlite3.Row) -> Material:
+        source_path = row["source_path"]
+        return Material(
+            id=row["id"],
+            discipline_id=row["discipline_id"],
+            type=self._material_type_from_document_title(row["title"], source_path),
+            title=row["title"],
+            file_name=Path(source_path).name,
+            source_path=source_path,
+            mime_type=row["mime_type"],
+            content=Path(source_path).name,
+        )
+
     def get_materials(self, discipline_id: str, material_type: Optional[str] = None) -> List[Material]:
         cursor = self.conn.cursor()
-        if material_type:
-            cursor.execute(
-                "SELECT * FROM materials WHERE discipline_id = ? AND type = ?",
-                (discipline_id, material_type)
-            )
-        else:
-            cursor.execute("SELECT * FROM materials WHERE discipline_id = ?", (discipline_id,))
+        cursor.execute(
+            """
+            SELECT id, title, source_path, mime_type, discipline_id, created_at
+            FROM documents
+            WHERE discipline_id = ?
+            ORDER BY title ASC
+            """,
+            (discipline_id,),
+        )
 
-        rows = cursor.fetchall()
-        return [
-            Material(
-                id=row["id"],
-                discipline_id=row["discipline_id"],
-                type=row["type"],
-                content=row["content"]
-            )
-            for row in rows
-        ]
+        materials = [self._material_from_document_row(row) for row in cursor.fetchall()]
+        if material_type:
+            normalized_type = material_type.lower()
+            materials = [
+                material for material in materials
+                if normalized_type in material.type.lower()
+            ]
+        return materials
 
     def search_materials(self, query: str, discipline_id: Optional[str] = None) -> List[Material]:
         cursor = self.conn.cursor()
+        params: list = [f"%{query}%"]
+        sql = """
+            SELECT DISTINCT
+                documents.id,
+                documents.title,
+                documents.source_path,
+                documents.mime_type,
+                documents.discipline_id,
+                documents.created_at
+            FROM documents
+            LEFT JOIN document_chunks ON document_chunks.document_id = documents.id
+            WHERE (documents.title LIKE ? OR document_chunks.content LIKE ?)
+        """
+        params.append(f"%{query}%")
         if discipline_id:
-            cursor.execute(
-                "SELECT * FROM materials WHERE discipline_id = ? AND content LIKE ?",
-                (discipline_id, f"%{query}%")
-            )
-        else:
-            cursor.execute("SELECT * FROM materials WHERE content LIKE ?", (f"%{query}%",))
+            sql += " AND documents.discipline_id = ?"
+            params.append(discipline_id)
 
-        rows = cursor.fetchall()
-        return [
-            Material(
-                id=row["id"],
-                discipline_id=row["discipline_id"],
-                type=row["type"],
-                content=row["content"]
-            )
-            for row in rows
-        ]
+        sql += " ORDER BY documents.title ASC"
+        cursor.execute(sql, params)
+        return [self._material_from_document_row(row) for row in cursor.fetchall()]
+
+    def save_generated_document_record(
+        self,
+        path: str,
+        discipline_id: str,
+        title: str,
+        text: str,
+    ) -> None:
+        """Fallback: register a generated file even if full RAG import failed."""
+        source_path = str(Path(path).resolve())
+        document_id = str(uuid.uuid4())
+        mime_type = mimetypes.guess_type(source_path)[0] or "application/octet-stream"
+        created_at = datetime.now(timezone.utc).isoformat()
+        cursor = self.conn.cursor()
+
+        existing = cursor.execute(
+            "SELECT id FROM documents WHERE source_path = ?",
+            (source_path,),
+        ).fetchone()
+        if existing:
+            cursor.execute("DELETE FROM document_chunks WHERE document_id = ?", (existing["id"],))
+            cursor.execute("DELETE FROM documents WHERE id = ?", (existing["id"],))
+
+        cursor.execute(
+            """
+            INSERT INTO documents (
+                id, title, source_path, mime_type, discipline_id, created_at, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                document_id,
+                title,
+                source_path,
+                mime_type,
+                discipline_id,
+                created_at,
+                json.dumps({"generated": True, "indexed": False}, ensure_ascii=False),
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO document_chunks (
+                id, document_id, chunk_index, page, content, embedding_json, token_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                document_id,
+                0,
+                None,
+                text,
+                "[]",
+                len(text.split()),
+            ),
+        )
+        self.conn.commit()
 
     def get_student_grades(self, student_id: str, discipline_id: Optional[str] = None) -> List[Grade]:
         cursor = self.conn.cursor()

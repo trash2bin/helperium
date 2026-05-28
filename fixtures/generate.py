@@ -198,17 +198,6 @@ def generate_data():
     teachers = generate_teachers()
     disciplines = generate_disciplines()
 
-    # Материалы привязаны к дисциплинам
-    materials = []
-    for disc in disciplines:
-        for _ in range(random.randint(1, 3)):
-            materials.append({
-                "id": fake.uuid4(),
-                "discipline_id": disc['id'],
-                "type": random.choice(['Лекция (слайды)', 'Методичка', 'Лабораторная работа']),
-                "content": ru_text(400)
-            })
-
     schedule = generate_schedule(groups, disciplines, teachers)
     grades = generate_grades(students, groups, disciplines)
 
@@ -217,7 +206,7 @@ def generate_data():
         "students": students,
         "teachers": teachers,
         "disciplines": disciplines,
-        "materials": materials,
+        "materials": [],
         "schedule": schedule,
         "grades": grades
     }

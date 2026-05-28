@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from db.database import Database
+from tools.document_generator import MaterialDocumentGenerator
 from tools.rag import RagTools
 
 # Settings
@@ -74,6 +75,129 @@ def cmd_search(args):
     db.close()
 
 
+def cmd_generate(args):
+    """Сгенерировать PDF/DOCX-материалы для дисциплины."""
+    if args.model:
+        os.environ["DOCGEN_MODEL"] = args.model
+
+    db = Database()
+    rag = RagTools(db)
+    generator = MaterialDocumentGenerator(db, rag)
+    try:
+        materials = generator.ensure_materials(
+            discipline_id=args.discipline_id,
+            force=args.force,
+        )
+        if not materials:
+            print("Дисциплина не найдена или материалы не созданы.")
+            db.close()
+            return
+
+        for material in materials:
+            print(f"  {material.type}: {material.file_name}  {material.source_path}")
+        print(f"\nВсего: {len(materials)}")
+    except RuntimeError as e:
+        print(f"ERR {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        db.close()
+
+
+def cmd_generate_all(args):
+    """Сгенерировать PDF/DOCX-материалы для всех дисциплин."""
+    if args.model:
+        os.environ["DOCGEN_MODEL"] = args.model
+
+    db = Database()
+    rag = RagTools(db)
+    generator = MaterialDocumentGenerator(db, rag)
+    disciplines = db.get_all_disciplines()
+    created_total = 0
+
+    try:
+        for index, discipline in enumerate(disciplines, 1):
+            print(f"[{index}/{len(disciplines)}] {discipline.name}")
+            materials = generator.ensure_materials(discipline.id, force=args.force)
+            for material in materials:
+                print(f"  {material.type}: {material.file_name}")
+            created_total += len(materials)
+
+        print(f"\nГотово. Дисциплин: {len(disciplines)}, файлов в базе: {created_total}")
+    except RuntimeError as e:
+        print(f"ERR {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        db.close()
+
+
+def _delete_documents(db: Database, rag: RagTools, rows) -> int:
+    cursor = db.conn.cursor()
+    deleted = 0
+    for row in rows:
+        doc_id = row["id"]
+        source_path = Path(row["source_path"])
+        try:
+            rag._delete_document_vectors(doc_id)
+        except Exception as exc:
+            print(f"WARN не удалось удалить векторы {doc_id}: {exc}", file=sys.stderr)
+        cursor.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
+        cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        if source_path.exists():
+            try:
+                source_path.unlink()
+            except OSError as exc:
+                print(f"WARN не удалось удалить файл {source_path}: {exc}", file=sys.stderr)
+        deleted += 1
+    db.conn.commit()
+    return deleted
+
+
+def _cleanup_empty_generated_dirs() -> None:
+    generated_dir = Path("generated_materials").resolve()
+    if not generated_dir.exists():
+        return
+    for path in sorted(generated_dir.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+        if not path.is_dir():
+            continue
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+    try:
+        generated_dir.rmdir()
+    except OSError:
+        pass
+
+
+def cmd_clear_generated(args):
+    """Удалить сгенерированные материалы из SQLite, ChromaDB и с диска."""
+    db = Database()
+    rag = RagTools(db)
+    cursor = db.conn.cursor()
+
+    if args.discipline_id:
+        rows = cursor.execute(
+            """
+            SELECT id, source_path FROM documents
+            WHERE discipline_id = ? AND source_path LIKE ?
+            """,
+            (args.discipline_id, "%generated_materials%"),
+        ).fetchall()
+    else:
+        rows = cursor.execute(
+            """
+            SELECT id, source_path FROM documents
+            WHERE source_path LIKE ?
+            """,
+            ("%generated_materials%",),
+        ).fetchall()
+
+    deleted = _delete_documents(db, rag, rows)
+    _cleanup_empty_generated_dirs()
+    print(f"Удалено документов: {deleted}")
+    db.close()
+
+
 def cmd_delete(args):
     """Удалить документ из индекса."""
     db = Database()
@@ -135,6 +259,27 @@ def main():
     p_search.add_argument("--discipline-id", "-d", help="Фильтр по дисциплине")
     p_search.add_argument("--limit", "-n", type=int, default=5, help="Кол-во результатов")
     p_search.set_defaults(func=cmd_search)
+
+    # generate
+    p_generate = sub.add_parser("generate", help="Сгенерировать PDF/DOCX-материалы дисциплины")
+    p_generate.add_argument("--discipline-id", "-d", required=True, help="ID дисциплины")
+    p_generate.add_argument("--force", action="store_true", help="Пересоздать файлы")
+    p_generate.add_argument("--model", "-m", help="Модель Ollama, например qwen2.5:0.5b")
+    p_generate.set_defaults(func=cmd_generate)
+
+    # generate-all
+    p_generate_all = sub.add_parser("generate-all", help="Сгенерировать PDF/DOCX-материалы для всех дисциплин")
+    p_generate_all.add_argument("--force", action="store_true", help="Пересоздать файлы")
+    p_generate_all.add_argument("--model", "-m", help="Модель Ollama, например qwen2.5:0.5b")
+    p_generate_all.set_defaults(func=cmd_generate_all)
+
+    # clear-generated
+    p_clear_generated = sub.add_parser(
+        "clear-generated",
+        help="Удалить сгенерированные материалы из базы, ChromaDB и с диска",
+    )
+    p_clear_generated.add_argument("--discipline-id", "-d", help="ID дисциплины")
+    p_clear_generated.set_defaults(func=cmd_clear_generated)
 
     # delete
     p_delete = sub.add_parser("delete", help="Удалить документ из индекса")

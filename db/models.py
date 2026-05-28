@@ -26,7 +26,11 @@ class Material(BaseModel):
     id: str
     discipline_id: str
     type: str
-    content: str
+    title: str
+    file_name: str
+    source_path: str
+    mime_type: str
+    content: str = ""
 
 class Document(BaseModel):
     id: str
