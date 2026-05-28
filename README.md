@@ -12,7 +12,8 @@ MCP-сервер для университетского ассистента н
 | `find_student_by_name(name)` | Поиск студента по ФИО |
 | `get_schedule(group_id, day?)` | Расписание группы, опционально по дню |
 | `get_disciplines(student_id)` | Дисциплины студента через его группу |
-| `get_materials(discipline_id, type?)` | Учебные материалы по дисциплине |
+| `get_materials(discipline_id, type?)` | Список файлов по дисциплине; при первом вызове генерирует их локально |
+| `generate_materials(discipline_id, force?)` | Явно сгенерировать или пересоздать материалы дисциплины |
 | `search_materials(query, discipline_id?)` | Поиск по содержимому материалов |
 | `get_student_grades(student_id, discipline_id?)` | Оценки студента, опционально по одной дисциплине |
 | `get_teacher_by_name(name)` | Поиск преподавателя |
@@ -29,9 +30,11 @@ MCP-сервер для университетского ассистента н
 - SQLite — локальное хранилище
 - Pydantic — схемы ответов
 - Faker — генерация тестовых данных
-- pypdf и python-docx — чтение PDF и DOCX
+- python-docx — генерация DOCX
+- встроенный PDF-генератор — генерация PDF-лекций без внешних утилит
 - Sentence Transformers — локальная embedding-модель
 - ChromaDB — локальная векторная база для RAG-поиска
+- Ollama — локальная генерация текста материалов
 
 ## Структура
 
@@ -44,6 +47,7 @@ agent-tutor/
 ├── tools/
 │   ├── student.py      # StudentTools
 │   ├── disciplines.py  # DisciplineTools
+│   ├── document_generator.py # Генерация PDF/DOCX-материалов
 │   └── rag.py          # Импорт документов, чанкинг, embeddings, retrieval
 ├── fixtures/
 │   └── generate.py     # Генератор тестовых данных
