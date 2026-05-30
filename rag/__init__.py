@@ -1,14 +1,14 @@
 """RAG-система."""
 from __future__ import annotations
 
-from db.database import Database
+import sqlite3
 
 from rag.config import RagConfig
 from rag.parser import DocumentParser
 from rag.chunker import TextChunker
-from rag.embeddings import EmbeddingService
+from rag.embeddings import SentenceTransformerEmbedding
 from rag.repository import DocumentRepository
-from rag.vector_store import VectorStore
+from rag.vector_store import ChromaDBVectorStore
 from rag.pipeline import RAGPipeline
 
 
@@ -20,18 +20,22 @@ __all__ = [
 
 
 def create_rag_pipeline(
-    db: Database,
+    conn: sqlite3.Connection,
     config: RagConfig | None = None,
 ) -> RAGPipeline:
-    """Фабрика для создания RAG-пайплайна с готовыми зависимостями."""
+    """Создать RAG-пайплайн.
+
+    Принимает sqlite3.Connection (не Database), чтобы не создавать
+    циклической зависимости между rag и db пакетами.
+    """
     if config is None:
         config = RagConfig.from_env()
 
-    embedding_service = EmbeddingService(config)
+    embedding_service = SentenceTransformerEmbedding(config)
     parser = DocumentParser(config)
     chunker = TextChunker(config)
-    repository = DocumentRepository(db, config)
-    vector_store = VectorStore(config, embedding_service)
+    repository = DocumentRepository(conn, config)
+    vector_store = ChromaDBVectorStore(config, embedding_service)
 
     return RAGPipeline(
         config=config,

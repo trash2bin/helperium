@@ -17,10 +17,11 @@ MCP-сервер для университетского ассистента н
 | `get_student_grades(student_id, discipline_id?)` | Оценки студента, опционально по одной дисциплине |
 | `get_teacher_by_name(name)` | Поиск преподавателя |
 | `get_teacher_schedule(teacher_name, day?)` | Расписание преподавателя |
-| `import_document(path, discipline_id?, title?)` | Импорт документа в локальный RAG-индекс |
 | `list_documents(discipline_id?)` | Список документов в RAG-индексе |
 | `search_documents(query, discipline_id?, limit?)` | Поиск релевантных фрагментов документов |
 | `get_rag_context(query, discipline_id?, limit?)` | Готовый контекст для ответа по документам |
+
+> **Примечание:** `import_document` доступен только через CLI `agent-ingest`, не через MCP-сервер.
 
 ## Осторожность
 
@@ -48,17 +49,40 @@ agent-tutor/
 ├── server.py           # MCP-сервер, точка входа
 ├── db/
 │   ├── database.py     # SQLite, создание таблиц, загрузка фикстур
-│   └── models.py       # Pydantic-модели
+│   └── models.py       # Pydantic-модели (реэкспорт RAG-моделей из rag.models)
 ├── tools/
 │   ├── student.py      # StudentTools
-│   ├── disciplines.py  # DisciplineTools
-│   └── rag.py          # Импорт документов, чанкинг, embeddings, retrieval
+│   ├── disciplines.py  # DisciplineTools (get_materials/search_materials через doc_repo)
+│   ├── grades.py       # GradeTools
+│   ├── teacher.py      # TeacherTools
+│   └── rag.py          # Устаревший фасад, заглушка для обратной совместимости
+├── rag/                # RAG-слой (не зависит от db пакета)
+│   ├── __init__.py     # create_rag_pipeline(conn, config)
+│   ├── config.py       # RagConfig из переменных окружения
+│   ├── interfaces.py   # EmbeddingProtocol, VectorStoreProtocol
+│   ├── embeddings.py   # SentenceTransformerEmbedding
+│   ├── vector_store.py # ChromaDBVectorStore
+│   ├── parser.py       # DocumentParser (PDF, DOCX, TXT, MD, HTML)
+│   ├── chunker.py      # TextChunker (semantic, recursive, sentence)
+│   ├── repository.py   # DocumentRepository — CRUD документов/чанков в SQLite
+│   ├── pipeline.py     # RAGPipeline — оркестрация парсинг → чанкинг → сохранение
+│   └── models.py       # Pydantic-модели (Document, Material, RagSearchResult, ...)
 ├── fixtures/
 │   ├── generate.py     # Генератор тестовых данных
 │   ├── ingest.py       # CLI agent-ingest для RAG-документов и генерации материалов
 │   └── document_generator.py # Генерация PDF/DOCX-материалов для фикстур
 └── fixtures.json       # Тестовые данные
 ```
+
+## Архитектура RAG-пакета
+
+Пакет `rag/` не зависит от `db/`.
+`DocumentRepository` принимает сырой `sqlite3.Connection`.
+
+- `rag/interfaces.py` — протоколы (`EmbeddingProtocol`, `VectorStoreProtocol`) для подмены реализаций
+- `rag/embeddings.py` → `SentenceTransformerEmbedding`, `rag/vector_store.py` → `ChromaDBVectorStore`
+- Pydantic-модели (`Document`, `Material`, `RagSearchResult`, ...) переехали в `rag/models.py`; `db/models.py` реэкспортирует
+- `server.py` использует `create_rag_pipeline(db.conn)` напрямую (вместо `RagTools`)
 
 ## RAG по документам
 

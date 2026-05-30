@@ -26,6 +26,7 @@ from fixtures.catalog import (
     GROUP_SPECIALTY_MAP,
     SPECIALITIES,
 )
+from rag.repository import DocumentRepository
 from tools.rag import RagTools
 
 
@@ -442,6 +443,7 @@ class MaterialDocumentGenerator:
     ) -> None:
         self.db = db
         self.rag_tools = rag_tools
+        self.doc_repo = rag_tools.pipeline.repository
         self.output_dir = Path(
             output_dir or os.environ.get("DOCGEN_OUTPUT_DIR", DEFAULT_OUTPUT_DIR)
         )
@@ -460,7 +462,7 @@ class MaterialDocumentGenerator:
         self._remove_stale_generated_documents(discipline_id, force=force)
 
         existing = self._valid_generated_materials(
-            self.db.get_materials(discipline_id)
+            self.doc_repo.get_materials(discipline_id)
         )
         missing_types = self._expected_material_types() - {
             material.type for material in existing
@@ -475,7 +477,7 @@ class MaterialDocumentGenerator:
         for document in generated:
             self._index_generated_document(discipline.id, document)
 
-        return self.db.get_materials(discipline_id)
+        return self.doc_repo.get_materials(discipline_id)
 
     def generate_documents(
         self,
@@ -524,14 +526,15 @@ class MaterialDocumentGenerator:
             chunks = self.rag_tools.pipeline.chunker.chunk_pages(
                 [{"page": None, "text": document.text}]
             )
-            self.rag_tools.pipeline._save_document(
-                source_path=document.path.resolve(),
+            self.rag_tools.pipeline.repository.save_document_with_chunks(
+                source_path=str(document.path.resolve()),
                 chunks=chunks,
                 discipline_id=discipline_id,
                 title=document.title,
+                vector_store=self.rag_tools.pipeline.vector_store,
             )
         except Exception:
-            self.db.save_generated_document_record(
+            self.rag_tools.pipeline.repository.save_generated_document_fallback(
                 path=str(document.path),
                 discipline_id=discipline_id,
                 title=document.title,
@@ -559,7 +562,7 @@ class MaterialDocumentGenerator:
     def _delete_outdated_generated_documents(self, discipline_id: str) -> None:
         expected_extensions = self._expected_extensions()
         rows_to_delete = []
-        for material in self.db.get_materials(discipline_id):
+        for material in self.doc_repo.get_materials(discipline_id):
             source_path = Path(material.source_path)
             if not self._is_generated_path(source_path):
                 continue

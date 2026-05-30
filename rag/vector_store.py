@@ -5,20 +5,24 @@ import logging
 from typing import cast
 
 import chromadb
-from chromadb.api.types import Metadata
-
-from db.models import RagSearchResult
+from chromadb.api.types import Embeddings, Metadata
 
 from rag.config import RagConfig
-from rag.embeddings import EmbeddingService
+from rag.embeddings import SentenceTransformerEmbedding
+from rag.interfaces import EmbeddingProtocol, VectorStoreProtocol
+from rag.models import RagSearchResult
 
 logger = logging.getLogger(__name__)
 
 
-class VectorStore:
-    """Обёртка над ChromaDB."""
+class ChromaDBVectorStore(VectorStoreProtocol):
+    """ChromaDB-реализация VectorStoreProtocol.
 
-    def __init__(self, config: RagConfig, embedding_service: EmbeddingService) -> None:
+    Локальное персистентное хранилище. В будущем заменяется на
+    RemoteVectorStore (HTTP к Qdrant/Pgvector-микросервису).
+    """
+
+    def __init__(self, config: RagConfig, embedding_service: EmbeddingProtocol) -> None:
         self.config = config
         self.embedding_service = embedding_service
 
@@ -62,7 +66,7 @@ class VectorStore:
                     }
                 )
 
-            embeddings = self.embedding_service.encode_batched(batch_texts)
+            embeddings = cast(Embeddings, self.embedding_service.encode_batched(batch_texts))
             self.collection.add(
                 ids=batch_ids,
                 documents=batch_texts,
@@ -86,10 +90,10 @@ class VectorStore:
         limit: int = 5,
     ) -> list[RagSearchResult]:
         """Семантический поиск."""
-        query_embedding = self.embedding_service.encode_batched([query])
+        query_emb: Embeddings = cast(Embeddings, self.embedding_service.encode_batched([query]))
 
         query_result = self.collection.query(
-            query_embeddings=query_embedding,
+            query_embeddings=query_emb,
             n_results=limit,
             where={"discipline_id": discipline_id} if discipline_id else None,
             include=["documents", "metadatas", "distances"],

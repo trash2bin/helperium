@@ -1,20 +1,18 @@
-"""Основной пайплайн RAG."""
+"""Основной пайплайн RAG — оркестрация без raw SQL."""
 from __future__ import annotations
 
 import logging
-import mimetypes
-import uuid
 from pathlib import Path
 from typing import Callable
 
-from db.models import Document, DocumentImportResult, RagContext, RagSearchResult
-
 from rag.config import RagConfig
+from rag.embeddings import SentenceTransformerEmbedding
+from rag.interfaces import EmbeddingProtocol, VectorStoreProtocol
+from rag.models import DocumentImportResult, RagContext, RagSearchResult
 from rag.parser import DocumentParser
 from rag.chunker import TextChunker
-from rag.embeddings import EmbeddingService
 from rag.repository import DocumentRepository
-from rag.vector_store import VectorStore
+from rag.vector_store import ChromaDBVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +20,20 @@ ProgressCallback = Callable[..., None]
 
 
 class RAGPipeline:
-    """Оркестратор RAG-пайплайна."""
+    """Оркестратор RAG-пайплайна.
+
+    Координирует парсинг -> чанкинг -> сохранение (SQLite + VectorStore).
+    Не содержит raw SQL — вся persistence делегирована DocumentRepository.
+    """
 
     def __init__(
         self,
         config: RagConfig,
         parser: DocumentParser,
         chunker: TextChunker,
-        embedding_service: EmbeddingService,
+        embedding_service: EmbeddingProtocol,
         repository: DocumentRepository,
-        vector_store: VectorStore,
+        vector_store: VectorStoreProtocol,
     ) -> None:
         self.config = config
         self.parser = parser
@@ -47,7 +49,7 @@ class RAGPipeline:
         title: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> DocumentImportResult:
-        """Импортировать документ."""
+        """Импортировать документ: парсинг -> чанкинг -> сохранение."""
         source_path = self._validate_path(path)
 
         # Парсинг
@@ -63,90 +65,21 @@ class RAGPipeline:
         if not chunks:
             raise ValueError(f"Document has no readable text: {source_path}")
 
-        # Сохранение
-        document = self._save_document(
-            source_path=source_path,
+        # Сохранение (транзакция SQLite + ChromaDB внутри repository)
+        result = self.repository.save_document_with_chunks(
+            source_path=str(source_path),
             chunks=chunks,
             discipline_id=discipline_id,
             title=title,
+            vector_store=self.vector_store,
         )
 
         if on_progress:
-            on_progress("done", n=len(chunks))
+            on_progress("done", n=result.chunks_count)
 
-        return DocumentImportResult(document=document, chunks_count=len(chunks))
+        return result
 
-    def _save_document(
-        self,
-        source_path: Path,
-        chunks: list,
-        discipline_id: str | None,
-        title: str | None,
-    ) -> Document:
-        """Сохранить документ (транзакция SQLite + ChromaDB)."""
-        document_id = str(uuid.uuid4())
-        mime_type = mimetypes.guess_type(source_path.name)[0] or "application/octet-stream"
-        document_title = title or source_path.stem
-
-        cursor = self.repository.db.conn.cursor()
-
-        # Удаляем старую версию
-        existing_id = self.repository.find_existing_by_path(str(source_path))
-        if existing_id:
-            try:
-                self.vector_store.delete_by_document_id(existing_id)
-            except Exception as exc:
-                logger.warning("Failed to delete vectors for %s: %s", existing_id, exc)
-            self.repository.delete_document(cursor, existing_id)
-
-        # Вставляем в SQLite
-        created_at = self.repository.insert_document(
-            cursor=cursor,
-            document_id=document_id,
-            title=document_title,
-            source_path=str(source_path),
-            mime_type=mime_type,
-            discipline_id=discipline_id,
-        )
-
-        chunk_ids, chunk_texts, chunk_metadatas = self.repository.insert_chunks(
-            cursor=cursor,
-            document_id=document_id,
-            chunks=chunks,
-        )
-
-        try:
-            # Сначала ChromaDB
-            self.vector_store.add_chunks(
-                chunk_ids=chunk_ids,
-                chunk_texts=chunk_texts,
-                chunk_metadatas=chunk_metadatas,
-                document_id=document_id,
-                document_title=document_title,
-                source_path=str(source_path),
-                discipline_id=discipline_id,
-            )
-            # Потом SQLite
-            self.repository.commit()
-        except Exception as e:
-            self.repository.rollback()
-            # Откатываем ChromaDB
-            try:
-                self.vector_store.delete_by_ids(chunk_ids)
-            except Exception as cleanup_exc:
-                logger.error("Failed to cleanup ChromaDB: %s", cleanup_exc)
-            raise e
-
-        return Document(
-            id=document_id,
-            title=document_title,
-            source_path=str(source_path),
-            mime_type=mime_type,
-            discipline_id=discipline_id,
-            created_at=created_at,
-        )
-
-    def list_documents(self, discipline_id: str | None = None) -> list[Document]:
+    def list_documents(self, discipline_id: str | None = None) -> list:
         """Список документов."""
         return self.repository.list_documents(discipline_id)
 
@@ -184,8 +117,6 @@ class RAGPipeline:
             discipline_id=discipline_id,
             limit=limit,
         )
-
-        # TODO: Добавить контроль max_context_tokens через токенизатор
 
         return RagContext(
             query=query,

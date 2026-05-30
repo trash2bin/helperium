@@ -1,4 +1,4 @@
-"""Сервис для вычисления эмбеддингов."""
+"""Сервис для вычисления эмбеддингов (SentenceTransformer)."""
 from __future__ import annotations
 
 import logging
@@ -7,12 +7,17 @@ from typing import cast
 from chromadb.api.types import Embeddings
 
 from rag.config import RagConfig
+from rag.interfaces import EmbeddingProtocol
 
 logger = logging.getLogger(__name__)
 
 
-class EmbeddingService:
-    """Сервис эмбеддингов с батчингом и кэшированием модели."""
+class SentenceTransformerEmbedding(EmbeddingProtocol):
+    """SentenceTransformer-реализация EmbeddingProtocol.
+
+    Модель грузится лениво при первом вызове encode_batched.
+    В будущем заменяется на RemoteEmbedding (HTTP к микросервису).
+    """
 
     def __init__(self, config: RagConfig) -> None:
         self.config = config
