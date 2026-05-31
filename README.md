@@ -71,6 +71,17 @@ agent-tutor/
 │   ├── generate.py     # Генератор тестовых данных
 │   ├── ingest.py       # CLI agent-ingest для RAG-документов и генерации материалов
 │   └── document_generator.py # Генерация PDF/DOCX-материалов для фикстур
+├── demo/               # Демо-часть: API и веб-интерфейс
+│   ├── settings.py     # Конфигурация demo (порты, Ollama URL, таймауты)
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── agent.py    # Логика агента: Ollama, MCP, инструменты, контекст
+│   │   ├── data.py     # DemoDataRepository — данные для демонстрации
+│   │   └── server.py   # REST/SSE API сервер
+│   └── web/
+│       ├── __init__.py
+│       ├── server.py   # Статический веб-сервер
+│       └── static/     # Статические файлы (HTML, CSS, JS)
 └── fixtures.json       # Тестовые данные
 ```
 
@@ -140,25 +151,41 @@ uv tool install . --reinstall
 
 ## Демо-сайт и чат
 
-Для демонстрации есть два дополнительных процесса:
+Для демонстрации есть два компонента, разделённые на API и веб-часть:
 
-- `agent-chat-api` — REST/SSE API над Ollama и MCP-сервером.
-- `agent-demo-web` — статический сайт с витриной данных и плавающим окном чата.
+- **API сервер** (`demo/api/server.py`) — REST/SSE API над Ollama и MCP-сервером, отвечает за вызов моделей, работу с инструментами и управление контекстом
+- **Веб-сервер** (`demo/web/server.py`) — статический сайт с витриной данных и плавающим окном чата
+
+Архитектура API:
+- `demo/api/agent.py` — логика агента: вызов Ollama, подключение к MCP-серверу, вызов инструментов, валидация вызовов, рекурсивные вызовы моделей, память контекста
+- `demo/api/data.py` — DemoDataRepository с данными для демонстрации
+- `demo/api/server.py` — HTTP API с endpoints: `GET /health`, `GET /api/data`, `POST /api/chat` (Server-Sent Events)
 
 Запуск:
 
 ```bash
-uv run agent-chat-api
-uv run agent-demo-web
+# API сервер (порт по умолчанию 8081)
+uv run python -m demo.api.server
+
+# Веб-сервер (порт по умолчанию 8080)
+uv run python -m demo.web.server
 ```
 
 По умолчанию сайт доступен на `http://127.0.0.1:8080`, API — на `http://127.0.0.1:8081`.
-Модель Ollama задаётся через `OLLAMA_MODEL`, адрес Ollama — через `OLLAMA_URL`.
 
-Пример:
+Переменные окружения:
+- `DEMO_API_HOST`/`DEMO_API_PORT` — хост/порт API сервера (по умолчанию `127.0.0.1:8081`)
+- `DEMO_WEB_HOST`/`DEMO_WEB_PORT` — хост/порт веб-сервера (по умолчанию `127.0.0.1:8080`)
+- `OLLAMA_URL` — адрес Ollama (по умолчанию `http://127.0.0.1:11434`)
+- `OLLAMA_MODEL` — модель Ollama (по умолчанию `qwen2.5:0.5b`)
+- `DEMO_REQUEST_TIMEOUT` — таймаут запросов к Ollama (по умолчанию `120` секунд)
+
+Пример запуска с кастомной моделью:
 ```bash
-OLLAMA_MODEL=carstenuhlig/omnicoder-9b:latest uv run agent-chat-api
+OLLAMA_MODEL=carstenuhlig/omnicoder-9b:latest uv run python -m demo.api.server
 ```
+
+> **Примечание:** Для работы демо требуется запущенный MCP-сервер (`uv run mcp dev server.py`) и локальный Ollama.
 
 Синхронизировать зависимости в локальное окружение `.venv`:
 

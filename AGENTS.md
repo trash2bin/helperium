@@ -70,8 +70,48 @@ agent-tutor/
 │   ├── generate.py     # Генератор тестовых данных
 │   ├── ingest.py       # CLI agent-ingest для RAG-документов и генерации материалов
 │   └── document_generator.py # Генерация PDF/DOCX-материалов для фикстур
+├── demo/               # Демо-часть: API и веб-интерфейс
+│   ├── settings.py     # Конфигурация demo (порты, Ollama URL, таймауты)
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── agent.py    # Логика агента: вызов Ollama, MCP, инструментов, память контекста
+│   │   ├── data.py     # DemoDataRepository — данные для демонстрации
+│   │   └── server.py   # REST/SSE API сервер (Health, Data, Chat)
+│   └── web/
+│       ├── __init__.py
+│       ├── server.py   # Статический веб-сервер
+│       └── static/     # Статические файлы (HTML, CSS, JS)
 └── fixtures.json       # Тестовые данные
 ```
+
+## Демо-часть
+
+Для демонстрации работы системы доступны два компонента:
+
+- **API сервер** (`demo/api/server.py`) — обрабатывает запросы к Ollama и MCP-серверу, обеспечивает вызов инструментов и управление контекстом агента
+- **Веб-сервер** (`demo/web/server.py`) — отдаёт статические файлы интерфейса и подключается к API
+
+Архитектура:
+- `demo/api/agent.py` — ядро: вызов Ollama, подключение к MCP, вызов инструментов, валидация вызовов, рекурсивные вызовы моделей, память контекста
+- `demo/api/data.py` — репозиторий данных для демонстрации
+- `demo/api/server.py` — HTTP API endpoints: `/health`, `/api/data`, `/api/chat` (SSE)
+- `demo/web/server.py` — статический сервер с индексной страницей и статикой
+
+Запуск:
+```bash
+# API сервер (порты из DEMO_API_PORT, по умолчанию 8081)
+uv run python -m demo.api.server
+
+# Веб-сервер (порты из DEMO_WEB_PORT, по умолчанию 8080)
+uv run python -m demo.web.server
+```
+
+Переменные окружения:
+- `DEMO_API_HOST`/`DEMO_API_PORT` — хост/порт API (по умолчанию `127.0.0.1:8081`)
+- `DEMO_WEB_HOST`/`DEMO_WEB_PORT` — хост/порт веб-сервера (по умолчанию `127.0.0.1:8080`)
+- `OLLAMA_URL` — адрес Ollama (по умолчанию `http://127.0.0.1:11434`)
+- `OLLAMA_MODEL` — модель Ollama (по умолчанию `qwen2.5:0.5b`)
+- `DEMO_REQUEST_TIMEOUT` — таймаут запросов (по умолчанию `120`)
 
 ## Виртуальное окружение
 
