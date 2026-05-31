@@ -138,6 +138,28 @@ uv tool install . --reinstall
 
 Используй `uv run ...` для разработки. `uv tool install . --reinstall` нужен, когда нужно обновить глобально установленную CLI-команду после изменения кода.
 
+## Демо-сайт и чат
+
+Для демонстрации есть два дополнительных процесса:
+
+- `agent-chat-api` — REST/SSE API над Ollama и MCP-сервером.
+- `agent-demo-web` — статический сайт с витриной данных и плавающим окном чата.
+
+Запуск:
+
+```bash
+uv run agent-chat-api
+uv run agent-demo-web
+```
+
+По умолчанию сайт доступен на `http://127.0.0.1:8080`, API — на `http://127.0.0.1:8081`.
+Модель Ollama задаётся через `OLLAMA_MODEL`, адрес Ollama — через `OLLAMA_URL`.
+
+Пример:
+```bash
+OLLAMA_MODEL=carstenuhlig/omnicoder-9b:latest uv run agent-chat-api
+```
+
 Синхронизировать зависимости в локальное окружение `.venv`:
 
 ```bash

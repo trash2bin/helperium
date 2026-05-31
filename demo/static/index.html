@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agent Tutor Demo</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">MCP + Ollama</p>
+        <h1>Университетский ассистент</h1>
+      </div>
+      <div class="status" id="status">API: проверка</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <h2>Локальная база учебного процесса</h2>
+          <p>Студенты, преподаватели, расписание, оценки и RAG-документы доступны модели через MCP-инструменты.</p>
+        </div>
+        <div class="metric-grid" id="metrics"></div>
+      </section>
+
+      <section class="tabs" aria-label="Разделы данных">
+        <button class="tab active" data-tab="students">Студенты</button>
+        <button class="tab" data-tab="schedule">Расписание</button>
+        <button class="tab" data-tab="disciplines">Дисциплины</button>
+        <button class="tab" data-tab="teachers">Преподаватели</button>
+        <button class="tab" data-tab="documents">Документы</button>
+        <button class="tab" data-tab="grades">Оценки</button>
+      </section>
+
+      <section class="data-shell">
+        <div class="section-title">
+          <h2 id="tableTitle">Студенты</h2>
+          <input id="filter" type="search" placeholder="Фильтр">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <aside class="chat-widget" id="chatWidget">
+      <div class="chat-head">
+        <div>
+          <strong>Ассистент</strong>
+          <span>Ollama + MCP</span>
+        </div>
+        <button class="icon-button" id="collapseChat" title="Свернуть">−</button>
+      </div>
+      <div class="messages" id="messages">
+        <div class="message assistant">Спросите про студента, оценки, расписание или материалы.</div>
+      </div>
+      <form class="chat-form" id="chatForm">
+        <textarea id="chatInput" rows="2" placeholder="Например: какие оценки у Иван Петров Иванович?"></textarea>
+        <button type="submit" title="Отправить">↗</button>
+      </form>
+    </aside>
+
+    <button class="chat-open hidden" id="openChat" title="Открыть чат">✦</button>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
