@@ -23,17 +23,29 @@ logger = logging.getLogger("demo.api.agent")
 litellm.drop_params = True
 setattr(litellm, "set_verbose", os.environ.get("LITELLM_DEBUG", "false").lower() == "true")
 
+
+# Температура модели (чем выше, тем более креативным)
+TEMPERATURE = 0.3
+
+# Максимальное количество итераций модели до ответа
+MAX_ITERATIONS = 5
+
+# Максимальное количество пустых ответов до остановки модели
+# Например, если модель не вызывает инструменты и не возвращает ответ
+# в течение нескольких раундов, остановим её работу.
+MAX_EMPTY_ROUNDS = 3
+
 SYSTEM_PROMPT = """
 Ты университетский ассистент с доступом к базе данных через MCP-инструменты.
 
 КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
 1. Ты НЕ знаешь никаких данных о студентах, расписании, оценках, преподавателях или документах без инструментов.
-2. При любом вопросе о данных университета сначала используй соответствующий MCP-инструмент.
+2. При любом вопросе о данных университета сначала используй MCP-инструмент.
 3. Не выдумывай ответ из памяти.
 4. Если вопрос общий — отвечай кратко и по делу.
 
 ПРАВИЛА ОТВЕТА:
-- Отвечай по-русски.
+- Отвечай на языке пользователя, по умолчанию используй русский.
 - Если данных нет — прямо скажи об этом.
 - Если не понял запрос — уточни.
 """
@@ -86,7 +98,7 @@ async def call_mcp_tool(session: ClientSession, name: str, arguments: dict[str, 
         if result.isError:
             error_text = _collect_text_content(result)
             return json.dumps(
-                {"ok": False, "error": error_text or f"Ошибка вызова инструмента {name}"},
+                {"ok": False, "error": error_text or f"Error calling tool {name}"},
                 ensure_ascii=False,
             )
 
@@ -96,9 +108,9 @@ async def call_mcp_tool(session: ClientSession, name: str, arguments: dict[str, 
 
         content = _collect_text_content(result)
         return json.dumps({"ok": True, "data": content}, ensure_ascii=False)
-    except Exception as exc:
+    except Exception as e:
         logger.exception(f"[AGENT] Exception calling tool {name}")
-        return json.dumps({"ok": False, "error": f"Ошибка при вызове {name}: {exc}"}, ensure_ascii=False)
+        return json.dumps({"ok": False, "error": f"Error calling {name}: {e}"}, ensure_ascii=False)
 
 
 class LLMAgent:
@@ -116,6 +128,7 @@ class LLMAgent:
             "together_ai/",
         )
 
+        # Если URL Ollama задан и модель не является известным провайдером, используем ollama_chat
         if settings.ollama_url and not model_name.startswith(known_providers):
             self.model = f"ollama_chat/{model_name}"
         else:
@@ -123,16 +136,17 @@ class LLMAgent:
 
         self.api_base = settings.ollama_url.rstrip("/") if settings.ollama_url else None
         self.timeout = settings.request_timeout
-        self.enable_thinking = os.environ.get("ENABLE_THINK", "true").lower() in ("1", "true", "yes")
+        self.enable_thinking = settings.think_mode
 
-        self.max_history_turns = int(os.environ.get("DEMO_HISTORY_TURNS", "8"))
-        self.max_history_content_chars = int(os.environ.get("DEMO_HISTORY_CONTENT_CHARS", "6000"))
+        self.max_history_turns = settings.history_turns
+        self.max_history_content_chars = settings.history_content_chars
 
         self._memory_path = PROJECT_ROOT / ".agent_memory.json"
         self._histories: dict[str, list[list[dict[str, Any]]]] = self._load_histories()
         self._session_locks: dict[str, asyncio.Lock] = {}
 
     def _load_histories(self) -> dict[str, list[list[dict[str, Any]]]]:
+        """Load the agent's memory from the persistent storage."""
         if not self._memory_path.exists():
             return {}
         try:
@@ -171,15 +185,14 @@ class LLMAgent:
             tools = await list_mcp_tools(session)
             logger.info(f"[AGENT] Available tools: {[t['function']['name'] for t in tools]}")
 
-            max_iterations = 4
             empty_rounds = 0
 
-            for iteration in range(max_iterations):
-                logger.info(f"[AGENT] Iteration {iteration + 1}/{max_iterations} - calling model...")
+            for iteration in range(MAX_ITERATIONS):
+                logger.info(f"[AGENT] Iteration {iteration + 1}/{MAX_ITERATIONS} - calling model...")
                 message = await self._chat_once(messages, tools)
                 logger.info(f"[AGENT] Model response: {json.dumps(message, ensure_ascii=False)[:300]}...")
 
-                sanitized = self._sanitize_message(message)
+                sanitized = {k: v for k, v in message.items() if k != "reasoning_content"}
                 tool_calls = self._extract_tool_calls(sanitized)
                 content = (sanitized.get("content") or "").strip()
 
@@ -212,7 +225,7 @@ class LLMAgent:
                     continue
 
                 if content:
-                    logger.info(f"[AGENT] Final content: {content}")
+                    logger.info(f"[AGENT] Final content: {content[:100]}...")
                     messages.append(sanitized)
                     turn_messages.append(sanitized)
                     self._remember_turn(session_id, turn_messages)
@@ -225,19 +238,19 @@ class LLMAgent:
                     f"empty_rounds={empty_rounds}"
                 )
 
-                # ВАЖНО: не возвращаем reasoning_content обратно в prompt.
-                # Даём только короткий системный пинок, без "user"-сообщения и без think-эхо.
+
                 messages.append(
                     {
                         "role": "system",
-                        "content": (
+                        "content": ( # Отдаем модели ее мысли и ожидаем ответа
+                            f"Your thought: {message.get('reasoning_content', '')}\n"
                             "Верни только tool_calls или финальный ответ. "
                             "Не пиши reasoning_content и не повторяй внутренние рассуждения."
                         ),
                     }
                 )
 
-                if empty_rounds >= 2:
+                if empty_rounds >= MAX_EMPTY_ROUNDS:
                     break
 
             async for token in self._stream_and_save(messages, turn_messages, session_id):
@@ -268,6 +281,8 @@ class LLMAgent:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        """Отправляет запрос к модели и возвращает ответ."""
+
         extra_params: dict[str, Any] = {}
         if self.enable_thinking:
             extra_params["extra_body"] = {"think": True}
@@ -276,11 +291,11 @@ class LLMAgent:
 
         response: Any = await litellm.acompletion(
             model=self.model,
-            messages=self._prepare_messages_for_api(messages),
+            messages=messages,
             tools=tools,
             stream=False,
             timeout=self.timeout,
-            temperature=0.3,
+            temperature=TEMPERATURE,
             **extra_params,
         )
 
@@ -311,6 +326,8 @@ class LLMAgent:
         return result
 
     async def _stream_final(self, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
+        """Отправляет финальный запрос к модели и возвращает ответ."""
+
         extra_params: dict[str, Any] = {}
         if self.enable_thinking:
             extra_params["extra_body"] = {"think": True}
@@ -319,7 +336,7 @@ class LLMAgent:
 
         response: Any = await litellm.acompletion(
             model=self.model,
-            messages=self._prepare_messages_for_api(messages),
+            messages=messages,
             stream=True,
             timeout=self.timeout,
             **extra_params,
@@ -330,12 +347,9 @@ class LLMAgent:
                 yield chunk.choices[0].delta.content
 
     @staticmethod
-    def _sanitize_message(message: dict[str, Any]) -> dict[str, Any]:
-        # Ключевой момент: hidden reasoning не должен жить в истории диалога
-        return {k: v for k, v in message.items() if k != "reasoning_content"}
-
-    @staticmethod
     def _extract_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
+        """Извлекает вызовы инструментов из сообщения модели."""
+
         calls = []
 
         native_calls = message.get("tool_calls") or []
@@ -415,11 +429,6 @@ class LLMAgent:
                 )
 
         return calls
-
-    @staticmethod
-    def _prepare_messages_for_api(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        # НИКОГДА не возвращаем reasoning_content обратно в модель
-        return [{k: v for k, v in msg.items() if k != "reasoning_content"} for msg in messages]
 
     def _remember_turn(self, session_id: str, turn_messages: list[dict[str, Any]]) -> None:
         filtered: list[dict[str, Any]] = []

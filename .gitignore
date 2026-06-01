@@ -6,3 +6,4 @@ generated_materials/
 .claude/
 fixtures.json
 TECHNICAL_DOC.md
+.agent_memory.json
