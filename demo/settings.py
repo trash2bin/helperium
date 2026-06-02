@@ -20,6 +20,7 @@ class DemoSettings:
     think_mode: bool = os.environ.get("ENABLE_THINK", "true").lower() in ("1", "true", "yes")
     history_turns: int = int(os.environ.get("DEMO_HISTORY_TURNS", "8"))
     history_content_chars: int = int(os.environ.get("DEMO_HISTORY_CONTENT_CHARS", "6000"))
+    session_db_path: str = os.environ.get("DEMO_SESSION_DB_PATH", str(PROJECT_ROOT / "demo_sessions.sqlite"))
 
     # Model backlog (full interaction tracing)
     backlog_dir: str = os.environ.get("BACKLOG_DIR", str(PROJECT_ROOT / "backlog"))

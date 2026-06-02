@@ -8,9 +8,7 @@ import re
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from copy import deepcopy
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal, cast
 
 import litellm
@@ -21,6 +19,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from demo.api.backlog import backlog
+from demo.api.sessions import session_store
 from demo.settings import PROJECT_ROOT, settings
 
 logger = logging.getLogger("demo.api.agent")
@@ -162,30 +161,7 @@ class LLMAgent:
         self.timeout = settings.request_timeout
         self.enable_thinking = settings.think_mode
 
-        self.max_history_turns = settings.history_turns
-        self.max_history_content_chars = settings.history_content_chars
-
-        self._memory_path = PROJECT_ROOT / ".agent_memory.json"
-        self._histories: dict[str, list[list[dict[str, Any]]]] = self._load_histories()
         self._session_locks: dict[str, asyncio.Lock] = {}
-
-    def _load_histories(self) -> dict[str, list[list[dict[str, Any]]]]:
-        if not self._memory_path.exists():
-            return {}
-        try:
-            data = json.loads(self._memory_path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            logger.exception("[AGENT] Failed to load memory file")
-            return {}
-
-    def _save_histories(self) -> None:
-        tmp = self._memory_path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps(self._histories, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        tmp.replace(self._memory_path)
 
     async def stream_answer(self, user_message: str, session_id: str = "default") -> AsyncIterator[str]:
         """Backward-compatible token stream for the existing server.py."""
@@ -207,7 +183,7 @@ class LLMAgent:
             yield self._format_sse_event(event)
 
     async def stream_events(self, user_message: str, session_id: str = "default") -> AsyncIterator[AgentEvent]:
-        session_id = self._normalize_session_id(session_id)
+        session_id = session_store.normalize_session_id(session_id)
         logger.info("[AGENT] User message for session %s: %s...", session_id, user_message[:100])
 
         lock = self._session_locks.setdefault(session_id, asyncio.Lock())
@@ -646,44 +622,11 @@ class LLMAgent:
         return formatted
 
     def _remember_turn(self, session_id: str, turn_messages: list[dict[str, Any]]) -> None:
-        filtered: list[dict[str, Any]] = []
-        for message in turn_messages:
-            clean = self._compact_history_message(message)
-
-            if clean.get("role") == "assistant":
-                has_content = bool((clean.get("content") or "").strip())
-                has_tool_calls = bool(clean.get("tool_calls"))
-                if not has_content and not has_tool_calls:
-                    continue
-
-            filtered.append(clean)
-
-        history = self._histories.setdefault(session_id, [])
-        history.append(filtered)
-
-        if len(history) > self.max_history_turns:
-            del history[: len(history) - self.max_history_turns]
-
-        self._save_histories()
-        logger.debug("[AGENT] Stored turn for session %s; total turns=%s", session_id, len(history))
-
-    def _compact_history_message(self, message: dict[str, Any]) -> dict[str, Any]:
-        compact = {k: deepcopy(v) for k, v in message.items() if k != "reasoning_content"}
-        content = compact.get("content")
-        if isinstance(content, str) and len(content) > self.max_history_content_chars:
-            compact["content"] = content[: self.max_history_content_chars] + "\n\n...[обрезано в истории диалога]"
-        if compact.get("role") == "assistant" and compact.get("tool_calls"):
-            compact["tool_calls"] = self._format_tool_calls_for_model(self._extract_tool_calls(compact))
-        return compact
+        session_store.append_turn(session_id, turn_messages)
+        logger.debug("[AGENT] Stored turn for session %s", session_id)
 
     def _history_messages(self, session_id: str) -> list[dict[str, Any]]:
-        turns = self._histories.get(session_id, [])
-        return [self._compact_history_message(message) for turn in turns for message in turn]
-
-    @staticmethod
-    def _normalize_session_id(session_id: str) -> str:
-        session_id = str(session_id or "").strip()
-        return session_id[:128] if session_id else "default"
+        return session_store.history_messages(session_id)
 
     @staticmethod
     def _format_sse_event(event: AgentEvent) -> str:
