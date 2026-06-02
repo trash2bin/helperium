@@ -16,6 +16,7 @@ import litellm
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from demo.api.backlog import backlog
 from demo.settings import PROJECT_ROOT, settings
 
 logger = logging.getLogger("demo.api.agent")
@@ -24,11 +25,14 @@ litellm.drop_params = True
 setattr(litellm, "set_verbose", os.environ.get("LITELLM_DEBUG", "false").lower() == "true")
 
 
-# Температура модели (чем выше, тем более креативным)
-TEMPERATURE = 0.3
+# Температура модели (чем выше, тем более креативным реже зацикливаться)
+TEMPERATURE = 0.5
 
 # Максимальное количество итераций модели до ответа
 MAX_ITERATIONS = 5
+
+# Максимальное количество токенов для размышлений и вызова туллов
+MAX_TOKENS_THINING = 4096
 
 # Максимальное количество пустых ответов до остановки модели
 # Например, если модель не вызывает инструменты и не возвращает ответ
@@ -49,6 +53,7 @@ SYSTEM_PROMPT = """
 - Если данных нет — прямо скажи об этом.
 - Если не понял запрос — уточни.
 """
+
 
 @asynccontextmanager
 async def mcp_session() -> AsyncIterator[ClientSession]:
@@ -181,80 +186,100 @@ class LLMAgent:
             {"role": "user", "content": user_message},
         ]
 
-        async with mcp_session() as session:
-            tools = await list_mcp_tools(session)
-            logger.info(f"[AGENT] Available tools: {[t['function']['name'] for t in tools]}")
+        turn_id = backlog.turn_start(session_id, user_message)
 
-            empty_rounds = 0
+        try:
+            async with mcp_session() as session:
+                tools = await list_mcp_tools(session)
+                logger.info(f"[AGENT] Available tools: {[t['function']['name'] for t in tools]}")
 
-            for iteration in range(MAX_ITERATIONS):
-                logger.info(f"[AGENT] Iteration {iteration + 1}/{MAX_ITERATIONS} - calling model...")
-                message = await self._chat_once(messages, tools)
-                logger.info(f"[AGENT] Model response: {json.dumps(message, ensure_ascii=False)[:300]}...")
+                empty_rounds = 0
 
-                sanitized = {k: v for k, v in message.items() if k != "reasoning_content"}
-                tool_calls = self._extract_tool_calls(sanitized)
-                content = (sanitized.get("content") or "").strip()
+                for iteration in range(MAX_ITERATIONS):
+                    logger.info(f"[AGENT] Iteration {iteration + 1}/{MAX_ITERATIONS} - calling model...")
+                    backlog.model_request(session_id, turn_id, iteration, messages, tools)
+                    message = await self._chat_once(messages, tools)
+                    logger.info(f"[AGENT] Model response: {json.dumps(message, ensure_ascii=False)[:300]}...")
+                    backlog.model_response(session_id, turn_id, iteration, message, duration_ms=0, token_usage=message.pop("_usage", None))
 
-                if tool_calls:
-                    logger.info(f"[AGENT] Processing {len(tool_calls)} tool call(s)")
-                    messages.append(sanitized)
-                    turn_messages.append(sanitized)
-                    empty_rounds = 0
+                    sanitized = {k: v for k, v in message.items() if k != "reasoning_content"}
+                    tool_calls = self._extract_tool_calls(sanitized)
+                    content = (sanitized.get("content") or "").strip()
 
-                    for tool_call in tool_calls:
-                        name = tool_call["name"]
-                        arguments = tool_call["arguments"]
-                        tool_call_id = tool_call.get("id") or f"call_{name}_{uuid.uuid4().hex[:8]}"
+                    if tool_calls:
+                        logger.info(f"[AGENT] Processing {len(tool_calls)} tool call(s)")
+                        messages.append(sanitized)
+                        turn_messages.append(sanitized)
+                        empty_rounds = 0
 
-                        logger.info(f"[AGENT] Executing tool: {name}")
-                        yield f"\n\n[tool:{name}]\n"
+                        for tool_call in tool_calls:
+                            name = tool_call["name"]
+                            arguments = tool_call["arguments"]
+                            tool_call_id = tool_call.get("id") or f"call_{name}_{uuid.uuid4().hex[:8]}"
 
-                        tool_result = await call_mcp_tool(session, name, arguments)
-                        logger.info(f"[AGENT] Tool {name} result: {tool_result[:250]}...")
+                            backlog.tool_call(session_id, turn_id, iteration, name, arguments)
+                            logger.info(f"[AGENT] Executing tool: {name}")
+                            yield f"\n\n[tool:{name}]\n"
 
-                        tool_message = {
-                            "role": "tool",
-                            "content": tool_result,
-                            "tool_call_id": tool_call_id,
-                            "name": name,
+                            tool_result = await call_mcp_tool(session, name, arguments)
+                            logger.info(f"[AGENT] Tool {name} result: {tool_result[:250]}...")
+                            backlog.tool_result(session_id, turn_id, iteration, name, tool_result, duration_ms=0)
+
+                            tool_message = {
+                                "role": "tool",
+                                "content": tool_result,
+                                "tool_call_id": tool_call_id,
+                                "name": name,
+                            }
+                            messages.append(tool_message)
+                            turn_messages.append(tool_message)
+
+                        continue
+
+                    if content:
+                        logger.info(f"[AGENT] Final content: {content[:100]}...")
+                        messages.append(sanitized)
+                        turn_messages.append(sanitized)
+                        self._remember_turn(session_id, turn_messages)
+                        # Стримим уже готовый ответ маленькими кусочками,
+                        # чтобы фронтенд получал SSE-события последовательно
+                        chunk_size = max(1, len(content) // 30)
+                        for pos in range(0, len(content), chunk_size):
+                            yield content[pos:pos + chunk_size]
+                        return
+
+                    empty_rounds += 1
+                    logger.warning(
+                        "[AGENT] Model returned no content/tool_calls (reasoning only or empty). "
+                        f"empty_rounds={empty_rounds}"
+                    )
+
+                    reasoning = message.get("reasoning_content", "")
+                    backlog.empty_round(session_id, turn_id, iteration, reasoning, messages)
+
+                     # Отдаем модели ее мысли и ожидаем ответа
+                    messages.append(
+                        {"role": "assistant", "content": reasoning}
+                    )
+
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Верни только tool_calls или финальный ответ. "
+                                "Не пиши reasoning_content и не повторяй внутренние рассуждения."
+                            ),
                         }
-                        messages.append(tool_message)
-                        turn_messages.append(tool_message)
+                    )
 
-                    continue
+                    if empty_rounds >= MAX_EMPTY_ROUNDS:
+                        break
 
-                if content:
-                    logger.info(f"[AGENT] Final content: {content[:100]}...")
-                    messages.append(sanitized)
-                    turn_messages.append(sanitized)
-                    self._remember_turn(session_id, turn_messages)
-                    yield content
-                    return
-
-                empty_rounds += 1
-                logger.warning(
-                    "[AGENT] Model returned no content/tool_calls (reasoning only or empty). "
-                    f"empty_rounds={empty_rounds}"
-                )
-
-
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": ( # Отдаем модели ее мысли и ожидаем ответа
-                            f"Your thought: {message.get('reasoning_content', '')}\n"
-                            "Верни только tool_calls или финальный ответ. "
-                            "Не пиши reasoning_content и не повторяй внутренние рассуждения."
-                        ),
-                    }
-                )
-
-                if empty_rounds >= MAX_EMPTY_ROUNDS:
-                    break
-
-            async for token in self._stream_and_save(messages, turn_messages, session_id):
-                yield token
+                async for token in self._stream_and_save(messages, turn_messages, session_id):
+                    yield token
+        except Exception as exc:
+            backlog.error(session_id, turn_id, MAX_ITERATIONS, str(exc))
+            raise
 
     async def _stream_and_save(
         self,
@@ -296,6 +321,7 @@ class LLMAgent:
             stream=False,
             timeout=self.timeout,
             temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS_THINING,
             **extra_params,
         )
 

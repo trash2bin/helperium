@@ -93,8 +93,9 @@ agent-tutor/
 
 Архитектура:
 - `demo/api/agent.py` — ядро: вызов Ollama, подключение к MCP, вызов инструментов, валидация вызовов, рекурсивные вызовы моделей, память контекста
+- `demo/api/backlog.py` — полный бэклог модели: JSONL-файл на сессию со всеми запросами/ответами/токенами/таймингами
 - `demo/api/data.py` — репозиторий данных для демонстрации
-- `demo/api/server.py` — HTTP API endpoints: `/health`, `/api/data`, `/api/chat` (SSE)
+- `demo/api/server.py` — HTTP API endpoints: `/health`, `/api/data`, `/api/chat` (SSE), `/api/backlog`
 - `demo/web/server.py` — статический сервер с индексной страницей и статикой
 
 Запуск:
@@ -113,6 +114,8 @@ uv run python -m demo.web.server
 - `OLLAMA_URL` — адрес Ollama (по умолчанию `http://127.0.0.1:11434`)
 - `OLLAMA_MODEL` — модель Ollama (по умолчанию `qwen2.5:0.5b`)
 - `DEMO_REQUEST_TIMEOUT` — таймаут запросов (по умолчанию `120`)
+- `BACKLOG_DIR` — папка для JSONL-файлов бэклога (по умолчанию `./backlog/`)
+- `BACKLOG_RETENTION_DAYS` — дней хранить файлы бэклога (по умолчанию `30`)
 
 ## Виртуальное окружение
 

@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from demo.api.agent import agent
+from demo.api.backlog import backlog
 from demo.api.data import data_repository
 from demo.settings import settings
 
@@ -42,6 +43,19 @@ async def health(_: Request) -> JSONResponse:
 async def data(_: Request) -> JSONResponse:
     """Get demo data overview."""
     return JSONResponse(data_repository.overview())
+
+
+async def backlog_list(_: Request) -> JSONResponse:
+    """List all backlog sessions."""
+    return JSONResponse(backlog.list_sessions())
+
+
+async def backlog_detail(request: Request) -> JSONResponse:
+    """Read records of a specific backlog session."""
+    session_id = request.path_params.get("session_id", "")
+    limit = int(request.query_params.get("limit", "500"))
+    offset = int(request.query_params.get("offset", "0"))
+    return JSONResponse(backlog.read_session(session_id, limit=limit, offset=offset))
 
 
 async def chat(request: Request) -> StreamingResponse:
@@ -86,6 +100,8 @@ app = Starlette(
         Route("/health", health),
         Route("/api/data", data),
         Route("/api/chat", chat, methods=["POST"]),
+        Route("/api/backlog", backlog_list),
+        Route("/api/backlog/{session_id}", backlog_detail),
     ]
 )
 app.add_middleware(

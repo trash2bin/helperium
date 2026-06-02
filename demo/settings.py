@@ -21,5 +21,9 @@ class DemoSettings:
     history_turns: int = int(os.environ.get("DEMO_HISTORY_TURNS", "8"))
     history_content_chars: int = int(os.environ.get("DEMO_HISTORY_CONTENT_CHARS", "6000"))
 
+    # Model backlog (full interaction tracing)
+    backlog_dir: str = os.environ.get("BACKLOG_DIR", str(PROJECT_ROOT / "backlog"))
+    backlog_retention_days: int = int(os.environ.get("BACKLOG_RETENTION_DAYS", "30"))
+
 
 settings = DemoSettings()
