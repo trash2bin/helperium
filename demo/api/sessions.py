@@ -6,7 +6,7 @@ import threading
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from db.connection import SqliteConnector
 from demo.settings import PROJECT_ROOT, settings
@@ -14,29 +14,52 @@ from demo.settings import PROJECT_ROOT, settings
 logger = logging.getLogger("demo.api.sessions")
 
 
+def _create_sqlite_connection(db_path: str | Path) -> sqlite3.Connection:
+    """Factory function to create a SQLite connection with proper setup.
+    
+    Can be replaced with PostgreSQL/MySQL/Redis connection factory in the future.
+    
+    Example for PostgreSQL:
+        import psycopg2
+        def _create_postgres_connection(dsn: str) -> psycopg2.connection:
+            conn = psycopg2.connect(dsn)
+            conn.autocommit = False
+            return conn
+    
+    Example for MySQL:
+        import mysql.connector
+        def _create_mysql_connection(config: dict) -> mysql.connector.connection:
+            return mysql.connector.connect(**config)
+    """
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
 class SessionStore:
-    """Persistent chat session history for the demo agent."""
+    """Persistent chat session history for the demo agent.
+    
+    Uses dependency injection for database connection factory,
+    allowing easy switching between SQLite, PostgreSQL, MySQL, etc.
+    """
 
     def __init__(
         self,
-        db_path: str | Path,
+        connection_factory: Callable[[], sqlite3.Connection],
         *,
         max_turns: int,
         max_content_chars: int,
         legacy_memory_path: str | Path | None = None,
     ) -> None:
-        self.db_path = Path(db_path)
-        self.connector = SqliteConnector(
-            self.db_path,
-            check_same_thread=True,
-            pragmas=("PRAGMA foreign_keys = ON",),
-        )
+        self._connection_factory = connection_factory
         self.max_turns = max(1, max_turns)
         self.max_content_chars = max(1, max_content_chars)
         self.legacy_memory_path = Path(legacy_memory_path) if legacy_memory_path else None
         self._lock = threading.RLock()
 
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
         self._migrate_legacy_memory()
 
@@ -193,8 +216,8 @@ class SessionStore:
             (session_id, session_id, self.max_turns),
         )
 
-    def _connect(self):
-        return self.connector.connect()
+    def _connect(self) -> sqlite3.Connection:
+        return self._connection_factory()
 
     @staticmethod
     def _is_turn(value: Any) -> bool:
@@ -202,7 +225,7 @@ class SessionStore:
 
 
 session_store = SessionStore(
-    settings.session_db_path,
+    connection_factory=lambda: _create_sqlite_connection(settings.session_db_path),
     max_turns=settings.history_turns,
     max_content_chars=settings.history_content_chars,
     legacy_memory_path=PROJECT_ROOT / ".agent_memory.json",

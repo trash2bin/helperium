@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from sqlite3.dbapi2 import Row
 from typing import Any
 
 from db.database import Database
@@ -31,7 +32,13 @@ class DemoDataRepository:
     def _count(self, table: str) -> int:
         if table not in {"students", "teachers", "disciplines", "documents", "grades", "schedule"}:
             raise ValueError(f"Unsupported stats table: {table}")
-        return int(self.db.fetch_one(f"SELECT COUNT(*) AS total FROM {table}")["total"])
+
+        fetch = self.db.fetch_one(f"SELECT COUNT(*) AS total FROM {table}")
+
+        if fetch is None:
+            raise RuntimeError(f"Failed to fetch count for table: {table}")
+
+        return fetch["total"]
 
     def _students(self) -> list[dict[str, Any]]:
         rows = self.db.fetch_all(
