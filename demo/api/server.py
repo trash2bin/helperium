@@ -92,7 +92,7 @@ def _sse(payload: dict[str, Any]) -> str:
 def _event_payload(event_type: str, data: Any) -> dict[str, Any] | None:
     """Convert internal agent events to the browser-facing SSE payload."""
     if event_type == "token":
-        return {"type": "token", "text": str(data)}
+        return {"type": "token", "text": data.get("data")}
     if event_type == "final":
         text = data.get("content") if isinstance(data, dict) else ""
         return {"type": "final", "text": str(text or "")}

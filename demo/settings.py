@@ -26,5 +26,11 @@ class DemoSettings:
     backlog_dir: str = os.environ.get("BACKLOG_DIR", str(PROJECT_ROOT / "backlog"))
     backlog_retention_days: int = int(os.environ.get("BACKLOG_RETENTION_DAYS", "30"))
 
+    # Model parameters
+    agent_temperature: float = float(os.environ.get("AGENT_TEMPERATURE", "0.5"))
+    agent_max_iterations: int = int(os.environ.get("AGENT_MAX_ITERATIONS", "5"))
+    agent_max_tokens_thinking: int = int(os.environ.get("AGENT_MAX_TOKENS_THINKING", "4096"))
+    agent_max_empty_rounds: int = int(os.environ.get("AGENT_MAX_EMPTY_ROUNDS", "3"))
+
 
 settings = DemoSettings()
