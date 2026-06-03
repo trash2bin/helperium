@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Protocol
 
 from rag.config import RagConfig
 from rag.parser import DocumentParser
@@ -19,14 +20,19 @@ __all__ = [
 ]
 
 
+class ConnectionProvider(Protocol):
+    @property
+    def connection(self) -> sqlite3.Connection:
+        ...
+
+
 def create_rag_pipeline(
-    conn: sqlite3.Connection,
+    connection: sqlite3.Connection | ConnectionProvider,
     config: RagConfig | None = None,
 ) -> RAGPipeline:
     """Создать RAG-пайплайн.
 
-    Принимает sqlite3.Connection (не Database), чтобы не создавать
-    циклической зависимости между rag и db пакетами.
+    Принимает sqlite3.Connection или маленький provider с полем connection.
     """
     if config is None:
         config = RagConfig.from_env()
@@ -34,7 +40,7 @@ def create_rag_pipeline(
     embedding_service = SentenceTransformerEmbedding(config)
     parser = DocumentParser(config)
     chunker = TextChunker(config)
-    repository = DocumentRepository(conn, config)
+    repository = DocumentRepository(connection, config)
     vector_store = ChromaDBVectorStore(config, embedding_service)
 
     return RAGPipeline(

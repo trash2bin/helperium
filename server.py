@@ -23,7 +23,7 @@ db = Database()
 student_tools = StudentTools(db)
 grade_tools = GradeTools(db)
 teacher_tools = TeacherTools(db)
-rag = create_rag_pipeline(db.conn)
+rag = create_rag_pipeline(db.connector)
 discipline_tools = DisciplineTools(db)
 
 mcp = FastMCP("University Server")
@@ -194,7 +194,7 @@ def get_health_status() -> dict:
     """
     db_status = {"status": "ok", "error": None}
     try:
-        db.conn.execute("SELECT 1")
+        db.ping()
     except Exception as e:
         db_status = {"status": "error", "error": str(e)}
 

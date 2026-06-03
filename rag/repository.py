@@ -4,30 +4,40 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from rag.config import RagConfig
 from rag.models import ChunkDict, Document, DocumentImportResult, Material
 
-if TYPE_CHECKING:
-    import sqlite3
-
 logger = logging.getLogger(__name__)
+
+
+class ConnectionProvider(Protocol):
+    @property
+    def connection(self) -> sqlite3.Connection:
+        ...
 
 
 class DocumentRepository:
     """CRUD для документов и чанков в SQLite.
 
-    Принимает сырой sqlite3.Connection, а не Database, чтобы не создавать
-    циклической зависимости между rag и db пакетами.
+    Принимает маленький connection provider или sqlite3.Connection, чтобы RAG
+    оставался отделен от application-level Database.
     """
 
-    def __init__(self, conn: sqlite3.Connection, config: RagConfig) -> None:
-        self.conn = conn
+    def __init__(self, connection: sqlite3.Connection | ConnectionProvider, config: RagConfig) -> None:
+        self._connection = connection
         self.config = config
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        if isinstance(self._connection, sqlite3.Connection):
+            return self._connection
+        return self._connection.connection
 
     def list_documents(self, discipline_id: str | None = None, limit: int | None = None) -> list[Document]:
         """Список загруженных документов (опционально по дисциплине).
@@ -66,6 +76,25 @@ class DocumentRepository:
             (source_path,),
         ).fetchone()
         return row["id"] if row else None
+
+    def find_document_for_delete(
+        self,
+        *,
+        source_path: str | None = None,
+        document_id: str | None = None,
+    ) -> sqlite3.Row | None:
+        """Find minimal document info used by delete flows."""
+        if source_path:
+            return self.conn.execute(
+                "SELECT id, title, source_path FROM documents WHERE source_path = ?",
+                (source_path,),
+            ).fetchone()
+        if document_id:
+            return self.conn.execute(
+                "SELECT id, title, source_path FROM documents WHERE id = ?",
+                (document_id,),
+            ).fetchone()
+        return None
 
     def get_document_by_id(self, document_id: str) -> Document | None:
         """Получить документ по ID."""
@@ -121,6 +150,20 @@ class DocumentRepository:
         sql += " ORDER BY documents.title ASC"
         cursor.execute(sql, params)
         return [self._material_from_row(row) for row in cursor.fetchall()]
+
+    def list_generated_document_rows(
+        self,
+        *,
+        path_marker: str,
+        discipline_id: str | None = None,
+    ) -> list[sqlite3.Row]:
+        """Return generated document rows matched by source path marker."""
+        params: list[str] = [f"%{path_marker}%"]
+        sql = "SELECT id, source_path FROM documents WHERE source_path LIKE ?"
+        if discipline_id:
+            sql += " AND discipline_id = ?"
+            params.append(discipline_id)
+        return self.conn.execute(sql, params).fetchall()
 
     # === Транзакционный save ===
 
@@ -228,6 +271,12 @@ class DocumentRepository:
         )
         cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
 
+    def delete_document_record(self, document_id: str, *, commit: bool = True) -> None:
+        cursor = self.conn.cursor()
+        self.delete_document(cursor, document_id)
+        if commit:
+            self.conn.commit()
+
     def commit(self) -> None:
         self.conn.commit()
 
@@ -300,11 +349,7 @@ class DocumentRepository:
             (source_path,),
         ).fetchone()
         if existing:
-            cursor.execute(
-                "DELETE FROM document_chunks WHERE document_id = ?",
-                (existing["id"],),
-            )
-            cursor.execute("DELETE FROM documents WHERE id = ?", (existing["id"],))
+            self.delete_document(cursor, existing["id"])
 
         cursor.execute(
             """

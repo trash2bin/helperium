@@ -131,7 +131,7 @@ def cmd_generate_all(args):
 
 
 def _delete_documents(db: Database, rag: RagTools, rows) -> int:
-    cursor = db.conn.cursor()
+    doc_repo = rag.pipeline.repository
     deleted = 0
     for row in rows:
         doc_id = row["id"]
@@ -140,15 +140,14 @@ def _delete_documents(db: Database, rag: RagTools, rows) -> int:
             rag._delete_document_vectors(doc_id)
         except Exception as exc:
             print(f"WARN не удалось удалить векторы {doc_id}: {exc}", file=sys.stderr)
-        cursor.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
-        cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        doc_repo.delete_document_record(doc_id, commit=False)
         if source_path.exists():
             try:
                 source_path.unlink()
             except OSError as exc:
                 print(f"WARN не удалось удалить файл {source_path}: {exc}", file=sys.stderr)
         deleted += 1
-    db.conn.commit()
+    db.commit()
     return deleted
 
 
@@ -173,24 +172,10 @@ def cmd_clear_generated(args):
     """Удалить сгенерированные материалы из SQLite, ChromaDB и с диска."""
     db = Database()
     rag = RagTools(db)
-    cursor = db.conn.cursor()
-
-    if args.discipline_id:
-        rows = cursor.execute(
-            """
-            SELECT id, source_path FROM documents
-            WHERE discipline_id = ? AND source_path LIKE ?
-            """,
-            (args.discipline_id, "%generated_materials%"),
-        ).fetchall()
-    else:
-        rows = cursor.execute(
-            """
-            SELECT id, source_path FROM documents
-            WHERE source_path LIKE ?
-            """,
-            ("%generated_materials%",),
-        ).fetchall()
+    rows = rag.pipeline.repository.list_generated_document_rows(
+        path_marker="generated_materials",
+        discipline_id=args.discipline_id,
+    )
 
     deleted = _delete_documents(db, rag, rows)
     _cleanup_empty_generated_dirs()
@@ -201,20 +186,15 @@ def cmd_clear_generated(args):
 def cmd_delete(args):
     """Удалить документ из индекса."""
     db = Database()
-    cursor = db.conn.cursor()
+    rag = RagTools(db)
+    doc_repo = rag.pipeline.repository
 
     # По пути или по id
     if args.path:
         source_path = str(Path(args.path).resolve())
-        row = cursor.execute(
-            "SELECT id, title FROM documents WHERE source_path = ?",
-            (source_path,),
-        ).fetchone()
+        row = doc_repo.find_document_for_delete(source_path=source_path)
     elif args.document_id:
-        row = cursor.execute(
-            "SELECT id, title FROM documents WHERE id = ?",
-            (args.document_id,),
-        ).fetchone()
+        row = doc_repo.find_document_for_delete(document_id=args.document_id)
     else:
         print("ERR укажите --path или --document-id", file=sys.stderr)
         sys.exit(1)
@@ -226,11 +206,8 @@ def cmd_delete(args):
 
     doc_id = row["id"]
     title = row["title"]
-    rag = RagTools(db)
     rag._delete_document_vectors(doc_id)
-    cursor.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
-    cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-    db.conn.commit()
+    doc_repo.delete_document_record(doc_id)
     print(f"OK  удалён: {title} ({doc_id})")
     db.close()
 

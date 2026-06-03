@@ -580,14 +580,10 @@ class MaterialDocumentGenerator:
         discipline_id: str,
         missing_only: bool,
     ) -> None:
-        cursor = self.db.conn.cursor()
-        rows = cursor.execute(
-            """
-            SELECT id, source_path FROM documents
-            WHERE discipline_id = ? AND source_path LIKE ?
-            """,
-            (discipline_id, f"%{self.output_dir.name}%"),
-        ).fetchall()
+        rows = self.doc_repo.list_generated_document_rows(
+            path_marker=self.output_dir.name,
+            discipline_id=discipline_id,
+        )
 
         rows_to_delete = []
         for row in rows:
@@ -601,17 +597,16 @@ class MaterialDocumentGenerator:
         self._delete_document_rows(rows_to_delete)
 
     def _delete_document_rows(self, rows: Iterable[Any]) -> None:
-        cursor = self.db.conn.cursor()
         deleted_any = False
         for row in rows:
-            self._delete_generated_document_row(cursor, row)
+            self._delete_generated_document_row(row)
             deleted_any = True
 
         if deleted_any:
-            self.db.conn.commit()
+            self.db.commit()
             self._cleanup_empty_output_dirs()
 
-    def _delete_generated_document_row(self, cursor: Any, row: Any) -> None:
+    def _delete_generated_document_row(self, row: Any) -> None:
         document_id = row["id"]
         source_path = Path(row["source_path"])
 
@@ -620,11 +615,7 @@ class MaterialDocumentGenerator:
         except Exception:
             pass
 
-        cursor.execute(
-            "DELETE FROM document_chunks WHERE document_id = ?",
-            (document_id,),
-        )
-        cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+        self.doc_repo.delete_document_record(document_id, commit=False)
         if source_path.exists():
             try:
                 source_path.unlink()
