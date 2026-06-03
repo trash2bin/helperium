@@ -1,8 +1,8 @@
 """Фасад RagTools — упразднён.
 
 RagTools был тонкой обёрткой с ленивой инициализацией, которая дублировала
-весь интерфейс RAGPipeline. Теперь server.py и ingest.py используют
-create_rag_pipeline() напрямую.
+весь интерфейс RAGPipeline. Новый код должен использовать create_rag_pipeline()
+или RAGPipeline напрямую.
 
 Оставлен как заглушка для обратной совместимости старых скриптов.
 """
@@ -26,12 +26,12 @@ class RagTools:
         **kwargs,
     ) -> None:
         self.db = db
-        self._pipeline = create_rag_pipeline(db.conn)
+        self._pipeline = create_rag_pipeline(db.connector)
 
     @property
     def pipeline(self):
         if self._pipeline is None:
-            self._pipeline = create_rag_pipeline(self.db.conn)
+            self._pipeline = create_rag_pipeline(self.db.connector)
         return self._pipeline
 
     def import_document(self, path, discipline_id=None, title=None, on_progress=None):

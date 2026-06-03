@@ -1,399 +1,155 @@
-import os
-import sys
-import sqlite3
-import json
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from .models import Student, Discipline, ScheduleEntry, Lesson, Grade, Teacher, Group
+from __future__ import annotations
 
-PROJECT_ROOT = Path(__file__).parent.parent
+import json
+import sqlite3
+from pathlib import Path
+from typing import Any, Optional
+
+from db.connection import PROJECT_ROOT, SqliteConnector
+from db.fixtures import load_fixtures
+from db.schema import create_schema
+
+from .models import Discipline, Grade, Group, Lesson, ScheduleEntry, Student, Teacher
+
+FIXTURES_PATH = PROJECT_ROOT / "fixtures.json"
+
 
 class Database:
-    def __init__(self, db_path: str | None = None):
-        if db_path is None:
-            db_path = os.environ.get(
-                "DB_PATH",
-                str(PROJECT_ROOT / "university.db")
-            )
-        self.db_path = db_path
-        self.conn: sqlite3.Connection = sqlite3.connect(
-            db_path,
-            check_same_thread=False
-        )
-        self.conn.row_factory = sqlite3.Row
-        self.create_tables()
-        self.load_fixtures()
+    """Application database facade over a managed SQLite connector."""
+
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        *,
+        connector: SqliteConnector | None = None,
+        load_seed_data: bool = True,
+    ) -> None:
+        self.connector = connector or SqliteConnector(db_path)
+        self.conn = self.connector.connection
         self._closed = False
 
-    def create_tables(self):
-        cursor = self.conn.cursor()
+        create_schema(self.conn)
+        if load_seed_data:
+            load_fixtures(self.conn, FIXTURES_PATH)
 
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS groups (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            speciality TEXT
-        )
-        """)
+    @property
+    def db_path(self) -> str:
+        return str(self.connector.db_path)
 
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS students (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            group_id TEXT,
-            course INTEGER,
-            FOREIGN KEY (group_id) REFERENCES groups (id)
-        )
-        """)
+    def execute(self, sql: str, parameters: tuple[Any, ...] | list[Any] = ()) -> sqlite3.Cursor:
+        return self.conn.execute(sql, parameters)
 
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS teachers (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            disciplines_json TEXT
-        )
-        """)
+    def fetch_one(self, sql: str, parameters: tuple[Any, ...] | list[Any] = ()) -> sqlite3.Row | None:
+        return self.execute(sql, parameters).fetchone()
 
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS disciplines (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            description TEXT
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS materials (
-            id TEXT PRIMARY KEY,
-            discipline_id TEXT,
-            type TEXT,
-            content TEXT,
-            FOREIGN KEY (discipline_id) REFERENCES disciplines (id)
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS documents (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            source_path TEXT NOT NULL UNIQUE,
-            mime_type TEXT NOT NULL,
-            discipline_id TEXT,
-            created_at TEXT NOT NULL,
-            metadata_json TEXT,
-            FOREIGN KEY (discipline_id) REFERENCES disciplines (id)
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS document_chunks (
-            id TEXT PRIMARY KEY,
-            document_id TEXT NOT NULL,
-            chunk_index INTEGER NOT NULL,
-            page INTEGER,
-            content TEXT NOT NULL,
-            embedding_json TEXT NOT NULL,
-            token_count INTEGER NOT NULL,
-            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
-        )
-        """)
-
-        cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id
-        ON document_chunks (document_id)
-        """)
-
-        cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_documents_discipline_id
-        ON documents (discipline_id)
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS grades (
-            id TEXT PRIMARY KEY,
-            student_id TEXT,
-            discipline_id TEXT,
-            grade TEXT,
-            date TEXT,
-            FOREIGN KEY (student_id) REFERENCES students (id),
-            FOREIGN KEY (discipline_id) REFERENCES disciplines (id)
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS schedule (
-            id TEXT PRIMARY KEY,
-            day TEXT,
-            group_id TEXT,
-            lessons_json TEXT,
-            FOREIGN KEY (group_id) REFERENCES groups (id)
-        )
-        """)
-
-        self.conn.commit()
-
-    def load_fixtures(self):
-        fixtures_path = Path(__file__).parent.parent / "fixtures.json"
-        print(f"[DB] Looking for fixtures at: {fixtures_path}", file=sys.stderr)
-        print(f"[DB] Exists: {fixtures_path.exists()}", file=sys.stderr)
-
-        if not fixtures_path.exists():
-            print(f"[DB] FIXTURES NOT FOUND at {fixtures_path}", file=sys.stderr)
-            return
-
-        with open(fixtures_path, "r", encoding='utf-8') as f:
-            data = json.load(f)
-
-        cursor = self.conn.cursor()
-
-        # Load groups
-        for group in data.get("groups", []):
-            cursor.execute(
-                "INSERT OR IGNORE INTO groups (id, name, speciality) VALUES (?, ?, ?)",
-                (group["id"], group["name"], group["specialty"])
-            )
-
-        # Load students
-        for student in data.get("students", []):
-            cursor.execute(
-                "INSERT OR IGNORE INTO students (id, name, group_id, course) VALUES (?, ?, ?, ?)",
-                (student["id"], student["name"], student["group_id"], student["course"])
-            )
-
-        # Load teachers
-        for teacher in data.get("teachers", []):
-            cursor.execute(
-                "INSERT OR IGNORE INTO teachers (id, name, disciplines_json) VALUES (?, ?, ?)",
-                (teacher["id"], teacher["name"], json.dumps(teacher["disciplines"], ensure_ascii=False))
-            )
-
-        # Load disciplines
-        for discipline in data.get("disciplines", []):
-            cursor.execute(
-                "INSERT OR IGNORE INTO disciplines (id, name, description) VALUES (?, ?, ?)",
-                (discipline["id"], discipline["name"], discipline["description"])
-            )
-
-        # Load materials
-        for material in data.get("materials", []):
-            cursor.execute(
-                "INSERT OR IGNORE INTO materials (id, discipline_id, type, content) VALUES (?, ?, ?, ?)",
-                (material["id"], material["discipline_id"], material["type"], material["content"])
-            )
-
-        # Load grades
-        for grade in data.get("grades", []):
-            cursor.execute(
-                "INSERT OR IGNORE INTO grades (id, student_id, discipline_id, grade, date) VALUES (?, ?, ?, ?, ?)",
-                (grade["id"], grade["student_id"], grade["discipline_id"], str(grade["grade"]), grade["date"])
-            )
-
-        # Load schedule
-        for entry in data.get("schedule", []):
-            cursor.execute(
-                "INSERT OR IGNORE INTO schedule (id, group_id, day, lessons_json) VALUES (?, ?, ?, ?)",
-                (entry["id"], entry["group_id"], entry["day"], json.dumps(entry["lessons"], ensure_ascii=False))
-            )
-
-        self.conn.commit()
-        print("[DB] Fixtures loaded successfully.")
+    def fetch_all(self, sql: str, parameters: tuple[Any, ...] | list[Any] = ()) -> list[sqlite3.Row]:
+        return self.execute(sql, parameters).fetchall()
 
     def get_group(self, group_id: str) -> Group | None:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM groups WHERE id = ?", (group_id,))
-        row = cursor.fetchone()
-        if row:
-            return Group(
-                id=row["id"],
-                name=row["name"],
-                speciality=row["speciality"],
-            )
-        return None
+        row = self.fetch_one("SELECT * FROM groups WHERE id = ?", (group_id,))
+        if not row:
+            return None
+        return Group(
+            id=row["id"],
+            name=row["name"],
+            speciality=row["speciality"],
+        )
 
     def get_student(self, student_id: str) -> Optional[Student]:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
-        row = cursor.fetchone()
-        if row:
-            return Student(
-                id=row["id"],
-                name=row["name"],
-                group=self.get_group(row["group_id"]),
-                course=row["course"],
-            )
-        return None
+        row = self.fetch_one("SELECT * FROM students WHERE id = ?", (student_id,))
+        return self._student_from_row(row) if row else None
 
     def get_id_student(self, name: str | None) -> Optional[Student]:
         if name is None:
             return None
 
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM students WHERE name = ?", (name,))
-        row = cursor.fetchone()
-        if row:
-            return Student(
-                id=row["id"],
-                name=row["name"],
-                group=self.get_group(row["group_id"]),
-                course=row["course"],
-            )
-        return None
+        row = self.fetch_one("SELECT * FROM students WHERE name = ?", (name,))
+        return self._student_from_row(row) if row else None
 
     def get_teacher_by_name(self, name: str) -> Optional[Teacher]:
-        """Поиск учителя по имени"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM teachers WHERE name = ?", (name,))
-        row = cursor.fetchone()
-        if row:
-            return Teacher(
-                id=row["id"],
-                name=row["name"],
-                disciplines=json.loads(row["disciplines_json"])
-            )
-        return None
+        row = self.fetch_one("SELECT * FROM teachers WHERE name = ?", (name,))
+        if not row:
+            return None
+        return Teacher(
+            id=row["id"],
+            name=row["name"],
+            disciplines=json.loads(row["disciplines_json"] or "[]"),
+        )
 
-    def get_teacher_schedule(self, teacher_name: str, day: Optional[str] = None) -> List[ScheduleEntry]:
-        """
-        Получает расписание преподавателя.
-        Так как расписание нормализовано по группам, нам нужно пройти по всем записям
-        и найти те, где в lessons_json упоминается этот учитель.
-        """
-        cursor = self.conn.cursor()
-
-        # Сначала найдем ID учителя, если он есть в базе
+    def get_teacher_schedule(self, teacher_name: str, day: Optional[str] = None) -> list[ScheduleEntry]:
         teacher = self.get_teacher_by_name(teacher_name)
         if not teacher:
             return []
 
-        query = "SELECT * FROM schedule"
-        params = []
-
+        sql = "SELECT * FROM schedule"
+        params: list[Any] = []
         if day:
-            query += " WHERE day = ?"
+            sql += " WHERE day = ?"
             params.append(day)
 
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-
-        result_schedule: List[ScheduleEntry] = []
-
-        for row in rows:
-            lessons_data = json.loads(row["lessons_json"])
-            # Фильтруем уроки, которые ведет этот учитель
-            teacher_lessons: List[Lesson] = [l for l in lessons_data if l.get("teacher_name") == teacher_name]
+        entries: list[ScheduleEntry] = []
+        for row in self.fetch_all(sql, params):
+            lessons_data = json.loads(row["lessons_json"] or "[]")
+            teacher_lessons = [
+                self._lesson_from_dict(lesson)
+                for lesson in lessons_data
+                if lesson.get("teacher_name") == teacher_name
+            ]
 
             if teacher_lessons:
-                result_schedule.append(ScheduleEntry(
-                    id=row["id"],
-                    group=self.get_group(row["group_id"]),
-                    day=row["day"],
-                    lessons=teacher_lessons
-                ))
-
-        return result_schedule
-
-    def get_schedule(self, group_id: str, day: Optional[str] = None) -> List[ScheduleEntry]:
-        cursor = self.conn.cursor()
-
-        if day:
-            cursor.execute(
-                "SELECT * FROM schedule WHERE group_id = ? AND day = ?",
-                (group_id, day)
-            )
-        else:
-            cursor.execute(
-                "SELECT * FROM schedule WHERE group_id = ?",
-                (group_id,)
-            )
-
-        rows = cursor.fetchall()
-        result = []
-
-        for row in rows:
-            raw_lessons = json.loads(row["lessons_json"])
-            lessons = []
-            for lesson in raw_lessons:
-                lessons.append(
-                    Lesson(
-                        discipline_id=lesson["discipline_id"],
-                        discipline_name=lesson.get("discipline_name", "Неизвестно"),
-                        teacher_name=lesson["teacher_name"],
-                        room=lesson["room"],
+                entries.append(
+                    ScheduleEntry(
+                        id=row["id"],
+                        group=self.get_group(row["group_id"]),
+                        day=row["day"],
+                        lessons=teacher_lessons,
                     )
                 )
-            result.append(
-                ScheduleEntry(
-                    id=row["id"],
-                    group=self.get_group(row["group_id"]),
-                    day=row["day"],
-                    lessons=lessons
-                )
-            )
-        return result
 
-    def get_disciplines(self, student_id: str) -> List[Discipline]:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT group_id FROM students WHERE id = ?", (student_id,))
-        row = cursor.fetchone()
+        return entries
+
+    def get_schedule(self, group_id: str, day: Optional[str] = None) -> list[ScheduleEntry]:
+        if day:
+            rows = self.fetch_all(
+                "SELECT * FROM schedule WHERE group_id = ? AND day = ?",
+                (group_id, day),
+            )
+        else:
+            rows = self.fetch_all(
+                "SELECT * FROM schedule WHERE group_id = ?",
+                (group_id,),
+            )
+
+        return [self._schedule_entry_from_row(row) for row in rows]
+
+    def get_disciplines(self, student_id: str) -> list[Discipline]:
+        row = self.fetch_one("SELECT group_id FROM students WHERE id = ?", (student_id,))
         if not row:
             return []
-        group_id = row["group_id"]
 
-        cursor.execute("SELECT lessons_json FROM schedule WHERE group_id = ?", (group_id,))
-        rows = cursor.fetchall()
-
-        discipline_ids = set()
-        for row in rows:
-            lessons = json.loads(row["lessons_json"])
-            for lesson in lessons:
-                discipline_ids.add(lesson["discipline_id"])
-
+        discipline_ids = self._discipline_ids_for_group(row["group_id"])
         if not discipline_ids:
             return []
 
         placeholders = ", ".join("?" * len(discipline_ids))
-        cursor.execute(
-            f"SELECT * FROM disciplines WHERE id IN ({placeholders})",
-            list(discipline_ids)
+        rows = self.fetch_all(
+            f"SELECT * FROM disciplines WHERE id IN ({placeholders}) ORDER BY name ASC",
+            sorted(discipline_ids),
         )
-        return [
-            Discipline(
-                id=row["id"],
-                name=row["name"],
-                description=row["description"]
-            )
-            for row in cursor.fetchall()
-        ]
+        return [self._discipline_from_row(row) for row in rows]
 
     def get_discipline(self, discipline_id: str) -> Discipline | None:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM disciplines WHERE id = ?", (discipline_id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        return Discipline(
-            id=row["id"],
-            name=row["name"],
-            description=row["description"],
-        )
+        row = self.fetch_one("SELECT * FROM disciplines WHERE id = ?", (discipline_id,))
+        return self._discipline_from_row(row) if row else None
 
-    def get_all_disciplines(self) -> List[Discipline]:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM disciplines ORDER BY name ASC")
+    def get_all_disciplines(self) -> list[Discipline]:
         return [
-            Discipline(
-                id=row["id"],
-                name=row["name"],
-                description=row["description"],
-            )
-            for row in cursor.fetchall()
+            self._discipline_from_row(row)
+            for row in self.fetch_all("SELECT * FROM disciplines ORDER BY name ASC")
         ]
 
-    
-    def get_student_grades(self, student_id: str, discipline_id: Optional[str] = None) -> List[Grade]:
-        cursor = self.conn.cursor()
-        query = """
+    def get_student_grades(self, student_id: str, discipline_id: Optional[str] = None) -> list[Grade]:
+        sql = """
             SELECT
                 grades.id,
                 grades.student_id,
@@ -405,37 +161,90 @@ class Database:
             LEFT JOIN disciplines ON disciplines.id = grades.discipline_id
             WHERE grades.student_id = ?
         """
-        params: list = [student_id]
+        params: list[Any] = [student_id]
 
         if discipline_id:
-            query += " AND grades.discipline_id = ?"
+            sql += " AND grades.discipline_id = ?"
             params.append(discipline_id)
 
-        query += " ORDER BY grades.date DESC, disciplines.name ASC"
+        sql += " ORDER BY grades.date DESC, disciplines.name ASC"
+        return [self._grade_from_row(row) for row in self.fetch_all(sql, params)]
 
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
+    def ping(self) -> None:
+        self.execute("SELECT 1")
 
-        return [
-            Grade(
-                id=row["id"],
-                student_id=row["student_id"],
-                discipline_id=row["discipline_id"],
-                discipline_name=row["discipline_name"] or "Неизвестная дисциплина",
-                grade=row["grade"],
-                date=row["date"],
-            )
-            for row in rows
-        ]
+    def commit(self) -> None:
+        self.conn.commit()
 
-    def close(self):
+    def rollback(self) -> None:
+        self.conn.rollback()
+
+    def close(self) -> None:
         if not self._closed:
-            self.conn.close()
+            self.connector.close()
             self._closed = True
 
-    def __enter__(self):
+    def __enter__(self) -> Database:
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         self.close()
         return False
+
+    def _student_from_row(self, row: sqlite3.Row) -> Student:
+        return Student(
+            id=row["id"],
+            name=row["name"],
+            group=self.get_group(row["group_id"]),
+            course=row["course"],
+        )
+
+    def _discipline_ids_for_group(self, group_id: str) -> set[str]:
+        rows = self.fetch_all("SELECT lessons_json FROM schedule WHERE group_id = ?", (group_id,))
+        discipline_ids: set[str] = set()
+        for row in rows:
+            for lesson in json.loads(row["lessons_json"] or "[]"):
+                discipline_id = lesson.get("discipline_id")
+                if discipline_id:
+                    discipline_ids.add(discipline_id)
+        return discipline_ids
+
+    def _schedule_entry_from_row(self, row: sqlite3.Row) -> ScheduleEntry:
+        lessons = [
+            self._lesson_from_dict(lesson)
+            for lesson in json.loads(row["lessons_json"] or "[]")
+        ]
+        return ScheduleEntry(
+            id=row["id"],
+            group=self.get_group(row["group_id"]),
+            day=row["day"],
+            lessons=lessons,
+        )
+
+    @staticmethod
+    def _lesson_from_dict(lesson: dict[str, Any]) -> Lesson:
+        return Lesson(
+            discipline_id=lesson["discipline_id"],
+            discipline_name=lesson.get("discipline_name", "Неизвестно"),
+            teacher_name=lesson["teacher_name"],
+            room=lesson["room"],
+        )
+
+    @staticmethod
+    def _discipline_from_row(row: sqlite3.Row) -> Discipline:
+        return Discipline(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+        )
+
+    @staticmethod
+    def _grade_from_row(row: sqlite3.Row) -> Grade:
+        return Grade(
+            id=row["id"],
+            student_id=row["student_id"],
+            discipline_id=row["discipline_id"],
+            discipline_name=row["discipline_name"] or "Неизвестная дисциплина",
+            grade=row["grade"],
+            date=row["date"],
+        )

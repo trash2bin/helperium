@@ -60,7 +60,7 @@ agent-tutor/
 │   ├── teacher.py      # TeacherTools
 │   └── rag.py          # Устаревший фасад, заглушка для обратной совместимости
 ├── rag/                # RAG-слой (не зависит от db пакета)
-│   ├── __init__.py     # create_rag_pipeline(conn, config)
+│   ├── __init__.py     # create_rag_pipeline(connection, config)
 │   ├── config.py       # RagConfig из переменных окружения
 │   ├── interfaces.py   # EmbeddingProtocol, VectorStoreProtocol
 │   ├── embeddings.py   # SentenceTransformerEmbedding
@@ -97,7 +97,7 @@ agent-tutor/
 - `rag/interfaces.py` — протоколы (`EmbeddingProtocol`, `VectorStoreProtocol`) для подмены реализаций
 - `rag/embeddings.py` → `SentenceTransformerEmbedding`, `rag/vector_store.py` → `ChromaDBVectorStore`
 - Pydantic-модели (`Document`, `Material`, `RagSearchResult`, ...) переехали в `rag/models.py`; `db/models.py` реэкспортирует
-- `server.py` использует `create_rag_pipeline(db.conn)` напрямую (вместо `RagTools`)
+- `server.py` использует `create_rag_pipeline(db.connector)` напрямую (вместо `RagTools`)
 
 ## RAG по документам
 

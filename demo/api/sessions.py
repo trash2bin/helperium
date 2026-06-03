@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import threading
 import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from db.connection import SqliteConnector
 from demo.settings import PROJECT_ROOT, settings
 
 logger = logging.getLogger("demo.api.sessions")
@@ -26,6 +26,11 @@ class SessionStore:
         legacy_memory_path: str | Path | None = None,
     ) -> None:
         self.db_path = Path(db_path)
+        self.connector = SqliteConnector(
+            self.db_path,
+            check_same_thread=True,
+            pragmas=("PRAGMA foreign_keys = ON",),
+        )
         self.max_turns = max(1, max_turns)
         self.max_content_chars = max(1, max_content_chars)
         self.legacy_memory_path = Path(legacy_memory_path) if legacy_memory_path else None
@@ -172,7 +177,7 @@ class SessionStore:
             compact["content"] = content[: self.max_content_chars] + "\n\n...[обрезано в истории диалога]"
         return compact
 
-    def _trim_session(self, conn: sqlite3.Connection, session_id: str) -> None:
+    def _trim_session(self, conn, session_id: str) -> None:
         conn.execute(
             """
             DELETE FROM session_turns
@@ -188,11 +193,8 @@ class SessionStore:
             (session_id, session_id, self.max_turns),
         )
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+    def _connect(self):
+        return self.connector.connect()
 
     @staticmethod
     def _is_turn(value: Any) -> bool:
