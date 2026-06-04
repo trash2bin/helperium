@@ -215,7 +215,7 @@ class LLMAgent:
 
                 # Fallback if no final answer
                 async for event in self._run_fallback(
-                    messages, turn_messages, session_id
+                    messages, turn_messages, session_id, is_finished,
                 ):
                     yield event
 
@@ -470,6 +470,7 @@ class LLMAgent:
         messages: list[dict[str, Any]],
         turn_messages: list[dict[str, Any]],
         session_id: SessionId,
+        is_finished: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         """Run fallback stream when no final answer was produced."""
         final_parts: list[str] = []
@@ -478,7 +479,7 @@ class LLMAgent:
             final_parts.append(token)
             yield AgentEvent("token", TokenEventData(data=token))
 
-        if not final_parts:
+        if not final_parts and not is_finished:
             fallback_msg = "Извините, модель завершила работу без ответа. Попробуйте уточнить запрос."
             final_parts.append(fallback_msg)
             yield AgentEvent("token", TokenEventData(data=fallback_msg))

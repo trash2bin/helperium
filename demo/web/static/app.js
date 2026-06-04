@@ -1,5 +1,5 @@
 const apiBase = window.DEMO_API_BASE || "http://127.0.0.1:8081";
-const sessionId = getSessionId();
+
 const chatHistoryKey = "agentTutorMessages";
 const storage = window.localStorage;
 
@@ -84,7 +84,10 @@ const metrics = [
 
 const $ = (selector) => document.querySelector(selector);
 
+let currentSessionId;
+
 async function init() {
+  currentSessionId = getSessionId();
   bindTabs();
   bindChat();
   await Promise.all([loadData(), checkHealth(), restoreServerHistory()]);
@@ -109,32 +112,24 @@ async function checkHealth() {
   }
 }
 
+
 async function restoreServerHistory() {
   const storageKey = "agentTutorSessionId";
+  const messages = $("#messages");
+  messages.innerHTML = "";
+  
   try {
-    const sessionId = storage.getItem(storageKey);
-    if (!sessionId) {
-      restoreChatHistory();
+    if (!currentSessionId) {
       return;
     }
     
-    const response = await fetch(`${apiBase}/api/session/history?session_id=${encodeURIComponent(sessionId)}`);
+    const response = await fetch(`${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}`);
     if (!response.ok) {
-      restoreChatHistory();
       return;
     }
     
     const data = await response.json();
     const serverMessages = data.messages || [];
-    
-    if (serverMessages.length === 0) {
-      restoreChatHistory();
-      return;
-    }
-    
-    // Восстанавливаем сообщения из сервера
-    const messages = $("#messages");
-    messages.innerHTML = "";
     
     for (const msg of serverMessages) {
       if (msg.role === "user") {
@@ -143,27 +138,23 @@ async function restoreServerHistory() {
         const node = document.createElement("div");
         node.className = "message assistant";
         node.dataset.raw = msg.content || "";
-        
-        // Извлекаем инструменты из tool_calls
         const toolCalls = msg.tool_calls || [];
         const toolNames = toolCalls.map(tc => tc.function?.name).filter(Boolean);
         if (toolNames.length > 0) {
           node.dataset.tools = JSON.stringify(toolNames);
         }
-        
         node.innerHTML = msg.content ? renderAssistantMarkup(msg.content, toolNames) : "";
         messages.appendChild(node);
-        
-        // Сохраняем в localStorage
         appendStoredMessage("assistant", msg.content || "", toolNames);
       }
     }
     
     scrollMessagesToBottom(messages);
   } catch {
-    restoreChatHistory();
+    return;
   }
 }
+
 
 async function loadData() {
   const response = await fetch(`${apiBase}/api/data`);
@@ -275,7 +266,7 @@ async function streamChat(message, target) {
     const response = await fetch(`${apiBase}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, session_id: sessionId }),
+      body: JSON.stringify({ message, session_id: currentSessionId }),
     });
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
