@@ -112,68 +112,76 @@ async function checkHealth() {
   }
 }
 
-
 async function restoreServerHistory() {
   const messages = $("#messages");
   messages.innerHTML = "";
   let pendingToolNames = [];
-  
+
   try {
     if (!currentSessionId) {
       return;
     }
-    
-    const response = await fetch(`${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}`);
+
+    const response = await fetch(
+      `${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}`,
+    );
     if (!response.ok) {
       return;
     }
-    
+
     const data = await response.json();
     const serverMessages = data.messages || [];
-    
+
     for (const msg of serverMessages) {
       if (msg.role === "user") {
-        addMessage("user", msg.content || "", { persist: false, scroll: false });
+        addMessage("user", msg.content || "", {
+          persist: false,
+          scroll: false,
+        });
       } else if (msg.role === "assistant") {
         const toolNames = normalizeToolNames(msg.tool_calls);
-        const content = String(msg.content || "");
+        const content = stripLeadingToolLabels(
+          String(msg.content || ""),
+          toolNames,
+        );
 
         if (!content.trim() && toolNames.length > 0) {
-          pendingToolNames = normalizeToolNames([...pendingToolNames, ...toolNames]);
+          pendingToolNames = normalizeToolNames([
+            ...pendingToolNames,
+            ...toolNames,
+          ]);
           continue;
         }
 
-        const mergedTools = normalizeToolNames([...pendingToolNames, ...toolNames]);
+        const mergedTools = normalizeToolNames([
+          ...pendingToolNames,
+          ...toolNames,
+        ]);
         pendingToolNames = [];
+
+        if (mergedTools.length > 0) {
+          messages.appendChild(createToolStripNode(mergedTools));
+        }
 
         const node = document.createElement("div");
         node.className = "message assistant";
         node.dataset.raw = content;
-        if (mergedTools.length > 0) {
-          node.dataset.tools = JSON.stringify(mergedTools);
-        }
-        node.innerHTML = renderAssistantMarkup(content, mergedTools);
+        node.innerHTML = renderAssistantMarkup(content);
         messages.appendChild(node);
         appendStoredMessage("assistant", content, mergedTools);
       }
     }
 
     if (pendingToolNames.length > 0) {
-      const node = document.createElement("div");
-      node.className = "message assistant";
-      node.dataset.raw = "";
-      node.dataset.tools = JSON.stringify(pendingToolNames);
-      node.innerHTML = renderAssistantMarkup("", pendingToolNames);
-      messages.appendChild(node);
+      messages.appendChild(createToolStripNode(pendingToolNames));
       appendStoredMessage("assistant", "", pendingToolNames);
     }
-    
+
     scrollMessagesToBottom(messages);
   } catch {
     return;
   }
 }
-
 
 async function loadData() {
   const response = await fetch(`${apiBase}/api/data`);
@@ -277,10 +285,11 @@ function bindChat() {
 }
 
 async function streamChat(message, target) {
-  target.dataset.raw = "";
+  target.classList.add("is-thinking");
+  target.dataset.raw = "Думаю и проверяю данные...";
   target.dataset.tools = "[]";
   target.dataset.saved = "false";
-  target.innerHTML = '<span class="typing">Думаю и проверяю данные...</span>';
+  target.innerHTML = renderAssistantMarkup("Думаю и проверяю данные...");
   try {
     const response = await fetch(`${apiBase}/api/chat`, {
       method: "POST",
@@ -337,9 +346,15 @@ function handleEventChunk(chunk, target) {
     return;
   }
   const payload = JSON.parse(line.slice(5).trim());
+  const wasThinking = target.classList.contains("is-thinking");
+  clearAssistantThinking(target);
   if (payload.type === "token") {
     const messages = $("#messages");
     const shouldStickToBottom = isScrolledNearBottom(messages);
+    if (wasThinking) {
+      target.dataset.raw = "";
+      target.innerHTML = "";
+    }
     appendAssistantToken(target, payload.text);
     if (shouldStickToBottom) {
       scrollMessagesToBottom(messages);
@@ -348,7 +363,13 @@ function handleEventChunk(chunk, target) {
   if (payload.type === "final") {
     const messages = $("#messages");
     const shouldStickToBottom = isScrolledNearBottom(messages);
-    setAssistantText(target, payload.text || "");
+    const currentRaw = target.dataset.raw || "";
+    const finalText = typeof payload.text === "string" ? payload.text : "";
+    if (wasThinking) {
+      target.dataset.raw = "";
+      target.innerHTML = "";
+    }
+    setAssistantText(target, mergeAssistantText(currentRaw, finalText));
     if (shouldStickToBottom) {
       scrollMessagesToBottom(messages);
     }
@@ -359,7 +380,7 @@ function handleEventChunk(chunk, target) {
       tools.push(payload.name);
       target.dataset.tools = JSON.stringify(tools);
     }
-    setAssistantText(target, target.textContent || target.dataset.raw || "");
+    ensureAssistantToolStrip(target, tools);
   }
   if (payload.type === "done" && !(target.dataset.raw || "").trim()) {
     const fallback = "Модель не вернула текст. Попробуйте уточнить запрос.";
@@ -381,24 +402,42 @@ function appendAssistantToken(target, text) {
 }
 
 function setAssistantText(target, raw) {
+  clearAssistantThinking(target);
   target.dataset.raw = raw;
-  const tools = JSON.parse(target.dataset.tools || "[]");
-  target.innerHTML = renderAssistantMarkup(raw, tools);
+  target.innerHTML = renderAssistantMarkup(raw);
 }
 
-function renderAssistantMarkup(raw, toolNames = []) {
-  const chunks = [];
+function clearAssistantThinking(target) {
+  if (!target.classList.contains("is-thinking")) {
+    return;
+  }
+  target.classList.remove("is-thinking");
+}
 
-  // Вывод списка инструментов (или инструмента)
-  if (toolNames.length) {
-    const uniqueTools = [...new Set(toolNames)];
-    chunks.push(
-      `<div class="tool-strip">${uniqueTools
-        .map((name) => `<span>tool: ${escapeHtml(name)}</span>`)
-        .join("")}</div>`,
-    );
+function mergeAssistantText(currentRaw, finalText) {
+  const current = String(currentRaw || "");
+  const final = String(finalText || "");
+
+  if (!final) {
+    return current;
+  }
+  if (!current) {
+    return final;
+  }
+  if (final.startsWith(current)) {
+    return final;
+  }
+  if (current.startsWith(final)) {
+    return current;
   }
 
+  // When the final response diverges from the streamed draft, keep the
+  // longer text so we do not erase content the user already saw.
+  return final.length >= current.length ? final : current;
+}
+
+function renderAssistantMarkup(raw) {
+  const chunks = [];
   const text = raw.trim();
   if (!text) return chunks.join("");
 
@@ -459,6 +498,67 @@ function renderAssistantMarkup(raw, toolNames = []) {
   }
 
   return chunks.join("");
+}
+
+function renderToolStrip(toolNames = []) {
+  const uniqueTools = [...new Set(normalizeToolNames(toolNames))];
+  if (!uniqueTools.length) {
+    return "";
+  }
+
+  return `<div class="tool-strip">${uniqueTools
+    .map((name) => `<span>tool: ${escapeHtml(name)}</span>`)
+    .join("")}</div>`;
+}
+
+function createToolStripNode(toolNames = []) {
+  const node = document.createElement("div");
+  node.className = "assistant-tools";
+  node.dataset.tools = JSON.stringify(normalizeToolNames(toolNames));
+  node.innerHTML = renderToolStrip(toolNames);
+  return node;
+}
+
+function ensureAssistantToolStrip(target, toolNames = []) {
+  const normalizedTools = normalizeToolNames(toolNames);
+  if (!normalizedTools.length) {
+    return null;
+  }
+
+  const messages = $("#messages");
+  const previous = target.previousElementSibling;
+  if (previous && previous.classList.contains("assistant-tools")) {
+    previous.dataset.tools = JSON.stringify(normalizedTools);
+    previous.innerHTML = renderToolStrip(normalizedTools);
+    return previous;
+  }
+
+  const node = createToolStripNode(normalizedTools);
+  messages.insertBefore(node, target);
+  return node;
+}
+
+function stripLeadingToolLabels(text, toolNames = []) {
+  let value = String(text || "");
+  const normalizedTools = normalizeToolNames(toolNames);
+
+  if (!normalizedTools.length || !value.startsWith("tool:")) {
+    return value;
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const name of normalizedTools) {
+      const prefix = `tool: ${name}`;
+      if (value.startsWith(prefix)) {
+        value = value.slice(prefix.length);
+        changed = true;
+      }
+    }
+  }
+
+  return value.trimStart();
 }
 
 function isTableStart(lines, index) {
@@ -537,7 +637,7 @@ function addMessage(kind, text, options = {}) {
     if (tools.length > 0) {
       node.dataset.tools = JSON.stringify(tools);
     }
-    node.innerHTML = renderAssistantMarkup(text, tools);
+    node.innerHTML = renderAssistantMarkup(text);
   } else {
     node.textContent = text;
   }
@@ -564,7 +664,7 @@ function restoreChatHistory() {
   storedMessages.forEach((message) => {
     if (message.kind === "assistant") {
       const tools = normalizeToolNames(message.tools || []);
-      const text = String(message.text || "");
+      const text = stripLeadingToolLabels(String(message.text || ""), tools);
 
       if (!text.trim() && tools.length > 0) {
         pendingToolNames = normalizeToolNames([...pendingToolNames, ...tools]);
@@ -579,8 +679,9 @@ function restoreChatHistory() {
       node.dataset.raw = text;
       if (mergedTools.length > 0) {
         node.dataset.tools = JSON.stringify(mergedTools);
+        messages.appendChild(createToolStripNode(mergedTools));
       }
-      node.innerHTML = renderAssistantMarkup(text, mergedTools);
+      node.innerHTML = renderAssistantMarkup(text);
       messages.appendChild(node);
     } else {
       addMessage(message.kind, message.text, { persist: false, scroll: false });
@@ -588,12 +689,7 @@ function restoreChatHistory() {
   });
 
   if (pendingToolNames.length > 0) {
-    const node = document.createElement("div");
-    node.className = "message assistant";
-    node.dataset.raw = "";
-    node.dataset.tools = JSON.stringify(pendingToolNames);
-    node.innerHTML = renderAssistantMarkup("", pendingToolNames);
-    messages.appendChild(node);
+    messages.appendChild(createToolStripNode(pendingToolNames));
   }
   scrollMessagesToBottom(messages);
 }
@@ -602,15 +698,18 @@ function saveAssistantMessage(target) {
   if (target.dataset.saved === "true") {
     return;
   }
-  const text = target.dataset.raw || target.textContent || "";
+  const text = String(target.dataset.raw || "");
   const tools = normalizeToolNames(JSON.parse(target.dataset.tools || "[]"));
   appendStoredMessage("assistant", text, tools);
   target.dataset.saved = "true";
 }
 
 function appendStoredMessage(kind, text, tools = []) {
-  const value = String(text || "").trim();
   const normalizedTools = normalizeToolNames(tools);
+  const value =
+    kind === "assistant"
+      ? stripLeadingToolLabels(String(text || ""), normalizedTools).trim()
+      : String(text || "").trim();
   if (!value && normalizedTools.length === 0) {
     return;
   }

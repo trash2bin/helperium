@@ -195,6 +195,9 @@ class LLMAgent:
                 is_finished = False
 
                 for iteration in range(self.max_iterations):
+                    iteration_empty_rounds = empty_rounds
+                    iteration_completed = False
+
                     async for event in self._handle_iteration(
                         iteration,
                         session,
@@ -207,17 +210,39 @@ class LLMAgent:
                     ):
                         if event.type == "final":
                             is_finished = True
+                            iteration_completed = True
+                        elif event.type == "tool_call":
+                            iteration_completed = True
+                        elif event.type == "tool_result":
+                            iteration_completed = True
+                        elif event.type == "status":
+                            data = event.data
+                            if (
+                                isinstance(data, dict)
+                                and data.get("phase") == "tool_calls"
+                            ):
+                                iteration_completed = True
+                            elif (
+                                isinstance(data, dict)
+                                and data.get("phase") == "empty_round"
+                            ):
+                                empty_round_value = data.get("empty_rounds")
+                                if isinstance(empty_round_value, int):
+                                    iteration_empty_rounds = empty_round_value
                         yield event
+
+                    empty_rounds = 0 if iteration_completed else iteration_empty_rounds
 
                     # Check if we should stop
                     if is_finished or empty_rounds >= self.max_empty_rounds:
                         break
 
-                # Fallback if no final answer
-                async for event in self._run_fallback(
-                    messages, turn_messages, session_id, is_finished,
-                ):
-                    yield event
+                # Fallback only when no final answer was produced.
+                if not is_finished:
+                    async for event in self._run_fallback(
+                        messages, turn_messages, session_id, is_finished,
+                    ):
+                        yield event
 
         except Exception as exc:
             backlog.error(
