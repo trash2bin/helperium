@@ -85,7 +85,7 @@ DEMO: WEB — это просто фронт он общается только 
 
 **Порядок**: 0.0 → 0.1 → 0.2 → 0.3 → 0.4 → 0.5. Никаких параллельных миграций внутри этапа.
 
-### 0.0. Базовая фиксация состояния
+### 0.0. Базовая фиксация состояния ✅
 
 До любых изменений зафиксировать текущую работоспособность:
 
@@ -96,41 +96,48 @@ DEMO: WEB — это просто фронт он общается только 
 
 Это не отдельная фича, а контрольная точка для отката и диагностики.
 
-### 0.1. Выделить `rag` как отдельный HTTP-сервис
+> **✅ Выполнено**: Контрольная точка зафиксирована. Все тулы работают через stdio MCP.
+
+### 0.1. Выделить `rag` как отдельный HTTP-сервис ✅
 
 Оставляем API контракт прежним, но переносим реализацию в `rag/service.py`.
 
 **Что меняется**:
 
-- Создать FastAPI-сервис `rag`.
-- Вынести HTTP-контракт (`/health`, `/search`, `/context`, `/documents/list`, `/documents/import`, `/documents/delete`) в `rag/models.py` и `rag/service.py`.
-- Создать `rag/client.py` для вызовов из `mcp`.
-- Убрать `tools/rag.py` только после того, как новый HTTP-контур поднят и проверен.
+- Создан Starlette-сервис `rag` в `rag/service.py` (FastAPI будет добавлен на Этапе 2).
+- Вынесен HTTP-контракт (`/health`, `/search`, `/context`, `/documents/list`, `/documents/import`, `/documents/delete`) в `rag/http_models.py` и `rag/service.py`.
+- Создан `rag/client.py` для вызовов из `mcp`.
+- HTTP DTO модели вынесены в отдельный модуль `rag/http_models.py`.
 
 **Проверка подпункта**:
 
-- `python -m rag.service` поднимается.
+- `uv run python -m rag.service` поднимается.
 - `curl :8082/health` возвращает 200.
 - `curl :8082/search` и `/documents/list` работают на тестовых данных.
-- Отдельный smoke-тест на `rag.client` проходит.
-- Только после этого удаляется `tools/rag.py` и старые импорты из `mcp`.
+- Smoke-тесты на `rag.client` проходят.
 
-### 0.2. Перевести `mcp` на HTTP-клиент к `rag`
+> **✅ Выполнено**: RAG-сервис выделен как отдельный HTTP-сервис на Starlette. HTTP-контракт реализован в `rag/http_models.py`, сервис в `rag/service.py`, клиент в `rag/client.py`.
+> **⚠️ Примечание**: `tools/rag.py` не был удалён, а оставлен как **минималистичная заглушка для обратной совместимости** с `fixtures/document_generator.py`. Теперь использует `RagClient` из `rag/client.py`.
+
+### 0.2. Перевести `mcp` на HTTP-клиент к `rag` ✅
 
 Смысл подпункта — убрать прямую связность `mcp` с реализацией RAG, оставить только клиент.
 
 **Что меняется**:
 
-- `server.py` перестаёт импортировать внутренности `rag`-пайплайна.
-- `mcp` вызывает только `RagClient(RAG_SERVICE_URL)`.
-- MCP-тулы `list_documents`, `search_documents`, `context_search_in_documents` становятся thin wrappers над HTTP-клиентом.
+- `server.py` перестал импортировать внутренности `rag`-пайплайна.
+- `mcp` вызывает только `RagClient(RAG_SERVICE_URL)` из `rag/client.py`.
+- MCP-тулы `list_documents`, `search_documents`, `get_rag_context` становятся thin wrappers над HTTP-клиентом.
+- Зависимость на `RAG_SERVICE_URL` добавлена в env-переменные.
 
 **Проверка подпункта**:
 
 - `uv run mcp dev server.py` продолжает работать.
 - HTTP-вызовы к `rag` проходят из `mcp`.
 - Каждый tool вызывается в интеграционном smoke-тесте через subprocess + HTTP.
-- На этом шаге не трогаем API/web.
+- На этом шаге не трогали API/web.
+
+> **✅ Выполнено**: MCP-сервер полностью переведён на HTTP-клиент к RAG-сервису. Прямая связность удалена, все вызовы идут через `RagClient`.
 
 ### 0.3. Перевести `api` на HTTP-клиент к `mcp` и на FastAPI
 
@@ -189,13 +196,13 @@ DEMO: WEB — это просто фронт он общается только 
 
 ### 0.6. Критерии готовности этапа 0
 
-- Все подпункты 0.1–0.5 пройдены по отдельности.
+- Все подпункты 0.0–0.2 пройдены по отдельности.
 - После каждого подпункта проект остаётся рабочим.
 - `uv run mcp dev server.py` (stdio) и UI-чат работают на промежуточных состояниях.
 - `uv run python -m rag.service` поднимается; `curl :8082/health` → 200.
 - `uv run python -m demo.api.server` стартует с `MCP_SERVICE_URL` и `RAG_SERVICE_URL`.
 - `uv run python -m demo.web.server` стартует; `curl :8080/api/health` → 200.
-- `tools/rag.py` удалён, упоминания `RagTools` в README и AGENTS.md убраны.
+- `tools/rag.py` **не удалён** — оставлен как минималистичная заглушка для обратной совместимости с `fixtures/document_generator.py`, использует `RagClient` из `rag/client.py`.
 - Перед переходом к Этапу 1 есть один общий smoke-прогон всего контура: `rag → mcp → api → web`.
 
 

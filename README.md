@@ -5,7 +5,7 @@
 | Часть | Описание |
 |---|---|
 | MCP-сервер | Сервер для взаимодействия с базой данной и RAG|
-| RAG | Поиск учебных материалов по содержимому (Пока что часть MCP-сервера) |
+| RAG | Поиск учебных материалов по содержимому (отдельный HTTP-сервис) |
 | API с агентом | Взаимодействия с агентом и сам кастомный клиент агента: [Ядро агента](demo/api/agent/) |
 | Web UI | Сайт визитка с чатом для взаимодействия с агентом и презентации |
 
@@ -58,7 +58,7 @@ agent-tutor/
 │   ├── disciplines.py  # DisciplineTools (get_materials/search_materials через doc_repo)
 │   ├── grades.py       # GradeTools
 │   ├── teacher.py      # TeacherTools
-│   └── rag.py          # Устаревший фасад, заглушка для обратной совместимости
+│   └── rag.py          # Фасад для обратной совместимости (использует RagClient)
 ├── rag/                # RAG-слой (не зависит от db пакета)
 │   ├── __init__.py     # create_rag_pipeline(connection, config)
 │   ├── config.py       # RagConfig из переменных окружения
@@ -69,7 +69,10 @@ agent-tutor/
 │   ├── chunker.py      # TextChunker (semantic, recursive, sentence)
 │   ├── repository.py   # DocumentRepository — CRUD документов/чанков в SQLite
 │   ├── pipeline.py     # RAGPipeline — оркестрация парсинг → чанкинг → сохранение
-│   └── models.py       # Pydantic-модели (Document, Material, RagSearchResult, ...)
+│   ├── models.py       # Pydantic-модели (Document, Material, RagSearchResult, ...)
+│   ├── http_models.py  # HTTP DTO модели для RAG-сервиса
+│   ├── service.py      # HTTP-сервис RAG (Starlette) — endpoint'ы /health, /search, /context, /documents/*
+│   └── client.py       # HTTP-клиент для вызовов RAG-сервиса из MCP
 ├── fixtures/
 │   ├── generate.py     # Генератор тестовых данных
 │   ├── ingest.py       # CLI agent-ingest для RAG-документов и генерации материалов
@@ -98,6 +101,21 @@ agent-tutor/
 - `rag/embeddings.py` → `SentenceTransformerEmbedding`, `rag/vector_store.py` → `ChromaDBVectorStore`
 - Pydantic-модели (`Document`, `Material`, `RagSearchResult`, ...) переехали в `rag/models.py`; `db/models.py` реэкспортирует
 - `server.py` использует `create_rag_pipeline(db.connector)` напрямую (вместо `RagTools`)
+
+### Новая архитектура (Этап 0 выполнен)
+
+RAG выделен в **отдельный HTTP-сервис**:
+- `rag/service.py` — Starlette-приложение с endpoint'ами:
+  - `GET /health` — проверка статуса сервиса
+  - `POST /search` — семантический поиск по документам
+  - `POST /context` — получение RAG-контекста для LLM
+  - `POST /documents/list` — список документов
+  - `POST /documents/import` — импорт документа
+  - `POST /documents/delete` — удаление документа
+- `rag/client.py` — HTTP-клиент для вызовов RAG-сервиса из MCP и других компонентов
+- `rag/http_models.py` — Pydantic-модели для HTTP-контракта
+- MCP-сервер (`server.py`) использует `RagClient` для вызовов RAG через HTTP
+- `tools/rag.py` оставлен как **минималистичная заглушка** для обратной совместимости с `fixtures/document_generator.py`
 
 ## RAG по документам
 
@@ -141,6 +159,7 @@ cd agent-tutor
 
 - `agent-tutor` — MCP-сервер, точка входа `server:main`.
 - `agent-ingest` — CLI для документов и генерации, точка входа `fixtures.ingest:main`.
+- `rag-service` — HTTP RAG-сервис, точка входа `rag.service:main`.
 
 Базовые команды:
 
@@ -148,6 +167,7 @@ cd agent-tutor
 uv sync
 uv run agent-ingest --help
 uv run mcp dev server.py
+uv run python -m rag.service  # Запуск RAG HTTP-сервиса на порту 8082
 uv tool install . --reinstall
 ```
 
@@ -364,6 +384,10 @@ uv run agent-ingest delete --document-id e077bb64-31e6-4d37-98c6-d2f350d7a947
 | Переменная | По умолчанию | Зачем |
 |---|---|---|
 | `DB_PATH` | `./university.db` | Путь к SQLite-базе |
+| `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | URL RAG HTTP-сервиса для MCP-сервера |
+| `RAG_HOST` | `127.0.0.1` | Хост RAG-сервиса |
+| `RAG_PORT` | `8082` | Порт RAG-сервиса |
+| `RAG_HTTP_TIMEOUT` | `60.0` | Таймаут HTTP-запросов к RAG-сервису (секунды) |
 | `RAG_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | HF-id или локальный путь к embedding-модели |
 | `RAG_EMBEDDING_BATCH_SIZE` | `64` | Размер батча для embeddings |
 | `RAG_DEVICE` | `cpu` | Устройство для embeddings: `cpu`, `cuda`, `mps` |
@@ -401,10 +425,16 @@ uv run agent-ingest list
 Запустить через MCP Inspector для проверки инструментов:
 
 ```bash
-uv run mcp dev server.py
+# Для работы с HTTP RAG-сервисом нужно запустить его отдельно
+uv run python -m rag.service
+
+# В другом терминале запускаем MCP-сервер с указанием URL RAG-сервиса
+RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp dev server.py
 ```
 
-В браузере выбрать транспорт **STDIO**. Если подключаешься вручную, укажи команду `uv`, аргументы `run python server.py`, затем нажми Connect.
+В браузере выбрать транспорт **HTTP** (или **STDIO** для development). 
+Для STDIO: укажи команду `uv`, аргументы `run python server.py`, затем нажми Connect.
+Для HTTP: укажи URL `http://127.0.0.1:8083/mcp` (если запущен MCP-сервер с HTTP-транспортом).
 
 
 ### Пример запроса к модели:
@@ -415,14 +445,34 @@ uv run mcp dev server.py
 
 ## Текущее состояние
 
-Проект находится на стадии рабочего прототипа.
+Проект находится на стадии рабочего прототипа. **Выполнены punkты 0.0, 0.1, 0.2 из ROADMAP**.
 
 Работает:
 - MCP-сервер стартует и публикует инструменты
 - SQLite-база инициализируется и загружает фикстуры при старте
 - Инструменты возвращают типизированные Pydantic-ответы
 - RAG-метаданные хранятся в SQLite, а векторный индекс документов — в ChromaDB
+- **RAG выделен в отдельный HTTP-сервис** (`rag/service.py`) — сервис поднимается на порту 8082
+- **MCP-сервер использует HTTP-клиент** (`rag/client.py`) для вызовов RAG через `RAG_SERVICE_URL`
+- Прямая связность между MCP и RAG-пайплайном удалена
+- `tools/rag.py` оставлен как **минималистичная заглушка** для обратной совместимости с `fixtures/document_generator.py`
 - Проверено в MCP Inspector и Goose, Claude Code, Pi
 - **Демо-часть**: LiteLLM интеграция, стриминг ответов, память сессий, режим мышления, полный бэклог всех взаимодействий с моделью
 - Сайт доступен для демонстрации
-- Кстомный клиент на для сайта уже ведет логическое повествование и вызывает инструменты для решения задачи пользователя
+- Кастомный клиент на сайте уже ведёт логическое повествование и вызывает инструменты для решения задачи пользователя
+
+### Как запустить после изменений
+
+```bash
+# Терминал 1: RAG HTTP-сервис (порт 8082)
+uv run python -m rag.service
+
+# Терминал 2: MCP-сервер (порт 8083, использует RAG по HTTP)
+RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp dev server.py
+
+# Терминал 3: API сервер (порт 8081)
+uv run python -m demo.api.server
+
+# Терминал 4: Веб-сервер (порт 8080)
+uv run python -m demo.web.server
+```
