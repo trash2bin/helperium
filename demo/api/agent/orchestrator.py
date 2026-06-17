@@ -214,7 +214,6 @@ class LLMAgent:
                 session_id, turn_id, self.max_iterations, str(exc)
             )
             yield AgentEvent("error", ErrorEventData(message=str(exc)))
-            raise
 
     async def _handle_iteration(
         self,

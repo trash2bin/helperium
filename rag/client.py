@@ -22,7 +22,7 @@ RAG_HTTP_TIMEOUT: float = float(os.environ.get("RAG_HTTP_TIMEOUT", "60.0"))
 
 class RagClient:
     """Тонкий HTTP-клиент для обращений к RAG-сервису.
-    
+
     Создаётся с базовым URL сервиса, поддерживает таймауты и переиспользование
     асинхронного клиента httpx для повышения производительности.
     """
@@ -33,7 +33,7 @@ class RagClient:
         timeout: float = RAG_HTTP_TIMEOUT,
     ):
         """Инициализация клиента.
-        
+
         Args:
             base_url: базовый URL RAG-сервиса (по умолчанию из RAG_SERVICE_URL)
             timeout: таймаут для HTTP-запросов в секундах
@@ -60,19 +60,13 @@ class RagClient:
             self._client = httpx.AsyncClient(timeout=self.timeout)
         return self._client
 
-    def close(self) -> None:
-        """Закрыть клиент синхронно (если был создан)."""
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-
     def _build_url(self, endpoint: str) -> str:
         """Построить полный URL эндпоинта."""
         return f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
     async def health(self) -> dict[str, Any]:
         """Проверка состояния RAG-сервиса.
-        
+
         Returns:
             dict с полем 'status' ('ok' или 'degraded') и статусами компонентов
         """
@@ -88,11 +82,11 @@ class RagClient:
         limit: int | None = None,
     ) -> list[Document]:
         """Получить список документов.
-        
+
         Args:
             discipline_id: опциональный фильтр по ID дисциплины
             limit: опциональное ограничение количества документов
-            
+
         Returns:
             список Document
         """
@@ -116,15 +110,15 @@ class RagClient:
         title: str | None = None,
     ) -> DocumentImportResult:
         """Импортировать документ в RAG-индекс.
-        
+
         Args:
             path: путь к файлу документа
             discipline_id: опциональный ID дисциплины
             title: опциональное название документа
-            
+
         Returns:
             DocumentImportResult с документом и количеством чанков
-            
+
         Raises:
             FileNotFoundError: если файл не найден
             ValueError: если документ невалиден
@@ -138,12 +132,12 @@ class RagClient:
 
         async with self.client as c:
             response = await c.post(url, json=payload)
-            
+
             if response.status_code == 404:
                 raise FileNotFoundError(f"Document not found: {path}")
             elif response.status_code == 422:
                 raise ValueError(f"Invalid document: {response.text}")
-            
+
             response.raise_for_status()
             data = response.json()
             return DocumentImportResult(
@@ -157,14 +151,14 @@ class RagClient:
         document_id: str | None = None,
     ) -> dict[str, Any]:
         """Удалить документ из RAG-индекса.
-        
+
         Args:
             path: путь к файлу (опционально)
             document_id: ID документа (опционально)
-            
+
         Returns:
             dict с информацией об удалённом документе
-            
+
         Raises:
             ValueError: если не передан ни path, ни document_id
         """
@@ -187,12 +181,12 @@ class RagClient:
         limit: int = 5,
     ) -> list[RagSearchResult]:
         """Семантический поиск по фрагментам документов.
-        
+
         Args:
             query: поисковый запрос
             discipline_id: опциональный фильтр по ID дисциплины
             limit: максимальное количество результатов (1-20)
-            
+
         Returns:
             список RagSearchResult
         """
@@ -217,12 +211,12 @@ class RagClient:
         limit: int = 5,
     ) -> RagContext:
         """Получить готовый RAG-контекст для LLM-ответа.
-        
+
         Args:
             query: вопрос пользователя
             discipline_id: опциональный фильтр по ID дисциплины
             limit: количество фрагментов в контексте (1-20)
-            
+
         Returns:
             RagContext с инструкцией и чанками
         """
@@ -245,7 +239,7 @@ class RagClient:
     def health_sync(self) -> dict[str, Any]:
         """Синхронная проверка состояния."""
         import httpx as sync_httpx
-        
+
         url = self._build_url("/health")
         with sync_httpx.Client(timeout=self.timeout) as c:
             response = c.get(url)
@@ -259,7 +253,7 @@ class RagClient:
     ) -> list[Document]:
         """Синхронный список документов."""
         import httpx as sync_httpx
-        
+
         url = self._build_url("/documents/list")
         payload: dict[str, Any] = {}
         if discipline_id is not None:
@@ -281,7 +275,7 @@ class RagClient:
     ) -> DocumentImportResult:
         """Синхронный импорт документа."""
         import httpx as sync_httpx
-        
+
         url = self._build_url("/documents/import")
         payload: dict[str, Any] = {"path": path}
         if discipline_id is not None:
@@ -291,12 +285,12 @@ class RagClient:
 
         with sync_httpx.Client(timeout=self.timeout) as c:
             response = c.post(url, json=payload)
-            
+
             if response.status_code == 404:
                 raise FileNotFoundError(f"Document not found: {path}")
             elif response.status_code == 422:
                 raise ValueError(f"Invalid document: {response.text}")
-            
+
             response.raise_for_status()
             data = response.json()
             return DocumentImportResult(
@@ -311,7 +305,7 @@ class RagClient:
     ) -> dict[str, Any]:
         """Синхронное удаление документа."""
         import httpx as sync_httpx
-        
+
         url = self._build_url("/documents/delete")
         payload: dict[str, Any] = {}
         if path is not None:
@@ -332,7 +326,7 @@ class RagClient:
     ) -> list[RagSearchResult]:
         """Синхронный поиск по документам."""
         import httpx as sync_httpx
-        
+
         url = self._build_url("/search")
         payload: dict[str, Any] = {
             "query": query,
@@ -355,7 +349,7 @@ class RagClient:
     ) -> RagContext:
         """Синхронный RAG-контекст."""
         import httpx as sync_httpx
-        
+
         url = self._build_url("/context")
         payload: dict[str, Any] = {
             "query": query,

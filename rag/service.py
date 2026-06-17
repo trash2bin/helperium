@@ -208,7 +208,10 @@ async def import_document(request: Request) -> JSONResponse:
 
 
 async def delete_document(request: Request) -> JSONResponse:
-    """Удалить документ из RAG-индекса (по пути или ID)."""
+    """Удалить документ из RAG-индекса (по пути или ID).
+    
+    Idempotent: возвращает 200 даже если документ не найден.
+    """
     try:
         payload = await _parse_json(request)
     except ValueError as exc:
@@ -226,8 +229,11 @@ async def delete_document(request: Request) -> JSONResponse:
             source_path=path,
             document_id=document_id,
         )
+        
         if not row:
-            return _err("Document not found", status=404)
+            # Idempotent delete: документ уже удалён или не существовал
+            logger.info("Delete requested for non-existent document (path=%s, document_id=%s)", path, document_id)
+            return _ok({"deleted": None, "title": None, "message": "Document not found, already deleted or never existed"})
 
         doc_id = row["id"]
         try:

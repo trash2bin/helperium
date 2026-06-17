@@ -145,8 +145,8 @@ class OllamaGenerateConfig:
         return cls(
             model=os.environ.get("DOCGEN_MODEL", DEFAULT_DOCGEN_MODEL),
             url=os.environ.get("DOCGEN_OLLAMA_URL", _default_ollama_generate_url()),
-            timeout_seconds=_env_float("DOCGEN_TIMEOUT", 90.0),
-            temperature=_env_float("DOCGEN_TEMPERATURE", 0.35),
+            timeout_seconds=_env_float("DOCGEN_TIMEOUT", 3600.0),
+            temperature=_env_float("DOCGEN_TEMPERATURE", 1.00),
             num_predict=_env_int("DOCGEN_NUM_PREDICT", 4500),
             min_response_chars=_env_int("DOCGEN_MIN_RESPONSE_CHARS", 120),
             max_attempts=max(1, _env_int("DOCGEN_MAX_ATTEMPTS", 2)),
