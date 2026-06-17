@@ -6,7 +6,7 @@ from pathlib import Path
 
 from db.database import Database
 from fixtures.document_generator import MaterialDocumentGenerator
-from tools.rag import RagTools
+from rag.client import RagClient, RAG_SERVICE_URL
 
 # Settings
 os.environ["RAG_LOCAL_FILES_ONLY"] = "1"
@@ -15,18 +15,17 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 def cmd_import(args):
     db = Database()
-    rag = RagTools(db)
+    rag = RagClient(RAG_SERVICE_URL)
     t0 = time.monotonic()
 
     def progress(stage, **kw):
         print(f"\n  [{stage.upper()}] ", end="", flush=True)
 
     try:
-        result = rag.import_document(
+        result = rag.import_document_sync(
             path=args.path,
             discipline_id=args.discipline_id,
             title=args.title,
-            on_progress=progress,
         )
         print(f"  done — {result.chunks_count} chunks, {time.monotonic()-t0:.1f}s")
     except (FileNotFoundError, ValueError) as e:
@@ -39,9 +38,9 @@ def cmd_import(args):
 def cmd_list(args):
     """Показать загруженные документы."""
     db = Database()
-    rag = RagTools(db)
+    rag = RagClient(RAG_SERVICE_URL)
 
-    docs = rag.list_documents(discipline_id=args.discipline_id)
+    docs = rag.list_documents_sync(discipline_id=args.discipline_id)
     if not docs:
         print("Документов нет.")
         return
@@ -55,9 +54,9 @@ def cmd_list(args):
 def cmd_search(args):
     """Тестовый поиск по документам (без MCP-сервера)."""
     db = Database()
-    rag = RagTools(db)
+    rag = RagClient(RAG_SERVICE_URL)
 
-    results = rag.search_documents(
+    results = rag.search_documents_sync(
         query=args.query,
         discipline_id=args.discipline_id,
         limit=args.limit,
@@ -81,6 +80,7 @@ def cmd_generate(args):
         os.environ["DOCGEN_MODEL"] = args.model
 
     db = Database()
+    from tools.rag import RagTools
     rag = RagTools(db)
     generator = MaterialDocumentGenerator(db, rag)
     try:
@@ -109,6 +109,7 @@ def cmd_generate_all(args):
         os.environ["DOCGEN_MODEL"] = args.model
 
     db = Database()
+    from tools.rag import RagTools
     rag = RagTools(db)
     generator = MaterialDocumentGenerator(db, rag)
     disciplines = db.get_all_disciplines()
@@ -130,17 +131,15 @@ def cmd_generate_all(args):
         db.close()
 
 
-def _delete_documents(db: Database, rag: RagTools, rows) -> int:
-    doc_repo = rag.pipeline.repository
+def _delete_documents(db: Database, rag: RagClient, rows) -> int:
     deleted = 0
     for row in rows:
         doc_id = row["id"]
         source_path = Path(row["source_path"])
         try:
-            rag._delete_document_vectors(doc_id)
+            rag.delete_document_sync(document_id=doc_id)
         except Exception as exc:
             print(f"WARN не удалось удалить векторы {doc_id}: {exc}", file=sys.stderr)
-        doc_repo.delete_document_record(doc_id, commit=False)
         if source_path.exists():
             try:
                 source_path.unlink()
@@ -170,12 +169,17 @@ def _cleanup_empty_generated_dirs() -> None:
 
 def cmd_clear_generated(args):
     """Удалить сгенерированные материалы из SQLite, ChromaDB и с диска."""
+    from db.database import Database
     db = Database()
-    rag = RagTools(db)
-    rows = rag.pipeline.repository.list_generated_document_rows(
-        path_marker="generated_materials",
-        discipline_id=args.discipline_id,
-    )
+    rag = RagClient(RAG_SERVICE_URL)
+    
+    # Получаем список документов через RAG клиент
+    docs = rag.list_documents_sync(discipline_id=args.discipline_id)
+    rows = [
+        {"id": doc.id, "source_path": doc.source_path}
+        for doc in docs
+        if "generated_materials" in doc.source_path
+    ]
 
     deleted = _delete_documents(db, rag, rows)
     _cleanup_empty_generated_dirs()
@@ -186,28 +190,41 @@ def cmd_clear_generated(args):
 def cmd_delete(args):
     """Удалить документ из индекса."""
     db = Database()
-    rag = RagTools(db)
-    doc_repo = rag.pipeline.repository
+    rag = RagClient(RAG_SERVICE_URL)
 
     # По пути или по id
     if args.path:
         source_path = str(Path(args.path).resolve())
-        row = doc_repo.find_document_for_delete(source_path=source_path)
+        # Нужно получить ID документа по пути
+        docs = rag.list_documents_sync()
+        row = None
+        for doc in docs:
+            if doc.source_path == source_path:
+                row = {"id": doc.id, "title": doc.title, "source_path": doc.source_path}
+                break
+        if not row:
+            print("Документ не найден.")
+            db.close()
+            return
     elif args.document_id:
-        row = doc_repo.find_document_for_delete(document_id=args.document_id)
+        # По document_id - нужно получить информацию о документе
+        docs = rag.list_documents_sync()
+        row = None
+        for doc in docs:
+            if doc.id == args.document_id:
+                row = {"id": doc.id, "title": doc.title, "source_path": doc.source_path}
+                break
+        if not row:
+            print("Документ не найден.")
+            db.close()
+            return
     else:
         print("ERR укажите --path или --document-id", file=sys.stderr)
         sys.exit(1)
 
-    if not row:
-        print("Документ не найден.")
-        db.close()
-        return
-
     doc_id = row["id"]
     title = row["title"]
-    rag._delete_document_vectors(doc_id)
-    doc_repo.delete_document_record(doc_id)
+    rag.delete_document_sync(document_id=doc_id)
     print(f"OK  удалён: {title} ({doc_id})")
     db.close()
 

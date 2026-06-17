@@ -15,16 +15,19 @@ from tools.student import StudentTools
 from tools.disciplines import DisciplineTools
 from tools.grades import GradeTools
 from tools.teacher import TeacherTools
-from rag import create_rag_pipeline
+from rag.client import RagClient, RAG_SERVICE_URL
 from rag.models import Document, RagContext, RagSearchResult
 
 
+# Инициализация инструментов БД
 db = Database()
 student_tools = StudentTools(db)
 grade_tools = GradeTools(db)
 teacher_tools = TeacherTools(db)
-rag = create_rag_pipeline(db.connector)
 discipline_tools = DisciplineTools(db)
+
+# HTTP-клиент к RAG-сервису
+rag_client = RagClient(RAG_SERVICE_URL)
 
 mcp = FastMCP("University Server")
 
@@ -147,7 +150,7 @@ def list_documents(
 
     Возвращает List[Document]: id, title, source_path, mime_type, discipline_id, created_at.
     """
-    return rag.list_documents(discipline_id, limit) or []
+    return rag_client.list_documents_sync(discipline_id, limit) or []
 
 
 @mcp.tool()
@@ -163,7 +166,7 @@ def search_documents(
     Возвращает List[RagSearchResult]: document_id, document_title, chunk_id, page, score, content.
     Используй context_search_in_documents если нужен готовый контекст для ответа.
     """
-    return rag.search_documents(query, discipline_id, limit) or []
+    return rag_client.search_documents_sync(query, discipline_id, limit) or []
 
 
 @mcp.tool()
@@ -180,17 +183,17 @@ def context_search_in_documents(
     Возвращает RagContext: query, answer_instruction, chunks[].
     Отвечай только на основе chunks, явно укажи если данных недостаточно.
     """
-    return rag.build_rag_context(query, discipline_id, limit)
+    return rag_client.build_rag_context_sync(query, discipline_id, limit)
 
 
 # СЛУЖЕБНОЕ
 
 @mcp.tool()
 def get_health_status() -> dict:
-    """Проверить работоспособность системы (БД и ChromaDB).
+    """Проверить работоспособность системы (БД и RAG-сервис).
 
     Возвращает {"database": {"status": "ok"|"error", "error": null|str},
-                "chroma":   {"status": "ok"|"error", "error": null|str}}.
+                "rag": {"status": "ok"|"error", "error": null|str}}.
     """
     db_status = {"status": "ok", "error": None}
     try:
@@ -198,13 +201,15 @@ def get_health_status() -> dict:
     except Exception as e:
         db_status = {"status": "error", "error": str(e)}
 
-    chroma_status = {"status": "ok", "error": None}
+    rag_status = {"status": "ok", "error": None}
     try:
-        rag.list_documents(limit=1)
+        health = rag_client.health_sync()
+        if health.get("status") != "ok":
+            rag_status = {"status": "error", "error": "RAG service degraded"}
     except Exception as e:
-        chroma_status = {"status": "error", "error": str(e)}
+        rag_status = {"status": "error", "error": str(e)}
 
-    return {"database": db_status, "chroma": chroma_status}
+    return {"database": db_status, "rag": rag_status}
 
 
 def main():

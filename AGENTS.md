@@ -148,7 +148,7 @@ uv run python -m demo.web.server
 - `rag/vector_store.py` → `ChromaDBVectorStore` (реализует `VectorStoreProtocol`)
 - Pydantic-модели (`Document`, `Material`, `RagSearchResult`, ...) переехали в `rag/models.py`; `db/models.py` их реэкспортирует
 - `server.py` использует `create_rag_pipeline(db.connector)` напрямую вместо `RagTools`
-- `tools/rag.py` — заглушка для обратной совместимости
+
 - `tools/disciplines.py` берёт `DocumentRepository` через конструктор, а не ходит в `Database`
 
 ## Документы и RAG
