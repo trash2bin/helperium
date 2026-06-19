@@ -27,7 +27,7 @@ from fixtures.catalog import (
     SPECIALITIES,
 )
 from rag.repository import DocumentRepository
-from tools.rag import RagTools
+from mcp_server.tools.rag import RagTools
 
 
 DEFAULT_DOCGEN_MODEL = "qwen2.5:0.5b"

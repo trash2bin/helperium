@@ -139,23 +139,28 @@ DEMO: WEB — это просто фронт он общается только 
 
 > **✅ Выполнено**: MCP-сервер полностью переведён на HTTP-клиент к RAG-сервису. Прямая связность удалена, все вызовы идут через `RagClient`.
 
-### 0.3. Перевести `api` на HTTP-клиент к `mcp` и на FastAPI
+### 0.3. Перевести `api` на HTTP-клиент к `mcp` и на FastAPI ✅
 
 На этом подпункте меняется только транспорт и фреймворк, но не бизнес-логика чата.
 
 **Что меняется**:
 
+- `mcp_server/` — вынесена директория для MCP-сервера (ранее `server.py` в корне)
 - `demo/api/agent/mcp_client.py` переключается с `stdio_client` на `mcp.client.streamable_http.streamablehttp_client`.
 - `demo/api/server.py` переводится со Starlette на FastAPI.
 - SSE-стриминг сохраняется без изменения контракта.
 - Публичные эндпоинты `/health`, `/api/data`, `/api/chat`, `/api/backlog`, `/api/backlog/{session_id}`, `/api/session/history` остаются прежними.
+- Добавлена настройка `mcp_service_url` в `demo/settings.py` (дефолт: `http://127.0.0.1:8083/mcp`).
 
 **Проверка подпункта**:
 
+- `python -m mcp_server.server` поднимается (HTTP, порт 8083, mount_path `/mcp`)
 - `python -m demo.api.server` стартует.
 - `curl :8081/health` отвечает.
 - Один полный чат-цикл через SSE проходит с HTTP-MCP.
 - Отдельный тест проверяет, что `call_tool` в MCPClient работает через HTTP.
+
+> **✅ Выполнено**: API сервис переведен на FastAPI и HTTP-клиент к MCP. SSE-стриминг сохранен, бизнес-логика чата не изменена.
 
 ### 0.4. Перевести `web` на FastAPI reverse-proxy и SSE-прокси
 
@@ -523,7 +528,7 @@ docker compose --profile prod up -d
 
 | После этапа | Проверка |
 |---|---|
-| 0 | `uv run mcp dev server.py` (stdio) + `python -m rag.service` + UI чат работает через HTTP MCP-клиент |
+| 0 | `python -m rag.service` + `python -m mcp_server.server` + `python -m demo.api.server` + `python -m demo.web.server` — все 4 сервиса поднимаются, UI чат работает end-to-end через HTTP MCP |
 | 1 | `uv run pytest` — unit + integration зелёные, coverage ≥ 40%, ruff без ошибок |
 | 2 | `docker compose up -d` — 4 long-running сервиса `healthy`, UI чат работает. `tools`/`cron`/`prod` профили стартуют |
 | 2.5 | `docker compose ps` и smoke-проход локализуют падение по сервисам без чтения кода |

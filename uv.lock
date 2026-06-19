@@ -30,13 +30,14 @@ wheels = [
 
 [[package]]
 name = "agent-tutor"
-version = "0.0.33"
+version = "0.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "chonkie", extra = ["semantic"] },
     { name = "chromadb" },
     { name = "docling" },
     { name = "faker" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "litellm" },
     { name = "mcp", extra = ["cli"] },
@@ -53,6 +54,7 @@ requires-dist = [
     { name = "chromadb", specifier = ">=1.5.9" },
     { name = "docling", specifier = ">=2.0.0" },
     { name = "faker", specifier = ">=20.0.0" },
+    { name = "fastapi", specifier = ">=0.137.2" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "litellm", specifier = ">=1.86.2" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.0.0" },
@@ -765,6 +767,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/15/01/28c8ddae8caaf82c929655000963d83e3f01265a9af34e823c2ef2eee8ac/faker-40.19.1.tar.gz", hash = "sha256:76fa71fd3bf320db25e5504eb356f9a76b8a95cd6098524d006f446035b6b89d", size = 1969318, upload-time = "2026-05-22T15:57:37.433Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/b4/40a1ec12ec834604f3848143343baf1c67bc9a1096e401907eaa0d25876a/faker-40.19.1-py3-none-any.whl", hash = "sha256:265259b37c013838baaae34940207288170df385d6c5281413fce56a3504d580", size = 2007643, upload-time = "2026-05-22T15:57:35.867Z" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.137.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e2/29/cc5819dc24d3daa80cdaa1aec023bf8652a70dd7fd1c96b0b225c99a7690/fastapi-0.137.2.tar.gz", hash = "sha256:b9d893bebc97dcfbdcb1917e88a292d062844ea19445a5fa4f7eb28c4baea9e3", size = 410332, upload-time = "2026-06-18T06:58:24.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/ed/0c6b644e99fb5697d8bdcd36cdb47c52e77a63fc7a1514b1f03a6ecab955/fastapi-0.137.2-py3-none-any.whl", hash = "sha256:791d36261e916a98b25ac85ee591bc3db159394070f6d3d096d94fb378f60ce2", size = 122252, upload-time = "2026-06-18T06:58:26.074Z" },
 ]
 
 [[package]]

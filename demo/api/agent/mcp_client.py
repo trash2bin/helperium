@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 
-from demo.settings import PROJECT_ROOT, settings
+from demo.settings import settings
 
 logger = logging.getLogger("demo.api.agent.mcp_client")
 
@@ -24,21 +23,20 @@ class MCPClient:
         self._session_locks: dict[str, Any] = {}
 
     @asynccontextmanager
-    async def get_session(self) -> AsyncIterator[ClientSession]:
-        """Context manager for MCP session."""
-        logger.debug("[MCP] Creating session...")
-        server_path = str(PROJECT_ROOT / "server.py")
-        params = StdioServerParameters(
-            command=settings.python_executable,
-            args=[server_path],
-            env={**dict(os.environ), "PYTHONPATH": str(PROJECT_ROOT)},
-        )
-        async with stdio_client(params) as (read, write):
+    async def get_session(self) -> AsyncGenerator[ClientSession, None]:
+        """Context manager for MCP session using HTTP transport."""
+        logger.debug("[MCP] Creating HTTP session to %s", settings.mcp_service_url)
+
+        # Create HTTP client to MCP server using context manager
+        async with streamable_http_client(
+            url=settings.mcp_service_url,
+            terminate_on_close=True,
+        ) as (read, write, get_session_id):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                logger.debug("[MCP] Session initialized")
+                logger.debug("[MCP] HTTP Session initialized")
                 yield session
-                logger.debug("[MCP] Session closing")
+                logger.debug("[MCP] HTTP Session closing")
 
     async def list_tools(self, session: ClientSession) -> list[dict[str, Any]]:
         """List available MCP tools."""

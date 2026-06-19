@@ -6,13 +6,12 @@ import os
 from typing import Any
 
 import uvicorn
-from starlette.applications import Starlette
-from starlette.middleware.cors import CORSMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse, StreamingResponse
-from starlette.routing import Route
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from demo.api.agent import agent
+from demo.api.agent.types import AgentEventData
 from demo.api.backlog import backlog
 from demo.api.data import data_repository
 from demo.api.sessions import session_store
@@ -52,17 +51,16 @@ async def backlog_list(_: Request) -> JSONResponse:
     return JSONResponse(backlog.list_sessions())
 
 
-async def backlog_detail(request: Request) -> JSONResponse:
+async def backlog_detail(request: Request, session_id: str) -> JSONResponse:
     """Read records of a specific backlog session."""
-    session_id = request.path_params.get("session_id", "")
     limit = int(request.query_params.get("limit", "500"))
     offset = int(request.query_params.get("offset", "0"))
     return JSONResponse(backlog.read_session(session_id, limit=limit, offset=offset))
 
 
-async def session_history(request: Request) -> JSONResponse:
+async def session_history(request: Request, session_id: str = "default") -> JSONResponse:
     """Get chat history for a session."""
-    session_id = str(request.query_params.get("session_id", "")) or "default"
+    session_id = str(session_id or request.query_params.get("session_id", "")) or "default"
     history = session_store.history_messages(session_id)
     return JSONResponse({"messages": history})
 
@@ -98,9 +96,9 @@ def _sse(payload: dict[str, Any]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _event_payload(event_type: str, data: Any) -> dict[str, Any] | None:
+def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | None:
     """Convert internal agent events to the browser-facing SSE payload."""
-    logger.info(f"[SERVER] event_type: {event_type}, data: {data}")
+    logger.info(f"[SERVER] event_type: {event_type}, data: {str(data)[:20]}")
     if event_type == "token":
         return {"type": "token", "text": data.get("data")}
     if event_type == "final":
@@ -126,22 +124,46 @@ def _format_error(exc: BaseException) -> str:
 
 
 # Create the API application
-app = Starlette(
-    routes=[
-        Route("/health", health),
-        Route("/api/data", data),
-        Route("/api/chat", chat, methods=["POST"]),
-        Route("/api/backlog", backlog_list),
-        Route("/api/backlog/{session_id}", backlog_detail),
-        Route("/api/session/history", session_history, methods=["GET"]),
-    ]
-)
+app = FastAPI()
+
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+# Register routes
+@app.get("/health")
+async def health_endpoint(request: Request) -> JSONResponse:
+    return await health(request)
+
+
+@app.get("/api/data")
+async def data_endpoint(request: Request) -> JSONResponse:
+    return await data(request)
+
+
+@app.post("/api/chat")
+async def chat_endpoint(request: Request) -> StreamingResponse:
+    return await chat(request)
+
+
+@app.get("/api/backlog")
+async def backlog_list_endpoint(request: Request) -> JSONResponse:
+    return await backlog_list(request)
+
+
+@app.get("/api/backlog/{session_id}")
+async def backlog_detail_endpoint(request: Request, session_id: str) -> JSONResponse:
+    return await backlog_detail(request, session_id)
+
+
+@app.get("/api/session/history")
+async def session_history_endpoint(request: Request, session_id: str = "default") -> JSONResponse:
+    return await session_history(request, session_id)
 
 
 def main() -> None:

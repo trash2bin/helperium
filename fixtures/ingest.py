@@ -7,6 +7,7 @@ from pathlib import Path
 from db.database import Database
 from fixtures.document_generator import MaterialDocumentGenerator
 from rag.client import RagClient, RAG_SERVICE_URL
+from mcp_server.tools.rag import RagTools
 
 # Settings
 os.environ["RAG_LOCAL_FILES_ONLY"] = "1"
@@ -80,7 +81,7 @@ def cmd_generate(args):
         os.environ["DOCGEN_MODEL"] = args.model
 
     db = Database()
-    from tools.rag import RagTools
+
     rag = RagTools(db)
     generator = MaterialDocumentGenerator(db, rag)
     try:
@@ -109,7 +110,7 @@ def cmd_generate_all(args):
         os.environ["DOCGEN_MODEL"] = args.model
 
     db = Database()
-    from tools.rag import RagTools
+
     rag = RagTools(db)
     generator = MaterialDocumentGenerator(db, rag)
     disciplines = db.get_all_disciplines()
@@ -172,7 +173,7 @@ def cmd_clear_generated(args):
     from db.database import Database
     db = Database()
     rag = RagClient(RAG_SERVICE_URL)
-    
+
     # Получаем список документов через RAG клиент
     docs = rag.list_documents_sync(discipline_id=args.discipline_id)
     rows = [

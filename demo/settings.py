@@ -30,6 +30,9 @@ class DemoSettings:
     backlog_dir: str = os.environ.get("BACKLOG_DIR", str(PROJECT_ROOT / "backlog"))
     backlog_retention_days: int = int(os.environ.get("BACKLOG_RETENTION_DAYS", "30"))
 
+    # MCP service URL for HTTP transport
+    mcp_service_url: str = os.environ.get("MCP_SERVICE_URL", "http://127.0.0.1:8000/mcp")
+
     # Model parameters
     agent_temperature: float = float(os.environ.get("AGENT_TEMPERATURE", "0.5"))
     agent_max_iterations: int = int(os.environ.get("AGENT_MAX_ITERATIONS", "5"))

@@ -213,7 +213,7 @@ def get_health_status() -> dict:
 
 
 def main():
-    mcp.run()
+    mcp.run(transport="streamable-http", mount_path="/mcp")
 
 
 if __name__ == "__main__":

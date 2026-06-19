@@ -49,16 +49,18 @@
 
 ```
 agent-tutor/
-├── server.py           # MCP-сервер, точка входа
+├── mcp_server/        # MCP-сервер (ранее server.py в корне)
+│   ├── __init__.py
+│   ├── server.py       # FastMCP-сервер, точка входа, HTTP-транспорт
+│   └── tools/
+│       ├── student.py  # StudentTools
+│       ├── disciplines.py  # DisciplineTools (get_materials/search_materials через doc_repo)
+│       ├── grades.py   # GradeTools
+│       ├── teacher.py  # TeacherTools
+│       └── rag.py      # Фасад для обратной совместимости (использует RagClient)
 ├── db/
 │   ├── database.py     # SQLite, создание таблиц, загрузка фикстур
 │   └── models.py       # Pydantic-модели (реэкспорт RAG-моделей из rag.models)
-├── tools/
-│   ├── student.py      # StudentTools
-│   ├── disciplines.py  # DisciplineTools (get_materials/search_materials через doc_repo)
-│   ├── grades.py       # GradeTools
-│   ├── teacher.py      # TeacherTools
-│   └── rag.py          # Фасад для обратной совместимости (использует RagClient)
 ├── rag/                # RAG-слой (не зависит от db пакета)
 │   ├── __init__.py     # create_rag_pipeline(connection, config)
 │   ├── config.py       # RagConfig из переменных окружения
@@ -157,7 +159,7 @@ cd agent-tutor
 
 Проект управляется через `uv` и описан в `pyproject.toml`. Основные entrypoint-команды:
 
-- `agent-tutor` — MCP-сервер, точка входа `server:main`.
+- `agent-tutor` — MCP-сервер, точка входа `mcp_server.server:main`.
 - `agent-ingest` — CLI для документов и генерации, точка входа `fixtures.ingest:main`.
 - `rag-service` — HTTP RAG-сервис, точка входа `rag.service:main`.
 
@@ -429,11 +431,11 @@ uv run agent-ingest list
 uv run python -m rag.service
 
 # В другом терминале запускаем MCP-сервер с указанием URL RAG-сервиса
-RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp dev server.py
+RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp_serve/server.py
 ```
 
 В браузере выбрать транспорт **HTTP** (или **STDIO** для development). 
-Для STDIO: укажи команду `uv`, аргументы `run python server.py`, затем нажми Connect.
+Для STDIO: укажи команду `uv`, аргументы `mcp_serve/server.py`, затем нажми Connect.
 Для HTTP: укажи URL `http://127.0.0.1:8083/mcp` (если запущен MCP-сервер с HTTP-транспортом).
 
 
@@ -445,17 +447,19 @@ RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp dev server.py
 
 ## Текущее состояние
 
-Проект находится на стадии рабочего прототипа. **Выполнены punkты 0.0, 0.1, 0.2 из ROADMAP**.
+Проект находится на стадии рабочего прототипа. **Выполнены этапы 0.0, 0.1, 0.2, 0.3 из ROADMAP**.
 
 Работает:
-- MCP-сервер стартует и публикует инструменты
+- MCP-сервер стартует и публикует инструменты (HTTP-транспорт на порту 8083, mount_path `/mcp`)
 - SQLite-база инициализируется и загружает фикстуры при старте
 - Инструменты возвращают типизированные Pydantic-ответы
 - RAG-метаданные хранятся в SQLite, а векторный индекс документов — в ChromaDB
 - **RAG выделен в отдельный HTTP-сервис** (`rag/service.py`) — сервис поднимается на порту 8082
 - **MCP-сервер использует HTTP-клиент** (`rag/client.py`) для вызовов RAG через `RAG_SERVICE_URL`
 - Прямая связность между MCP и RAG-пайплайном удалена
-- `tools/rag.py` оставлен как **минималистичная заглушка** для обратной совместимости с `fixtures/document_generator.py`
+- `mcp_server/tools/rag.py` оставлен как **минималистичная заглушка** для обратной совместимости с `fixtures/document_generator.py`
+- **API сервис переведен на FastAPI** (ранее Starlette), SSE-стриминг сохранен
+- **API использует HTTP-клиент к MCP** (`mcp.client.streamable_http.streamablehttp_client`)
 - Проверено в MCP Inspector и Goose, Claude Code, Pi
 - **Демо-часть**: LiteLLM интеграция, стриминг ответов, память сессий, режим мышления, полный бэклог всех взаимодействий с моделью
 - Сайт доступен для демонстрации
@@ -467,11 +471,11 @@ RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp dev server.py
 # Терминал 1: RAG HTTP-сервис (порт 8082)
 uv run python -m rag.service
 
-# Терминал 2: MCP-сервер (порт 8083, использует RAG по HTTP)
-RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp dev server.py
+# Терминал 2: MCP-сервер (порт 8083, HTTP-транспорт, использует RAG по HTTP)
+RAG_SERVICE_URL=http://127.0.0.1:8082 uv run python -m mcp_server.server
 
-# Терминал 3: API сервер (порт 8081)
-uv run python -m demo.api.server
+# Терминал 3: API сервер (порт 8081, FastAPI, использует MCP по HTTP)
+MCP_SERVICE_URL=http://127.0.0.1:8083/mcp uv run python -m demo.api.server
 
 # Терминал 4: Веб-сервер (порт 8080)
 uv run python -m demo.web.server
