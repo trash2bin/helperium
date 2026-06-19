@@ -5,22 +5,18 @@ import sys
 from pathlib import Path
 
 from db.database import Database
-from fixtures.document_generator import MaterialDocumentGenerator
 from rag.client import RagClient, RAG_SERVICE_URL
-from mcp_server.tools.rag import RagTools
 
 # Settings
 os.environ["RAG_LOCAL_FILES_ONLY"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+
 def cmd_import(args):
     db = Database()
     rag = RagClient(RAG_SERVICE_URL)
     t0 = time.monotonic()
-
-    def progress(stage, **kw):
-        print(f"\n  [{stage.upper()}] ", end="", flush=True)
 
     try:
         result = rag.import_document_sync(
@@ -37,7 +33,6 @@ def cmd_import(args):
 
 
 def cmd_list(args):
-    """Показать загруженные документы."""
     db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
@@ -53,7 +48,6 @@ def cmd_list(args):
 
 
 def cmd_search(args):
-    """Тестовый поиск по документам (без MCP-сервера)."""
     db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
@@ -73,63 +67,6 @@ def cmd_search(args):
         if len(r.content) > 500:
             print("...")
     db.close()
-
-
-def cmd_generate(args):
-    """Сгенерировать PDF/DOCX-материалы для дисциплины."""
-    if args.model:
-        os.environ["DOCGEN_MODEL"] = args.model
-
-    db = Database()
-
-    rag = RagTools(db)
-    generator = MaterialDocumentGenerator(db, rag)
-    try:
-        materials = generator.ensure_materials(
-            discipline_id=args.discipline_id,
-            force=args.force,
-        )
-        if not materials:
-            print("Дисциплина не найдена или материалы не созданы.")
-            db.close()
-            return
-
-        for material in materials:
-            print(f"  {material.type}: {material.file_name}  {material.source_path}")
-        print(f"\nВсего: {len(materials)}")
-    except RuntimeError as e:
-        print(f"ERR {e}", file=sys.stderr)
-        sys.exit(1)
-    finally:
-        db.close()
-
-
-def cmd_generate_all(args):
-    """Сгенерировать PDF/DOCX-материалы для всех дисциплин."""
-    if args.model:
-        os.environ["DOCGEN_MODEL"] = args.model
-
-    db = Database()
-
-    rag = RagTools(db)
-    generator = MaterialDocumentGenerator(db, rag)
-    disciplines = db.get_all_disciplines()
-    created_total = 0
-
-    try:
-        for index, discipline in enumerate(disciplines, 1):
-            print(f"[{index}/{len(disciplines)}] {discipline.name}")
-            materials = generator.ensure_materials(discipline.id, force=args.force)
-            for material in materials:
-                print(f"  {material.type}: {material.file_name}")
-            created_total += len(materials)
-
-        print(f"\nГотово. Дисциплин: {len(disciplines)}, файлов в базе: {created_total}")
-    except RuntimeError as e:
-        print(f"ERR {e}", file=sys.stderr)
-        sys.exit(1)
-    finally:
-        db.close()
 
 
 def _delete_documents(db: Database, rag: RagClient, rows) -> int:
@@ -169,12 +106,9 @@ def _cleanup_empty_generated_dirs() -> None:
 
 
 def cmd_clear_generated(args):
-    """Удалить сгенерированные материалы из SQLite, ChromaDB и с диска."""
-    from db.database import Database
     db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
-    # Получаем список документов через RAG клиент
     docs = rag.list_documents_sync(discipline_id=args.discipline_id)
     rows = [
         {"id": doc.id, "source_path": doc.source_path}
@@ -189,14 +123,11 @@ def cmd_clear_generated(args):
 
 
 def cmd_delete(args):
-    """Удалить документ из индекса."""
     db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
-    # По пути или по id
     if args.path:
         source_path = str(Path(args.path).resolve())
-        # Нужно получить ID документа по пути
         docs = rag.list_documents_sync()
         row = None
         for doc in docs:
@@ -208,7 +139,6 @@ def cmd_delete(args):
             db.close()
             return
     elif args.document_id:
-        # По document_id - нужно получить информацию о документе
         docs = rag.list_documents_sync()
         row = None
         for doc in docs:
@@ -236,49 +166,28 @@ def main():
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # import
     p_import = sub.add_parser("import", help="Загрузить документ в индекс")
-    p_import.add_argument("path", help="Путь к файлу (PDF, DOCX, TXT, MD, HTML)")
-    p_import.add_argument("--discipline-id", "-d", help="ID дисциплины для привязки")
-    p_import.add_argument("--title", "-t", help="Название документа")
+    p_import.add_argument("path", help="Путь к файлу")
+    p_import.add_argument("--discipline-id", "-d", help="ID дисциплины")
+    p_import.add_argument("--title", "-t", help="Название")
     p_import.set_defaults(func=cmd_import)
 
-    # list
-    p_list = sub.add_parser("list", help="Показать загруженные документы")
+    p_list = sub.add_parser("list", help="Список документов")
     p_list.add_argument("--discipline-id", "-d", help="Фильтр по дисциплине")
     p_list.set_defaults(func=cmd_list)
 
-    # search
-    p_search = sub.add_parser("search", help="Тестовый поиск по документам")
-    p_search.add_argument("query", help="Поисковый запрос")
-    p_search.add_argument("--discipline-id", "-d", help="Фильтр по дисциплине")
-    p_search.add_argument("--limit", "-n", type=int, default=5, help="Кол-во результатов")
+    p_search = sub.add_parser("search", help="Поиск по документам")
+    p_search.add_argument("query", help="Запрос")
+    p_search.add_argument("--discipline-id", "-d", help="Фильтр")
+    p_search.add_argument("--limit", "-n", type=int, default=5)
     p_search.set_defaults(func=cmd_search)
 
-    # generate
-    p_generate = sub.add_parser("generate", help="Сгенерировать PDF/DOCX-материалы дисциплины")
-    p_generate.add_argument("--discipline-id", "-d", required=True, help="ID дисциплины")
-    p_generate.add_argument("--force", action="store_true", help="Пересоздать файлы")
-    p_generate.add_argument("--model", "-m", help="Модель Ollama, например qwen2.5:0.5b")
-    p_generate.set_defaults(func=cmd_generate)
+    p_clear = sub.add_parser("clear-generated", help="Очистить сгенерированные")
+    p_clear.add_argument("--discipline-id", "-d", help="Фильтр")
+    p_clear.set_defaults(func=cmd_clear_generated)
 
-    # generate-all
-    p_generate_all = sub.add_parser("generate-all", help="Сгенерировать PDF/DOCX-материалы для всех дисциплин")
-    p_generate_all.add_argument("--force", action="store_true", help="Пересоздать файлы")
-    p_generate_all.add_argument("--model", "-m", help="Модель Ollama, например qwen2.5:0.5b")
-    p_generate_all.set_defaults(func=cmd_generate_all)
-
-    # clear-generated
-    p_clear_generated = sub.add_parser(
-        "clear-generated",
-        help="Удалить сгенерированные материалы из базы, ChromaDB и с диска",
-    )
-    p_clear_generated.add_argument("--discipline-id", "-d", help="ID дисциплины")
-    p_clear_generated.set_defaults(func=cmd_clear_generated)
-
-    # delete
-    p_delete = sub.add_parser("delete", help="Удалить документ из индекса")
-    p_delete.add_argument("--path", help="Путь к файлу документа")
+    p_delete = sub.add_parser("delete", help="Удалить документ")
+    p_delete.add_argument("--path", help="Путь к файлу")
     p_delete.add_argument("--document-id", help="ID документа")
     p_delete.set_defaults(func=cmd_delete)
 
@@ -287,5 +196,4 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Ingest script started")
     main()

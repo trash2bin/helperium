@@ -11,10 +11,10 @@ from db.models import (
     Student,
     Teacher,
 )
-from tools.student import StudentTools
-from tools.disciplines import DisciplineTools
-from tools.grades import GradeTools
-from tools.teacher import TeacherTools
+from mcp_server.tools.student import StudentTools
+from mcp_server.tools.disciplines import DisciplineTools
+from mcp_server.tools.grades import GradeTools
+from mcp_server.tools.teacher import TeacherTools
 from rag.client import RagClient, RAG_SERVICE_URL
 from rag.models import Document, RagContext, RagSearchResult
 

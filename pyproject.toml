@@ -1,8 +1,8 @@
 [project]
 name = "agent-tutor"
-version = "0.0.4"
+version = "0.0.6"
 readme = "README.md"
-description = "University MCP server"
+description = "An AI assistant for the university help site"
 requires-python = ">=3.12, <3.14" # tokie (dependencies for chonkie) needs Python 3.12+ and <3.14 (stable)
 dependencies = [
     "mcp[cli]>=1.0.0",
@@ -23,8 +23,10 @@ dependencies = [
 [project.scripts]
 agent-tutor = "mcp_server.server:main"
 agent-ingest = "fixtures.ingest:main" # Ingest documents into the local RAG index
+agent-generate = "fixtures.agent_generate:main" # Generate educational materials
 agent-chat-api = "demo.api:main"
 agent-demo-web = "demo.web:main"
+agent-rag = "rag.service:main"
 
 [build-system]
 requires = ["hatchling"]
