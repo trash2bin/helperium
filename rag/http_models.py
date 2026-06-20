@@ -63,6 +63,42 @@ class HealthResponse(BaseModel):
     embedding: dict = Field(default_factory=dict, description="Статус embedding-модели")
 
 
+class ListDocumentsResponse(BaseModel):
+    """Список документов в индексе."""
+
+    documents: List[dict] = Field(..., description="Список метаданных документов")
+    count: int = Field(..., description="Общее количество найденных документов")
+
+
+class ImportDocumentResponse(BaseModel):
+    """Результат импорта документа."""
+
+    document: dict = Field(..., description="Метаданные импортированного документа")
+    chunks_count: int = Field(..., description="Количество созданных чанков")
+
+
+class DeleteDocumentResponse(BaseModel):
+    """Результат удаления документа."""
+
+    deleted: Optional[str] = Field(default=None, description="ID удалённого документа")
+    title: Optional[str] = Field(default=None, description="Название удалённого документа")
+    message: Optional[str] = Field(default=None, description="Сообщение о результате (например, если документ не найден)")
+
+
+class SearchResponse(BaseModel):
+    """Результаты семантического поиска."""
+
+    results: List[dict] = Field(..., description="Список найденных фрагментов")
+    count: int = Field(..., description="Общее количество результатов")
+
+
+class ContextResponse(BaseModel):
+    """Сформированный контекст для LLM."""
+
+    context: str = Field(..., description="Объединённый текст релевантных фрагментов")
+    sources: List[dict] = Field(..., description="Список источников, использованных в контексте")
+
+
 class ErrorResponse(BaseModel):
     """Унифицированный ответ об ошибке."""
 

@@ -6,7 +6,7 @@ import os
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -16,6 +16,14 @@ from demo.api.backlog import backlog
 from demo.api.data import data_repository
 from demo.api.sessions import session_store
 from demo.settings import settings
+from demo.api.http_models import (
+    BacklogDetailResponse,
+    BacklogListResponse,
+    ChatRequest,
+    DataOverviewResponse,
+    HealthResponse,
+    SessionHistoryResponse,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -31,47 +39,60 @@ if os.environ.get("DEMO_DEBUG", "").lower() in ("1", "true", "yes"):
     print("[DEMO] Debug logging enabled for agent and MCP")
 
 
-async def health(_: Request) -> JSONResponse:
+# === Business Logic Handlers ===
+
+async def get_health() -> HealthResponse:
     """Health check endpoint."""
     payload: dict[str, Any] = {"api": "ok"}
     try:
         payload["ollama"] = await agent.health()
     except Exception as exc:
         payload["ollama"] = {"status": "error", "error": str(exc)}
-    return JSONResponse(payload)
+    return HealthResponse(**payload)
 
 
-async def data(_: Request) -> JSONResponse:
+async def get_data() -> DataOverviewResponse:
     """Get demo data overview."""
-    return JSONResponse(data_repository.overview())
+    return DataOverviewResponse(data=data_repository.overview())
 
 
-async def backlog_list(_: Request) -> JSONResponse:
+async def get_backlog_list() -> BacklogListResponse:
     """List all backlog sessions."""
-    return JSONResponse(backlog.list_sessions())
+    return BacklogListResponse(sessions=backlog.list_sessions())
 
 
-async def backlog_detail(request: Request, session_id: str) -> JSONResponse:
+async def get_backlog_detail(session_id: str, limit: int = 500, offset: int = 0) -> BacklogDetailResponse:
     """Read records of a specific backlog session."""
-    limit = int(request.query_params.get("limit", "500"))
-    offset = int(request.query_params.get("offset", "0"))
-    return JSONResponse(backlog.read_session(session_id, limit=limit, offset=offset))
+    records = backlog.read_session(session_id, limit=limit, offset=offset)
+    return BacklogDetailResponse(
+        records=records,
+        session_id=session_id,
+        count=len(records)
+    )
 
 
-async def session_history(request: Request, session_id: str = "default") -> JSONResponse:
+async def get_session_history(session_id: str = "default") -> SessionHistoryResponse:
     """Get chat history for a session."""
-    session_id = str(session_id or request.query_params.get("session_id", "")) or "default"
     history = session_store.history_messages(session_id)
-    return JSONResponse({"messages": history})
+    return SessionHistoryResponse(messages=history)
 
 
-async def chat(request: Request) -> StreamingResponse:
+async def chat_handler(request: Request) -> StreamingResponse:
     """Streaming chat endpoint that handles user messages."""
-    body = await request.json()
-    message = str(body.get("message", "")).strip()
-    session_id = str(body.get("session_id", "")).strip() or "default"
+    try:
+        body = await request.json()
+        chat_req = ChatRequest(**body)
+    except Exception as exc:
+        return StreamingResponse(_single_error(f"Invalid request body: {exc}"), media_type="text/event-stream")
+
+    message = chat_req.message
+    session_id = chat_req.session_id
+
     if not message:
         return StreamingResponse(_single_error("Введите вопрос."), media_type="text/event-stream")
+
+    if not session_id:
+        return StreamingResponse(_single_error("Введите session_id."), media_type="text/event-stream")
 
     async def events():
         try:
@@ -124,7 +145,11 @@ def _format_error(exc: BaseException) -> str:
 
 
 # Create the API application
-app = FastAPI()
+app = FastAPI(
+    title="Agent-Tutor Core API",
+    description="Backend API for the Agent-Tutor system. Handles orchestration, session history, and tool integration.",
+    version="0.1.0",
+)
 
 # CORS middleware
 app.add_middleware(
@@ -136,34 +161,67 @@ app.add_middleware(
 
 
 # Register routes
-@app.get("/health")
-async def health_endpoint(request: Request) -> JSONResponse:
-    return await health(request)
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Проверка здоровья API",
+    description="Проверяет работоспособность API и доступность LLM провайдера."
+)
+async def health_endpoint():
+    return await get_health()
 
 
-@app.get("/api/data")
-async def data_endpoint(request: Request) -> JSONResponse:
-    return await data(request)
+@app.get(
+    "/api/data",
+    response_model=DataOverviewResponse,
+    summary="Обзор данных",
+    description="Возвращает сводную информацию о доступных данных университета."
+)
+async def data_endpoint():
+    return await get_data()
 
 
-@app.post("/api/chat")
+@app.post(
+    "/api/chat",
+    summary="Стриминг чата",
+    description="Основной эндпоинт для общения с агентом. Возвращает поток SSE событий."
+)
 async def chat_endpoint(request: Request) -> StreamingResponse:
-    return await chat(request)
+    return await chat_handler(request)
 
 
-@app.get("/api/backlog")
-async def backlog_list_endpoint(request: Request) -> JSONResponse:
-    return await backlog_list(request)
+@app.get(
+    "/api/backlog",
+    response_model=BacklogListResponse,
+    summary="Список сессий бэклога",
+    description="Возвращает список всех сохраненных сессий из бэклога."
+)
+async def backlog_list_endpoint():
+    return await get_backlog_list()
 
 
-@app.get("/api/backlog/{session_id}")
-async def backlog_detail_endpoint(request: Request, session_id: str) -> JSONResponse:
-    return await backlog_detail(request, session_id)
+@app.get(
+    "/api/backlog/{session_id}",
+    response_model=BacklogDetailResponse,
+    summary="Детали сессии бэклога",
+    description="Возвращает все события конкретной сессии."
+)
+async def backlog_detail_endpoint(
+    session_id: str,
+    limit: int = Query(500, ge=1),
+    offset: int = Query(0, ge=0)
+):
+    return await get_backlog_detail(session_id, limit, offset)
 
 
-@app.get("/api/session/history")
-async def session_history_endpoint(request: Request, session_id: str = "default") -> JSONResponse:
-    return await session_history(request, session_id)
+@app.get(
+    "/api/session/history",
+    response_model=SessionHistoryResponse,
+    summary="История сессии",
+    description="Возвращает историю сообщений для указанной сессии."
+)
+async def session_history_endpoint(session_id: str = Query("default")):
+    return await get_session_history(session_id)
 
 
 def main() -> None:

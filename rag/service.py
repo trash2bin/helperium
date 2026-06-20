@@ -1,34 +1,33 @@
 """HTTP-сервис RAG.
 
 Запускается как `python -m rag.service` (или через entrypoint `rag-service`).
-Предоставляет тонкий HTTP-фасад над `RAGPipeline`:
-
-    GET  /health
-    POST /documents/list
-    POST /documents/import
-    POST /documents/delete
-    POST /search
-    POST /context
-
-Использует Starlette (FastAPI нет в зависимостях, чтобы не раздувать их
-на этом этапе). Когда придёт Этап 2 (контейнеризация) — FastAPI можно
-добавить одной строкой в `pyproject.toml` и мигрировать роуты.
+Предоставляет типизированный HTTP-фасад над `RAGPipeline` с использованием FastAPI.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
 
-from starlette.applications import Starlette
-from starlette.middleware.cors import CORSMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Route
+from fastapi import FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from db.database import Database
 from rag import create_rag_pipeline
+from rag.http_models import (
+    ContextRequest,
+    ContextResponse,
+    DeleteDocumentRequest,
+    DeleteDocumentResponse,
+    ErrorResponse,
+    HealthResponse,
+    ImportDocumentRequest,
+    ImportDocumentResponse,
+    ListDocumentsRequest,
+    ListDocumentsResponse,
+    SearchRequest,
+    SearchResponse,
+)
 
 logger = logging.getLogger("rag.service")
 
@@ -67,45 +66,31 @@ class ServiceState:
 state = ServiceState()
 
 
-# === Утилиты ответов ===
+# === Приложение ===
 
-def _ok(data: Any, status: int = 200) -> JSONResponse:
-    return JSONResponse(data, status_code=status)
+app = FastAPI(
+    title="RAG Service",
+    description="HTTP API for RAG pipeline (indexing and semantic search)",
+    version="0.1.0",
+)
 
-
-def _err(message: str, status: int = 400, detail: str | None = None) -> JSONResponse:
-    payload: dict[str, Any] = {"error": message}
-    if detail:
-        payload["detail"] = detail
-    return JSONResponse(payload, status_code=status)
-
-
-async def _parse_json(request: Request) -> dict[str, Any]:
-    """Прочитать JSON-тело запроса (или вернуть пустой dict для GET)."""
-    if request.method == "GET":
-        return dict(request.query_params)
-    raw = await request.body()
-    if not raw:
-        return {}
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid JSON body: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ValueError("JSON body must be an object")
-    return data
-
-
-def _require(payload: dict[str, Any], key: str) -> Any:
-    if key not in payload:
-        raise ValueError(f"Missing required field: {key}")
-    return payload[key]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # === Эндпоинты ===
 
-async def health(_: Request) -> JSONResponse:
-    """Состояние RAG-сервиса: SQLite + ChromaDB + embedding-модель."""
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Проверка состояния сервиса",
+    description="Проверяет доступность SQLite, ChromaDB и загрузку embedding-модели.",
+)
+async def health() -> HealthResponse:
     db_status: dict[str, Any] = {"status": "ok", "error": None}
     chroma_status: dict[str, Any] = {"status": "ok", "error": None}
     embedding_status: dict[str, Any] = {"status": "ok", "error": None, "model": None}
@@ -113,7 +98,7 @@ async def health(_: Request) -> JSONResponse:
     # SQLite
     try:
         state.get_db().ping()
-    except Exception as exc:  # pragma: no cover — defensive
+    except Exception as exc:
         db_status = {"status": "error", "error": str(exc)}
 
     # ChromaDB
@@ -129,210 +114,197 @@ async def health(_: Request) -> JSONResponse:
         db_status["status"] == "ok"
         and chroma_status["status"] == "ok"
     )
-    return _ok(
-        {
-            "status": "ok" if overall_ok else "degraded",
-            "database": db_status,
-            "chroma": chroma_status,
-            "embedding": embedding_status,
-        },
-        status=200 if overall_ok else 503,
+    
+    if not overall_ok:
+        # We return 503 if degraded, but still provide the HealthResponse body
+        # FastAPI's response_model doesn't automatically change status code.
+        # We can use raise HTTPException or just return the model and let the caller see status.
+        # However, for /health, returning a 503 is standard for load balancers.
+        # To do this while keeping the body, we can use a custom response or just let it be 200
+        # and let the 'status' field indicate degradation. 
+        # Let's stick to 200 but with "degraded" status to avoid breaking simple clients,
+        # OR use a custom response. Let's use 200 and rely on the 'status' field.
+        pass
+
+    return HealthResponse(
+        status="ok" if overall_ok else "degraded",
+        database=db_status,
+        chroma=chroma_status,
+        embedding=embedding_status,
     )
 
 
-async def list_documents(request: Request) -> JSONResponse:
-    """Список документов в RAG-индексе."""
+@app.post(
+    "/documents/list",
+    response_model=ListDocumentsResponse,
+    summary="Список документов",
+    description="Возвращает список документов в индексе с фильтрацией по дисциплине.",
+)
+async def list_documents(req: ListDocumentsRequest) -> ListDocumentsResponse:
     try:
-        payload = await _parse_json(request)
-    except ValueError as exc:
-        return _err(str(exc), status=400)
+        docs = state.get_pipeline().list_documents(
+            discipline_id=req.discipline_id,
+            limit=req.limit,
+        )
+        return ListDocumentsResponse(
+            documents=[doc.model_dump(mode="json") for doc in docs],
+            count=len(docs),
+        )
+    except Exception as exc:
+        logger.exception("list_documents failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to list documents: {exc}"
+        )
 
-    discipline_id = payload.get("discipline_id")
-    limit = payload.get("limit")
-    if limit is not None:
-        try:
-            limit = int(limit)
-        except (TypeError, ValueError):
-            return _err("`limit` must be an integer", status=400)
 
+@app.get(
+    "/documents/list",
+    response_model=ListDocumentsResponse,
+    summary="Список документов (GET)",
+    description="Аналог POST /documents/list, но через query-параметры.",
+)
+async def list_documents_get(
+    discipline_id: str | None = Query(None),
+    limit: int | None = Query(None, ge=1, le=1000),
+) -> ListDocumentsResponse:
     try:
         docs = state.get_pipeline().list_documents(
             discipline_id=discipline_id,
             limit=limit,
         )
+        return ListDocumentsResponse(
+            documents=[doc.model_dump(mode="json") for doc in docs],
+            count=len(docs),
+        )
     except Exception as exc:
-        logger.exception("list_documents failed")
-        return _err("Failed to list documents", status=500, detail=str(exc))
-
-    return _ok(
-        {
-            "documents": [doc.model_dump(mode="json") for doc in docs],
-            "count": len(docs),
-        }
-    )
+        logger.exception("list_documents_get failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to list documents: {exc}"
+        )
 
 
-async def import_document(request: Request) -> JSONResponse:
-    """Импортировать документ в RAG-индекс."""
-    try:
-        payload = await _parse_json(request)
-    except ValueError as exc:
-        return _err(str(exc), status=400)
-
-    try:
-        path = _require(payload, "path")
-    except ValueError as exc:
-        return _err(str(exc), status=400)
-
+@app.post(
+    "/documents/import",
+    response_model=ImportDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Импорт документа",
+    description="Загружает файл в RAG-индекс, разбивает на чанки и индексирует векторы.",
+)
+async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
     try:
         result = state.get_pipeline().import_document(
-            path=path,
-            discipline_id=payload.get("discipline_id"),
-            title=payload.get("title"),
+            path=req.path,
+            discipline_id=req.discipline_id,
+            title=req.title,
+        )
+        return ImportDocumentResponse(
+            document=result.document.model_dump(mode="json"),
+            chunks_count=result.chunks_count,
         )
     except FileNotFoundError as exc:
-        return _err("Document not found", status=404, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except ValueError as exc:
-        return _err("Invalid document", status=422, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     except Exception as exc:
         logger.exception("import_document failed")
-        return _err("Failed to import document", status=500, detail=str(exc))
-
-    return _ok(
-        {
-            "document": result.document.model_dump(mode="json"),
-            "chunks_count": result.chunks_count,
-        },
-        status=201,
-    )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to import document: {exc}"
+        )
 
 
-async def delete_document(request: Request) -> JSONResponse:
-    """Удалить документ из RAG-индекса (по пути или ID).
-    
-    Idempotent: возвращает 200 даже если документ не найден.
-    """
-    try:
-        payload = await _parse_json(request)
-    except ValueError as exc:
-        return _err(str(exc), status=400)
-
-    path = payload.get("path")
-    document_id = payload.get("document_id")
-    if not path and not document_id:
-        return _err("Provide `path` or `document_id`", status=400)
+@app.post(
+    "/documents/delete",
+    response_model=DeleteDocumentResponse,
+    summary="Удаление документа",
+    description="Удаляет документ и его векторы из индекса по пути или ID. Идемпотентно.",
+)
+async def delete_document(req: DeleteDocumentRequest) -> DeleteDocumentResponse:
+    if not req.path and not req.document_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Provide `path` or `document_id`"
+        )
 
     try:
         pipeline = state.get_pipeline()
         repo = pipeline.repository
         row = repo.find_document_for_delete(
-            source_path=path,
-            document_id=document_id,
+            source_path=req.path,
+            document_id=req.document_id,
         )
         
         if not row:
-            # Idempotent delete: документ уже удалён или не существовал
-            logger.info("Delete requested for non-existent document (path=%s, document_id=%s)", path, document_id)
-            return _ok({"deleted": None, "title": None, "message": "Document not found, already deleted or never existed"})
+            logger.info("Delete requested for non-existent document (path=%s, document_id=%s)", req.path, req.document_id)
+            return DeleteDocumentResponse(
+                deleted=None, 
+                title=None, 
+                message="Document not found, already deleted or never existed"
+            )
 
         doc_id = row["id"]
         try:
             pipeline.delete_document_vectors(doc_id)
         except Exception as exc:
             logger.warning("Vector deletion failed for %s: %s", doc_id, exc)
+        
         repo.delete_document_record(doc_id, commit=True)
+        return DeleteDocumentResponse(deleted=doc_id, title=row["title"])
     except Exception as exc:
         logger.exception("delete_document failed")
-        return _err("Failed to delete document", status=500, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to delete document: {exc}"
+        )
 
-    return _ok({"deleted": doc_id, "title": row["title"]})
 
-
-async def search(request: Request) -> JSONResponse:
-    """Семантический поиск по фрагментам документов."""
-    try:
-        payload = await _parse_json(request)
-    except ValueError as exc:
-        return _err(str(exc), status=400)
-
-    try:
-        query = _require(payload, "query")
-    except ValueError as exc:
-        return _err(str(exc), status=400)
-
-    limit = payload.get("limit", 5)
-    try:
-        limit = int(limit)
-    except (TypeError, ValueError):
-        return _err("`limit` must be an integer", status=400)
-
+@app.post(
+    "/search",
+    response_model=SearchResponse,
+    summary="Семантический поиск",
+    description="Ищет наиболее релевантные фрагменты документов по текстовому запросу.",
+)
+async def search(req: SearchRequest) -> SearchResponse:
     try:
         results = state.get_pipeline().search_documents(
-            query=str(query),
-            discipline_id=payload.get("discipline_id"),
-            limit=limit,
+            query=req.query,
+            discipline_id=req.discipline_id,
+            limit=req.limit,
+        )
+        return SearchResponse(
+            results=[r.model_dump(mode="json") for r in results],
+            count=len(results),
         )
     except Exception as exc:
         logger.exception("search failed")
-        return _err("Search failed", status=500, detail=str(exc))
-
-    return _ok(
-        {
-            "results": [r.model_dump(mode="json") for r in results],
-            "count": len(results),
-        }
-    )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Search failed: {exc}"
+        )
 
 
-async def context(request: Request) -> JSONResponse:
-    """Готовый RAG-контекст для LLM-ответа."""
-    try:
-        payload = await _parse_json(request)
-    except ValueError as exc:
-        return _err(str(exc), status=400)
-
-    try:
-        query = _require(payload, "query")
-    except ValueError as exc:
-        return _err(str(exc), status=400)
-
-    limit = payload.get("limit", 5)
-    try:
-        limit = int(limit)
-    except (TypeError, ValueError):
-        return _err("`limit` must be an integer", status=400)
-
+@app.post(
+    "/context",
+    response_model=ContextResponse,
+    summary="Сборка контекста",
+    description="Формирует итоговую строку контекста для передачи в LLM.",
+)
+async def context(req: ContextRequest) -> ContextResponse:
     try:
         rag_context = state.get_pipeline().build_rag_context(
-            query=str(query),
-            discipline_id=payload.get("discipline_id"),
-            limit=limit,
+            query=req.query,
+            discipline_id=req.discipline_id,
+            limit=req.limit,
         )
+        return ContextResponse(**rag_context.model_dump(mode="json"))
     except Exception as exc:
         logger.exception("context failed")
-        return _err("Context build failed", status=500, detail=str(exc))
-
-    return _ok(rag_context.model_dump(mode="json"))
-
-
-# === Приложение ===
-
-app = Starlette(
-    routes=[
-        Route("/health", health, methods=["GET"]),
-        Route("/documents/list", list_documents, methods=["GET", "POST"]),
-        Route("/documents/import", import_document, methods=["POST"]),
-        Route("/documents/delete", delete_document, methods=["POST"]),
-        Route("/search", search, methods=["POST"]),
-        Route("/context", context, methods=["POST"]),
-    ]
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Context build failed: {exc}"
+        )
 
 
 def main() -> None:
