@@ -219,16 +219,14 @@ DEMO: WEB — это просто фронт он общается только 
 **Выполнено на этапе 0.5***
 
 
-## Этап 1. Тестовая инфраструктура
+## Этап 1. Тестовая инфраструктура и стандартизация API
 
-**Цель**: покрыть тестами модули, изменённые в Этапе 0 и которые будут меняться в Этапе 2. **Покрытие ≥ 40%** на Этапе 1, поднимается по мере рефакторингов.
+**Цель**: обеспечить надежность системы через комплексное тестирование и внедрение строгого API-контракта. **Покрытие ≥ 40%** на данном этапе.
 
 ### 1.1. Зависимости
-
 Добавить в `pyproject.toml` (`[dependency-groups]` или `[project.optional-dependencies.test]`): `pytest>=8`, `pytest-asyncio>=0.24`, `pytest-cov>=5`, `pytest-mock>=3.14`, `respx>=0.21` (мок httpx), `freezegun>=1.5`, `httpx>=0.28`, `ruff>=0.7`.
 
 ### 1.2. Структура `tests/`
-
 ```
 tests/
 ├── conftest.py
@@ -245,48 +243,40 @@ tests/
 │   └── api/         (chat_flow.py — SSE-сценарии с моками LLMClient/MCPClient)
 └── fixtures/        (paragraphs.txt коммитится; PDF/DOCX генерируются в conftest.py)
 ```
+PDF/DOCX-фикстуры генерируются через `fixtures/document_generator.py` в `tmp_path`. 
+Настройки Pytest: `asyncio_mode = "auto"`, маркеры `unit/integration/e2e/slow`, `coverage.fail_under = 40`.
 
-PDF/DOCX-фикстуры не коммитятся — генерируются через `fixtures/document_generator.py` в `tmp_path`. Pytest: `asyncio_mode = "auto"`, маркеры `unit/integration/e2e/slow`, `coverage.fail_under = 40`.
+### 1.3. Стандартизация API (OpenAPI/Swagger)
+Перед написанием интеграционных тестов все FastAPI-сервисы (`rag`, `api`, `web`) должны иметь декларативный контракт:
+- **Типизация**: Обязательное использование Pydantic `BaseModel` для всех Request/Response моделей.
+- **Аннотации**: Каждый эндпоинт должен иметь `response_model`, `summary` и `description`.
+- **Валидация**: Описание полей через `Field` и явное указание HTTP-кодов ответов.
+- **Доступность**: Работающий `/docs` (Swagger UI) и `/openapi.json` для каждого сервиса.
+- **Цель**: Использование этой схемы в тестах для автоматической проверки соответствия ответов контракту.
 
-### 1.3. Обязательный минимум кейсов
+### 1.4. Обязательный минимум кейсов
+Без этих кейсов этап 1 не закрыт. Детализированный список — в `doc/TEST_CASES.md`.
 
-Без этих кейсов этап 1 не закрыт. Остальное — в `doc/TEST_CASES.md` (по мере надобности).
+- **RAG**: `config.py` (env), `parser.py` (edge-cases), `chunker.py` (стратегии), `vector_store.py` (ChromaDB в `tmp`), `repository.py` (транзакции), `pipeline.py` (import/search), `service.py` (`/health`, `/search`, `/import`), `client.py` (через `respx`).
+- **DB**: `database.py` (все методы + edge-кейсы).
+- **Tools**: по 1 позитивному и 1 негативному сценарию на каждый инструмент.
+- **MCP**: проверка каждого тула через HTTP-клиент к поднятому в subprocess серверу.
+- **Core API**: `sessions.py` (round-trip), `backlog.py` (events/cleanup), `tool_parser.py` (разные JSON-форматы), `orchestrator.py` (4 базовых сценария), `mcp_client.py` (call_tool happy/error), `server.py` (SSE-стриминг).
+- **CLI**: `ingest.py` (smoke-тест валидации аргументов).
 
-- **`rag/config.py`**: `from_env()`, дефолт `chroma_path`.
-- **`rag/parser.py`**: пустой PDF → `[]`; текстовые форматы напрямую; несуществующий путь → `FileNotFoundError`.
-- **`rag/chunker.py`**: 3 стратегии на `paragraphs.txt` стабильны; `chunk_pages` с многостраничным входом.
-- **`rag/vector_store.py`** (реальная ChromaDB в `tmp_chroma_path`): `add_chunks`→`search`, `delete_by_document_id`, фильтр по `discipline_id`.
-- **`rag/repository.py`**: `save_document_with_chunks` откатывает SQLite и чистит vector_store при ошибке chroma; `delete_document` каскадно.
-- **`rag/pipeline.py`**: `import_document` happy + пустой результат → `ValueError`; `search_documents` пустой query → `[]`.
-- **`rag/service.py`**: `/health` (200/503), `/search`, `/documents/import`.
-- **`rag/client.py`** (через `respx`): все методы.
-- **`db/database.py`**: все методы + edge-кейсы.
-- **`tools/*.py`**: по 1 позитивному + 1 негативному на тул.
-- **`server.py`**: каждый тул вызывается через HTTP MCP-клиент к поднятому subprocess.
-- **`demo/api/sessions.py`**: round-trip, `_compact_message`, `_trim_session`.
-- **`demo/api/backlog.py`**: каждый тип события пишется/читается; cleanup.
-- **`demo/api/agent/tool_parser.py`**: native + markdown JSON + «голый» JSON + невалидный; `format_for_model`.
-- **`demo/api/agent/orchestrator.py`**: **4 сценария** — (1) прямой ответ, (2) tool→final, (3) `max_iterations` → fallback, (4) исключение в MCPClient → `tool_result` с `ok=false`.
-- **`demo/api/agent/mcp_client.py`**: `call_tool` happy + ошибка; парсинг `structuredContent`.
-- **`demo/api/server.py`**: `/health`, `/api/data`, `/api/chat` с пустым сообщением → SSE error.
-- **`fixtures/ingest.py`**: только smoke — argparse валидация, без сети.
+### 1.5. Что НЕ тестируем в Этапе 1
+- Глубокие сценарии оркестратора (достаточно 4-х базовых).
+- Внутренности внешних библиотек (размер батча embedding, токенизация `chonkie` и т.д.).
+- In-memory транспорт FastMCP (только subprocess + HTTP).
+- `fixtures/document_generator.py` (зависимость от внешнего LLM).
+- Реальная модель embedding в unit-тестах (используем мок `EmbeddingProtocol`).
+- Pydantic-модели отдельно (покрываются статическим анализом и тестами эндпоинтов).
 
-### 1.6. Стандартизация API (OpenAPI/Swagger)
-
-Для всех сервисов (`rag`, `api`, `web`) обеспечить полнофункциональное документирование API:
-
-- **Типизация**: Использование Pydantic `BaseModel` для всех Request/Response моделей.
-- **Аннотации**: Добавление `response_model`, `summary`, `description` для всех эндпоинтов.
-- **Валидация**: Добавление описаний полей через `Field` и корректных кодов ответов.
-- **Доступность**: Убедиться, что `/docs` (Swagger UI) доступен для каждого сервиса и корректно отображает структуру API.
-- **Цель**: Использование OpenAPI-схем в интеграционных тестах для автоматической проверки контрактов (например, через `fastapi.testclient` или валидацию ответов).
-
-### 1.7. Критерии готовности этапа 1
-
-- `uv run pytest -m "unit or integration"` — все зелёные.
-- `uv run pytest --cov --cov-fail-under=40` показывает покрытие ≥ 40% для `db`, `tools`, `rag`, `demo`, `server` (исключая `demo/web/static/*`, `fixtures/document_generator.py`, `fixtures/generate.py`).
+### 1.6. Критерии готовности этапа 1
+- `uv run pytest -m "unit or integration"` — все тесты проходят.
+- `uv run pytest --cov --cov-fail-under=40` — покрытие ≥ 40% (кроме статики и генераторов).
 - `uv run ruff check .` и `uv run ruff format --check .` — без ошибок.
-- Для всех эндпоинтов `rag`, `api`, `web` сгенерированы корректные спецификации OpenAPI (проверка через `curl :808x/openapi.json`).
+- Для всех сервисов (`rag`, `api`, `web`) доступны корректные спецификации OpenAPI (проверка через `curl :808x/openapi.json`).
 
 ---
 
