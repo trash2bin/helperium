@@ -271,20 +271,22 @@ PDF/DOCX-фикстуры не коммитятся — генерируются
 - **`demo/api/server.py`**: `/health`, `/api/data`, `/api/chat` с пустым сообщением → SSE error.
 - **`fixtures/ingest.py`**: только smoke — argparse валидация, без сети.
 
-### 1.4. Что НЕ тестируем в Этапе 1
+### 1.6. Стандартизация API (OpenAPI/Swagger)
 
-- 10 детальных сценариев оркестратора (хватает 4).
-- Размер батча embedding, точная токенизация (тесты на chonkie/sentence-transformers, не наш код).
-- In-memory FastMCP транспорт. Используем subprocess + HTTP.
-- `fixtures/document_generator.py` (завязан на Ollama).
-- Реальная embedding-модель в unit — только в integration с моком `EmbeddingProtocol`.
-- Pydantic-модели отдельно — type-checker покрывает лучше.
+Для всех сервисов (`rag`, `api`, `web`) обеспечить полнофункциональное документирование API:
 
-### 1.5. Критерии готовности этапа 1
+- **Типизация**: Использование Pydantic `BaseModel` для всех Request/Response моделей.
+- **Аннотации**: Добавление `response_model`, `summary`, `description` для всех эндпоинтов.
+- **Валидация**: Добавление описаний полей через `Field` и корректных кодов ответов.
+- **Доступность**: Убедиться, что `/docs` (Swagger UI) доступен для каждого сервиса и корректно отображает структуру API.
+- **Цель**: Использование OpenAPI-схем в интеграционных тестах для автоматической проверки контрактов (например, через `fastapi.testclient` или валидацию ответов).
+
+### 1.7. Критерии готовности этапа 1
 
 - `uv run pytest -m "unit or integration"` — все зелёные.
 - `uv run pytest --cov --cov-fail-under=40` показывает покрытие ≥ 40% для `db`, `tools`, `rag`, `demo`, `server` (исключая `demo/web/static/*`, `fixtures/document_generator.py`, `fixtures/generate.py`).
 - `uv run ruff check .` и `uv run ruff format --check .` — без ошибок.
+- Для всех эндпоинтов `rag`, `api`, `web` сгенерированы корректные спецификации OpenAPI (проверка через `curl :808x/openapi.json`).
 
 ---
 
