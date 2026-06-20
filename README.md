@@ -1,482 +1,320 @@
 # agent-tutor
 
-Полноценный агент с MCP-сервером для университетского ассистента на базе LLM. Даёт языковой модели доступ к данным об учебном процессе через набор инструментов — студенты, расписание, дисциплины, учебные материалы. А также прикрученным RAG для поиска учебных материалов по содержимому.
+LLM-агент для университетского ассистента. Даёт языковой модели доступ к учебным данным (студенты, расписание, оценки, материалы) через MCP-инструменты и семантический поиск по документам.
 
-| Часть | Описание |
-|---|---|
-| MCP-сервер | Сервер для взаимодействия с базой данной и RAG|
-| RAG | Поиск учебных материалов по содержимому (отдельный HTTP-сервис) |
-| API с агентом | Взаимодействия с агентом и сам кастомный клиент агента: [Ядро агента](demo/api/agent/) |
-| Web UI | Сайт визитка с чатом для взаимодействия с агентом и презентации |
+Четыре независимых HTTP-сервиса + CLI-утилиты. Работает с Ollama, Mistral, OpenAI и любым провайдером через LiteLLM.
 
-## Что умеет
-
-Чем может пользоватся агент:
-
-| Инструмент | Что делает |
-|---|---|
-| `get_student(student_id)` | Карточка студента |
-| `find_student_by_name(name)` | Поиск студента по ФИО |
-| `get_schedule(group_id, day?)` | Расписание группы, опционально по дню |
-| `get_disciplines(student_id)` | Дисциплины студента через его группу |
-| `get_materials(discipline_id, type?)` | Список файлов по дисциплине |
-| `search_materials(query, discipline_id?)` | Поиск по содержимому материалов |
-| `get_student_grades(student_id, discipline_id?)` | Оценки студента, опционально по одной дисциплине |
-| `get_teacher_by_name(name)` | Поиск преподавателя |
-| `get_teacher_schedule(teacher_name, day?)` | Расписание преподавателя |
-| `list_documents(discipline_id?)` | Список документов в RAG-индексе |
-| `search_documents(query, discipline_id?, limit?)` | Поиск релевантных фрагментов документов |
-| `get_rag_context(query, discipline_id?, limit?)` | Готовый контекст для ответа по документам |
-
-> **Примечание:** `import_document` доступен только через CLI `agent-ingest`, не через MCP-сервер.
-
-
-## Стек
-
-- Python 3.12 и 3.13
-- [FastMCP](https://github.com/modelcontextprotocol/python-sdk) — транспортный слой MCP
-- [LiteLLM](https://github.com/BerriAI/litellm) — унифицированный интерфейс для работы с различными LLM-провайдерами
-- SQLite — локальное хранилище
-- Pydantic — схемы ответов
-- Faker — генерация тестовых данных
-- python-docx — генерация DOCX-материалов для фикстур
-- встроенный PDF-генератор — генерация PDF-лекций для фикстур без внешних утилит
-- Sentence Transformers — локальная embedding-модель
-- ChromaDB — локальная векторная база для RAG-поиска
-- Ollama — локальная генерация текста материалов через `agent-ingest`
-
-## Структура
+## Архитектура
 
 ```
-agent-tutor/
-├── mcp_server/        # MCP-сервер (ранее server.py в корне)
-│   ├── __init__.py
-│   ├── server.py       # FastMCP-сервер, точка входа, HTTP-транспорт
-│   └── tools/
-│       ├── student.py  # StudentTools
-│       ├── disciplines.py  # DisciplineTools (get_materials/search_materials через doc_repo)
-│       ├── grades.py   # GradeTools
-│       ├── teacher.py  # TeacherTools
-│       └── rag.py      # Фасад для обратной совместимости (использует RagClient)
-├── db/
-│   ├── database.py     # SQLite, создание таблиц, загрузка фикстур
-│   └── models.py       # Pydantic-модели (реэкспорт RAG-моделей из rag.models)
-├── rag/                # RAG-слой (не зависит от db пакета)
-│   ├── __init__.py     # create_rag_pipeline(connection, config)
-│   ├── config.py       # RagConfig из переменных окружения
-│   ├── interfaces.py   # EmbeddingProtocol, VectorStoreProtocol
-│   ├── embeddings.py   # SentenceTransformerEmbedding
-│   ├── vector_store.py # ChromaDBVectorStore
-│   ├── parser.py       # DocumentParser (PDF, DOCX, TXT, MD, HTML)
-│   ├── chunker.py      # TextChunker (semantic, recursive, sentence)
-│   ├── repository.py   # DocumentRepository — CRUD документов/чанков в SQLite
-│   ├── pipeline.py     # RAGPipeline — оркестрация парсинг → чанкинг → сохранение
-│   ├── models.py       # Pydantic-модели (Document, Material, RagSearchResult, ...)
-│   ├── http_models.py  # HTTP DTO модели для RAG-сервиса
-│   ├── service.py      # HTTP-сервис RAG (Starlette) — endpoint'ы /health, /search, /context, /documents/*
-│   └── client.py       # HTTP-клиент для вызовов RAG-сервиса из MCP
-├── fixtures/
-│   ├── generate.py     # Генератор тестовых данных
-│   ├── ingest.py       # CLI agent-ingest для RAG-документов и генерации материалов
-│   └── document_generator.py # Генерация PDF/DOCX-материалов для фикстур
-├── demo/               # Демо-часть: API и веб-интерфейс
-│   ├── settings.py     # Конфигурация demo (порты, Ollama URL, таймауты)
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── agent/      # Логика агента: orchestrator, LLM, MCP, инструменты, контекст
-│   │   ├── backlog.py  # Бэклог взаимодействий с моделью (JSONL)
-│   │   ├── data.py     # Управление базой данных
-│   │   └── server.py   # REST/SSE API сервер
-│   └── web/
-│       ├── __init__.py
-│       ├── server.py   # Статический веб-сервер
-│       └── static/     # Статические файлы (HTML, CSS, JS)
-└── fixtures.json       # Тестовые данные
+web:8080 → api:8081 → mcp:8083 → rag:8082
+                ↓
+         LLM-провайдер (Ollama / Mistral / OpenAI / …)
 ```
 
-## Архитектура RAG-пакета
-
-Пакет `rag/` не зависит от `db/`.
-`DocumentRepository` принимает сырой `sqlite3.Connection`.
-
-- `rag/interfaces.py` — протоколы (`EmbeddingProtocol`, `VectorStoreProtocol`) для подмены реализаций
-- `rag/embeddings.py` → `SentenceTransformerEmbedding`, `rag/vector_store.py` → `ChromaDBVectorStore`
-- Pydantic-модели (`Document`, `Material`, `RagSearchResult`, ...) переехали в `rag/models.py`; `db/models.py` реэкспортирует
-- `server.py` использует `create_rag_pipeline(db.connector)` напрямую (вместо `RagTools`)
-
-### Новая архитектура (Этап 0 выполнен)
-
-RAG выделен в **отдельный HTTP-сервис**:
-- `rag/service.py` — Starlette-приложение с endpoint'ами:
-  - `GET /health` — проверка статуса сервиса
-  - `POST /search` — семантический поиск по документам
-  - `POST /context` — получение RAG-контекста для LLM
-  - `POST /documents/list` — список документов
-  - `POST /documents/import` — импорт документа
-  - `POST /documents/delete` — удаление документа
-- `rag/client.py` — HTTP-клиент для вызовов RAG-сервиса из MCP и других компонентов
-- `rag/http_models.py` — Pydantic-модели для HTTP-контракта
-- MCP-сервер (`server.py`) использует `RagClient` для вызовов RAG через HTTP
-- `tools/rag.py` оставлен как **минималистичная заглушка** для обратной совместимости с `fixtures/document_generator.py`
-
-## RAG по документам
-
-RAG-слой работает локально через SQLite + ChromaDB:
-
-1. `import_document` читает файл.
-2. Текст разбивается на чанки.
-3. Для каждого чанка считается embedding моделью `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
-4. Векторы и тексты чанков сохраняются в ChromaDB.
-5. Метаданные документов сохраняются в SQLite.
-6. `search_documents` ищет похожие фрагменты в ChromaDB.
-7. `get_rag_context` возвращает фрагменты и инструкцию для модели: отвечать только по найденным источникам.
-
-По умолчанию ChromaDB хранит индекс в папке `chroma_db/`.
-
-При первом использовании RAG embedding-модель может скачаться из Hugging Face, если запуск идёт через MCP-сервер и `RAG_LOCAL_FILES_ONLY` не включён. CLI `agent-ingest` сейчас принудительно выставляет `RAG_LOCAL_FILES_ONLY=1`, поэтому для него модель должна быть уже в локальном кэше или задана локальным путём через `RAG_EMBEDDING_MODEL`.
-
-```bash
-RAG_LOCAL_FILES_ONLY=1
-RAG_DEVICE=cuda
-```
-
-Пример:
-
-```bash
-uv run agent-ingest import ~/Documents/test.pdf
-```
-
-```text
-Найди задание под номером 11 в Методичка по базам данных
-```
+| Сервис | Стек | Стандартный порт | Назначение |
+|---|---|---|---|
+| `mcp` | FastMCP | 8083 | MCP-сервер, инструменты доступа к данным |
+| `rag` | FastAPI | 8082 | Поиск по документам (ChromaDB + SQLite) |
+| `api` | FastAPI + LiteLLM | 8081 | Оркестратор агента, SSE-стриминг |
+| `web` | FastAPI | 8080 | Веб-интерфейс, reverse-proxy к API |
 
 ## Быстрый старт
 
 ```bash
 git clone https://github.com/trash2bin/agent-tutor
 cd agent-tutor
-```
-
-Проект управляется через `uv` и описан в `pyproject.toml`. Основные entrypoint-команды:
-
-- `agent-tutor` — MCP-сервер, точка входа `mcp_server.server:main`.
-- `agent-ingest` — CLI для документов и генерации, точка входа `fixtures.ingest:main`.
-- `rag-service` — HTTP RAG-сервис, точка входа `rag.service:main`.
-
-Базовые команды:
-
-```bash
-uv sync
-uv run agent-ingest --help
-uv run mcp dev server.py
-uv run python -m rag.service  # Запуск RAG HTTP-сервиса на порту 8082
-uv tool install . --reinstall
-```
-
-Используй `uv run ...` для разработки. `uv tool install . --reinstall` нужен, когда нужно обновить глобально установленную CLI-команду после изменения кода.
-
-## Демо-сайт и чат
-
-Для демонстрации есть два компонента, разделённые на API и веб-часть:
-
-- **API сервер** (`demo/api/server.py`) — REST/SSE API над моделькой, отвечает за вызов моделей через LiteLLM, работу с инструментами и управление контекстом
-- **Веб-сервер** (`demo/web/server.py`) — статический сайт с витриной данных и плавающим окном чата
-
-Архитектура API:
-- `demo/api/agent/` — логика агента: вызов модели через LiteLLM, подключение к MCP-серверу, вызов инструментов, валидация вызовов, рекурсивные вызовы моделей, память контекста, стриминг ответов, обработка reasoning; основной оркестратор находится в `demo/api/agent/orchestrator.py`
-- `demo/api/backlog.py` — полный бэклог взаимодействий: JSONL-файл на каждую сессию с запросами, ответами, вызовами инструментов, токенами и таймингами (хранит данные в `backlog/`)
-- `demo/api/server.py` — HTTP API с endpoints: `GET /health`, `GET /api/data`, `POST /api/chat` (Server-Sent Events), `GET /api/backlog`, `GET /api/backlog/{session_id}`
-
-### Ключевые особенности
-
-- **LiteLLM интеграция**: Агент использует LiteLLM для унифицированной работы с различными LLM-провайдерами
-- **Режим мышления**: Модель может рассуждать в несколько этап приходя к конкретному ответу пользователю
-- **Стриминг ответов**: Потоковая передача токенов и событий через Server-Sent Events (SSE)
-- **Память сессий**: Автоматическое хранение истории диалога для каждой сессии
-- **Полный бэклог**: Все взаимодействия с моделью логируются в JSONL-файлах в папке `backlog/`
-
-Запуск:
-
-```bash
-# API сервер (порт по умолчанию 8081)
-uv run python -m demo.api.server
-
-# Запуск с Mostral
-DEMO_DEBUG=1 MISTRAL_API_KEY={TOKEN} MISTRAL_MODEL=mistral-medium uv run python -m demo.api.server
-
-# Веб-сервер (порт по умолчанию 8080)
-uv run python -m demo.web.server
-```
-
-По умолчанию сайт доступен на `http://127.0.0.1:8080`, API — на `http://127.0.0.1:8081`.
-
-Переменные окружения:
-- `DEMO_API_HOST`/`DEMO_API_PORT` — хост/порт API сервера (по умолчанию `127.0.0.1:8081`)
-- `DEMO_WEB_HOST`/`DEMO_WEB_PORT` — хост/порт веб-сервера (по умолчанию `127.0.0.1:8080`)
-- `OLLAMA_URL` — адрес Ollama (по умолчанию `http://127.0.0.1:11434`)
-- `OLLAMA_MODEL` — модель Ollama (по умолчанию `qwen2.5:0.5b`)
-- `DEMO_REQUEST_TIMEOUT` — таймаут запросов (по умолчанию `600` секунд = 10 минут)
-- `ENABLE_THINK` — включить режим мышления/рассуждений (`true`/`false`, по умолчанию `true`)
-- `DEMO_HISTORY_TURNS` — количество хранимых ходов в истории сессии (по умолчанию `8`)
-- `DEMO_HISTORY_CONTENT_CHARS` — максимальная длина содержимого в истории (по умолчанию `6000`)
-- `BACKLOG_DIR` — папка для JSONL-файлов бэклога (по умолчанию `./backlog/`)
-- `BACKLOG_RETENTION_DAYS` — дней хранить файлы бэклога (по умолчанию `30`)
-- `LITELLM_DEBUG` — включить отладочный режим LiteLLM (`true`/`false`)
-- `DEMO_DEBUG` — 1 включить отладочный режим demo
-
-Пример запуска с кастомной моделью:
-```bash
-OLLAMA_MODEL=carstenuhlig/omnicoder-9b:latest uv run python -m demo.api.server
-```
-
-> **Примечание:** Для работы демо требуется запущенный локальный Ollama (или другой провайдер, поддерживаемый LiteLLM).
-
-Синхронизировать зависимости в локальное окружение `.venv`:
-
-```bash
 uv sync
 ```
 
-Запускать команды без активации окружения:
+Запуск (4 терминала, порядок важен):
 
 ```bash
-uv run agent-ingest --help
-uv run agent-tutor
+uv run agent-rag          # Терминал 1 — RAG-сервис :8082
+uv run agent-tutor        # Терминал 2 — MCP-сервер :8083
+uv run agent-chat-api     # Терминал 3 — API-сервер :8081
+uv run agent-demo-web     # Терминал 4 — Веб-сервер :8080
 ```
 
-## Виртуальное окружение
+Откройте `http://127.0.0.1:8080`.
 
-Чаще всего достаточно `uv sync`: он создаёт `.venv`, если его ещё нет, и ставит зависимости из `pyproject.toml`/`uv.lock`.
+По умолчанию агент ожидает Ollama на `http://127.0.0.1:11434`. Другие провайдеры:
 
-Полезные команды для работы с виртуальным окружением:
+```bash
+# Mistral
+MISTRAL_API_KEY=<token> MISTRAL_MODEL=mistral-medium uv run agent-chat-api
 
-| Команда | Что делает |
+# OpenAI
+OPENAI_API_KEY=<token> uv run agent-chat-api
+```
+
+## MCP-инструменты
+
+| Инструмент | Что делает |
 |---|---|
-| `uv sync` | Создать/обновить `.venv` по `uv.lock` |
-| `uv run <command>` | Запустить команду внутри проектного окружения |
-| `uv venv --python 3.12` | Явно создать `.venv` на Python 3.12 |
-| `source .venv/bin/activate` | Активировать окружение в текущем shell |
-| `deactivate` | Выйти из активированного окружения |
-| `uv pip list` | Показать пакеты в `.venv` |
-| `uv add <package>` | Добавить runtime-зависимость в `pyproject.toml` |
-| `uv remove <package>` | Удалить зависимость из проекта |
-| `rm -rf .venv && uv sync` | Пересоздать окружение с нуля |
+| `get_student(student_id)` | Карточка студента |
+| `find_student_by_name(name)` | Поиск студента по ФИО |
+| `get_schedule(group_id, day?)` | Расписание группы |
+| `get_disciplines(student_id)` | Дисциплины студента |
+| `get_materials(discipline_id, type?)` | Список файлов по дисциплине |
+| `search_materials(query, discipline_id?)` | Поиск по содержимому материалов |
+| `get_student_grades(student_id, discipline_id?)` | Оценки студента |
+| `get_teacher_by_name(name)` | Поиск преподавателя |
+| `get_teacher_schedule(teacher_name, day?)` | Расписание преподавателя |
+| `list_documents(discipline_id?)` | Список документов в RAG-индексе |
+| `search_documents(query, discipline_id?, limit?)` | Поиск релевантных фрагментов |
+| `get_rag_context(query, discipline_id?, limit?)` | Контекст для ответа по документам |
 
-Для разработки обычно удобнее использовать `uv run ...`, так как команда всегда использует текущий код и зависимости из проекта. Установка через `uv tool install . --reinstall` нужна, когда требуется обновить глобально установленную CLI-команду после изменения кода.
+> `import_document` доступен только через CLI `agent-ingest`, не через MCP.
 
-Если нужна тестовая база данных (`fixtures.json`):
+## Стек
 
-```bash
-uv run python fixtures/generate.py
+- **Python 3.12 / 3.13**, `uv` — управление зависимостями
+- **FastMCP** — MCP-транспорт (HTTP и stdio)
+- **FastAPI + uvicorn** — HTTP-сервисы с OpenAPI
+- **LiteLLM** — единый клиент для Ollama, OpenAI, Mistral, Anthropic, Groq и др.
+- **SQLite** — хранилище студентов, дисциплин, документов
+- **ChromaDB** — векторный индекс для семантического поиска
+- **Sentence Transformers** — локальные embeddings (`paraphrase-multilingual-MiniLM-L12-v2`)
+- **pytest + pytest-asyncio + respx** — тестовая инфраструктура
+
+## Структура проекта
+
+```
+agent-tutor/
+├── mcp_server/              # MCP-сервер (FastMCP, HTTP :8083)
+│   ├── server.py
+│   └── tools/
+│       ├── student.py
+│       ├── disciplines.py
+│       ├── grades.py
+│       ├── teacher.py
+│       └── rag.py           # Фасад → RagClient (обратная совместимость)
+├── rag/                     # RAG HTTP-сервис (FastAPI, :8082)
+│   ├── service.py           # /health /search /context /documents/*
+│   ├── client.py            # HTTP-клиент для MCP и других сервисов
+│   ├── http_models.py       # Pydantic DTO для HTTP-контракта
+│   ├── pipeline.py          # парсинг → чанкинг → embedding → ChromaDB
+│   ├── embeddings.py        # SentenceTransformerEmbedding
+│   ├── vector_store.py      # ChromaDBVectorStore
+│   ├── repository.py        # CRUD документов в SQLite
+│   ├── models.py            # Pydantic-модели домена
+│   ├── interfaces.py        # EmbeddingProtocol, VectorStoreProtocol
+│   ├── config.py            # RagConfig из env
+│   ├── parser.py            # DocumentParser (PDF, DOCX, TXT, MD, HTML)
+│   └── chunker.py           # TextChunker (semantic, recursive, sentence)
+├── db/
+│   ├── database.py          # SQLite, схема, загрузка фикстур
+│   └── models.py            # Pydantic-модели (реэкспорт из rag.models)
+├── demo/
+│   ├── settings.py          # Все env-переменные demo-части
+│   ├── api/
+│   │   ├── server.py        # FastAPI — /health /api/data /api/chat (SSE) /api/backlog
+│   │   ├── backlog.py       # JSONL-бэклог всех взаимодействий с моделью
+│   │   ├── data.py          # Репозиторий данных
+│   │   ├── http_models.py   # Pydantic DTO для API
+│   │   └── agent/
+│   │       ├── orchestrator.py  # Оркестратор агента
+│   │       ├── llm_client.py    # Клиент LiteLLM
+│   │       ├── mcp_client.py    # HTTP-клиент к MCP
+│   │       └── tool_parser.py   # Парсер вызовов инструментов
+│   └── web/
+│       ├── server.py        # FastAPI reverse-proxy + SSE-прокси + статика
+│       └── static/          # HTML/CSS/JS
+├── fixtures/
+│   ├── generate.py          # Генератор fixtures.json (Faker)
+│   ├── ingest.py            # CLI agent-ingest
+│   └── document_generator.py  # Генерация PDF/DOCX через Ollama
+├── tests/
+│   ├── conftest.py
+│   ├── unit/                # rag/, db/, tools/, demo/
+│   └── integration/         # rag/, mcp/, api/
+├── fixtures.json            # Тестовые данные
+└── pyproject.toml
 ```
 
-Установить CLI-команды как `uv tool`:
+## RAG
+
+1. `agent-ingest import <file>` читает PDF / DOCX / TXT / MD / HTML.
+2. Текст разбивается на чанки (тип — `RAG_CHUNKER_TYPE`: `semantic`, `recursive`, `sentence`).
+3. Для каждого чанка считается embedding через `paraphrase-multilingual-MiniLM-L12-v2`.
+4. Векторы → ChromaDB, метаданные → SQLite.
+5. `search_documents` ищет ближайшие фрагменты по cosine similarity.
+6. `get_rag_context` возвращает готовый контекст с инструкцией для модели.
 
 ```bash
-uv tool install .
+# Загрузить документы
+uv run agent-ingest import ./lectures/lec01.pdf -d "cs-101" -t "Лекция 1: Введение"
+uv run agent-ingest import ./lectures/lec02.pdf -d "cs-101" -t "Лекция 2: Сортировки"
+
+# Проверить
+uv run agent-ingest list
+uv run agent-ingest search "быстрая сортировка" -n 3
+
+# Удалить
+uv run agent-ingest delete --document-id <id>
 ```
 
-Пересобрать пакет после изменения кода:
+> `agent-ingest` принудительно выставляет `RAG_LOCAL_FILES_ONLY=1` — embedding-модель должна быть в локальном кэше или задана через `RAG_EMBEDDING_MODEL`.
 
-```bash
-uv tool install . --reinstall
-```
+## Демо-часть
 
-`uv tool install` ставит команду в отдельное tool-окружение. Для разработки обычно удобнее `uv run ...`, потому что команда всегда использует текущий код и зависимости из проекта.
+Сайт: `http://127.0.0.1:8080`
+Swagger UI: `http://127.0.0.1:8082/docs` (RAG), `http://127.0.0.1:8081/docs` (API), `http://127.0.0.1:8080/docs` (Web)
 
-## Виртуальное окружение uv
+API-эндпоинты:
+- `GET /health` — статус сервиса
+- `GET /api/data` — учебные данные для витрины
+- `POST /api/chat` — SSE-стриминг ответа агента
+- `GET /api/backlog` / `GET /api/backlog/{session_id}` — история запросов
+- `GET /api/session/history` — история текущей сессии
 
-Чаще всего достаточно `uv sync`: он создаёт `.venv`, если его ещё нет, и ставит зависимости из `pyproject.toml`/`uv.lock`.
+Особенности агента:
+- **LiteLLM** — Ollama, OpenAI, Mistral, Anthropic, Groq и др. без смены кода
+- **Стриминг** — SSE с событиями `token`, `tool_call`, `tool_result`, `final`, `error`
+- **Память сессий** — хранит `DEMO_HISTORY_TURNS` последних ходов (по умолчанию 8)
+- **Режим мышления** — `ENABLE_THINK=true` передаёт `reasoning_content` модели
+- **Бэклог** — все запросы / ответы / инструменты / токены / тайминги в JSONL (`./backlog/`)
 
-Полезные команды:
+## CLI
 
-| Команда | Что делает |
-|---|---|
-| `uv sync` | Создать/обновить `.venv` по `uv.lock` |
-| `uv run <command>` | Запустить команду внутри проектного окружения |
-| `uv venv --python 3.12` | Явно создать `.venv` на Python 3.12 |
-| `source .venv/bin/activate` | Активировать окружение в текущем shell |
-| `deactivate` | Выйти из активированного окружения |
-| `uv pip list` | Показать пакеты в `.venv` |
-| `uv add <package>` | Добавить runtime-зависимость в `pyproject.toml` |
-| `uv remove <package>` | Удалить зависимость из проекта |
-| `rm -rf .venv && uv sync` | Пересоздать окружение с нуля |
-
-## CLI `agent-ingest`
-
-`agent-ingest` находится в `fixtures/ingest.py`. Он работает с локальной SQLite-базой, ChromaDB-индексом и генератором учебных материалов. Принудительно выставляет `RAG_LOCAL_FILES_ONLY=1`, поэтому embedding-модель должна быть в локальном кэше или задана локальным путём через `RAG_EMBEDDING_MODEL`.
-
-Общий формат:
+### `agent-ingest`
 
 ```bash
 uv run agent-ingest <command> [options]
 ```
 
-Если пакет установлен через `uv tool install . --reinstall`, можно запускать без `uv run`:
-
-```bash
-agent-ingest <command> [options]
-```
-
-Команды:
-
-| Команда | Назначение |
-|---|---|
-| `import <path>` | Загрузить PDF/DOCX/TXT/MD/HTML в RAG-индекс |
-| `list` | Показать документы в индексе |
-| `search <query>` | Проверить семантический поиск без MCP-сервера |
-| `generate -d <discipline-id>` | Сгенерировать материалы для одной дисциплины |
-| `generate-all` | Сгенерировать материалы для всех дисциплин |
-| `clear-generated` | Удалить сгенерированные материалы из SQLite, ChromaDB и с диска |
-| `delete` | Удалить один документ из индекса |
-
-Опции команд:
-
-| Команда | Опция | Что делает |
+| Команда | Опции | Назначение |
 |---|---|---|
-| `import` | `path` | Путь к документу: PDF, DOCX, TXT, MD или HTML |
-| `import` | `--discipline-id`, `-d` | Привязать документ к дисциплине |
-| `import` | `--title`, `-t` | Задать человекочитаемое название документа |
-| `list` | `--discipline-id`, `-d` | Показать документы только одной дисциплины |
-| `search` | `query` | Поисковый запрос |
-| `search` | `--discipline-id`, `-d` | Искать только в документах одной дисциплины |
-| `search` | `--limit`, `-n` | Количество результатов, по умолчанию `5` |
-| `generate` | `--discipline-id`, `-d` | ID дисциплины, обязательная опция |
-| `generate` | `--force` | Пересоздать файлы дисциплины |
-| `generate` | `--model`, `-m` | Переопределить Ollama-модель для запуска |
-| `generate-all` | `--force` | Пересоздать файлы всех дисциплин |
-| `generate-all` | `--model`, `-m` | Переопределить Ollama-модель для запуска |
-| `clear-generated` | `--discipline-id`, `-d` | Удалить генерацию только одной дисциплины |
-| `delete` | `--path` | Удалить документ по точному исходному пути |
-| `delete` | `--document-id` | Удалить документ по ID из `agent-ingest list` |
+| `import <path>` | `-d <discipline-id>`, `-t <title>` | Загрузить документ в RAG-индекс |
+| `list` | `-d <discipline-id>` | Список документов |
+| `search <query>` | `-d <discipline-id>`, `-n <limit>` | Семантический поиск |
+| `delete` | `--document-id <id>` или `--path <path>` | Удалить документ |
+| `clear-generated` | `-d <discipline-id>` | Удалить сгенерированные материалы |
 
-Загрузить документ в RAG:
+### `agent-generate`
 
 ```bash
-# Загрузил лекции
-uv run agent-ingest import ./lectures/lec01.pdf -d "cs-101" -t "Лекция 1: Введение"
-uv run agent-ingest import ./lectures/lec02.pdf -d "cs-101" -t "Лекция 2: Сортировки"
-uv run agent-ingest import ./textbook.docx -t "Учебник Алохи"
-
-# Проверил что загрузилось
-uv run agent-ingest list
-
-# Протестировал поиск
-uv run agent-ingest search "как работает быстрая сортировка" -n 3
-
-# Если результат не устраивает
-uv run agent-ingest import ./lectures/lec02.pdf -d "cs-101" -t "Лекция 2: Сортировки (исправленная)"
-
-# Удаление
-uv run agent-ingest delete --document-id e077bb64-31e6-4d37-98c6-d2f350d7a947
+uv run agent-generate <command> [options]
 ```
+
+| Команда | Опции | Назначение |
+|---|---|---|
+| `generate` | `-d <discipline-id>`, `--force`, `-m <model>` | Сгенерировать материалы дисциплины |
+| `generate-all` | `--force`, `-m <model>` | Сгенерировать материалы всех дисциплин |
+
+Генерация требует Ollama. Проверка: `curl http://127.0.0.1:11434/api/tags`
 
 ## Переменные окружения
 
-`agent-ingest` при старте сам выставляет:
+### RAG
 
-| Переменная | Значение | Зачем |
+| Переменная | По умолчанию | Описание |
 |---|---|---|
-| `RAG_LOCAL_FILES_ONLY` | `1` | Не скачивать embedding-модель из сети при CLI-импорте |
-| `HF_HUB_DISABLE_TELEMETRY` | `1` | Отключить telemetry Hugging Face |
-| `TOKENIZERS_PARALLELISM` | `false` | Убрать лишний parallelism/warning tokenizer-библиотек |
-
-Настройки базы и RAG:
-
-| Переменная | По умолчанию | Зачем |
-|---|---|---|
-| `DB_PATH` | `./university.db` | Путь к SQLite-базе |
-| `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | URL RAG HTTP-сервиса для MCP-сервера |
-| `RAG_HOST` | `127.0.0.1` | Хост RAG-сервиса |
-| `RAG_PORT` | `8082` | Порт RAG-сервиса |
-| `RAG_HTTP_TIMEOUT` | `60.0` | Таймаут HTTP-запросов к RAG-сервису (секунды) |
-| `RAG_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | HF-id или локальный путь к embedding-модели |
-| `RAG_EMBEDDING_BATCH_SIZE` | `64` | Размер батча для embeddings |
-| `RAG_DEVICE` | `cpu` | Устройство для embeddings: `cpu`, `cuda`, `mps` |
-| `RAG_CHUNKER_TYPE` | `semantic` | Тип чанкинга: `semantic`, `recursive`, `sentence` |
+| `RAG_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | HF-id или локальный путь |
+| `RAG_EMBEDDING_BATCH_SIZE` | `64` | Батч для embeddings |
+| `RAG_DEVICE` | `cpu` | `cpu`, `cuda`, `mps` |
+| `RAG_CHUNKER_TYPE` | `semantic` | `semantic`, `recursive`, `sentence` |
 | `RAG_CHUNK_SIZE` | `512` | Целевой размер чанка |
 | `RAG_CHUNK_OVERLAP` | `80` | Перекрытие чанков |
-| `RAG_PAGE_OVERLAP_TOKENS` | `50` | Перекрытие текста между страницами |
-| `CHROMA_PATH` | `./chroma_db` | Папка ChromaDB-индекса |
-| `CHROMA_COLLECTION` | `university_documents` | Имя коллекции ChromaDB |
-| `RAG_CONTEXT_MAX_TOKENS` | `8000` | Максимальный размер контекста для `get_rag_context` |
+| `RAG_PAGE_OVERLAP_TOKENS` | `50` | Перекрытие между страницами |
+| `CHROMA_PATH` | `./chroma_db` | Папка ChromaDB |
+| `CHROMA_COLLECTION` | `university_documents` | Имя коллекции |
+| `RAG_CONTEXT_MAX_TOKENS` | `8000` | Лимит токенов в `get_rag_context` |
+| `RAG_LOCAL_FILES_ONLY` | — | `1` — не скачивать модель из сети |
 
-Настройки генерации материалов:
+### MCP
 
-Генерация материалов требует локальную Ollama. Проверка доступности: `curl ${OLLAMA_HOST:-http://127.0.0.1:11434}/api/tags`.
-
-| Переменная | По умолчанию | Зачем |
+| Переменная | По умолчанию | Описание |
 |---|---|---|
-| `DOCGEN_MODEL` | `qwen2.5:0.5b` | Ollama-модель для генерации текста |
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Базовый адрес Ollama, если не задан `DOCGEN_OLLAMA_URL` |
-| `DOCGEN_OLLAMA_URL` | `$OLLAMA_HOST/api/generate` | Полный endpoint Ollama generate API |
+| `MCP_TRANSPORT` | `http` | `http` или `stdio` (только для `uv run mcp dev`) |
+| `MCP_HOST` | `127.0.0.1` | Хост MCP-сервера |
+| `MCP_PORT` | `8083` | Порт MCP-сервера |
+| `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | URL RAG-сервиса |
+
+### API
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `MCP_SERVICE_URL` | `http://127.0.0.1:8083/mcp` | URL MCP-сервиса |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Адрес Ollama |
+| `OLLAMA_MODEL` | `qwen2.5:0.5b` | Модель Ollama |
+| `MISTRAL_API_KEY` | — | Ключ Mistral API |
+| `MISTRAL_MODEL` | — | Модель Mistral |
+| `DEMO_REQUEST_TIMEOUT` | `600` | Таймаут turn агента (сек); в prod: `90` |
+| `ENABLE_THINK` | `true` | Режим мышления; в prod: `false` |
+| `DEMO_HISTORY_TURNS` | `8` | Ходов в истории сессии |
+| `DEMO_HISTORY_CONTENT_CHARS` | `6000` | Лимит символов истории |
+| `BACKLOG_DIR` | `./backlog/` | Папка JSONL-бэклога |
+| `BACKLOG_RETENTION_DAYS` | `30` | Дней хранить бэклог |
+| `DB_PATH` | `./university.db` | Путь к SQLite |
+| `DEMO_DEBUG` | — | `1` — отладочный режим |
+| `LITELLM_DEBUG` | — | `true` — отладочный режим LiteLLM |
+
+### Web
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `API_BEARER_TOKEN` | — | Bearer-токен (обязателен в prod) |
+| `WEB_ORIGIN` | `*` | CORS origin (ограничить в prod) |
+
+### Генерация (`agent-generate`)
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `DOCGEN_MODEL` | `qwen2.5:0.5b` | Ollama-модель |
+| `DOCGEN_OLLAMA_URL` | `$OLLAMA_HOST/api/generate` | Endpoint Ollama |
+| `DOCGEN_OUTPUT_DIR` | `./generated_materials` | Папка результатов |
 | `DOCGEN_NUM_PREDICT` | `4500` | Лимит генерируемых токенов |
-| `DOCGEN_MAX_ATTEMPTS` | `2` | Количество попыток получить не слишком короткий ответ |
-| `DOCGEN_MIN_RESPONSE_CHARS` | `120` | Минимальный желательный размер ответа модели |
-| `DOCGEN_FAKE_SEED` | не задан | Seed для воспроизводимого Faker-каркаса |
-| `DOCGEN_OUTPUT_DIR` | `./generated_materials` | Папка для PDF/DOCX-файлов |
+| `DOCGEN_FAKE_SEED` | — | Seed для воспроизводимого Faker-каркаса |
 
-Пример изолированного запуска:
+## Разработка
 
 ```bash
-DB_PATH=/tmp/agent-tutor.db \
-CHROMA_PATH=/tmp/agent-tutor-chroma \
-uv run agent-ingest list
+# Зависимости
+uv sync
+
+# Линтер и форматирование
+uv run ruff check .
+uv run ruff format .
+
+# Тесты
+uv run pytest                            # unit + integration
+uv run pytest -m unit                    # только unit
+uv run pytest -m integration             # только integration
+uv run pytest --cov --cov-fail-under=40  # с проверкой покрытия
+
+# Сгенерировать тестовую базу данных
+uv run python fixtures/generate.py
 ```
 
-Запустить через MCP Inspector для проверки инструментов:
-
+MCP Inspector (проверка инструментов):
 ```bash
-# Для работы с HTTP RAG-сервисом нужно запустить его отдельно
-uv run python -m rag.service
+# Запустить RAG-сервис
+uv run agent-rag
 
-# В другом терминале запускаем MCP-сервер с указанием URL RAG-сервиса
-RAG_SERVICE_URL=http://127.0.0.1:8082 uv run mcp_serve/server.py
+# Запустить MCP-сервер в другом терминале
+RAG_SERVICE_URL=http://127.0.0.1:8082 uv run agent-tutor
+
+# Подключиться через Inspector: http://127.0.0.1:8083/mcp
 ```
 
-В браузере выбрать транспорт **HTTP** (или **STDIO** для development). 
-Для STDIO: укажи команду `uv`, аргументы `mcp_serve/server.py`, затем нажми Connect.
-Для HTTP: укажи URL `http://127.0.0.1:8083/mcp` (если запущен MCP-сервер с HTTP-транспортом).
+Команды `uv`:
 
+| Команда | Что делает |
+|---|---|
+| `uv sync` | Создать / обновить `.venv` по `uv.lock` |
+| `uv run <cmd>` | Запустить команду в окружении проекта |
+| `uv add <pkg>` | Добавить зависимость |
+| `uv remove <pkg>` | Удалить зависимость |
+| `rm -rf .venv && uv sync` | Пересоздать окружение |
 
-### Пример запроса к модели:
+## Статус проекта
 
-```
-Какие материалы доступны студенту с id "456c4e68-290a-4f8b-b0d0-545534adaf3e" по его дисциплинам?
-```
+| Этап | Статус | Что сделано |
+|---|---|---|
+| 0 · Разделение сервисов | ✅ | 4 независимых HTTP-сервиса, MCP на HTTP-транспорте, CLI-утилиты вынесены |
+| 1 · Тестирование | ✅ | unit + integration тесты, покрытие ≥ 40%, OpenAPI-контракты, ruff |
 
-## Текущее состояние
-
-Проект находится на стадии рабочего прототипа. **Выполнены этапы 0.0, 0.1, 0.2, 0.3 из ROADMAP**.
-
-Работает:
-- MCP-сервер стартует и публикует инструменты (HTTP-транспорт на порту 8083, mount_path `/mcp`)
-- SQLite-база инициализируется и загружает фикстуры при старте
-- Инструменты возвращают типизированные Pydantic-ответы
-- RAG-метаданные хранятся в SQLite, а векторный индекс документов — в ChromaDB
-- **RAG выделен в отдельный HTTP-сервис** (`rag/service.py`) — сервис поднимается на порту 8082
-- **MCP-сервер использует HTTP-клиент** (`rag/client.py`) для вызовов RAG через `RAG_SERVICE_URL`
-- Прямая связность между MCP и RAG-пайплайном удалена
-- `mcp_server/tools/rag.py` оставлен как **минималистичная заглушка** для обратной совместимости с `fixtures/document_generator.py`
-- **API сервис переведен на FastAPI** (ранее Starlette), SSE-стриминг сохранен
-- **API использует HTTP-клиент к MCP** (`mcp.client.streamable_http.streamablehttp_client`)
-- Проверено в MCP Inspector и Goose, Claude Code, Pi
-- **Демо-часть**: LiteLLM интеграция, стриминг ответов, память сессий, режим мышления, полный бэклог всех взаимодействий с моделью
-- Сайт доступен для демонстрации
-- Кастомный клиент на сайте уже ведёт логическое повествование и вызывает инструменты для решения задачи пользователя
-
-### Как запустить после изменений
-
-```bash
-# Терминал 1: RAG HTTP-сервис (порт 8082)
-uv run python -m rag.service
-
-# Терминал 2: MCP-сервер (порт 8083, HTTP-транспорт, использует RAG по HTTP)
-RAG_SERVICE_URL=http://127.0.0.1:8082 uv run python -m mcp_server.server
-
-# Терминал 3: API сервер (порт 8081, FastAPI, использует MCP по HTTP)
-MCP_SERVICE_URL=http://127.0.0.1:8083/mcp uv run python -m demo.api.server
-
-# Терминал 4: Веб-сервер (порт 8080)
-uv run python -m demo.web.server
-```
+Полный план с критериями готовности — в [ROADMAP.md](ROADMAP.md).
+Детали для разработчиков и агентов — в [AGENTS.md](AGENTS.md).
