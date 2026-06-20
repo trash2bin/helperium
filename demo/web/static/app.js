@@ -195,7 +195,8 @@ async function restoreServerHistory() {
 
 async function loadData() {
   const response = await fetch(`${apiBase}/api/data`);
-  state.data = await response.json();
+  const responseData = await response.json();
+  state.data = responseData.data || responseData;
   renderMetrics();
   renderTable();
 }
