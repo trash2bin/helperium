@@ -38,11 +38,8 @@ def test_db(db_path):
 def mock_embedding():
     """Provides a mocked EmbeddingProtocol implementation."""
     class MockEmbedding(EmbeddingProtocol):
-        def embed_text(self, text: str) -> list[float]:
-            # Return a mock 384-dimensional vector (typical for paraphrase-multilingual-MiniLM-L12-v2)
-            return [0.1] * 384
-
-        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        def encode_batched(self, texts: list[str]) -> list[list[float]]:
+            # Return mock 384-dimensional vectors (typical for paraphrase-multilingual-MiniLM-L12-v2)
             return [[0.1] * 384 for _ in texts]
 
     return MockEmbedding()
@@ -54,7 +51,8 @@ def rag_config(temp_dir):
     config = RagConfig(
         chroma_path=str(temp_dir / "chroma_db"),
         chroma_collection="test_collection",
-        rag_device="cpu",
+        embedding_device="cpu",
         embedding_model="mock",
+        chunker_type="recursive",
     )
     return config

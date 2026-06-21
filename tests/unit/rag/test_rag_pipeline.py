@@ -168,3 +168,159 @@ def test_text_chunker_page_overlapping():
     assert len(chunks) > 0
     assert chunks[0]["page"] == 1
     # Check that pages are processed
+
+
+# --- RAGPipeline Tests ---
+
+
+def test_pipeline_validate_path_success(temp_dir):
+    """_validate_path accepts existing file."""
+    from rag.pipeline import RAGPipeline
+
+    file_path = temp_dir / "exists.txt"
+    file_path.write_text("test", encoding="utf-8")
+
+    result = RAGPipeline._validate_path(str(file_path))
+    assert result.exists()
+    assert result.is_file()
+
+
+def test_pipeline_validate_path_not_found(temp_dir):
+    """_validate_path raises FileNotFoundError for missing file."""
+    from rag.pipeline import RAGPipeline
+
+    missing = temp_dir / "nope.txt"
+    with pytest.raises(FileNotFoundError, match="not found"):
+        RAGPipeline._validate_path(str(missing))
+
+
+def test_pipeline_validate_path_not_a_file(temp_dir):
+    """_validate_path raises ValueError for a directory."""
+    from rag.pipeline import RAGPipeline
+
+    with pytest.raises(ValueError, match="not a file"):
+        RAGPipeline._validate_path(str(temp_dir))
+
+
+def test_pipeline_search_empty_query(rag_config, mock_embedding):
+    """search_documents returns [] for empty/whitespace query."""
+    from rag.pipeline import RAGPipeline
+    from rag.parser import DocumentParser
+    from rag.chunker import TextChunker
+    from rag.repository import DocumentRepository
+    from rag.vector_store import ChromaDBVectorStore
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    parser = DocumentParser(rag_config)
+    chunker = TextChunker(rag_config)
+    repo = DocumentRepository(conn, rag_config)
+    vstore = ChromaDBVectorStore(rag_config, mock_embedding)
+
+    pipeline = RAGPipeline(rag_config, parser, chunker, mock_embedding, repo, vstore)
+
+    assert pipeline.search_documents("") == []
+    assert pipeline.search_documents("   ") == []
+
+
+def test_pipeline_search_clamps_limit(rag_config, mock_embedding):
+    """search_documents clamps limit between 1 and config.search_limit_max."""
+    from rag.pipeline import RAGPipeline
+    from rag.parser import DocumentParser
+    from rag.chunker import TextChunker
+    from rag.repository import DocumentRepository
+    from rag.vector_store import ChromaDBVectorStore
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    parser = DocumentParser(rag_config)
+    chunker = TextChunker(rag_config)
+    repo = DocumentRepository(conn, rag_config)
+    vstore = ChromaDBVectorStore(rag_config, mock_embedding)
+
+    pipeline = RAGPipeline(rag_config, parser, chunker, mock_embedding, repo, vstore)
+
+    # Should not crash with limit=0 or limit=100500
+    result = pipeline.search_documents("test", limit=0)
+    assert len(result) == 0
+
+    result = pipeline.search_documents("test", limit=99999)
+    assert isinstance(result, list)
+
+
+def test_pipeline_build_rag_context(rag_config, mock_embedding):
+    """build_rag_context returns RagContext with instruction and query."""
+    from rag.pipeline import RAGPipeline
+    from rag.parser import DocumentParser
+    from rag.chunker import TextChunker
+    from rag.repository import DocumentRepository
+    from rag.vector_store import ChromaDBVectorStore
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    parser = DocumentParser(rag_config)
+    chunker = TextChunker(rag_config)
+    repo = DocumentRepository(conn, rag_config)
+    vstore = ChromaDBVectorStore(rag_config, mock_embedding)
+
+    pipeline = RAGPipeline(rag_config, parser, chunker, mock_embedding, repo, vstore)
+
+    ctx = pipeline.build_rag_context("sorting algorithms")
+    assert ctx.query == "sorting algorithms"
+    assert ctx.answer_instruction != ""
+    assert isinstance(ctx.chunks, list)
+
+
+def test_pipeline_import_roundtrip(temp_dir, rag_config, mock_embedding):
+    """Full round-trip: import txt → list → search."""
+    import sqlite3
+    from rag.pipeline import RAGPipeline
+    from rag.parser import DocumentParser
+    from rag.chunker import TextChunker
+    from rag.repository import DocumentRepository
+    from rag.vector_store import ChromaDBVectorStore
+
+    db_path = temp_dir / "test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+
+    # Init schema using real schema
+    from db.schema import create_schema
+    create_schema(conn)
+
+    parser = DocumentParser(rag_config)
+    chunker = TextChunker(rag_config)
+    repo = DocumentRepository(conn, rag_config)
+    vstore = ChromaDBVectorStore(rag_config, mock_embedding)
+
+    pipeline = RAGPipeline(rag_config, parser, chunker, mock_embedding, repo, vstore)
+
+    # Create test file
+    txt_file = temp_dir / "lecture.txt"
+    txt_file.write_text(
+        "Quick sort is an efficient sorting algorithm. "
+        "It uses divide and conquer strategy. "
+        "Merge sort also uses divide and conquer. "
+        "Binary search works on sorted arrays.",
+        encoding="utf-8",
+    )
+
+    # Import
+    result = pipeline.import_document(
+        path=str(txt_file),
+        title="Lecture 1: Sorting",
+    )
+    assert result.document is not None
+    assert result.chunks_count > 0
+    assert result.document.title == "Lecture 1: Sorting"
+
+    # List
+    docs = pipeline.list_documents()
+    assert len(docs) == 1
+    assert docs[0].title == "Lecture 1: Sorting"
+
+    # Search
+    hits = pipeline.search_documents("quick sort", limit=5)
+    assert len(hits) > 0
+    assert "sort" in hits[0].content.lower()
