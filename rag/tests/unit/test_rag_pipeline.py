@@ -293,7 +293,7 @@ def test_pipeline_import_roundtrip(temp_dir, rag_config, mock_embedding):
     conn.execute("PRAGMA foreign_keys = ON")
 
     # Init schema using real schema
-    from db.schema import create_schema
+    from agent_tutor_sdk.db.schema import create_schema
 
     create_schema(conn)
 

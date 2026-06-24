@@ -1,5 +1,5 @@
-from db.database import Database
-from db.models import Discipline
+from agent_tutor_sdk.db.database import Database
+from agent_tutor_sdk.db.models import Discipline
 
 
 def test_database_initialization(test_db):

@@ -18,9 +18,9 @@ members = [
     "agent-tutor-workspace",
     "demo-api",
     "demo-web",
+    "fixtures",
     "mcp-server",
     "rag",
-    "tools",
 ]
 
 [[package]]
@@ -43,7 +43,7 @@ wheels = [
 
 [[package]]
 name = "agent-tutor-sdk"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "agent-tutor-sdk" }
 dependencies = [
     { name = "httpx" },
@@ -958,6 +958,27 @@ wheels = [
 ]
 
 [[package]]
+name = "fixtures"
+version = "0.2.0"
+source = { editable = "fixtures" }
+dependencies = [
+    { name = "agent-tutor-sdk" },
+    { name = "faker" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "python-docx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-tutor-sdk", editable = "agent-tutor-sdk" },
+    { name = "faker", specifier = ">=20.0.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "python-docx", specifier = ">=1.2.0" },
+]
+
+[[package]]
 name = "flatbuffers"
 version = "25.12.19"
 source = { registry = "https://pypi.org/simple" }
@@ -1544,7 +1565,7 @@ cli = [
 
 [[package]]
 name = "mcp-server"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "mcp_server" }
 dependencies = [
     { name = "agent-tutor-sdk" },
@@ -2822,7 +2843,7 @@ wheels = [
 
 [[package]]
 name = "rag"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "rag" }
 dependencies = [
     { name = "agent-tutor-sdk" },
@@ -3444,29 +3465,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/ad/2c8f7f47c41356400dbb4e37bdf05297feea49fdaa732877973f9f3f7557/tokie-0.0.9-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:00bfef25ec782a729aeb2db9fa54e57ed492f0898662f123ba89c3b24614985a", size = 2768664, upload-time = "2026-05-05T18:21:45.179Z" },
     { url = "https://files.pythonhosted.org/packages/fb/a7/6c3e8af745fe2f963b15f4f7049138e018d98e9814c8907550ee616b1ef9/tokie-0.0.9-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:7dfb5d6023585ff18b0f1e2d00e4cd37f872c0055c3d6f3b7b8bf550647c7b7b", size = 2731266, upload-time = "2026-05-05T18:21:46.655Z" },
     { url = "https://files.pythonhosted.org/packages/d0/96/85580cd16e5e97486ad53e8227b3acb10327d68bb8b38a64b405719b5601/tokie-0.0.9-cp313-cp313-win_amd64.whl", hash = "sha256:559d16d6f6898aa1cea5a8be329e5f1654c889d0f25d9652d98c3f88ccf7aca9", size = 2309372, upload-time = "2026-05-05T18:21:48.022Z" },
-]
-
-[[package]]
-name = "tools"
-version = "0.1.0"
-source = { editable = "tools" }
-dependencies = [
-    { name = "agent-tutor-sdk" },
-    { name = "faker" },
-    { name = "httpx" },
-    { name = "psycopg2-binary" },
-    { name = "pydantic" },
-    { name = "python-docx" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "agent-tutor-sdk", editable = "agent-tutor-sdk" },
-    { name = "faker", specifier = ">=20.0.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "psycopg2-binary", specifier = ">=2.9.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "python-docx", specifier = ">=1.2.0" },
 ]
 
 [[package]]

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from db.schema import create_schema
+from agent_tutor_sdk.db.schema import create_schema
 from rag.chunker import TextChunker
 from rag.config import RagConfig
 from rag.parser import DocumentParser

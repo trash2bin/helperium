@@ -12,7 +12,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling_core.types.doc.document import TextItem, TableItem
 
 from rag.config import RagConfig
-from rag.models import PageDict
+from rag._types import PageDict
 
 if TYPE_CHECKING:
     pass

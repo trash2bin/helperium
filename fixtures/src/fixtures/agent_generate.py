@@ -4,7 +4,7 @@ import sys
 
 from agent_tutor_sdk.db.database import Database
 from fixtures.document_generator import MaterialDocumentGenerator
-from mcp_server.tools.rag import RagTools
+from fixtures.rag_tools import RagTools
 
 
 def cmd_generate(args):

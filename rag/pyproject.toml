@@ -1,6 +1,6 @@
 [project]
 name = "rag"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "agent-tutor-sdk",
@@ -18,6 +18,13 @@ dependencies = [
 
 [project.scripts]
 agent-rag = "rag.service:main"
+
+[tool.uv]
+index-strategy = "unsafe-first-match"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 
 [build-system]
 requires = ["hatchling"]

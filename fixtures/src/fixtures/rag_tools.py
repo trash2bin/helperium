@@ -1,7 +1,6 @@
-"""Фасад RagTools для обратной совместимости.
+"""Фасад RagTools для совместимости с document_generator.py.
 
-Этот модуль оставлен для совместимости с fixtures/document_generator.py.
-Новый код должен использовать agent_tutor_sdk.rag.client.RagClient напрямую.
+Работает через HTTP-клиент к RAG-сервису.
 """
 
 from __future__ import annotations
@@ -54,7 +53,6 @@ class _FakePipeline:
 
     def __init__(self, client: RagClient):
         self.client = client
-        # Создаем минимальные заглушки для document_generator
         self.repository = _FakeRepository(client)
         self.chunker = _FakeChunker()
         self.vector_store = _FakeVectorStore()
@@ -67,7 +65,6 @@ class _FakeRepository:
         self.client = client
 
     def get_materials(self, discipline_id: str | None = None):
-        """Возвращает материалы как Discipline материалы."""
         from agent_tutor_sdk.rag.models import Material
 
         docs = self.client.list_documents_sync(discipline_id=discipline_id)
@@ -88,7 +85,6 @@ class _FakeRepository:
     def list_generated_document_rows(
         self, path_marker: str, discipline_id: str | None = None
     ):
-        """Возвращает строки документов."""
         docs = self.client.list_documents_sync(discipline_id=discipline_id)
         return [
             {"id": doc.id, "source_path": doc.source_path, "title": doc.title}
@@ -97,27 +93,12 @@ class _FakeRepository:
         ]
 
     def delete_document_record(self, document_id: str, commit: bool = True):
-        """Удаляет запись документа."""
         self.client.delete_document_sync(document_id=document_id)
 
     def save_document_with_chunks(
         self, source_path, chunks, discipline_id, title, vector_store
     ):
-        """Сохраняет документ с чанками - через HTTP клиент."""
-        # Импортируем документ
         try:
-            # Chunker для текстовых файлов
-            text_chunks = []
-            for chunk in chunks:
-                text_chunks.append(
-                    {
-                        "page": chunk.get("page"),
-                        "content": chunk.get("content", ""),
-                    }
-                )
-
-            # Для совместимости просто сохраняем как текстовый файл
-            # и импортируем через HTTP
             result = self.client.import_document_sync(
                 path=source_path,
                 discipline_id=discipline_id,
@@ -129,15 +110,12 @@ class _FakeRepository:
             raise
 
     def save_generated_document_fallback(self, path, discipline_id, title, text):
-        """Резервное сохранение документа."""
         from pathlib import Path
 
-        # Сохраняем текст в файл
         path_obj = Path(path)
         path_obj.parent.mkdir(parents=True, exist_ok=True)
         path_obj.write_text(text, encoding="utf-8")
 
-        # Пробуем импортировать через HTTP
         self.client.import_document_sync(
             path=path,
             discipline_id=discipline_id,
@@ -149,13 +127,10 @@ class _FakeChunker:
     """Фейковый чанкер для совместимости."""
 
     def chunk_pages(self, pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Возвращает чанки из страниц."""
         chunks = []
         for page in pages:
             text = page.get("text", "")
             page_num = page.get("page")
-            # Разбиваем текст на чанки по ~512 токенам (примерно)
-            # Для простоты возвращаем одну страницу как один чанк
             if text:
                 chunks.append({"page": page_num, "content": text})
         return chunks

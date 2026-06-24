@@ -421,15 +421,15 @@ Prod-режим - `docker compose --profile prod up -d`. Поднимается 
 
 Чёткое разделение:
 
-- **Контракты** (`specs/`) — единственный source of truth. OpenAPI-спецификации всех
-  HTTP-сервисов, сохранённые в репозитории. По ним можно реализовать клиент на любом
-  языке без доступа к исходному коду сервиса.
-- **SDK** (`agent-tutor-sdk/`) — Python-обёртка для dev-удобства. Содержит `rag/client.py`,
+- **SDK** (`agent-tutor-sdk/`) — Python-пакет для dev-удобства. Содержит `rag/client.py`,
   `rag/models.py`, `db/` (database + connector + schema + models). Используется Python-
-  сервисами (mcp_server, tools) и local dev. **Не является единственным контрактом** —
-  дублирует OpenAPI-спецификацию, а не наоборот.
+  сервисами (mcp_server, fixtures) и local dev.
 - **Сами сервисы** — self-contained пакеты с собственными `pyproject.toml`, зависящие
   только от SDK. Не импортируют ничего из соседних сервисов напрямую.
+- **Контракты** (`specs/`) — OpenAPI-спецификации всех HTTP-сервисов, сохранённые
+  в репозитории как source of truth. Изменение API начинается с правки spec,
+  затем реализация. CI проверяет соответствие spec ↔ код.
+  FastAPI дополнительно генерирует актуальную спецификацию на `/openapi.json` и `/docs`.
 
 ### Почему не protobuf / gRPC / Smithy
 
@@ -442,9 +442,9 @@ Prod-режим - `docker compose --profile prod up -d`. Поднимается 
 
 OpenAPI — «минимальная достаточность» в чистом виде.
 
-### План перехода
+### План перехода и статус выполнения
 
-#### 2.6.1. Создать `specs/` с OpenAPI-спецификациями
+#### 2.6.1. Создать `specs/` с OpenAPI-спецификациями ✅
 
 ```
 specs/
@@ -454,35 +454,40 @@ specs/
 ```
 
 Spec — **первичен**. Изменение API начинается с правки spec, затем реализация.
-CI проверяет:
+CI (или тесты) проверяют:
 ```bash
 diff <(curl -s http://rag:8082/openapi.json) <(yq -o json specs/rag.openapi.yaml)
 ```
-Если не совпало — CI падает.
+Если не совпало — тест падает.
 
-#### 2.6.2. Создать `agent-tutor-sdk/` как uv workspace member
+**Что сделано**:
+- `specs/` создана с OpenAPI-спецификациями для rag и api сервисов (YAML).
+- Тесты `rag/tests/unit/test_openapi_spec.py` и `demo/api/tests/unit/test_openapi_spec.py`
+  проверяют, что код соответствует spec.
+- `specs/README.md` описывает как обновлять spec и генерировать клиент.
+
+#### 2.6.2. Создать `agent-tutor-sdk/` как uv workspace member ✅
 
 ```
 agent-tutor-sdk/
 ├── pyproject.toml
-└── src/agent_tutor_sdk/
-    ├── __init__.py
-    ├── db/
-    │   ├── __init__.py
-    │   ├── connector.py       # (из db/connector.py)
-    │   ├── database.py        # (из db/database.py)
-    │   ├── models.py          # (из db/models.py) — Student, Grade, Teacher…
-    │   └── schema.py          # (из db/schema.py)
-    └── rag/
-        ├── __init__.py
-        ├── client.py          # (из rag/client.py) — HTTP-клиент к RAG
-        ├── models.py          # (из rag/models.py) — Document, RagContext…
-        └── http_models.py     # (из rag/http_models.py) — DTO
+├── src/agent_tutor_sdk/
+│   ├── db/                     # connector.py, database.py, models.py, schema.py, fixtures.py
+│   └── rag/                    # client.py, models.py
+└── tests/
+    ├── test_client.py          # (из rag/tests/unit/test_client.py)
+    └── test_database.py        # (из db/tests/unit/test_database.py)
 ```
 
-SDK — вторичен. Он реализует контракт из `specs/`, а не определяет его.
+**Что сделано**:
+- SDK создан, собирается `uv build`, используется всеми сервисами.
+- `rag/client.py` удалён из `rag/` — только в SDK.
+- `rag/models.py` удалён из `rag/` — публичные модели в SDK,
+  внутренние TypedDict'ы (`PageDict`, `ChunkDict`) — в `rag/_types.py`.
+- Тесты SDK переехали: `rag/tests/unit/test_client.py` → `agent-tutor-sdk/tests/unit/test_client.py`.
+  `db/tests/` → `agent-tutor-sdk/tests/unit/test_database.py`.
 
-#### 2.6.3. Перевести сервисы на uv workspace
+#### 2.6.3. Перевести сервисы на uv workspace ✅
 
 ```toml
 # pyproject.toml (корень)
@@ -493,97 +498,74 @@ members = [
     "mcp_server",
     "demo/api",
     "demo/web",
-    "tools",
+    "fixtures",                # вместо tools/
 ]
 ```
 
-Каждый сервис — отдельный `pyproject.toml` с собственными зависимостями,
-  entry points и testpaths:
+Каждый сервис — отдельный `pyproject.toml` с собственными зависимостями:
 
-```toml
-# mcp_server/pyproject.toml
-[project]
-name = "mcp_server"
-dependencies = [
-    "agent-tutor-sdk",           # берётся из workspace
-    "mcp[cli]>=1.0.0",
-]
-
-[project.scripts]
-agent-tutor = "mcp_server.server:main"
-```
-
-```toml
-# demo/web/pyproject.toml
-[project]
-name = "demo-web"
-dependencies = [
-    "pydantic>=2.0.0",
-    "httpx>=0.28.0",
-    "fastapi>=0.137.2",
-    "uvicorn[standard]>=0.38.0",
-]
-# Никакого SDK — web только прокси, не касается БД и RAG
-```
-
-#### 2.6.4. Убрать перекрёстные импорты между сервисами
-
-- `rag/client.py` удаляется из `rag/` и переносится в `agent-tutor-sdk/src/agent_tutor_sdk/rag/`
-- `rag/models.py` остаётся в `rag/` (внутренние модели пайплайна), публичные модели —
-  в `agent-tutor-sdk/`
-- `mcp_server/tools/rag.py` — удаляется. `fixtures/agent_generate.py` вызывает RAG
-  напрямую через HTTP (как и любой внешний клиент).
-- `db/` — удаляется из корня. База данных — часть SDK. Сервисы, которым нужен
-  прямой доступ к SQLite/Postgres, ставят зависимость на `agent-tutor-sdk`.
-- После переноса ни один сервис не импортирует `from rag` или `from db` напрямую.
-
-#### 2.6.5. Обновить Dockerfile'ы под workspace
-
-Каждый Dockerfile собирается из контекста **всего монорепозитория**
-(через `.dockerignore`), но runtime-слой содержит только:
-
-```dockerfile
-# web — самый лёгкий
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/demo/web /app/demo/web
-COPY --from=builder /app/demo/__init__.py /app/demo/__init__.py
-COPY --from=builder /app/demo/settings.py /app/demo/settings.py
-
-# mcp_server — с SDK
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/mcp_server /app/mcp_server
-COPY --from=builder /app/agent-tutor-sdk /app/agent-tutor-sdk
-```
-
-#### 2.6.6. Перенести тесты под SDK
-
-- `db/tests/` переезжает в `agent-tutor-sdk/tests/`
-- `rag/tests/unit/test_client.py` — туда же (тесты HTTP-клиента к RAG)
-
-### Что изменится
-
-| Компонент | Было | Стало |
+| Пакет | pyproject.toml | Зависит от SDK |
 |---|---|---|
-| `rag/client.py` | внутри `rag/`, потребители импортируют | в `agent-tutor-sdk/`, потребители ставят SDK |
-| `rag/models.py` | внутри `rag/`, общие для всех | публичные модели — в SDK, внутренние — в `rag/` |
-| `db/` (весь) | в корне проекта | в `agent-tutor-sdk/src/agent_tutor_sdk/db/` |
-| `mcp_server/tools/rag.py` | в mcp_server, нужен fixtures | удалён, fixtures ходит по HTTP |
+| `agent-tutor-sdk` | `agent-tutor-sdk/pyproject.toml` | — |
+| `rag` | `rag/pyproject.toml` | ✅ да |
+| `mcp_server` | `mcp_server/pyproject.toml` | ✅ да |
+| `demo-api` | `demo/api/pyproject.toml` | ✅ да |
+| `demo-web` | `demo/web/pyproject.toml` | ❌ нет (только fastapi + httpx + pydantic) |
+| `fixtures` | `fixtures/pyproject.toml` | ✅ да |
+
+#### 2.6.4. Убрать перекрёстные импорты между сервисами ✅
+
+| Было | Стало |
+|---|---|
+| `rag/client.py` внутри `rag/` | удалён из `rag/`, только в `agent-tutor-sdk` |
+| `rag/models.py` в `rag/` | публичные модели в SDK, TypedDict'ы в `rag/_types.py` |
+| `db/` в корне проекта | весь `db/` удалён из корня, всё в `agent-tutor-sdk` |
+| `mcp_server/tools/rag.py` | удалён, `RagTools` перенесён в `fixtures/rag_tools.py` |
+| `tools/Dockerfile` + `tools/pyproject.toml` | удалены (заменены на `fixtures/`) |
+| `fixtures` зависел от `mcp_server` | убрана зависимость, `fixtures` импортирует только SDK |
+
+Прямые импорты `from rag` или `from db` между сервисами отсутствуют.
+Остатки: 2 теста были переведены с `db.schema` на `agent_tutor_sdk.db.schema`.
+
+#### 2.6.5. Обновить Dockerfile'ы под workspace ✅
+
+Все Dockerfile'ы (`rag/Dockerfile`, `mcp_server/Dockerfile`, `demo/api/Dockerfile`,
+`demo/web/Dockerfile`) собираются из корня монорепозитория, runtime-слой содержит
+только нужные пакеты (сервис + SDK при необходимости).
+
+#### 2.6.6. Перенести тесты под SDK ✅
+
+- `db/tests/unit/test_database.py` → `agent-tutor-sdk/tests/unit/test_database.py`
+- `rag/tests/unit/test_client.py` → `agent-tutor-sdk/tests/unit/test_client.py`
+
+### Что изменилось
+
+| Компонент | Было | Стало (после этапа) |
+|---|---|---|
+| `rag/client.py` | внутри `rag/`, потребители импортируют | удалён из `rag/`, только в SDK |
+| `rag/models.py` | внутри `rag/`, общие для всех | публичные модели в SDK, TypedDict'ы в `rag/_types.py` |
+| `db/` (весь) | в корне проекта | удалён из корня, всё в SDK |
+| `mcp_server/tools/rag.py` | в mcp_server, нужен fixtures | удалён из mcp_server, перенесён в `fixtures/rag_tools.py` |
+| `tools/` | Dockerfile + pyproject.toml | удалён |
+| `specs/` | нет | OpenAPI-спецификации в репозитории, source of truth |
 | `pyproject.toml` | один на всё | workspace + по одному на сервис |
-| `specs/` | нет | OpenAPI-спецификации, source of truth |
-| Контракт | Python-типы (import) | OpenAPI-спецификация (файл) |
+| Контракт | Python-типы (import) | SDK + HTTP / OpenAPI |
 
 ### Критерии готовности этапа 2.6
 
-- [ ] `specs/` содержит OpenAPI-спецификации для rag и api сервисов
-- [ ] CI проверяет: `diff <(curl .../openapi.json) specs/*.yaml`
-- [ ] `agent-tutor-sdk/` — отдельный пакет с `pyproject.toml`, собирается `uv build`
-- [ ] `mcp_server`, `demo/api`, `tools` зависят от `agent-tutor-sdk`, а не импортируют `rag/` и `db/` напрямую
-- [ ] `demo/web` **не** зависит от SDK (только fastapi + httpx + pydantic)
-- [ ] `rag/client.py` больше не лежит в `rag/` — только в SDK
-- [ ] `mcp_server/tools/rag.py` удалён
-- [ ] `db/` в корне проекта удалён (весь — в SDK)
-- [ ] `uv run pytest` из корня проходит все тесты (109+)
-- [ ] `uv run pytest -p mcp_server` — только тесты mcp_server
+- [x] `agent-tutor-sdk/` — отдельный пакет с `pyproject.toml`, собирается `uv build`
+- [x] `mcp_server`, `demo/api`, `fixtures` зависят от `agent-tutor-sdk`, не импортируют `rag/` и `db/` напрямую
+- [x] `demo/web` **не** зависит от SDK (только fastapi + httpx + pydantic)
+- [x] `rag/client.py` больше не лежит в `rag/` — только в SDK
+- [x] `rag/models.py` почищен: публичные модели в SDK, внутренние типы в `rag/_types.py`
+- [x] `mcp_server/tools/rag.py` удалён
+- [x] `db/` в корне проекта удалён (весь — в SDK)
+- [x] `tools/` удалён (Dockerfile + pyproject.toml)
+- [x] `specs/` содержит OpenAPI-спецификации для rag и api сервисов (YAML)
+- [x] Тесты `test_openapi_spec.py` проверяют соответствие кода спецификациям
+- [x] `uv run pytest` из корня — 109 тестов, все зелёные
+- [x] `uv run pytest rag/tests/` — только RAG-тесты
+- [x] `uv run pytest mcp_server/tests/` — только MCP-тесты
 - [ ] `docker compose build` собирает все образы
 - [ ] `docker compose up -d` поднимает все сервисы, healthchecks зелёные
 

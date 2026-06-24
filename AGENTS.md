@@ -66,7 +66,7 @@ uv run pytest                   # Запуск тестов (unit и integration
 | `mcp_server/Dockerfile` | Образ MCP-сервера |
 | `demo/api/Dockerfile` | Образ API-сервера |
 | `demo/web/Dockerfile` | Образ WEB-сервера |
-| `tools/Dockerfile` | Образ CLI-утилит (agent-ingest, agent-generate, backup) |
+
 | `docker-compose.yml` | Оркестрация: 7 сервисов, healthchecks, volumes |
 | `Caddyfile` | HTTPS-прокси через Caddy (профиль prod) |
 | `.env.example` | Полный список переменных с дефолтами |
@@ -79,12 +79,9 @@ docker compose up -d
 # Prod-режим: + Caddy (HTTPS через Let's Encrypt)
 docker compose --profile prod up -d
 
-# CLI-утилиты (one-shot)
-docker compose --profile tools run --rm agent agent-ingest list
-docker compose --profile tools run --rm agent agent-generate generate -d "cs-101"
-
-# Бэкапы SQLite каждые 6 часов
-docker compose --profile cron up -d
+# CLI-утилиты (через uv, не Docker)
+uv run agent-ingest list
+uv run agent-generate generate -d "cs-101"
 
 # Сборка образов
 docker compose build
@@ -100,7 +97,6 @@ docker compose build
 | `rag_data` | `/data/rag` | `chroma_db/` |
 | `hf_cache` | `/home/app/.cache/huggingface` | embedding-модели |
 | `pg_data` | `/var/lib/postgresql/data` | PostgreSQL-данные |
-| `backups` | `/data/backups` | `.db.gz` снапшоты |
 
 ### 🐘 PostgreSQL (опционально, вместо SQLite)
 
@@ -151,24 +147,21 @@ agent-tutor/
 │       ├── student.py
 │       ├── disciplines.py
 │       ├── grades.py
-│       ├── teacher.py
-│       └── rag.py           # Фасад → RagClient (будет удалён в Этапе 2.6)
+│       └── teacher.py
 ├── rag/                     # RAG HTTP-сервис (FastAPI, :8082)
 │   ├── service.py           # /health /search /context /documents/*
-│   ├── client.py            # HTTP-клиент для MCP и других сервисов (переедет в SDK на Этапе 2.6)
+│   ├── _types.py            # Внутренние типы (PageDict, ChunkDict)
 │   ├── pipeline.py          # парсинг → чанкинг → embedding → ChromaDB
 │   ├── embeddings.py        # SentenceTransformerEmbedding
 │   ├── vector_store.py      # ChromaDBVectorStore
 │   ├── repository.py        # CRUD документов в SQLite/PostgreSQL
 │   ├── parser.py            # DocumentParser (PDF, DOCX, TXT, MD, HTML)
 │   ├── chunker.py           # TextChunker (semantic, recursive, sentence)
-│   ├── models.py            # Pydantic-модели домена
 │   ├── interfaces.py        # EmbeddingProtocol, VectorStoreProtocol
 │   ├── config.py            # RagConfig из env
 │   ├── http_models.py       # Pydantic DTO для HTTP-контракта
 │   └── tests/               # unit + integration тесты RAG
 │       ├── unit/
-│       │   ├── test_client.py
 │       │   ├── test_embeddings.py
 │       │   ├── test_rag_pipeline.py
 │       │   ├── test_repository.py
@@ -176,16 +169,12 @@ agent-tutor/
 │       │   └── test_vector_store.py
 │       └── integration/
 │           └── test_e2e_pipeline.py
-├── db/                      # Абстракция БД (SQLite / PostgreSQL)
-│   ├── connector.py         # Connector, SqliteConnector, PostgresConnector
-│   ├── connection.py        # Реэкспорт для обратной совместимости
-│   ├── database.py          # Фасад Database с CRUD
-│   ├── schema.py            # DDL для обеих БД (идемпотентный)
-│   ├── fixtures.py          # Загрузчик test-data / fixtures.json
-│   ├── models.py            # Pydantic-модели (реэкспорт из rag.models)
-│   └── tests/               # unit-тесты Database
-│       └── unit/
-│           └── test_database.py
+├── agent-tutor-sdk/         # Shared SDK (db connector, models, rag client)
+│   ├── pyproject.toml
+│   ├── src/agent_tutor_sdk/
+│   │   ├── db/connector.py, database.py, models.py, schema.py, fixtures.py
+│   │   └── rag/client.py, models.py
+│   └── tests/
 ├── demo/
 │   ├── settings.py          # Все env-переменные demo-части
 │   ├── api/
@@ -214,12 +203,15 @@ agent-tutor/
 │       ├── server.py        # FastAPI reverse-proxy + SSE-прокси + статика
 │       └── static/          # HTML/CSS/JS
 ├── fixtures/                 # CLI-утилиты (dev-only, не production-сервис)
+│   ├── pyproject.toml       # Workspace-пакет fixtures
 │   ├── README.md            # Документация CLI-команд
-│   ├── ingest.py            # CLI agent-ingest (импорт/поиск/удаление документов)
-│   ├── agent_generate.py    # CLI agent-generate (генерация материалов)
-│   ├── document_generator.py # Логика генерации документов через Ollama
-│   ├── generate.py          # Генератор fixtures.json (Faker)
-│   └── catalog.py           # Каталоги и справочники
+│   ├── src/fixtures/
+│   │   ├── ingest.py        # CLI agent-ingest (импорт/поиск/удаление документов)
+│   │   ├── agent_generate.py# CLI agent-generate (генерация материалов)
+│   │   ├── document_generator.py # Логика генерации документов через Ollama
+│   │   ├── generate.py      # Генератор fixtures.json (Faker)
+│   │   ├── catalog.py       # Каталоги и справочники
+│   │   └── rag_tools.py     # Фасад RagTools для document_generator
 ├── scripts/
 │   ├── dev.sh               # Нативный запуск всех сервисов
 │   ├── backup.py            # Бэкап SQLite
@@ -236,6 +228,9 @@ agent-tutor/
 > Корневой `conftest.py` предоставляет общие фикстуры (temp_dir, test_db, mock_embedding).
 > `uv run pytest` из корня запускает все тесты сразу.
 > `uv run pytest rag/tests/` — только RAG-тесты.
+> `uv run pytest mcp_server/tests/` — только MCP-тесты.
+> `uv run pytest demo/api/tests/` — только API-тесты.
+> `uv run pytest agent-tutor-sdk/tests/` — только SDK-тесты.
 
 ## Инструменты MCP-сервера
 
@@ -424,11 +419,13 @@ uv run agent-ingest clear-generated                  # Удалить сгене
 - **Этап 0** (0.0–0.5): Разделение на 4 независимых HTTP-сервиса, FastAPI, CLI-утилиты, HTTP-транспорт MCP
 - **Этап 1**: Тестовая инфраструктура (84% покрытие, 109 тестов, ruff, OpenAPI/Swagger)
 - **Этап 2**: Контейнеризация (5 Dockerfile'ов, docker-compose с 7 сервисами, Caddy, healthchecks, backup)
-- **Этап 2.x**: Тесты разнесены по сервисам (rag/tests/, mcp_server/tests/, demo/api/tests/, db/tests/),
+- **Этап 2.x**: Тесты разнесены по сервисам (rag/tests/, mcp_server/tests/, demo/api/tests/, agent-tutor-sdk/tests/),
   Dockerfile'ы копируют только нужные исходники, а не весь проект целиком
+- **Этап 2.6 (выполнен)**: Инкапсуляция сервисов — перекрёстные импорты убраны,
+  `rag/client.py`, `rag/models.py`, `db/`, `mcp_server/tools/rag.py` удалены из корня,
+  всё вынесено в `agent-tutor-sdk/`. `specs/` создан с OpenAPI-спецификациями для rag и api.
+  `tools/` удалён, `fixtures` переведён на workspace.
 
-**В работе**: Этап 2.6 (Инкапсуляция сервисов: SDK и контракты) — выделение общей Python-абстракции
-в `agent-tutor-sdk/`, перенос контрактов в `specs/`, uv workspace для каждого сервиса.
 Полный план — в `doc/ROADMAP.md`.
 
 Работает:
@@ -437,7 +434,7 @@ uv run agent-ingest clear-generated                  # Удалить сгене
 - API-сервер с агентом (FastAPI, LiteLLM, SSE-стриминг, память сессий, бэклог)
 - Веб-интерфейс (FastAPI, reverse-proxy, SSE-прокси)
 - База: SQLite (по умолчанию) или PostgreSQL (через `DATABASE_URL`)
-- `db/connector.py` — абстракция над SQLite/PostgreSQL
+- `agent-tutor-sdk/` — абстракция БД, моделей и RAG-клиента
 - `scripts/dev.sh` — нативный запуск всех сервисов
 - Docker: 5 образов, docker-compose, Caddy, backup-сервис, healthchecks
 - 109 тестов, 84% покрытие, ruff чисто

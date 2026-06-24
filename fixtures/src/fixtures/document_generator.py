@@ -28,7 +28,7 @@ from fixtures.catalog import (
     GROUP_SPECIALTY_MAP,
     SPECIALITIES,
 )
-from mcp_server.tools.rag import RagTools
+from fixtures.rag_tools import RagTools
 
 
 DEFAULT_DOCGEN_MODEL = "qwen2.5:0.5b"

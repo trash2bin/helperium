@@ -1,8 +1,6 @@
 # docker compose with 4 long-running services + optional profiles
 # Dev:   docker compose up -d
 # Prod:  docker compose --profile prod up -d
-# Tools: docker compose --profile tools run --rm agent agent-ingest list
-# Cron:  docker compose --profile cron up -d
 
 x-restart: &restart
   restart: unless-stopped
@@ -154,56 +152,6 @@ services:
       - agent-tutor-net
     <<: *restart
 
-  agent:
-    image: agent-tutor-agent:latest
-    build:
-      context: .
-      dockerfile: tools/Dockerfile
-    profiles:
-      - tools
-    volumes:
-      - app_data:/data/app
-      - rag_data:/data/rag:ro
-    environment:
-      - RAG_SERVICE_URL=http://rag:8082
-      - DB_PATH=/data/app/university.db
-      - DATABASE_URL=postgresql://tutor:tutor@db:5432/agent_tutor
-      - CHROMA_PATH=/data/rag/chroma_db
-      - DOCGEN_MODEL=${DOCGEN_MODEL:-qwen2.5:0.5b}
-      - DOCGEN_OLLAMA_URL=${DOCGEN_OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
-      - DOCGEN_OUTPUT_DIR=${DOCGEN_OUTPUT_DIR:-/data/app/generated_materials}
-      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
-      - RAG_DEVICE=${RAG_DEVICE:-cpu}
-      - RAG_LOCAL_FILES_ONLY=${RAG_LOCAL_FILES_ONLY:-0}
-    depends_on:
-      db:
-        condition: service_healthy
-      rag:
-        condition: service_healthy
-    networks:
-      - agent-tutor-net
-
-  # BACKUP (profile: cron): SQLite-backups every 6 hours
-  # Esed image for agent (Python + SQLite)
-  backup:
-    image: agent-tutor-agent:latest
-    build:
-      context: .
-      dockerfile: tools/Dockerfile
-    profiles:
-      - cron
-    command: python /app/scripts/backup.py
-    volumes:
-      - app_data:/data/app:ro
-      - backups:/data/backups
-    environment:
-      - BACKUP_DATA_DIR=/data/app
-      - BACKUP_DIR=/data/backups
-      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}
-      - BACKUP_INTERVAL_HOURS=${BACKUP_INTERVAL_HOURS:-6}
-    networks:
-      - agent-tutor-net
-
   # CADDY (profile: prod): HTTPS + reverse-proxy to web
   caddy:
     image: caddy:2
@@ -244,12 +192,6 @@ volumes:
       type: none
       o: bind
       device: ./.data/hf_cache
-  backups:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./.data/backups
   pg_data:
     driver: local
     driver_opts:

@@ -55,14 +55,13 @@ OPENAI_API_KEY=<token> ./scripts/dev.sh restart
 ```bash
 docker compose up -d                              # 4 long-running сервиса
 docker compose --profile prod up -d               # + Caddy (HTTPS)
-docker compose --profile tools run --rm agent agent-ingest list
 ```
 
 ## CLI
 
 ```bash
-uv run agent-ingest --help        # RAG-документы: import, list, search, delete
-uv run agent-generate --help      # Генерация учебных материалов (PDF/DOCX)
+uv run --package fixtures python -m fixtures.ingest --help   # RAG-документы
+uv run --package fixtures python -m fixtures.agent_generate --help   # Генерация
 ```
 
 ## Команды разработчика
@@ -78,15 +77,14 @@ uv run ruff format .
 
 ```
 ├── mcp_server/          # MCP-сервер (FastMCP, :8083)
-│   └── tools/           # student, teacher, grades, disciplines, rag
+│   └── tools/           # student, teacher, grades, disciplines
 ├── rag/                 # RAG HTTP-сервис (FastAPI, :8082)
-├── db/                  # Абстракция БД (SQLite / PostgreSQL)
+├── agent-tutor-sdk/     # Shared SDK (db, rag client, models)
 ├── demo/
 │   ├── api/             # API-сервер + агент (FastAPI, :8081)
 │   │   └── agent/       # orchestrator, llm_client, mcp_client, tool_parser
 │   └── web/             # Веб-интерфейс (FastAPI, :8080)
 ├── fixtures/            # Генерация тестовых данных и CLI-утилиты для этого
-├── tests/               # unit/ + integration/
 ├── scripts/             # dev.sh, backup.py, init-db.sql
 ├── doc/                 # Makrdown
 ├── docker-compose.yml

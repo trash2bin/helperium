@@ -15,3 +15,5 @@ backlog/
 .ruff_cache/
 .pytest_cache/
 .env
+*.egg-info
+dist/

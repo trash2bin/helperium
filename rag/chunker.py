@@ -8,7 +8,7 @@ import logging
 from typing import Protocol, runtime_checkable
 
 from rag.config import RagConfig
-from rag.models import PageDict, ChunkDict
+from rag._types import PageDict, ChunkDict
 from rag.utils import normalize_text
 
 logger = logging.getLogger(__name__)

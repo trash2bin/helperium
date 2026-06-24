@@ -1,8 +1,8 @@
 import pytest
 import respx
 from httpx import Response
-from rag.client import RagClient
-from rag.models import Document, RagSearchResult
+from agent_tutor_sdk.rag.client import RagClient
+from agent_tutor_sdk.rag.models import Document, RagSearchResult
 
 
 @pytest.fixture

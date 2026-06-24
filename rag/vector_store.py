@@ -10,7 +10,7 @@ from chromadb.api.types import Embeddings, Metadata
 
 from rag.config import RagConfig
 from rag.interfaces import EmbeddingProtocol, VectorStoreProtocol
-from rag.models import RagSearchResult
+from agent_tutor_sdk.rag.models import RagSearchResult
 
 logger = logging.getLogger(__name__)
 

@@ -17,7 +17,7 @@ members = [
     "mcp_server",
     "demo/api",
     "demo/web",
-    "tools",
+    "fixtures",
 ]
 
 # ── Dev dependencies ─────────────────────────────────────────────────

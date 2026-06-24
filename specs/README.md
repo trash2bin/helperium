@@ -6,8 +6,8 @@
 
 ```
 specs/
-├── rag.openapi.{json,yaml}   # RAG-сервис (порт 8082)
-├── api.openapi.{json,yaml}   # API-сервер с агентом (порт 8081)
+├── rag.openapi.yaml   # RAG-сервис (порт 8082)
+├── api.openapi.yaml   # API-сервер с агентом (порт 8081)
 └── README.md
 ```
 

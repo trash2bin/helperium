@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from rag.models import RagSearchResult
+    from agent_tutor_sdk.rag.models import RagSearchResult
 
 
 @runtime_checkable
