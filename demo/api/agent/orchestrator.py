@@ -132,8 +132,8 @@ class LLMAgent:
         self, user_message: str, session_id: SessionId
     ) -> AsyncIterator[AgentEvent]:
         """Execute a single conversation turn with multiple iterations."""
-        # Build initial messages
-        messages: list[dict[str, Any]] = self._build_messages_raw(
+        # Build initial messages (async — sync SQLite через to_thread)
+        messages: list[dict[str, Any]] = await self._build_messages_raw(
             user_message, session_id
         )
         turn_messages: list[dict[str, Any]] = [
@@ -402,7 +402,7 @@ class LLMAgent:
         final_message["content"] = content
         messages.append(final_message)
         turn_messages.append(final_message)
-        self.conversation_manager.remember_turn(
+        await self.conversation_manager.aremember_turn(
             session_id, cast(TurnMessages, turn_messages)
         )
 
@@ -469,15 +469,18 @@ class LLMAgent:
             yield AgentEvent("token", TokenEventData(data=fallback_msg))
 
         turn_messages.append({"role": "assistant", "content": "".join(final_parts)})
-        self.conversation_manager.remember_turn(
+        await self.conversation_manager.aremember_turn(
             session_id, cast(TurnMessages, turn_messages)
         )
 
-    def _build_messages_raw(
+    async def _build_messages_raw(
         self, user_message: str, session_id: SessionId
     ) -> list[dict[str, Any]]:
-        """Build the raw messages list for the LLM (as dicts for compatibility)."""
-        history: list[dict[str, Any]] = self.conversation_manager.get_history_messages(
+        """Build the raw messages list for the LLM.
+
+        History fetch идёт через asyncio.to_thread — sync SQLite не блокирует event loop.
+        """
+        history: list[dict[str, Any]] = await self.conversation_manager.aget_history_messages(
             session_id
         )
         return [

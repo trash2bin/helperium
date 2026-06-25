@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from agent_tutor_sdk.rag.client import RagClient, RAG_SERVICE_URL
+from agent_tutor_sdk.rag.client import RagClientSync, RAG_SERVICE_URL
 
 # Settings
 os.environ["RAG_LOCAL_FILES_ONLY"] = "1"
@@ -13,11 +13,11 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def cmd_import(args):
-    rag = RagClient(RAG_SERVICE_URL)
+    rag = RagClientSync(RAG_SERVICE_URL)
     t0 = time.monotonic()
 
     try:
-        result = rag.import_document_sync(
+        result = rag.import_document(
             path=args.path,
             discipline_id=args.discipline_id,
             title=args.title,
@@ -29,9 +29,9 @@ def cmd_import(args):
 
 
 def cmd_list(args):
-    rag = RagClient(RAG_SERVICE_URL)
+    rag = RagClientSync(RAG_SERVICE_URL)
 
-    docs = rag.list_documents_sync(discipline_id=args.discipline_id)
+    docs = rag.list_documents(discipline_id=args.discipline_id)
     if not docs:
         print("Документов нет.")
         return
@@ -42,9 +42,9 @@ def cmd_list(args):
 
 
 def cmd_search(args):
-    rag = RagClient(RAG_SERVICE_URL)
+    rag = RagClientSync(RAG_SERVICE_URL)
 
-    results = rag.search_documents_sync(
+    results = rag.search_documents(
         query=args.query,
         discipline_id=args.discipline_id,
         limit=args.limit,
@@ -61,13 +61,13 @@ def cmd_search(args):
             print("...")
 
 
-def _delete_documents(rag: RagClient, rows) -> int:
+def _delete_documents(rag: RagClientSync, rows) -> int:
     deleted = 0
     for row in rows:
         doc_id = row["id"]
         source_path = Path(row["source_path"])
         try:
-            rag.delete_document_sync(document_id=doc_id)
+            rag.delete_document(document_id=doc_id)
         except Exception as exc:
             print(f"WARN не удалось удалить векторы {doc_id}: {exc}", file=sys.stderr)
         if source_path.exists():
@@ -102,9 +102,9 @@ def _cleanup_empty_generated_dirs() -> None:
 
 
 def cmd_clear_generated(args):
-    rag = RagClient(RAG_SERVICE_URL)
+    rag = RagClientSync(RAG_SERVICE_URL)
 
-    docs = rag.list_documents_sync(discipline_id=args.discipline_id)
+    docs = rag.list_documents(discipline_id=args.discipline_id)
     rows = [
         {"id": doc.id, "source_path": doc.source_path}
         for doc in docs
@@ -117,11 +117,11 @@ def cmd_clear_generated(args):
 
 
 def cmd_delete(args):
-    rag = RagClient(RAG_SERVICE_URL)
+    rag = RagClientSync(RAG_SERVICE_URL)
 
     if args.path:
         source_path = str(Path(args.path).resolve())
-        docs = rag.list_documents_sync()
+        docs = rag.list_documents()
         row = None
         for doc in docs:
             if doc.source_path == source_path:
@@ -131,7 +131,7 @@ def cmd_delete(args):
             print("Документ не найден.")
             return
     elif args.document_id:
-        docs = rag.list_documents_sync()
+        docs = rag.list_documents()
         row = None
         for doc in docs:
             if doc.id == args.document_id:
@@ -146,7 +146,7 @@ def cmd_delete(args):
 
     doc_id = row["id"]
     title = row["title"]
-    rag.delete_document_sync(document_id=doc_id)
+    rag.delete_document(document_id=doc_id)
     print(f"OK  удалён: {title} ({doc_id})")
 
 

@@ -58,7 +58,9 @@ class Grade(BaseModel):
     student_name: str = Field(default="", description="Имя студента")
     discipline_id: str = Field(description="ID дисциплины")
     discipline_name: str = Field(description="Название дисциплины")
-    value: str = Field(alias="grade", description="Значение оценки: '5', '4', '3', '2', 'зачёт'")
+    value: str = Field(
+        alias="grade", description="Значение оценки: '5', '4', '3', '2', 'зачёт'"
+    )
     date: str = Field(description="Дата в формате YYYY-MM-DD")
 
 
@@ -77,6 +79,4 @@ class ScheduleEntry(BaseModel):
     id: str = Field(description="Уникальный идентификатор записи")
     group: Optional[Group] = Field(default=None, description="Группа")
     day: str = Field(description="День недели")
-    lessons: List[Lesson] = Field(
-        default_factory=list, description="Список занятий"
-    )
+    lessons: List[Lesson] = Field(default_factory=list, description="Список занятий")

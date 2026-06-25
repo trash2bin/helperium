@@ -54,19 +54,6 @@ class RagSearchResult(BaseModel):
     content: str
 
 
-class Material(BaseModel):
-    """Учебный материал (документ, представленный как материал дисциплины)."""
-
-    id: str
-    discipline_id: str
-    type: str
-    title: str
-    file_name: str
-    source_path: str
-    mime_type: str
-    content: str = ""
-
-
 class RagContext(BaseModel):
     """Готовый контекст для LLM с инструкцией и найденными чанками."""
 

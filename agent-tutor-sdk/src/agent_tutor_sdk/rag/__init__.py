@@ -5,7 +5,6 @@ from agent_tutor_sdk.rag.models import (
     Document,
     DocumentChunk,
     DocumentImportResult,
-    Material,
     RagContext,
     RagSearchResult,
 )
@@ -16,7 +15,6 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "DocumentImportResult",
-    "Material",
     "RagContext",
     "RagSearchResult",
 ]

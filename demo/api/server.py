@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Awaitable
 from uuid import uuid4
@@ -82,7 +83,7 @@ async def get_health() -> HealthResponse:
 
 async def get_data() -> DataOverviewResponse:
     """Get demo data overview."""
-    return DataOverviewResponse(data=data_repository.overview())
+    return DataOverviewResponse(data=await data_repository.overview())
 
 
 async def get_backlog_list() -> BacklogListResponse:
@@ -102,7 +103,7 @@ async def get_backlog_detail(
 
 async def get_session_history(session_id: str = "default") -> SessionHistoryResponse:
     """Get chat history for a session."""
-    history = session_store.history_messages(session_id)
+    history = await asyncio.to_thread(session_store.history_messages, session_id)
     return SessionHistoryResponse(messages=history)
 
 
@@ -195,8 +196,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown: закрываем MCP-сессию, если она была открыта
     logger.info("API server shutting down")
+    try:
+        agent = _agent_instance
+        if agent is not None and agent.mcp_client is not None:
+            await agent.mcp_client.close()
+    except Exception as exc:
+        logger.warning("MCP client close failed: %s", exc)
 
 
 # Create the API application

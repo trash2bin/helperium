@@ -7,9 +7,8 @@ from pathlib import Path
 
 import yaml
 
-# spec/ лежит в корне проекта, поднимаемся из demo/api/tests/unit/
-PROJECT_ROOT = Path(__file__).parents[4]
-SPEC_PATH = PROJECT_ROOT / "specs" / "api.openapi.yaml"
+# Тесты запускаются через `uv run pytest` из корня репо — cwd == repo root.
+SPEC_PATH = Path("specs") / "api.openapi.yaml"
 
 
 def test_openapi_spec_matches_generated():

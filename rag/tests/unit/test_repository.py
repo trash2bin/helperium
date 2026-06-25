@@ -67,7 +67,7 @@ def test_save_document_without_vector_store(repo):
     assert result.document.title == "Тестовый документ"
 
     # Проверяем, что данные реально в БД
-    doc = repo.get_document_by_id(result.document.id)
+    doc = repo.get_document_by_id_as_model(result.document.id)
     assert doc is not None
     assert doc.source_path == "test.txt"
 

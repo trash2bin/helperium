@@ -1,13 +1,21 @@
-"""Тесты инструментов преподавателя — через DataServiceClient (HTTP)."""
+"""Тесты инструментов преподавателя — через AsyncDataServiceClient (HTTP)."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent_tutor_sdk.data_client import DataServiceClient
+from agent_tutor_sdk.data_client import AsyncDataServiceClient
 
 
-def test_get_teacher_by_name():
+def _mock_response(status_code: int, json_data):
+    """Вспомогательная: создаёт мок httpx.Response (sync) для return_value AsyncMock."""
+    response = MagicMock()
+    response.status_code = status_code
+    response.json.return_value = json_data
+    return response
+
+
+async def test_get_teacher_by_name():
     """Поиск преподавателя по имени через HTTP."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
     mock_teacher = {
         "id": "t1",
@@ -15,32 +23,31 @@ def test_get_teacher_by_name():
         "disciplines": ["Алгоритмы", "Базы данных"],
     }
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = mock_teacher
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(200, mock_teacher)
 
-        teacher = client.find_teacher_by_name("Оксана Ниловна Константинова")
+        teacher = await client.find_teacher_by_name("Оксана Ниловна Константинова")
 
     assert teacher is not None
     assert teacher.full_name == "Оксана Ниловна Константинова"
     assert "Алгоритмы" in teacher.disciplines
 
 
-def test_get_teacher_by_name_not_found():
+async def test_get_teacher_by_name_not_found():
     """404 при ненайденном преподавателе."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 404
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(404, None)
 
-        teacher = client.find_teacher_by_name("Несуществующий")
+        teacher = await client.find_teacher_by_name("Несуществующий")
 
     assert teacher is None
 
 
-def test_get_teacher_schedule():
+async def test_get_teacher_schedule():
     """Расписание преподавателя через HTTP."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
     mock_schedule = [
         {
@@ -58,37 +65,36 @@ def test_get_teacher_schedule():
         }
     ]
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = mock_schedule
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(200, mock_schedule)
 
-        schedule = client.get_teacher_schedule("Оксана Ниловна Константинова")
+        schedule = await client.get_teacher_schedule("Оксана Ниловна Константинова")
 
     assert len(schedule) == 1
     assert schedule[0].day == "Понедельник"
 
 
-def test_get_teacher_schedule_with_day():
+async def test_get_teacher_schedule_with_day():
     """Расписание преподавателя с фильтром по дню."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = []
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(200, [])
 
-        schedule = client.get_teacher_schedule("Оксана Ниловна Константинова", day="Вторник")
+        schedule = await client.get_teacher_schedule(
+            "Оксана Ниловна Константинова", day="Вторник"
+        )
 
     assert schedule == []
 
 
-def test_get_teacher_schedule_nonexistent_teacher():
+async def test_get_teacher_schedule_nonexistent_teacher():
     """Расписание для несуществующего преподавателя — пустой список."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = []
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(200, [])
 
-        schedule = client.get_teacher_schedule("Несуществующий")
+        schedule = await client.get_teacher_schedule("Несуществующий")
 
     assert schedule == []

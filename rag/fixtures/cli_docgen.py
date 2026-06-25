@@ -2,16 +2,15 @@ import os
 import argparse
 import sys
 
-from agent_tutor_sdk.data_client import DataServiceClient
-from fixtures.document_generator import MaterialDocumentGenerator
-from fixtures.rag_tools import RagTools
+from agent_tutor_sdk.data_client import DataServiceClientSync
+from rag.fixtures.document_generator import MaterialDocumentGenerator
+from rag.fixtures.rag_tools import RagTools
 
 
 def cmd_generate(args):
     if args.model:
         os.environ["DOCGEN_MODEL"] = args.model
 
-    client = DataServiceClient()
     rag = RagTools()
     generator = MaterialDocumentGenerator(rag)
 
@@ -30,15 +29,13 @@ def cmd_generate(args):
     except RuntimeError as e:
         print(f"ERR {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        client.close()
 
 
 def cmd_generate_all(args):
     if args.model:
         os.environ["DOCGEN_MODEL"] = args.model
 
-    client = DataServiceClient()
+    client = DataServiceClientSync()
     rag = RagTools()
     generator = MaterialDocumentGenerator(rag)
     disciplines = client.get_all_disciplines()
@@ -58,8 +55,6 @@ def cmd_generate_all(args):
     except RuntimeError as e:
         print(f"ERR {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        client.close()
 
 
 def main():

@@ -10,17 +10,11 @@ import (
 
 // TeacherRepo — доступ к данным преподавателей и их расписания.
 type TeacherRepo struct {
-	db      db.DB
-	groupFn func(ctx context.Context, groupID string) (*models.Group, error)
+	db db.DB
 }
 
 func NewTeacherRepo(database db.DB) *TeacherRepo {
-	return &TeacherRepo{
-		db:      database,
-		groupFn: func(ctx context.Context, groupID string) (*models.Group, error) {
-			return queryGroup(ctx, database, groupID)
-		},
-	}
+	return &TeacherRepo{db: database}
 }
 
 // FindByName ищет преподавателя по полному ФИО.
@@ -42,15 +36,21 @@ func (r *TeacherRepo) FindByName(ctx context.Context, name string) (*models.Teac
 }
 
 // GetSchedule возвращает расписание преподавателя, опционально по дню.
+//
+// Один запрос с LEFT JOIN groups + пост-фильтрация lessons_json на стороне Go.
+// Это убирает N+1: раньше делался отдельный запрос к groups для каждой записи расписания.
 func (r *TeacherRepo) GetSchedule(ctx context.Context, teacherName string, day *string) ([]models.ScheduleEntry, error) {
 	var query string
 	var args []any
 
 	if day != nil {
-		query = `SELECT id, day, group_id, lessons_json FROM schedule WHERE day = ?`
+		query = `SELECT s.id, s.day, s.group_id, g.name, g.speciality, s.lessons_json
+		         FROM schedule s LEFT JOIN groups g ON g.id = s.group_id
+		         WHERE s.day = ?`
 		args = append(args, *day)
 	} else {
-		query = `SELECT id, day, group_id, lessons_json FROM schedule`
+		query = `SELECT s.id, s.day, s.group_id, g.name, g.speciality, s.lessons_json
+		         FROM schedule s LEFT JOIN groups g ON g.id = s.group_id`
 	}
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -61,14 +61,16 @@ func (r *TeacherRepo) GetSchedule(ctx context.Context, teacherName string, day *
 
 	var entries []models.ScheduleEntry
 	for rows.Next() {
-		var id, dayName, groupID, lessonsJSON string
-		if err := rows.Scan(&id, &dayName, &groupID, &lessonsJSON); err != nil {
+		var (
+			id, dayName, groupID, groupName, speciality, lessonsJSON string
+		)
+		if err := rows.Scan(&id, &dayName, &groupID, &groupName, &speciality, &lessonsJSON); err != nil {
 			continue
 		}
 
 		// Фильтруем уроки — оставляем только те, которые ведёт этот преподаватель
 		allLessons := parseLessonsJSON(lessonsJSON)
-		var teacherLessons []models.Lesson
+		teacherLessons := make([]models.Lesson, 0, len(allLessons))
 		for _, l := range allLessons {
 			if l.TeacherName == teacherName {
 				teacherLessons = append(teacherLessons, l)
@@ -76,11 +78,14 @@ func (r *TeacherRepo) GetSchedule(ctx context.Context, teacherName string, day *
 		}
 
 		if len(teacherLessons) > 0 {
-			group, _ := r.groupFn(ctx, groupID)
 			entries = append(entries, models.ScheduleEntry{
-				ID:      id,
+				ID: id,
+				Group: &models.Group{
+					ID:         groupID,
+					Name:       groupName,
+					Speciality: speciality,
+				},
 				Day:     dayName,
-				Group:   group,
 				Lessons: teacherLessons,
 			})
 		}

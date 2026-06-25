@@ -14,7 +14,6 @@ type Stats struct {
 	Disciplines int `json:"disciplines"`
 	Grades      int `json:"grades"`
 	Schedule    int `json:"schedule"`
-	Documents   int `json:"documents"`
 }
 
 // StatsRepo — доступ к статистике БД.
@@ -26,7 +25,7 @@ type StatsRepo struct {
 func NewStatsRepo(database db.DB) *StatsRepo {
 	return &StatsRepo{
 		db:     database,
-		tables: []string{"students", "teachers", "disciplines", "grades", "schedule", "documents"},
+		tables: []string{"students", "teachers", "disciplines", "grades", "schedule"},
 	}
 }
 
@@ -51,6 +50,5 @@ func (r *StatsRepo) GetAll(ctx context.Context) (*Stats, error) {
 		Disciplines: counts["disciplines"],
 		Grades:      counts["grades"],
 		Schedule:    counts["schedule"],
-		Documents:   counts["documents"],
 	}, nil
 }

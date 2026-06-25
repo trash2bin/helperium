@@ -17,22 +17,25 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 from faker import Faker
 
-from agent_tutor_sdk.db.connector import PROJECT_ROOT
 from agent_tutor_sdk.contracts import Discipline
-from agent_tutor_sdk.data_client import DataServiceClient
-from agent_tutor_sdk.rag.models import Material
-from fixtures.catalog import (
+from agent_tutor_sdk.data_client import DataServiceClientSync as DataServiceClient
+from rag.fixtures._material import Material
+from rag.fixtures.catalog import (
     CURRICULUM,
     DISCIPLINE_TOPICS,
     GROUP_NAMES,
     GROUP_SPECIALTY_MAP,
     SPECIALITIES,
 )
-from fixtures.rag_tools import RagTools
+from rag.fixtures.rag_tools import RagTools
+
+# Выходная директория для сгенерированных материалов.
+# По умолчанию — ./generated_materials относительно cwd.
+# Переопределяется через env DOCGEN_OUTPUT_DIR.
+DEFAULT_OUTPUT_DIR = Path(os.environ.get("DOCGEN_OUTPUT_DIR", "./generated_materials")).resolve()
 
 
 DEFAULT_DOCGEN_MODEL = "qwen2.5:0.5b"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "generated_materials"
 DOCX_FONT_NAME = "Times New Roman"
 DOCX_BODY_SIZE_PT = 14
 

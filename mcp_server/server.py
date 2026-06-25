@@ -40,23 +40,26 @@ mcp = FastMCP("University Server")
 
 
 @mcp.tool()
-def find_student_by_name(
+async def find_student_by_name(
     name: Annotated[
         str, Field(description="Полное ФИО студента. Пример: 'Иван Петров Иванович'")
     ],
 ) -> Optional[Any]:
     """Найти студента по имени."""
-    return _find_student_by_name(name)
+    return await _find_student_by_name(name)
 
 
 @mcp.tool()
-def get_student(
+async def get_student(
     student_id: Annotated[
-        str, Field(description="ID студента (UUID или число). Получи через find_student_by_name.")
+        str,
+        Field(
+            description="ID студента (UUID или число). Получи через find_student_by_name."
+        ),
     ],
 ) -> Optional[Any]:
     """Получить карточку студента по ID."""
-    return _get_student(student_id)
+    return await _get_student(student_id)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -65,17 +68,19 @@ def get_student(
 
 
 @mcp.tool()
-def get_schedule(
+async def get_schedule(
     group_id: Annotated[
         str, Field(description="ID группы (UUID). Берётся из поля group.id студента.")
     ],
     day: Annotated[
         Optional[str],
-        Field(description="День недели по-русски. Не передавай если нужно всё расписание."),
+        Field(
+            description="День недели по-русски. Не передавай если нужно всё расписание."
+        ),
     ] = None,
 ) -> List[Any]:
     """Расписание группы студента."""
-    return _get_schedule(group_id, day)
+    return await _get_schedule(group_id, day)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -84,25 +89,29 @@ def get_schedule(
 
 
 @mcp.tool()
-def get_disciplines(
+async def get_disciplines(
     student_id: Annotated[
         str, Field(description="ID студента из find_student_by_name или get_student.")
     ],
 ) -> List[Any]:
     """Список дисциплин студента."""
-    return _get_disciplines(student_id)
+    return await _get_disciplines(student_id)
 
 
 @mcp.tool()
-def get_student_grades(
-    student_id: Annotated[str, Field(description="ID студента из find_student_by_name.")],
+async def get_student_grades(
+    student_id: Annotated[
+        str, Field(description="ID студента из find_student_by_name.")
+    ],
     discipline_id: Annotated[
         Optional[str],
-        Field(description="ID дисциплины для фильтрации. Не передавай если нужны все оценки."),
+        Field(
+            description="ID дисциплины для фильтрации. Не передавай если нужны все оценки."
+        ),
     ] = None,
 ) -> List[Any]:
     """Оценки студента."""
-    return _get_student_grades(student_id, discipline_id)
+    return await _get_student_grades(student_id, discipline_id)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -111,25 +120,25 @@ def get_student_grades(
 
 
 @mcp.tool()
-def get_teacher_by_name(
-    name: Annotated[
-        str, Field(description="Полное ФИО преподавателя.")
-    ],
+async def get_teacher_by_name(
+    name: Annotated[str, Field(description="Полное ФИО преподавателя.")],
 ) -> Optional[Any]:
     """Найти преподавателя по имени."""
-    return _get_teacher_by_name(name)
+    return await _get_teacher_by_name(name)
 
 
 @mcp.tool()
-def get_teacher_schedule(
+async def get_teacher_schedule(
     teacher_name: Annotated[str, Field(description="Полное ФИО преподавателя.")],
     day: Annotated[
         Optional[str],
-        Field(description="День недели по-русски. Не передавай если нужно всё расписание."),
+        Field(
+            description="День недели по-русски. Не передавай если нужно всё расписание."
+        ),
     ] = None,
 ) -> List[Any]:
     """Расписание преподавателя."""
-    return _get_teacher_schedule(teacher_name, day)
+    return await _get_teacher_schedule(teacher_name, day)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -167,7 +176,9 @@ async def search_documents(
 
 @mcp.tool()
 async def context_search_in_documents(
-    query: Annotated[str, Field(description="Вопрос пользователя для поиска по документам.")],
+    query: Annotated[
+        str, Field(description="Вопрос пользователя для поиска по документам.")
+    ],
     discipline_id: Annotated[
         Optional[str], Field(description="ID дисциплины для сужения контекста.")
     ] = None,

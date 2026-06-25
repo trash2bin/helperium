@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, List, Optional
 
@@ -29,7 +28,7 @@ async def _list_documents(
     discipline_id: Optional[str] = None,
     limit: Optional[int] = None,
 ) -> List[Any]:
-    return await asyncio.to_thread(rag_client.list_documents_sync, discipline_id, limit) or []
+    return await rag_client.list_documents(discipline_id, limit) or []
 
 
 async def _search_documents(
@@ -37,7 +36,7 @@ async def _search_documents(
     discipline_id: Optional[str] = None,
     limit: int = 5,
 ) -> List[Any]:
-    return await asyncio.to_thread(rag_client.search_documents_sync, query, discipline_id, limit) or []
+    return await rag_client.search_documents(query, discipline_id, limit) or []
 
 
 async def _context_search_in_documents(
@@ -45,7 +44,7 @@ async def _context_search_in_documents(
     discipline_id: Optional[str] = None,
     limit: int = 5,
 ) -> Any:
-    return await asyncio.to_thread(rag_client.build_rag_context_sync, query, discipline_id, limit)
+    return await rag_client.build_rag_context(query, discipline_id, limit)
 
 
 async def _get_health_status_rag() -> dict:
@@ -53,7 +52,7 @@ async def _get_health_status_rag() -> dict:
     try:
         if rag_client is None:
             raise RuntimeError("RAG client not initialized")
-        health = await asyncio.to_thread(rag_client.health_sync)
+        health = await rag_client.health()
         if health.get("status") != "ok":
             rag_status = {"status": "error", "error": "RAG service degraded"}
     except Exception as e:

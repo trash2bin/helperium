@@ -1,13 +1,21 @@
-"""Тесты инструментов студента — через DataServiceClient (HTTP)."""
+"""Тесты инструментов студента — через AsyncDataServiceClient (HTTP)."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from agent_tutor_sdk.data_client import DataServiceClient
+from agent_tutor_sdk.data_client import AsyncDataServiceClient
 
 
-def test_get_student():
+def _mock_response(status_code: int, json_data):
+    """Вспомогательная: создаёт мок httpx.Response (sync) для return_value AsyncMock."""
+    response = MagicMock()
+    response.status_code = status_code
+    response.json.return_value = json_data
+    return response
+
+
+async def test_get_student():
     """Получение студента по ID через HTTP."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
     mock_student = {
         "id": "s1",
@@ -16,11 +24,10 @@ def test_get_student():
         "course": 2,
     }
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = mock_student
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(200, mock_student)
 
-        student = client.get_student("s1")
+        student = await client.get_student("s1")
 
     assert student is not None
     assert student.full_name == "Иван Петров Иванович"
@@ -29,9 +36,9 @@ def test_get_student():
     assert student.group.name == "ИВТ-21"
 
 
-def test_find_student_by_name():
+async def test_find_student_by_name():
     """Поиск студента по имени через HTTP."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
     mock_student = {
         "id": "s1",
@@ -40,37 +47,40 @@ def test_find_student_by_name():
         "course": None,
     }
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = mock_student
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(200, mock_student)
 
-        student = client.find_student_by_name("Иван Петров Иванович")
+        student = await client.find_student_by_name("Иван Петров Иванович")
 
     assert student is not None
     assert student.full_name == "Иван Петров Иванович"
 
 
-def test_get_student_not_found():
+async def test_get_student_not_found():
     """404 при ненайденном студенте."""
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 404
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(404, None)
 
-        student = client.get_student("nonexistent")
+        student = await client.get_student("nonexistent")
 
     assert student is None
 
 
-def test_get_schedule():
+async def test_get_schedule():
     """Расписание группы через HTTP."""
 
-    client = DataServiceClient("http://mock")
+    client = AsyncDataServiceClient("http://mock")
 
     mock_schedule = [
         {
             "id": "sc1",
-            "group": {"id": "g1", "name": "ИВТ-21", "speciality": "Информационные системы"},
+            "group": {
+                "id": "g1",
+                "name": "ИВТ-21",
+                "speciality": "Информационные системы",
+            },
             "day": "Понедельник",
             "lessons": [
                 {
@@ -83,11 +93,10 @@ def test_get_schedule():
         }
     ]
 
-    with patch.object(client, "_get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = mock_schedule
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = _mock_response(200, mock_schedule)
 
-        schedule = client.get_group_schedule("g1")
+        schedule = await client.get_group_schedule("g1")
 
     assert len(schedule) == 1
     assert schedule[0].day == "Понедельник"

@@ -1,8 +1,8 @@
 [project]
 name = "agent-tutor-workspace"
-version = "0.1.0"
+version = "0.2.0"
 readme = "README.md"
-description = "AI assistant for the university help site — workspace root"
+description = "AI assistant for the university help site - workspace root"
 requires-python = ">=3.12, <3.14"
 dependencies = []
 
@@ -17,7 +17,6 @@ members = [
     "mcp_server",
     "demo/api",
     "demo/web",
-    "fixtures",
 ]
 
 # ── Dev dependencies ─────────────────────────────────────────────────
@@ -30,12 +29,14 @@ dev = [
     "respx>=0.21.0",
     "freezegun>=1.5.0",
     "ruff>=0.7.0",
-]
+    "pyyaml>=6.0",  # тесты OpenAPI-спецификаций (test_openapi_api.py, test_openapi_spec.py)
+] 
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = [
     "agent-tutor-sdk/tests",
+    "fixtures/tests",
     "rag/tests",
     "mcp_server/tests",
     "demo/api/tests",
@@ -51,5 +52,3 @@ markers = [
 
 [tool.uv]
 index-strategy = "unsafe-first-match"
-
-

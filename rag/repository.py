@@ -2,6 +2,10 @@
 
 Принимает DBAPI2-совместимое соединение (sqlite3 / psycopg2).
 Вся SQL-адаптация под параметрический стиль — через переданный adapter.
+
+Внутренний слой: оперирует DocumentRow/MaterialRow (TypedDict из rag._types).
+Публичный слой (save_document_with_chunks) возвращает SaveResult с document_id + chunks_count.
+Конвертация в публичный Pydantic Document — в pipeline/service.
 """
 
 from __future__ import annotations
@@ -10,13 +14,34 @@ import json
 import logging
 import mimetypes
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from rag.config import RagConfig
-from rag._types import ChunkDict
-from agent_tutor_sdk.rag.models import Document, DocumentImportResult, Material
+from rag._types import (
+    ChunkDict,
+    DocumentRow,
+    MaterialRow,
+)
+from agent_tutor_sdk.rag.models import Document
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class SaveResult:
+    """Результат save_document_with_chunks — внутренний.
+
+    Attributes:
+        document: Pydantic Document (публичный, для обратной совместимости с тестами/вызывающими)
+        chunks_count: количество созданных чанков
+    """
+
+    document: Document
+    chunks_count: int
+
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +96,7 @@ class DocumentRepository:
 
     def list_documents(
         self, discipline_id: str | None = None, limit: int | None = None
-    ) -> list[Document]:
+    ) -> list[DocumentRow]:
         params: list[Any] = []
 
         if discipline_id:
@@ -94,6 +119,15 @@ class DocumentRepository:
         rows = cursor.fetchall()
         cursor.close()
         return [self._document_from_row(row) for row in rows]
+
+    def list_documents_as_models(
+        self, discipline_id: str | None = None, limit: int | None = None
+    ) -> list[Document]:
+        """Обёртка для обратной совместимости: конвертирует DocumentRow в публичный Document."""
+        return [
+            self._to_document_model(row)
+            for row in self.list_documents(discipline_id, limit)
+        ]
 
     def find_existing_by_path(self, source_path: str) -> str | None:
         cursor = self._exec(
@@ -127,7 +161,7 @@ class DocumentRepository:
             return row
         return None
 
-    def get_document_by_id(self, document_id: str) -> Document | None:
+    def get_document_by_id(self, document_id: str) -> DocumentRow | None:
         cursor = self._exec(
             "SELECT id, title, source_path, mime_type, discipline_id, discipline_name, created_at "
             "FROM documents WHERE id = ?",
@@ -137,9 +171,14 @@ class DocumentRepository:
         cursor.close()
         return self._document_from_row(row) if row else None
 
+    def get_document_by_id_as_model(self, document_id: str) -> Document | None:
+        """Алиас для обратной совместимости: возвращает публичную Pydantic Document."""
+        row = self.get_document_by_id(document_id)
+        return self._to_document_model(row) if row else None
+
     def get_materials(
         self, discipline_id: str, material_type: str | None = None
-    ) -> list[Material]:
+    ) -> list[MaterialRow]:
         cursor = self.conn.cursor()
         cursor.execute(
             self._sql(
@@ -160,7 +199,7 @@ class DocumentRepository:
 
     def search_materials(
         self, query: str, discipline_id: str | None = None
-    ) -> list[Material]:
+    ) -> list[MaterialRow]:
         cursor = self.conn.cursor()
         params: list[Any] = [f"%{query}%"]
         sql = """
@@ -211,7 +250,7 @@ class DocumentRepository:
         discipline_name: str | None = None,
         title: str | None = None,
         vector_store=None,
-    ) -> DocumentImportResult:
+    ) -> SaveResult:
         document_id = str(uuid.uuid4())
         mime_type = mimetypes.guess_type(source_path)[0] or "application/octet-stream"
         document_title = title or Path(source_path).stem
@@ -290,13 +329,17 @@ class DocumentRepository:
         else:
             self.conn.commit()
 
-        return DocumentImportResult(
+        # Внутренний слой репозитория возвращает публичную модель для удобства
+        # вызывающего кода (pipeline делает второй запрос, чтобы получить DocumentRow).
+        # Здесь конвертируем напрямую, чтобы сохранить обратную совместимость сигнатуры.
+        return SaveResult(
             document=Document(
                 id=document_id,
                 title=document_title,
                 source_path=source_path,
                 mime_type=mime_type,
                 discipline_id=discipline_id,
+                discipline_name=discipline_name,
                 created_at=created_at,
             ),
             chunks_count=len(chunks),
@@ -440,14 +483,28 @@ class DocumentRepository:
     # ── static helpers ──────────────────────────────────────────────
 
     @staticmethod
-    def _document_from_row(row: Any) -> Document:
-        return Document(
+    def _document_from_row(row: Any) -> DocumentRow:
+        """Конвертация сырого ряда БД в внутренний DocumentRow (TypedDict)."""
+        return DocumentRow(
             id=row["id"],
             title=row["title"],
             source_path=row["source_path"],
             mime_type=row["mime_type"],
             discipline_id=row["discipline_id"],
             discipline_name=row["discipline_name"],
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _to_document_model(row: DocumentRow) -> Document:
+        """Конвертация внутреннего DocumentRow в публичный Pydantic Document."""
+        return Document(
+            id=row["id"],
+            title=row["title"],
+            source_path=row["source_path"],
+            mime_type=row["mime_type"],
+            discipline_id=row.get("discipline_id"),
+            discipline_name=row.get("discipline_name"),
             created_at=row["created_at"],
         )
 
@@ -462,9 +519,10 @@ class DocumentRepository:
             return "Лабораторная работа"
         return "Документ"
 
-    def _material_from_row(self, row: Any) -> Material:
+    def _material_from_row(self, row: Any) -> MaterialRow:
+        """Конвертация сырого ряда в внутренний MaterialRow."""
         source_path = row["source_path"]
-        return Material(
+        return MaterialRow(
             id=row["id"],
             discipline_id=row.get("discipline_id"),
             type=self._material_type_from_title(row["title"], source_path),
@@ -474,3 +532,9 @@ class DocumentRepository:
             mime_type=row["mime_type"],
             content=Path(source_path).name,
         )
+
+    @staticmethod
+    def _to_material_model(row: MaterialRow) -> dict:
+        # Material модель не входит в публичный контракт SDK — возврат dict,
+        # чтобы избежать жёсткой зависимости внутреннего слоя от публичного API.
+        return dict(row)

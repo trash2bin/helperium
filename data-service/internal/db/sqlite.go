@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -38,6 +39,12 @@ func NewSQLite() (*SQLiteDB, error) {
 		return nil, fmt.Errorf("sqlite: failed to open %q: %w", absPath, err)
 	}
 
+	// Превентивная настройка пула. Для SQLite актуально меньше (один writer lock),
+	// но когда добавится PostgreSQL — параметры будут готовы.
+	conn.SetMaxOpenConns(25)
+	conn.SetMaxIdleConns(5)
+	conn.SetConnMaxLifetime(5 * time.Minute)
+
 	// Проверяем соединение
 	if err := conn.Ping(); err != nil {
 		conn.Close()
@@ -55,6 +62,10 @@ func (s *SQLiteDB) QueryRowContext(ctx context.Context, query string, args ...an
 
 func (s *SQLiteDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return s.conn.QueryContext(ctx, query, args...)
+}
+
+func (s *SQLiteDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return s.conn.ExecContext(ctx, query, args...)
 }
 
 func (s *SQLiteDB) PingContext(ctx context.Context) error {

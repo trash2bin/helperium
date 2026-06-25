@@ -24,7 +24,6 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
     environment:
       POSTGRES_USER: tutor
       POSTGRES_PASSWORD: tutor
@@ -57,9 +56,6 @@ services:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8084/health"]
       <<: *hc-curl
       start_period: 5s
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       - agent-tutor-net
     <<: *restart
@@ -85,9 +81,6 @@ services:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8082/health"]
       <<: *hc-curl
       start_period: 120s
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       - agent-tutor-net
     <<: *restart
@@ -104,14 +97,10 @@ services:
     environment:
       - DATA_SERVICE_URL=http://data-service:8084
       - RAG_SERVICE_URL=http://rag:8082
-      - DB_PATH=/data/app/university.db
-      - DATABASE_URL=postgresql://tutor:tutor@db:5432/agent_tutor
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8083/health"]
       <<: *hc-curl
     depends_on:
-      db:
-        condition: service_healthy
       data-service:
         condition: service_healthy
       rag:

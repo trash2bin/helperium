@@ -8,6 +8,8 @@
 specs/
 ├── rag.openapi.{json,yaml}   # RAG-сервис (порт 8082)
 ├── api.openapi.{json,yaml}   # API-сервер с агентом (порт 8081)
+├── schemas/                   # JSON Schema для Go data-service (генерируется из моделей)
+├── fixtures/                  # seed.json для data-service --seed (регенерируется, .gitignore)
 └── README.md
 ```
 

@@ -8,7 +8,12 @@ from typing import Callable
 
 from rag.config import RagConfig
 from rag.interfaces import EmbeddingProtocol, VectorStoreProtocol
-from agent_tutor_sdk.rag.models import DocumentImportResult, RagContext, RagSearchResult
+from agent_tutor_sdk.rag.models import (
+    Document,
+    DocumentImportResult,
+    RagContext,
+    RagSearchResult,
+)
 from rag.parser import DocumentParser
 from rag.chunker import TextChunker
 from rag.repository import DocumentRepository
@@ -78,18 +83,22 @@ class RAGPipeline:
         if on_progress:
             on_progress("done", n=result.chunks_count)
 
-        return result
+        return DocumentImportResult(
+            document=result.document,
+            chunks_count=result.chunks_count,
+        )
 
     def list_documents(
         self, discipline_id: str | None = None, limit: int | None = None
-    ) -> list:
-        """Список документов.
+    ) -> list[Document]:
+        """Список документов в публичном формате (Document Pydantic).
 
         Args:
             discipline_id: Опциональный ID дисциплины для фильтрации
             limit: Максимальное количество возвращаемых документов (None = без ограничения)
         """
-        return self.repository.list_documents(discipline_id, limit)
+        rows = self.repository.list_documents(discipline_id, limit)
+        return [self.repository._to_document_model(r) for r in rows]
 
     def delete_document_vectors(self, document_id: str) -> None:
         """Удалить векторы документа из векторного хранилища."""

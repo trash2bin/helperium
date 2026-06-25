@@ -36,6 +36,9 @@ async def test_llm_agent_stream_events():
     # get_history_messages должен вернуть список — он используется через *history
     mock_conv_manager.normalize_session_id.return_value = "default"
     mock_conv_manager.get_history_messages.return_value = []
+    # async-обёртки (используются orchestrator)
+    mock_conv_manager.aget_history_messages = AsyncMock(return_value=[])
+    mock_conv_manager.aremember_turn = AsyncMock(return_value=None)
 
     with patch("demo.api.agent.orchestrator.backlog"):
         agent = LLMAgent(

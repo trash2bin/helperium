@@ -63,6 +63,31 @@ MISTRAL_API_KEY=<token> MISTRAL_MODEL=mistral-medium ./scripts/dev.sh restart
 OPENAI_API_KEY=<token> ./scripts/dev.sh restart
 ```
 
+### Тестовая база с нуля
+
+Проект держит **две БД**: `university.db` (данные вуза) и `rag_documents.db` (индекс документов).
+Полная инструкция — в `AGENTS.md` → «Сидинг university.db». Короткий путь:
+
+```bash
+# 1. Сгенерировать seed.json (Python + faker)
+uv run agent-seedgen --students 80 --out specs/fixtures/seed.json
+
+# 2. Залить в SQLite (Go data-service)
+DB_PATH=./university.db \
+  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+
+# Или в PostgreSQL
+DATABASE_URL=postgresql://tutor:tutor@127.0.0.1:5432/agent_tutor \
+  DB_DRIVER=postgres \
+  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+
+# 3. Поднять всё
+./scripts/dev.sh start
+
+# 4. Импортировать PDF в RAG
+uv run agent-rag-ingest import ~/Documents/lecture.pdf -d <discipline-id>
+```
+
 ### Docker
 
 ```bash
@@ -73,8 +98,15 @@ docker compose --profile prod up -d               # + Caddy (HTTPS)
 ## CLI
 
 ```bash
-uv run --package fixtures python -m fixtures.ingest --help   # RAG-документы
-uv run --package fixtures python -m fixtures.agent_generate --help   # Генерация
+uv run agent-rag-ingest import ~/Documents/lecture.pdf -d <discipline-id>
+```
+
+### Сидинг university.db
+
+См. раздел в `AGENTS.md` → «Сидинг university.db». Короткий путь:
+
+```bash
+uv run agent-rag-docgen generate -d <discipline-id> --force   # генерация DOCX/PDF в RAG
 ```
 
 ## Команды разработчика
@@ -120,7 +152,7 @@ go build -o /dev/null ./cmd/server/
 │   ├── data-service.openapi.yaml
 │   ├── rag.openapi.yaml
 │   └── api.openapi.yaml
-├── fixtures/            # CLI-утилиты (генерация тестовых данных)
+├── rag/fixtures/      # CLI-утилиты (agent-rag-ingest, agent-rag-docgen, agent-seedgen)
 ├── scripts/             # dev.sh, init-db.sql
 ├── doc/                 # ROADMAP.md, планы
 ├── docker-compose.yml

@@ -4,8 +4,9 @@ import os
 import sys
 from pathlib import Path
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# demo-сервисы запускаются из корня проекта (scripts/dev.sh стартует из корня),
+# поэтому пути относительно cwd. Для другого cwd — переопредели env vars ниже.
+PROJECT_ROOT = Path.cwd()
 
 
 class DemoSettings:

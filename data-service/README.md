@@ -94,6 +94,12 @@ cmd/server/main.go         ← точка входа, graceful shutdown
 cd data-service
 DB_PATH=../university.db go run ./cmd/server/
 
+# Seed-режим (залить тестовые данные в пустую БД и выйти)
+DB_PATH=../university.db go run ./cmd/server/ --seed
+
+# С кастомным файлом сида
+DB_PATH=../university.db go run ./cmd/server/ --seed --seed-path ../specs/fixtures/seed.json
+
 # С другими портом
 PORT=8085 DB_PATH=../university.db go run ./cmd/server/
 ```
@@ -107,6 +113,89 @@ PORT=8085 DB_PATH=../university.db go run ./cmd/server/
 | `DATABASE_URL` | — | Строка подключения PostgreSQL |
 | `PORT` | `8084` | Порт HTTP |
 | `LOG_LEVEL` | `info` | Уровень лога (`info` или `debug`) |
+
+## Сидинг данных (Dev-режим)
+
+Data-service **только принимает** seed-данные и пишет в БД. **Генерацию** фейковых данных делает Python-утилита `agent-seedgen` (живёт в `rag/fixtures/`, бывший `fixtures/src/fixtures/seedgen.py`).
+
+```
+┌─────────────────────┐    seed.json     ┌──────────────────┐    SQL     ┌──────────┐
+│ agent-seedgen       │ ──────────────▶ │ data-service      │ ─────────▶ │ university│
+│ (Python + faker)    │  UUID, плоская  │ --seed (Go)       │            │ .db / PG  │
+│                     │  storage shape  │                   │            │           │
+└─────────────────────┘                 └──────────────────┘            └──────────┘
+```
+
+### 1. Сгенерировать seed.json (Python)
+
+```bash
+# Из корня проекта (cwd — репо)
+uv run agent-seedgen                                  # дефолт: 8 групп, 40 студентов
+uv run agent-seedgen --students 80 --grades 200       # кастомный размер
+uv run agent-seedgen --out /tmp/my-seed.json           # в другой файл
+```
+
+Файл `specs/fixtures/seed.json` содержит плоские UUID-id и структуру, совместимую с Go-сервисом. Источник данных (дисциплины, специальности, расписание) — `rag/fixtures/catalog.py`.
+
+### 2. Залить в БД (Go)
+
+```bash
+# SQLite (по умолчанию — university.db в cwd)
+DB_PATH=./university.db \
+  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+
+# PostgreSQL
+DATABASE_URL=postgresql://tutor:tutor@127.0.0.1:5432/agent_tutor \
+  DB_DRIVER=postgres \
+  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+```
+
+**Что делает `--seed`**:
+
+1. **Применяет DDL**: если таблиц в БД нет, они создаются автоматически из embedded SQL (`data-service/internal/db/schema.sql`).
+2. **Проверяет пустоту**: сидинг выполняется **только** если таблица `groups` содержит 0 записей. Это защита от случайной перезаписи реальных данных на проде.
+3. **Заливает в порядке FK** (соблюдая зависимости):
+   `groups` → `disciplines` → `teachers` → `students` → `schedule` → `grades`.
+4. **Завершается** после успешного сидинга (HTTP-сервер не стартует).
+
+Если БД не пуста — сервис паникует с `database already contains data, seed aborted`.
+
+### 3. Полный pipeline с нуля (университет + RAG)
+
+```bash
+# 1. Остановить всё и почистить артефакты
+./scripts/dev.sh stop
+rm -f university.db rag_documents.db
+rm -rf chroma_db/ generated_materials/
+
+# 2. Сгенерировать seed.json
+uv run agent-seedgen --students 80 --grades 200 --seed 42
+
+# 3. Залить в БД
+DB_PATH=./university.db \
+  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+
+# 4. Запустить все 5 сервисов
+./scripts/dev.sh start
+
+# 5. Импортировать документы в RAG
+uv run agent-rag-ingest import ~/Documents/lecture.pdf -d <discipline-id>
+```
+
+### Защита от перезаписи
+
+`data-service --seed` **не перезаписывает** непустую БД. Это by design: продовая БД вуза не должна быть уничтожена случайным сидом. Чтобы пересоздать с нуля:
+
+```bash
+# SQLite
+rm -f university.db
+go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+
+# PostgreSQL
+psql -c 'DROP DATABASE agent_tutor; CREATE DATABASE agent_tutor;'
+DATABASE_URL=postgresql://... DB_DRIVER=postgres \
+  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+```
 
 ## Docker
 

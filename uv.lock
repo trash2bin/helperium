@@ -18,7 +18,6 @@ members = [
     "agent-tutor-workspace",
     "demo-api",
     "demo-web",
-    "fixtures",
     "mcp-server",
     "rag",
 ]
@@ -58,7 +57,7 @@ requires-dist = [
 
 [[package]]
 name = "agent-tutor-workspace"
-version = "0.1.0"
+version = "0.2.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -68,6 +67,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-mock" },
+    { name = "pyyaml" },
     { name = "respx" },
     { name = "ruff" },
 ]
@@ -81,6 +81,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "pytest-mock", specifier = ">=3.14.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "respx", specifier = ">=0.21.0" },
     { name = "ruff", specifier = ">=0.7.0" },
 ]
@@ -955,27 +956,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bb/29/745f7d30d47fe0f251d3ad3dc2978a23141917661998763bebb6da007eb1/filetype-1.2.0.tar.gz", hash = "sha256:66b56cd6474bf41d8c54660347d37afcc3f7d1970648de365c102ef77548aadb", size = 998020, upload-time = "2022-11-02T17:34:04.141Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/18/79/1b8fa1bb3568781e84c9200f951c735f3f157429f44be0495da55894d620/filetype-1.2.0-py2.py3-none-any.whl", hash = "sha256:7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25", size = 19970, upload-time = "2022-11-02T17:34:01.425Z" },
-]
-
-[[package]]
-name = "fixtures"
-version = "0.2.0"
-source = { editable = "fixtures" }
-dependencies = [
-    { name = "agent-tutor-sdk" },
-    { name = "faker" },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "python-docx" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "agent-tutor-sdk", editable = "agent-tutor-sdk" },
-    { name = "faker", specifier = ">=20.0.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "python-docx", specifier = ">=1.2.0" },
 ]
 
 [[package]]
@@ -2850,10 +2830,12 @@ dependencies = [
     { name = "chonkie", extra = ["semantic"] },
     { name = "chromadb" },
     { name = "docling" },
+    { name = "faker" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "psycopg2-binary" },
     { name = "pydantic" },
+    { name = "python-docx" },
     { name = "sentence-transformers" },
     { name = "starlette" },
     { name = "uvicorn", extra = ["standard"] },
@@ -2865,10 +2847,12 @@ requires-dist = [
     { name = "chonkie", extras = ["semantic"], specifier = ">=1.0.0" },
     { name = "chromadb", specifier = ">=1.5.9" },
     { name = "docling", specifier = ">=2.0.0" },
+    { name = "faker", specifier = ">=20.0.0" },
     { name = "fastapi", specifier = ">=0.137.2" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "python-docx", specifier = ">=1.2.0" },
     { name = "sentence-transformers", specifier = ">=5.5.1" },
     { name = "starlette", specifier = ">=0.50.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0" },

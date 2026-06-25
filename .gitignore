@@ -21,3 +21,8 @@ backlog/
 .env
 *.egg-info
 dist/
+
+graphify-out/
+# specs/fixtures/seed.json — регенерируется через `uv run agent-seedgen`.
+# Детерминирован при --seed 42. Не храним в репе, чтобы не раздувать историю.
+specs/fixtures/seed.json

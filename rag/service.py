@@ -12,6 +12,7 @@ from typing import Any, Callable, Awaitable
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -166,7 +167,9 @@ async def health() -> JSONResponse:
 )
 async def list_documents(req: ListDocumentsRequest) -> ListDocumentsResponse:
     try:
-        docs = state.get_pipeline().list_documents(
+        # Sync SQLite + ChromaDB → в thread pool, чтобы не блокировать event loop
+        docs = await run_in_threadpool(
+            state.get_pipeline().list_documents,
             discipline_id=req.discipline_id,
             limit=req.limit,
         )
@@ -191,7 +194,9 @@ async def list_documents(req: ListDocumentsRequest) -> ListDocumentsResponse:
 )
 async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
     try:
-        result = state.get_pipeline().import_document(
+        # Долгая операция: парсинг + embedding + ChromaDB + SQLite — в thread pool
+        result = await run_in_threadpool(
+            state.get_pipeline().import_document,
             path=req.path,
             discipline_id=req.discipline_id,
             discipline_name=req.discipline_name,
@@ -228,7 +233,7 @@ async def delete_document(req: DeleteDocumentRequest) -> DeleteDocumentResponse:
             detail="Provide `path` or `document_id`",
         )
 
-    try:
+    def _do_delete() -> DeleteDocumentResponse:
         pipeline = state.get_pipeline()
         repo = pipeline.repository
         row = repo.find_document_for_delete(
@@ -256,6 +261,9 @@ async def delete_document(req: DeleteDocumentRequest) -> DeleteDocumentResponse:
 
         repo.delete_document_record(doc_id, commit=True)
         return DeleteDocumentResponse(deleted=doc_id, title=row["title"])
+
+    try:
+        return await run_in_threadpool(_do_delete)
     except Exception as exc:
         logger.exception("delete_document failed")
         raise HTTPException(
@@ -272,7 +280,8 @@ async def delete_document(req: DeleteDocumentRequest) -> DeleteDocumentResponse:
 )
 async def search(req: SearchRequest) -> SearchResponse:
     try:
-        results = state.get_pipeline().search_documents(
+        results = await run_in_threadpool(
+            state.get_pipeline().search_documents,
             query=req.query,
             discipline_id=req.discipline_id,
             limit=req.limit,
@@ -297,7 +306,8 @@ async def search(req: SearchRequest) -> SearchResponse:
 )
 async def context(req: ContextRequest) -> ContextResponse:
     try:
-        rag_context = state.get_pipeline().build_rag_context(
+        rag_context = await run_in_threadpool(
+            state.get_pipeline().build_rag_context,
             query=req.query,
             discipline_id=req.discipline_id,
             limit=req.limit,

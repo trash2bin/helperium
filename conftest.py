@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from agent_tutor_sdk.db.database import Database
 from rag.config import RagConfig
 from rag.interfaces import EmbeddingProtocol
 
@@ -26,14 +25,6 @@ def temp_dir():
 def db_path(temp_dir):
     """Provides a path to a temporary SQLite database."""
     return temp_dir / "test_university.db"
-
-
-@pytest.fixture
-def test_db(db_path):
-    """Provides an initialized Database instance with seed data in a temporary file."""
-    db = Database(db_path=db_path, load_seed_data=True)
-    yield db
-    db.close()
 
 
 @pytest.fixture

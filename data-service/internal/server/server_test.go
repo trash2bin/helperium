@@ -8,15 +8,83 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"testing"
 
 	_ "modernc.org/sqlite"
 
+	"github.com/agent-tutor/data-service/internal/seedgen"
 	"github.com/agent-tutor/data-service/internal/server"
 )
 
-// testDB открывает in-memory SQLite и выполняет seed.sql.
+// testSchema — DDL для in-memory SQLite в тестах.
+// Должен соответствовать схеме из data-service/internal/repository/*.go SQL-запросов.
+const testSchema = `
+CREATE TABLE IF NOT EXISTS groups (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    speciality TEXT
+);
+CREATE TABLE IF NOT EXISTS students (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    group_id TEXT,
+    course INTEGER,
+    FOREIGN KEY (group_id) REFERENCES groups (id)
+);
+CREATE TABLE IF NOT EXISTS teachers (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    disciplines_json TEXT
+);
+CREATE TABLE IF NOT EXISTS disciplines (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    description TEXT
+);
+CREATE TABLE IF NOT EXISTS grades (
+    id TEXT PRIMARY KEY,
+    student_id TEXT,
+    discipline_id TEXT,
+    grade TEXT,
+    date TEXT,
+    FOREIGN KEY (student_id) REFERENCES students (id),
+    FOREIGN KEY (discipline_id) REFERENCES disciplines (id)
+);
+CREATE TABLE IF NOT EXISTS schedule (
+    id TEXT PRIMARY KEY,
+    day TEXT,
+    group_id TEXT,
+    lessons_json TEXT,
+    FOREIGN KEY (group_id) REFERENCES groups (id)
+);
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    source_path TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL,
+    discipline_id TEXT,
+    created_at TEXT NOT NULL,
+    metadata_json TEXT,
+    FOREIGN KEY (discipline_id) REFERENCES disciplines (id)
+);
+`
+
+// loadTestSeed заливает компактный тестовый seed (seedgen.TestSeed) в in-memory DB.
+// Тесты ожидают конкретные ID/имена — TestSeed детерминированный.
+func loadTestSeed(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	if err := seedgen.Apply(context.Background(), sqlExecAdapter{db}, seedgen.TestSeed); err != nil {
+		t.Fatalf("seedgen.Apply: %v", err)
+	}
+}
+
+// sqlExecAdapter — заглушка для тестов, оборачивает *sql.DB в db.DB с ExecContext.
+type sqlExecAdapter struct{ *sql.DB }
+
+func (a sqlExecAdapter) Close() error { return a.DB.Close() }
+
+// testDB открывает in-memory SQLite и заливает fixtures/seed.json.
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -25,30 +93,20 @@ func testDB(t *testing.T) *sql.DB {
 		t.Fatalf("open in-memory db: %v", err)
 	}
 
-	seed, err := os.ReadFile("../../testdata/seed.sql")
-	if err != nil {
+	if _, err := db.ExecContext(context.Background(), testSchema); err != nil {
 		db.Close()
-		t.Fatalf("read seed.sql: %v", err)
+		t.Fatalf("apply schema: %v", err)
 	}
 
-	if _, err := db.ExecContext(context.Background(), string(seed)); err != nil {
-		db.Close()
-		t.Fatalf("execute seed.sql: %v", err)
-	}
-
+	loadTestSeed(t, db)
 	return db
 }
-
-// sqlDBAdapter адаптирует *sql.DB к интерфейсу db.DB.
-type sqlDBAdapter struct{ *sql.DB }
-
-func (a sqlDBAdapter) Close() error { return a.DB.Close() }
 
 // newTestServer создаёт тестовый HTTP-сервер с in-memory БД.
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	db := testDB(t)
-	router := server.NewRouter(sqlDBAdapter{db})
+	router := server.NewRouter(sqlExecAdapter{db})
 	ts := httptest.NewServer(router)
 	t.Cleanup(func() {
 		ts.Close()
