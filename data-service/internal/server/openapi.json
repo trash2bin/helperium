@@ -1,0 +1,438 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Data Service",
+    "description": "HTTP-сервис доступа к данным университета.\nЕдинственный сервис, который знает схему БД (таблицы, колонки, JOIN'ы).\n\nПри смене реальной БД вуза переписывается только этот сервис.\nВсе потребители (MCP, API, CLI) видят только этот HTTP-контракт.\n\n## Принципы\n- Все ответы — JSON, соответствующий схемам из `specs/schemas/`.\n- `404` когда сущность не найдена (не `200 null`).\n- Только GET — сервис не пишет в БД.\n- Correlation-ID пробрасывается через `X-Correlation-ID`.\n",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8084",
+      "description": "Локальный dev-сервер"
+    },
+    {
+      "url": "http://data-service:8084",
+      "description": "Docker compose (внутренняя сеть)"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Проверка состояния",
+        "description": "Проверяет доступность БД.",
+        "operationId": "health",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "Сервис работает (БД доступна или degraded)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/students/{id}": {
+      "get": {
+        "summary": "Карточка студента по ID",
+        "description": "Возвращает студента с информацией о группе и курсе.",
+        "operationId": "getStudent",
+        "tags": [
+          "Students"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID студента (UUID или строка)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Студент найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/student.schema.json"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Студент не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/students": {
+      "get": {
+        "summary": "Поиск студента по имени",
+        "description": "Возвращает студента по полному ФИО.",
+        "operationId": "findStudentByName",
+        "tags": [
+          "Students"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Полное ФИО студента. Пример: «Иван Петров Иванович»"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Студент найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/student.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Не передан параметр name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Студент не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/students/{id}/disciplines": {
+      "get": {
+        "summary": "Дисциплины студента",
+        "description": "Возвращает список дисциплин студента (через группу → расписание).",
+        "operationId": "getStudentDisciplines",
+        "tags": [
+          "Students"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID студента"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список дисциплин",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "schemas/discipline.schema.json"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Студент не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/students/{id}/grades": {
+      "get": {
+        "summary": "Оценки студента",
+        "description": "Возвращает оценки студента, опционально отфильтрованные по дисциплине.",
+        "operationId": "getStudentGrades",
+        "tags": [
+          "Students"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID студента"
+          },
+          {
+            "name": "discipline_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID дисциплины для фильтрации. Без параметра — все оценки."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список оценок",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "schemas/grade.schema.json"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teachers": {
+      "get": {
+        "summary": "Поиск преподавателя по имени",
+        "description": "Возвращает преподавателя с его дисциплинами.",
+        "operationId": "findTeacherByName",
+        "tags": [
+          "Teachers"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Полное ФИО преподавателя. Пример: «Оксана Ниловна Константинова»"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Преподаватель найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/teacher.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Не передан параметр name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Преподаватель не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teachers/{name}/schedule": {
+      "get": {
+        "summary": "Расписание преподавателя",
+        "description": "Возвращает расписание преподавателя, опционально по дню недели.",
+        "operationId": "getTeacherSchedule",
+        "tags": [
+          "Teachers"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Полное ФИО преподавателя"
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "День недели. Пример: «Понедельник». Без параметра — всё расписание."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список записей расписания",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "schemas/schedule-entry.schema.json"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groups/{id}/schedule": {
+      "get": {
+        "summary": "Расписание группы",
+        "description": "Возвращает расписание группы, опционально по дню недели.",
+        "operationId": "getGroupSchedule",
+        "tags": [
+          "Schedule"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID группы (UUID)"
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "День недели. Пример: «Понедельник». Без параметра — всё расписание."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список записей расписания",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "schemas/schedule-entry.schema.json"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/disciplines": {
+      "get": {
+        "summary": "Все дисциплины",
+        "description": "Возвращает список всех дисциплин.",
+        "operationId": "getAllDisciplines",
+        "tags": [
+          "Disciplines"
+        ],
+        "responses": {
+          "200": {
+            "description": "Список дисциплин",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "schemas/discipline.schema.json"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "db"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "description": "Общий статус сервиса."
+          },
+          "db": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "description": "Статус подключения к БД."
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Сообщение об ошибке."
+          }
+        }
+      }
+    }
+  }
+}

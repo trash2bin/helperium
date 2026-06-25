@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-tutor/schemas/discipline",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Уникальный идентификатор дисциплины"
+    },
+    "name": {
+      "type": "string",
+      "description": "Название дисциплины"
+    },
+    "description": {
+      "type": "string",
+      "description": "Краткое описание"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object"
+}

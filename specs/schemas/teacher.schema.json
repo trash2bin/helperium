@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-tutor/schemas/teacher",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Уникальный идентификатор преподавателя"
+    },
+    "full_name": {
+      "type": "string",
+      "description": "Полное ФИО преподавателя"
+    },
+    "disciplines": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "Список названий дисциплин"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object"
+}

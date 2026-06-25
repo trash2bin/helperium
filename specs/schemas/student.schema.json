@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-tutor/schemas/student",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Уникальный идентификатор студента"
+    },
+    "full_name": {
+      "type": "string",
+      "description": "Полное ФИО студента"
+    },
+    "group": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Уникальный идентификатор группы"
+        },
+        "name": {
+          "type": "string",
+          "description": "Название группы. Пример: ИВТ-21"
+        },
+        "speciality": {
+          "type": "string",
+          "description": "Специальность группы"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Группа студента. null если не назначена"
+    },
+    "course": {
+      "type": "integer",
+      "description": "Курс обучения (1–6). null если неизвестен"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object"
+}
