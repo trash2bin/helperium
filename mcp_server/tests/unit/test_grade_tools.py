@@ -1,69 +1,107 @@
-"""Тесты GradeRepo — оценки студентов."""
+"""Тесты оценок — через DataServiceClient (HTTP)."""
 
-from agent_tutor_sdk.db.repositories import GradeRepo
+from unittest.mock import patch
 
-
-def test_get_student_grades(test_db):
-    """Test getting grades for a student."""
-    repo = GradeRepo(test_db.connector)
-
-    # Use a known student from fixtures.json
-    student = test_db.get_id_student("Валерия Константиновна Макарова")
-    assert student is not None
-
-    grades = repo.get_student_grades(student.id)
-    assert isinstance(grades, list)
-    assert len(grades) >= 0
+from agent_tutor_sdk.data_client import DataServiceClient
 
 
-def test_get_student_grades_empty_for_unknown_student(test_db):
-    """Test getting grades for a student that doesn't exist."""
-    repo = GradeRepo(test_db.connector)
+def test_get_student_grades():
+    """Оценки студента через HTTP."""
+    client = DataServiceClient("http://mock")
 
-    grades = repo.get_student_grades("non-existent-student-id")
+    mock_grades = [
+        {
+            "id": "gr1",
+            "student_id": "s1",
+            "discipline_id": "d1",
+            "discipline_name": "Алгоритмы",
+            "grade": "5",
+            "date": "2026-01-15",
+        },
+        {
+            "id": "gr2",
+            "student_id": "s1",
+            "discipline_id": "d2",
+            "discipline_name": "Базы данных",
+            "grade": "4",
+            "date": "2026-02-20",
+        },
+    ]
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_grades
+
+        grades = client.get_student_grades("s1")
+
+    assert len(grades) == 2
+    assert grades[0].value == "5"
+    assert grades[0].discipline_name == "Алгоритмы"
+
+
+def test_get_student_grades_empty():
+    """Пустой список оценок для неизвестного студента."""
+    client = DataServiceClient("http://mock")
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = []
+
+        grades = client.get_student_grades("nonexistent")
+
     assert grades == []
 
 
-def test_get_student_grades_with_discipline_filter(test_db):
-    """Test getting grades for a student filtered by discipline."""
-    repo = GradeRepo(test_db.connector)
+def test_get_student_grades_with_discipline_filter():
+    """Оценки студента с фильтром по дисциплине."""
+    client = DataServiceClient("http://mock")
 
-    # Use a known student
-    student = test_db.get_id_student("Валерия Константиновна Макарова")
-    assert student is not None
+    mock_grades = [
+        {
+            "id": "gr1",
+            "student_id": "s1",
+            "discipline_id": "d1",
+            "discipline_name": "Алгоритмы",
+            "grade": "5",
+            "date": "2026-01-15",
+        }
+    ]
 
-    # Get all grades first
-    all_grades = repo.get_student_grades(student.id)
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_grades
 
-    # If there are grades, try filtering by first discipline
-    if all_grades:
-        first_discipline_id = all_grades[0].discipline_id
-        filtered_grades = repo.get_student_grades(
-            student.id, discipline_id=first_discipline_id
-        )
+        grades = client.get_student_grades("s1", discipline_id="d1")
 
-        assert isinstance(filtered_grades, list)
-        assert len(filtered_grades) <= len(all_grades)
-
-        for grade in filtered_grades:
-            assert grade.discipline_id == first_discipline_id
+    assert len(grades) == 1
+    assert grades[0].discipline_id == "d1"
 
 
-def test_get_student_grades_structure(test_db):
-    """Test that grades returned have valid structure."""
-    repo = GradeRepo(test_db.connector)
+def test_get_student_grades_structure():
+    """Структура возвращаемых оценок."""
+    client = DataServiceClient("http://mock")
 
-    # Use a known student
-    student = test_db.get_id_student("Валерия Константиновна Макарова")
-    assert student is not None
+    mock_grades = [
+        {
+            "id": "gr1",
+            "student_id": "s1",
+            "discipline_id": "d1",
+            "discipline_name": "Алгоритмы",
+            "grade": "5",
+            "date": "2026-01-15",
+        }
+    ]
 
-    grades = repo.get_student_grades(student.id)
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_grades
+
+        grades = client.get_student_grades("s1")
+
     for grade in grades:
-        assert hasattr(grade, "id")
-        assert hasattr(grade, "student_id")
-        assert hasattr(grade, "discipline_id")
-        assert hasattr(grade, "discipline_name")
-        assert hasattr(grade, "grade")
-        assert hasattr(grade, "date")
         assert isinstance(grade.id, str)
-        assert isinstance(grade.grade, str)
+        assert isinstance(grade.student_id, str)
+        assert isinstance(grade.discipline_id, str)
+        assert isinstance(grade.discipline_name, str)
+        assert isinstance(grade.value, str)
+        assert isinstance(grade.date, str)

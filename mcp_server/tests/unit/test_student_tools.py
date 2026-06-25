@@ -1,39 +1,95 @@
-"""Тесты StudentRepo — студенты и расписание."""
+"""Тесты инструментов студента — через DataServiceClient (HTTP)."""
 
-from agent_tutor_sdk.db.repositories import StudentRepo
+from unittest.mock import patch
+
+from agent_tutor_sdk.data_client import DataServiceClient
 
 
-def test_get_student(test_db):
-    """Test getting student information by valid ID."""
-    repo = StudentRepo(test_db.connector)
+def test_get_student():
+    """Получение студента по ID через HTTP."""
+    client = DataServiceClient("http://mock")
 
-    # Use a known student from fixtures.json
-    student = repo.get_id_student("Валерия Константиновна Макарова")
+    mock_student = {
+        "id": "s1",
+        "full_name": "Иван Петров Иванович",
+        "group": {"id": "g1", "name": "ИВТ-21", "speciality": "Информационные системы"},
+        "course": 2,
+    }
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_student
+
+        student = client.get_student("s1")
+
     assert student is not None
-
-    result = repo.get_student(student.id)
-    assert result is not None
-    assert result.name == "Валерия Константиновна Макарова"
-
-
-def test_find_student_by_name(test_db):
-    """Test finding student by name."""
-    repo = StudentRepo(test_db.connector)
-
-    result = repo.get_id_student("Валерия Константиновна Макарова")
-    assert result is not None
-    assert result.name == "Валерия Константиновна Макарова"
-
-
-def test_get_schedule(test_db):
-    """Test getting schedule for a group."""
-    repo = StudentRepo(test_db.connector)
-
-    # Need a valid group_id. Let's get it from the student
-    student = repo.get_id_student("Валерия Константиновна Макарова")
-    assert student is not None
+    assert student.full_name == "Иван Петров Иванович"
+    assert student.course == 2
     assert student.group is not None
+    assert student.group.name == "ИВТ-21"
 
-    schedule = repo.get_schedule(student.group.id)
-    assert isinstance(schedule, list)
-    assert len(schedule) >= 0
+
+def test_find_student_by_name():
+    """Поиск студента по имени через HTTP."""
+    client = DataServiceClient("http://mock")
+
+    mock_student = {
+        "id": "s1",
+        "full_name": "Иван Петров Иванович",
+        "group": None,
+        "course": None,
+    }
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_student
+
+        student = client.find_student_by_name("Иван Петров Иванович")
+
+    assert student is not None
+    assert student.full_name == "Иван Петров Иванович"
+
+
+def test_get_student_not_found():
+    """404 при ненайденном студенте."""
+    client = DataServiceClient("http://mock")
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 404
+
+        student = client.get_student("nonexistent")
+
+    assert student is None
+
+
+def test_get_schedule():
+    """Расписание группы через HTTP."""
+
+    client = DataServiceClient("http://mock")
+
+    mock_schedule = [
+        {
+            "id": "sc1",
+            "group": {"id": "g1", "name": "ИВТ-21", "speciality": "Информационные системы"},
+            "day": "Понедельник",
+            "lessons": [
+                {
+                    "discipline_id": "d1",
+                    "discipline_name": "Алгоритмы",
+                    "teacher_name": "Оксана Ниловна",
+                    "room": 101,
+                }
+            ],
+        }
+    ]
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_schedule
+
+        schedule = client.get_group_schedule("g1")
+
+    assert len(schedule) == 1
+    assert schedule[0].day == "Понедельник"
+    assert len(schedule[0].lessons) == 1
+    assert schedule[0].lessons[0].teacher_name == "Оксана Ниловна"

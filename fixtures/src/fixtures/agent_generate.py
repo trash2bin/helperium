@@ -2,7 +2,7 @@ import os
 import argparse
 import sys
 
-from agent_tutor_sdk.db.database import Database
+from agent_tutor_sdk.data_client import DataServiceClient
 from fixtures.document_generator import MaterialDocumentGenerator
 from fixtures.rag_tools import RagTools
 
@@ -11,9 +11,9 @@ def cmd_generate(args):
     if args.model:
         os.environ["DOCGEN_MODEL"] = args.model
 
-    db = Database()
-    rag = RagTools(db)
-    generator = MaterialDocumentGenerator(db, rag)
+    client = DataServiceClient()
+    rag = RagTools()
+    generator = MaterialDocumentGenerator(rag)
 
     try:
         materials = generator.ensure_materials(
@@ -31,17 +31,17 @@ def cmd_generate(args):
         print(f"ERR {e}", file=sys.stderr)
         sys.exit(1)
     finally:
-        db.close()
+        client.close()
 
 
 def cmd_generate_all(args):
     if args.model:
         os.environ["DOCGEN_MODEL"] = args.model
 
-    db = Database()
-    rag = RagTools(db)
-    generator = MaterialDocumentGenerator(db, rag)
-    disciplines = db.get_all_disciplines()
+    client = DataServiceClient()
+    rag = RagTools()
+    generator = MaterialDocumentGenerator(rag)
+    disciplines = client.get_all_disciplines()
     created_total = 0
 
     try:
@@ -59,7 +59,7 @@ def cmd_generate_all(args):
         print(f"ERR {e}", file=sys.stderr)
         sys.exit(1)
     finally:
-        db.close()
+        client.close()
 
 
 def main():

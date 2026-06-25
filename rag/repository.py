@@ -76,13 +76,13 @@ class DocumentRepository:
 
         if discipline_id:
             sql = """
-                SELECT id, title, source_path, mime_type, discipline_id, created_at
+                SELECT id, title, source_path, mime_type, discipline_id, discipline_name, created_at
                 FROM documents WHERE discipline_id = ? ORDER BY created_at DESC
                 """
             params.append(discipline_id)
         else:
             sql = """
-                SELECT id, title, source_path, mime_type, discipline_id, created_at
+                SELECT id, title, source_path, mime_type, discipline_id, discipline_name, created_at
                 FROM documents ORDER BY created_at DESC
                 """
 
@@ -129,7 +129,7 @@ class DocumentRepository:
 
     def get_document_by_id(self, document_id: str) -> Document | None:
         cursor = self._exec(
-            "SELECT id, title, source_path, mime_type, discipline_id, created_at "
+            "SELECT id, title, source_path, mime_type, discipline_id, discipline_name, created_at "
             "FROM documents WHERE id = ?",
             (document_id,),
         )
@@ -208,7 +208,8 @@ class DocumentRepository:
         source_path: str,
         chunks: list[ChunkDict],
         discipline_id: str | None,
-        title: str | None,
+        discipline_name: str | None = None,
+        title: str | None = None,
         vector_store=None,
     ) -> DocumentImportResult:
         document_id = str(uuid.uuid4())
@@ -236,8 +237,9 @@ class DocumentRepository:
             self._sql(
                 """
                 INSERT INTO documents (
-                    id, title, source_path, mime_type, discipline_id, created_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    id, title, source_path, mime_type,
+                    discipline_id, discipline_name, created_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
             ),
             (
@@ -246,6 +248,7 @@ class DocumentRepository:
                 source_path,
                 mime_type,
                 discipline_id,
+                discipline_name,
                 created_at,
                 json.dumps(
                     {
@@ -396,9 +399,9 @@ class DocumentRepository:
             self._sql(
                 """
                 INSERT INTO documents (
-                    id, title, source_path, mime_type, discipline_id,
-                    created_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    id, title, source_path, mime_type,
+                    discipline_id, discipline_name, created_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
             ),
             (
@@ -407,6 +410,7 @@ class DocumentRepository:
                 source_path,
                 mime_type,
                 discipline_id,
+                None,  # discipline_name не сохраняется для fallback-документов
                 created_at,
                 json.dumps({"generated": True, "indexed": False}, ensure_ascii=False),
             ),
@@ -443,6 +447,7 @@ class DocumentRepository:
             source_path=row["source_path"],
             mime_type=row["mime_type"],
             discipline_id=row["discipline_id"],
+            discipline_name=row["discipline_name"],
             created_at=row["created_at"],
         )
 

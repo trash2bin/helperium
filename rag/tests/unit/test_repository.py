@@ -19,6 +19,7 @@ def db_conn():
             source_path TEXT UNIQUE,
             mime_type TEXT,
             discipline_id TEXT,
+            discipline_name TEXT,
             created_at TEXT,
             metadata_json TEXT
         )

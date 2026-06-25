@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_tutor_sdk.db.schema import create_schema
+from rag.documents_schema import create_rag_schema
 from rag.chunker import TextChunker
 from rag.config import RagConfig
 from rag.parser import DocumentParser
@@ -40,7 +40,7 @@ def e2e_pipeline(temp_dir, e2e_config, mock_embedding) -> RAGPipeline:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    create_schema(conn)
+    create_rag_schema(conn)
 
     parser = DocumentParser(e2e_config)
     chunker = TextChunker(e2e_config)

@@ -23,9 +23,10 @@ class RagConfig:
     chunk_overlap: int = 80
     page_overlap_tokens: int = 50  # overlap между страницами
 
-    # ChromaDB
+    # ChromaDB + SQL
     chroma_path: str = ""
     chroma_collection: str = "university_documents"
+    rag_db_path: str = ""
 
     # Промпты
     rag_instruction: str = (
@@ -63,5 +64,6 @@ class RagConfig:
             chroma_collection=os.environ.get(
                 "CHROMA_COLLECTION", "university_documents"
             ),
+            rag_db_path=os.environ.get("RAG_DB_PATH", ""),
             context_max_tokens=int(os.environ.get("RAG_CONTEXT_MAX_TOKENS", "8000")),
         )

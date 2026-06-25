@@ -17,9 +17,9 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 from faker import Faker
 
-from agent_tutor_sdk.db.database import Database
 from agent_tutor_sdk.db.connector import PROJECT_ROOT
-from agent_tutor_sdk.db.models import Discipline
+from agent_tutor_sdk.contracts import Discipline
+from agent_tutor_sdk.data_client import DataServiceClient
 from agent_tutor_sdk.rag.models import Material
 from fixtures.catalog import (
     CURRICULUM,
@@ -434,14 +434,14 @@ MATERIAL_SPECS: tuple[MaterialSpec, ...] = (
 class MaterialDocumentGenerator:
     def __init__(
         self,
-        db: Database,
         rag_tools: RagTools,
         output_dir: str | Path | None = None,
         text_generator: DocumentTextGenerator | None = None,
         material_specs: Sequence[MaterialSpec] = MATERIAL_SPECS,
+        data_client: "DataServiceClient | None" = None,
     ) -> None:
-        self.db = db
         self.rag_tools = rag_tools
+        self._data_client = data_client or DataServiceClient()
         self.doc_repo = rag_tools.pipeline.repository
         self.output_dir = Path(
             output_dir or os.environ.get("DOCGEN_OUTPUT_DIR", DEFAULT_OUTPUT_DIR)
@@ -454,7 +454,9 @@ class MaterialDocumentGenerator:
         discipline_id: str,
         force: bool = False,
     ) -> list[Material]:
-        discipline = self.db.get_discipline(discipline_id)
+        # Проверяем что дисциплина существует через data-service HTTP
+        disciplines = self._data_client.get_all_disciplines()
+        discipline = next((d for d in disciplines if d.id == discipline_id), None)
         if discipline is None:
             return []
 
@@ -602,7 +604,6 @@ class MaterialDocumentGenerator:
             deleted_any = True
 
         if deleted_any:
-            self.db.commit()
             self._cleanup_empty_output_dirs()
 
     def _delete_generated_document_row(self, row: Any) -> None:

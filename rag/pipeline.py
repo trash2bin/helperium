@@ -45,6 +45,7 @@ class RAGPipeline:
         self,
         path: str,
         discipline_id: str | None = None,
+        discipline_name: str | None = None,
         title: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> DocumentImportResult:
@@ -69,6 +70,7 @@ class RAGPipeline:
             source_path=str(source_path),
             chunks=chunks,
             discipline_id=discipline_id,
+            discipline_name=discipline_name,
             title=title,
             vector_store=self.vector_store,
         )

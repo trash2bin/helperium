@@ -1,4 +1,8 @@
-"""DB layer — абстракция над SQLite / PostgreSQL."""
+"""DB layer — абстракция над SQLite / PostgreSQL.
+
+Доменные модели удалены — используй agent_tutor_sdk.contracts.
+Доменные репозитории удалены — используй agent_tutor_sdk.data_client.
+"""
 
 from agent_tutor_sdk.db.connector import (
     PROJECT_ROOT,
@@ -11,31 +15,6 @@ from agent_tutor_sdk.db.connector import (
     DBAPICursor,
 )
 from agent_tutor_sdk.db.database import Database, get_db, reset_db
-from agent_tutor_sdk.db.models import (
-    Student,
-    Teacher,
-    Group,
-    Discipline,
-    Grade,
-    Lesson,
-    ScheduleEntry,
-)
-from agent_tutor_sdk.db.models import (  # RAG models re-exported for convenience
-    Document,
-    DocumentChunk,
-    DocumentImportResult,
-    Material,
-    RagContext,
-    RagSearchResult,
-)
-from agent_tutor_sdk.db.repositories import (
-    BaseRepository,
-    GroupRepo,
-    StudentRepo,
-    TeacherRepo,
-    GradeRepo,
-    DisciplineRepo,
-)
 
 __all__ = [
     "PROJECT_ROOT",
@@ -49,23 +28,4 @@ __all__ = [
     "Database",
     "get_db",
     "reset_db",
-    "BaseRepository",
-    "GroupRepo",
-    "StudentRepo",
-    "TeacherRepo",
-    "GradeRepo",
-    "DisciplineRepo",
-    "Student",
-    "Teacher",
-    "Group",
-    "Discipline",
-    "Grade",
-    "Lesson",
-    "ScheduleEntry",
-    "Document",
-    "DocumentChunk",
-    "DocumentImportResult",
-    "Material",
-    "RagContext",
-    "RagSearchResult",
 ]

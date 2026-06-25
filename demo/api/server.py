@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from demo.api.agent import agent  # module itself, not singleton
+from demo.api.agent.orchestrator import LLMAgent
 from demo.api.agent.types import AgentEventData
 from demo.api.backlog import backlog
 from demo.api.data import data_repository
@@ -44,11 +44,11 @@ if os.environ.get("DEMO_DEBUG", "").lower() in ("1", "true", "yes"):
 
 
 # === Lazy agent singleton (init на первом запросе, а не при импорте) ===
-_agent_instance: agent.LLMAgent | None = None
+_agent_instance: LLMAgent | None = None
 _agent_lock = threading.Lock()
 
 
-def get_agent() -> agent.LLMAgent:
+def get_agent() -> LLMAgent:
     """Получить (или создать) глобальный экземпляр агента.
 
     Инициализируется лениво — при первом обращении, а не при импорте модуля.
@@ -62,7 +62,7 @@ def get_agent() -> agent.LLMAgent:
         with _agent_lock:
             if _agent_instance is None:
                 logger.info("Initializing LLM agent...")
-                _agent_instance = agent.LLMAgent()
+                _agent_instance = LLMAgent()
                 logger.info("LLM agent initialized")
     return _agent_instance
 

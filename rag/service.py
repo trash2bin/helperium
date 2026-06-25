@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent_tutor_sdk.db.database import Database, get_db
+from rag.db import RagDB
 from rag import create_rag_pipeline
 from rag.http_models import (
     ContextRequest,
@@ -46,17 +46,17 @@ class ServiceState:
     """Lazy-инициализируемое состояние процесса RAG-сервиса."""
 
     def __init__(self) -> None:
-        self._db: Database | None = None
+        self._db: RagDB | None = None
         self._pipeline = None
 
     def get_db(self):
         if self._db is None:
-            self._db = get_db()
+            self._db = RagDB()
         return self._db
 
     def get_pipeline(self):
         if self._pipeline is None:
-            self._pipeline = create_rag_pipeline(self.get_db().connector)
+            self._pipeline = create_rag_pipeline(self.get_db().conn)
         return self._pipeline
 
     def close(self) -> None:
@@ -194,6 +194,7 @@ async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
         result = state.get_pipeline().import_document(
             path=req.path,
             discipline_id=req.discipline_id,
+            discipline_name=req.discipline_name,
             title=req.title,
         )
         return ImportDocumentResponse(

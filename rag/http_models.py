@@ -58,6 +58,9 @@ class ImportDocumentRequest(BaseModel):
     discipline_id: Optional[str] = Field(
         default=None, description="ID дисциплины для привязки"
     )
+    discipline_name: Optional[str] = Field(
+        default=None, description="Название дисциплины (сохраняется при импорте)"
+    )
     title: Optional[str] = Field(default=None, description="Человекочитаемое название")
 
 

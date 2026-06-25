@@ -293,9 +293,9 @@ def test_pipeline_import_roundtrip(temp_dir, rag_config, mock_embedding):
     conn.execute("PRAGMA foreign_keys = ON")
 
     # Init schema using real schema
-    from agent_tutor_sdk.db.schema import create_schema
+    from rag.documents_schema import create_rag_schema
 
-    create_schema(conn)
+    create_rag_schema(conn)
 
     parser = DocumentParser(rag_config)
     chunker = TextChunker(rag_config)

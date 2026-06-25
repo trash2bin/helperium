@@ -4,7 +4,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from agent_tutor_sdk.db.database import Database
 from agent_tutor_sdk.rag.client import RagClient, RAG_SERVICE_URL
 
 # Settings
@@ -14,7 +13,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def cmd_import(args):
-    db = Database()
     rag = RagClient(RAG_SERVICE_URL)
     t0 = time.monotonic()
 
@@ -28,12 +26,9 @@ def cmd_import(args):
     except (FileNotFoundError, ValueError) as e:
         print(f"ERR {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        db.close()
 
 
 def cmd_list(args):
-    db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
     docs = rag.list_documents_sync(discipline_id=args.discipline_id)
@@ -44,11 +39,9 @@ def cmd_list(args):
     for doc in docs:
         print(f"  {doc.id}  {doc.title}  ({doc.mime_type})  {doc.source_path}")
     print(f"\nВсего: {len(docs)}")
-    db.close()
 
 
 def cmd_search(args):
-    db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
     results = rag.search_documents_sync(
@@ -66,10 +59,9 @@ def cmd_search(args):
         print(r.content[:500])
         if len(r.content) > 500:
             print("...")
-    db.close()
 
 
-def _delete_documents(db: Database, rag: RagClient, rows) -> int:
+def _delete_documents(rag: RagClient, rows) -> int:
     deleted = 0
     for row in rows:
         doc_id = row["id"]
@@ -87,7 +79,6 @@ def _delete_documents(db: Database, rag: RagClient, rows) -> int:
                     file=sys.stderr,
                 )
         deleted += 1
-    db.commit()
     return deleted
 
 
@@ -111,7 +102,6 @@ def _cleanup_empty_generated_dirs() -> None:
 
 
 def cmd_clear_generated(args):
-    db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
     docs = rag.list_documents_sync(discipline_id=args.discipline_id)
@@ -121,14 +111,12 @@ def cmd_clear_generated(args):
         if "generated_materials" in doc.source_path
     ]
 
-    deleted = _delete_documents(db, rag, rows)
+    deleted = _delete_documents(rag, rows)
     _cleanup_empty_generated_dirs()
     print(f"Удалено документов: {deleted}")
-    db.close()
 
 
 def cmd_delete(args):
-    db = Database()
     rag = RagClient(RAG_SERVICE_URL)
 
     if args.path:
@@ -141,7 +129,6 @@ def cmd_delete(args):
                 break
         if not row:
             print("Документ не найден.")
-            db.close()
             return
     elif args.document_id:
         docs = rag.list_documents_sync()
@@ -152,7 +139,6 @@ def cmd_delete(args):
                 break
         if not row:
             print("Документ не найден.")
-            db.close()
             return
     else:
         print("ERR укажите --path или --document-id", file=sys.stderr)
@@ -162,7 +148,6 @@ def cmd_delete(args):
     title = row["title"]
     rag.delete_document_sync(document_id=doc_id)
     print(f"OK  удалён: {title} ({doc_id})")
-    db.close()
 
 
 def main():

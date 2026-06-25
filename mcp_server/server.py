@@ -1,36 +1,42 @@
+"""MCP-сервер университетского ассистента.
+
+Данные университета — через data-service (Go) по HTTP.
+RAG-документы — через RAG-сервис по HTTP.
+SQL-запросов университетских данных не содержит.
+"""
+
 import os
-import asyncio
 import logging
 from mcp.server.fastmcp import FastMCP
 from typing import Annotated, Any, Optional, List
 from pydantic import Field
-from agent_tutor_sdk.db.database import Database, get_db
-from agent_tutor_sdk.db.models import (
-    Grade,
-    ScheduleEntry,
-    Discipline,
-    Student,
-    Teacher,
+
+from mcp_server.tools_via_http import (  # университетские данные → data-service (Go)
+    _find_student_by_name,
+    _get_student,
+    _get_schedule,
+    _get_disciplines,
+    _get_student_grades,
+    _get_teacher_by_name,
+    _get_teacher_schedule,
+    _health_db_status,
 )
-from agent_tutor_sdk.rag.client import RagClient, RAG_SERVICE_URL
-from agent_tutor_sdk.rag.models import Document, RagContext, RagSearchResult
+from mcp_server.tools_rag import (  # RAG-документы → RAG-сервис
+    init_rag,
+    _list_documents,
+    _search_documents,
+    _context_search_in_documents,
+    _get_health_status_rag,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# Lazy-инициализация БД и репозиториев (заполняется в main())
-# Используется @mcp.tool() декоратором — переменные разрешаются в момент вызова
-_db: Database | None = None
-student_repo: Any = None
-teacher_repo: Any = None
-grade_repo: Any = None
-discipline_repo: Any = None
-rag_client: RagClient | None = None
 
 mcp = FastMCP("University Server")
 
 
+# ══════════════════════════════════════════════════════════════════════
 # СТУДЕНТ
+# ══════════════════════════════════════════════════════════════════════
 
 
 @mcp.tool()
@@ -38,35 +44,24 @@ def find_student_by_name(
     name: Annotated[
         str, Field(description="Полное ФИО студента. Пример: 'Иван Петров Иванович'")
     ],
-) -> Optional[Student]:
-    """Найти студента по имени.
-
-    Используй ПЕРВЫМ если знаешь имя, но не знаешь ID.
-    Возвращает Student: id, name, course, group {id, name, speciality}.
-    group.id нужен для get_schedule. id нужен для get_student_grades и get_disciplines.
-    Возвращает null если не найден.
-    """
-    return student_repo.get_id_student(name)
+) -> Optional[Any]:
+    """Найти студента по имени."""
+    return _find_student_by_name(name)
 
 
 @mcp.tool()
 def get_student(
     student_id: Annotated[
-        str,
-        Field(
-            description="ID студента (UUID или число). Получи через find_student_by_name."
-        ),
+        str, Field(description="ID студента (UUID или число). Получи через find_student_by_name.")
     ],
-) -> Optional[Student]:
-    """Получить карточку студента по ID.
-
-    Возвращает Student: id, name, course, group {id, name, speciality}.
-    Возвращает null если не найден.
-    """
-    return student_repo.get_student(student_id)
+) -> Optional[Any]:
+    """Получить карточку студента по ID."""
+    return _get_student(student_id)
 
 
+# ══════════════════════════════════════════════════════════════════════
 # РАСПИСАНИЕ
+# ══════════════════════════════════════════════════════════════════════
 
 
 @mcp.tool()
@@ -76,21 +71,16 @@ def get_schedule(
     ],
     day: Annotated[
         Optional[str],
-        Field(
-            description="День недели по-русски: 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'. "
-            "Не передавай если нужно всё расписание."
-        ),
+        Field(description="День недели по-русски. Не передавай если нужно всё расписание."),
     ] = None,
-) -> List[ScheduleEntry]:
-    """Расписание группы студента.
-
-    ВАЖНО: принимает group.id (из карточки студента), а НЕ student.id.
-    Возвращает список ScheduleEntry: day, group, lessons[{discipline_id, discipline_name, teacher_name, room}].
-    """
-    return student_repo.get_schedule(group_id, day) or []
+) -> List[Any]:
+    """Расписание группы студента."""
+    return _get_schedule(group_id, day)
 
 
+# ══════════════════════════════════════════════════════════════════════
 # ДИСЦИПЛИНЫ И ОЦЕНКИ
+# ══════════════════════════════════════════════════════════════════════
 
 
 @mcp.tool()
@@ -98,54 +88,36 @@ def get_disciplines(
     student_id: Annotated[
         str, Field(description="ID студента из find_student_by_name или get_student.")
     ],
-) -> List[Discipline]:
-    """Список дисциплин студента.
-
-    Возвращает List[Discipline]: id, name, description.
-    discipline.id можно передать в get_student_grades для фильтрации по предмету.
-    """
-    return discipline_repo.get_disciplines(student_id) or []
+) -> List[Any]:
+    """Список дисциплин студента."""
+    return _get_disciplines(student_id)
 
 
 @mcp.tool()
 def get_student_grades(
-    student_id: Annotated[
-        str, Field(description="ID студента из find_student_by_name.")
-    ],
+    student_id: Annotated[str, Field(description="ID студента из find_student_by_name.")],
     discipline_id: Annotated[
         Optional[str],
-        Field(
-            description="ID дисциплины из get_disciplines для фильтрации по предмету. "
-            "Не передавай если нужны все оценки — вызов без discipline_id вернёт их все."
-        ),
+        Field(description="ID дисциплины для фильтрации. Не передавай если нужны все оценки."),
     ] = None,
-) -> List[Grade]:
-    """Оценки студента.
-
-    Без discipline_id — все оценки. С discipline_id — только по этому предмету.
-    ВАЖНО: не перебирай discipline_id вручную — вызови один раз без него, чтобы получить всё.
-    Возвращает List[Grade]: id, student_id, discipline_id, discipline_name, grade, date.
-    """
-    return grade_repo.get_student_grades(student_id, discipline_id) or []
+) -> List[Any]:
+    """Оценки студента."""
+    return _get_student_grades(student_id, discipline_id)
 
 
+# ══════════════════════════════════════════════════════════════════════
 # ПРЕПОДАВАТЕЛЬ
+# ══════════════════════════════════════════════════════════════════════
 
 
 @mcp.tool()
 def get_teacher_by_name(
     name: Annotated[
-        str,
-        Field(
-            description="Полное ФИО преподавателя. Пример: 'Оксана Ниловна Константинова'"
-        ),
+        str, Field(description="Полное ФИО преподавателя.")
     ],
-) -> Optional[Teacher]:
-    """Найти преподавателя по имени.
-
-    Возвращает Teacher: id, name, disciplines[]. Null если не найден.
-    """
-    return teacher_repo.get_teacher_by_name(name)
+) -> Optional[Any]:
+    """Найти преподавателя по имени."""
+    return _get_teacher_by_name(name)
 
 
 @mcp.tool()
@@ -153,167 +125,93 @@ def get_teacher_schedule(
     teacher_name: Annotated[str, Field(description="Полное ФИО преподавателя.")],
     day: Annotated[
         Optional[str],
-        Field(
-            description="День недели по-русски. Не передавай если нужно всё расписание."
-        ),
+        Field(description="День недели по-русски. Не передавай если нужно всё расписание."),
     ] = None,
-) -> List[ScheduleEntry]:
-    """Расписание преподавателя.
-
-    Принимает имя напрямую, отдельный вызов get_teacher_by_name не нужен.
-    Возвращает List[ScheduleEntry]: day, group, lessons[].
-    """
-    return teacher_repo.get_teacher_schedule(teacher_name, day) or []
+) -> List[Any]:
+    """Расписание преподавателя."""
+    return _get_teacher_schedule(teacher_name, day)
 
 
+# ══════════════════════════════════════════════════════════════════════
 # ДОКУМЕНТЫ / RAG
+# ══════════════════════════════════════════════════════════════════════
 
 
 @mcp.tool()
 async def list_documents(
     discipline_id: Annotated[
         Optional[str],
-        Field(
-            description="ID дисциплины для фильтрации. Не передавай для получения всех документов."
-        ),
+        Field(description="ID дисциплины для фильтрации."),
     ] = None,
     limit: Annotated[
         Optional[int], Field(description="Максимум документов (1–1000).", ge=1, le=1000)
     ] = None,
-) -> List[Document]:
-    """Список документов, доступных для RAG-поиска.
-
-    Возвращает List[Document]: id, title, source_path, mime_type, discipline_id, created_at.
-    """
-    return (
-        await asyncio.to_thread(rag_client.list_documents_sync, discipline_id, limit)
-        or []
-    )
+) -> List[Any]:
+    """Список документов, доступных для RAG-поиска."""
+    return await _list_documents(discipline_id, limit)
 
 
 @mcp.tool()
 async def search_documents(
     query: Annotated[str, Field(description="Поисковый запрос по документам.")],
     discipline_id: Annotated[
-        Optional[str],
-        Field(description="ID дисциплины для сужения поиска. Опционально."),
+        Optional[str], Field(description="ID дисциплины для сужения поиска.")
     ] = None,
     limit: Annotated[
         int, Field(description="Количество фрагментов (1–20).", ge=1, le=20)
     ] = 5,
-) -> List[RagSearchResult]:
-    """Поиск релевантных фрагментов документов (RAG).
-
-    Возвращает List[RagSearchResult]: document_id, document_title, chunk_id, page, score, content.
-    Используй context_search_in_documents если нужен готовый контекст для ответа.
-    """
-    return (
-        await asyncio.to_thread(
-            rag_client.search_documents_sync, query, discipline_id, limit
-        )
-        or []
-    )
+) -> List[Any]:
+    """Поиск релевантных фрагментов документов (RAG)."""
+    return await _search_documents(query, discipline_id, limit)
 
 
 @mcp.tool()
 async def context_search_in_documents(
-    query: Annotated[
-        str, Field(description="Вопрос пользователя для поиска по документам.")
-    ],
+    query: Annotated[str, Field(description="Вопрос пользователя для поиска по документам.")],
     discipline_id: Annotated[
-        Optional[str],
-        Field(description="ID дисциплины для сужения контекста. Опционально."),
+        Optional[str], Field(description="ID дисциплины для сужения контекста.")
     ] = None,
     limit: Annotated[
         int, Field(description="Фрагментов в контексте (1–20).", ge=1, le=20)
     ] = 5,
-) -> RagContext:
-    """Готовый RAG-контекст для ответа модели.
-
-    Предпочитай этот инструмент вместо search_documents когда нужно ответить на вопрос по материалам.
-    Возвращает RagContext: query, answer_instruction, chunks[].
-    Отвечай только на основе chunks, явно укажи если данных недостаточно.
-    """
-    return await asyncio.to_thread(
-        rag_client.build_rag_context_sync, query, discipline_id, limit
-    )
+) -> Any:
+    """Готовый RAG-контекст для ответа модели."""
+    return await _context_search_in_documents(query, discipline_id, limit)
 
 
+# ══════════════════════════════════════════════════════════════════════
 # СЛУЖЕБНОЕ
+# ══════════════════════════════════════════════════════════════════════
 
 
 @mcp.tool()
 async def get_health_status() -> dict:
-    """Проверить работоспособность системы (БД и RAG-сервис).
-
-    Возвращает {"database": {"status": "ok"|"error", "error": null|str},
-                "rag": {"status": "ok"|"error", "error": null|str}}.
-    """
-    db_status = {"status": "ok", "error": None}
-    try:
-        if _db is None:
-            raise RuntimeError("Database not initialized")
-        _db.ping()
-    except Exception as e:
-        db_status = {"status": "error", "error": str(e)}
-
-    rag_status = {"status": "ok", "error": None}
-    try:
-        if rag_client is None:
-            raise RuntimeError("RAG client not initialized")
-        health = await asyncio.to_thread(rag_client.health_sync)
-        if health.get("status") != "ok":
-            rag_status = {"status": "error", "error": "RAG service degraded"}
-    except Exception as e:
-        rag_status = {"status": "error", "error": str(e)}
-
+    """Проверить работоспособность системы (data-service, RAG)."""
+    db_status = await _health_db_status()
+    rag_status = await _get_health_status_rag()
     return {"database": db_status, "rag": rag_status}
 
 
-def _init_db() -> None:
-    """Lazy-инициализация БД и репозиториев.
-
-    Вызывается при старте сервера (main()), а не при импорте модуля.
-    Это позволяет:
-      - подменять окружение до старта (тесты, разные БД)
-      - не падать при импорте если БД недоступна
-      - не загружать фикстуры если БД уже заполнена
-    """
-    global _db, student_repo, teacher_repo, grade_repo, discipline_repo, rag_client
-    if _db is not None:
-        return  # уже проинициализировано
-
-    logger.info("Initializing database connection...")
-    _db = get_db()
-    student_repo = _db.student_repo
-    teacher_repo = _db.teacher_repo
-    grade_repo = _db.grade_repo
-    discipline_repo = _db.discipline_repo
-    rag_client = RagClient(RAG_SERVICE_URL)
-    logger.info("Database initialized successfully")
+# ══════════════════════════════════════════════════════════════════════
+# Запуск
+# ══════════════════════════════════════════════════════════════════════
 
 
 def main():
-    """Запустить MCP-сервер с HTTP-транспортом и health endpoint'ом.
-
-    FastMCP streamable-HTTP уже содержит маршрут /mcp.
-    Добавляем /health для docker healthcheck.
-    """
-    # Инициализируем БД ПЕРЕД запуском сервера
-    _init_db()
+    """Запустить MCP-сервер с HTTP-транспортом и health endpoint'ом."""
+    init_rag()
 
     from starlette.responses import JSONResponse
     from starlette.routing import Route
 
     async def health(request):
-        status = get_health_status()
+        status = await get_health_status()
         overall = all(v.get("status") == "ok" for v in status.values())
         return JSONResponse(
             {"status": "ok" if overall else "degraded", **status},
             status_code=200 if overall else 503,
         )
 
-    # Берём готовое Starlette-приложение от FastMCP и добавляем /health
     app = mcp.streamable_http_app()
     app.routes.append(Route("/health", endpoint=health))
 

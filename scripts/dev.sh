@@ -19,8 +19,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$PROJECT_ROOT/.data/logs"
 PID_DIR="$PROJECT_ROOT/.data/pids"
 
-SERVICES=("rag" "mcp" "api" "web")
+SERVICES=("data" "rag" "mcp" "api" "web")
 declare -A SERVICE_CMD=(
+  [data]="DB_PATH=$PROJECT_ROOT/university.db LOG_LEVEL=info $PROJECT_ROOT/data-service/bin/data-service"
   [rag]="uv run --package rag python -m rag.service"
   [mcp]="uv run --package mcp_server python -m mcp_server.server"
   [api]="uv run --package demo-api python -m demo.api.server"
@@ -28,12 +29,14 @@ declare -A SERVICE_CMD=(
 )
 
 # Дефолтные порты (перебиваются из .env)
+DATA_PORT=${DATA_PORT:-8084}
 RAG_PORT=${RAG_PORT:-8082}
 MCP_PORT=${MCP_PORT:-8083}
 API_PORT=${API_PORT:-8081}
 WEB_PORT=${WEB_PORT:-8080}
 
 declare -A SERVICE_PORT=(
+  [data]=$DATA_PORT
   [rag]=$RAG_PORT
   [mcp]=$MCP_PORT
   [api]=$API_PORT
@@ -42,8 +45,9 @@ declare -A SERVICE_PORT=(
 
 # Какие сервисы ждать по health перед стартом следующих
 declare -A SERVICE_DEPS=(
+  [data]=""
   [rag]=""
-  [mcp]="rag"
+  [mcp]="data rag"
   [api]="mcp"
   [web]="api"
 )
@@ -60,10 +64,11 @@ load_env() {
     set +a
     # перечитываем порты из env после source
     RAG_PORT=${RAG_PORT:-8082}
+    DATA_PORT=${DATA_PORT:-8084}
     MCP_PORT=${MCP_PORT:-8083}
     API_PORT=${API_PORT:-8081}
     WEB_PORT=${WEB_PORT:-8080}
-    SERVICE_PORT=([rag]=$RAG_PORT [mcp]=$MCP_PORT [api]=$API_PORT [web]=$WEB_PORT)
+    SERVICE_PORT=([data]=$DATA_PORT [rag]=$RAG_PORT [mcp]=$MCP_PORT [api]=$API_PORT [web]=$WEB_PORT)
   fi
 }
 
@@ -84,6 +89,7 @@ is_running() {
 health_url() {
   local svc="$1"
   case "$svc" in
+    data) echo "http://127.0.0.1:$DATA_PORT/health" ;;
     rag) echo "http://127.0.0.1:$RAG_PORT/health" ;;
     mcp) echo "http://127.0.0.1:$MCP_PORT/health" ;;
     api) echo "http://127.0.0.1:$API_PORT/health" ;;
@@ -126,6 +132,15 @@ cmd_start() {
 
   echo "🔄 Starting services..."
 
+  # Собираем data-service (Go) — бинарник чтобы не было проблем с PID от go run
+  echo "  🔨 Building data-service..."
+  mkdir -p "$PROJECT_ROOT/data-service/bin"
+  (cd "$PROJECT_ROOT/data-service" && go build -o bin/data-service ./cmd/server/) || {
+    echo "  ❌ Failed to build data-service"
+    exit 1
+  }
+  echo "  ✅ data-service built"
+
   for svc in "${SERVICES[@]}"; do
     if is_running "$svc"; then
       echo "  ⏭️  $svc already running (pid $(cat "$(pidfile "$svc")"))"
@@ -145,7 +160,7 @@ cmd_start() {
     # Доп. env для сервиса
     local extra_env=""
     case "$svc" in
-      mcp) extra_env="RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT" ;;
+      mcp) extra_env="DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT" ;;
       api) extra_env="MCP_SERVICE_URL=http://127.0.0.1:$MCP_PORT/mcp" ;;
       web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT" ;;
     esac
@@ -167,6 +182,7 @@ cmd_start() {
   echo ""
   echo "🎉 All services launched!"
   echo ""
+  echo "  DATA   http://127.0.0.1:$DATA_PORT    logs: $(logfile data)"
   echo "  RAG    http://127.0.0.1:$RAG_PORT    logs: $(logfile rag)"
   echo "  MCP    http://127.0.0.1:$MCP_PORT    logs: $(logfile mcp)"
   echo "  API    http://127.0.0.1:$API_PORT    logs: $(logfile api)"
@@ -251,6 +267,7 @@ _stop_svc_by_pgrep() {
   local svc="$1"
   local pattern
   case "$svc" in
+    data) pattern="data-service/bin/data-service" ;;
     rag) pattern="python -m rag.service" ;;
     mcp) pattern="python -m mcp_server.server" ;;
     api) pattern="python -m demo.api.server" ;;

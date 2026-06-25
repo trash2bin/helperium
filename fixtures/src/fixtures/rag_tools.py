@@ -19,12 +19,9 @@ class RagTools:
     Используется только в fixtures/document_generator.py.
     """
 
-    def __init__(
-        self,
-        db: Any,
-        **kwargs,
-    ) -> None:
-        # db игнорируется - используется HTTP-клиент
+    def __init__(self, db: Any = None) -> None:
+        # Параметр db оставлен для обратной совместимости со старыми вызовами.
+        # Все операции идут через HTTP-клиент к RAG-сервису.
         self._client = RagClient(RAG_SERVICE_URL)
         self.pipeline = _FakePipeline(self._client)
 

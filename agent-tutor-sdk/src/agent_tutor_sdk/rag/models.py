@@ -19,6 +19,7 @@ class Document(BaseModel):
     source_path: str
     mime_type: str
     discipline_id: str | None = None
+    discipline_name: str | None = None
     created_at: str
 
 

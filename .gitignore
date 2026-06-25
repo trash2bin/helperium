@@ -1,10 +1,14 @@
 __pycache__/
 .venv/
 *.db
+*.db-*
 *.sqlite
 *.sqlite-*
 chroma_db/
 generated_materials/
+# Go-built binaries (data-service: `go build -o bin/data-service ...`)
+data-service/bin/
+*.exe
 .claude/
 fixtures.json
 TECHNICAL_DOC.md

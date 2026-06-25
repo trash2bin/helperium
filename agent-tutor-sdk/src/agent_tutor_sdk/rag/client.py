@@ -277,6 +277,7 @@ class RagClient:
         self,
         path: str,
         discipline_id: str | None = None,
+        discipline_name: str | None = None,
         title: str | None = None,
     ) -> DocumentImportResult:
         """Синхронный импорт документа."""
@@ -286,6 +287,8 @@ class RagClient:
         payload: dict[str, Any] = {"path": path}
         if discipline_id is not None:
             payload["discipline_id"] = discipline_id
+        if discipline_name is not None:
+            payload["discipline_name"] = discipline_name
         if title is not None:
             payload["title"] = title
 

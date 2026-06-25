@@ -135,101 +135,57 @@ DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=8081 DEMO_WEB_PORT=8080 uv run python -m d
 
 ```
 agent-tutor/
-├── mcp_server/              # MCP-сервер (FastMCP, HTTP :8083)
-│   ├── server.py
-│   ├── tests/               # unit-тесты MCP-инструментов
-│   │   └── unit/
-│   │       ├── test_student_tools.py
-│   │       ├── test_discipline_tools.py
-│   │       ├── test_grade_tools.py
-│   │       └── test_teacher_tools.py
-│   └── tools/
-│       ├── student.py
-│       ├── disciplines.py
-│       ├── grades.py
-│       └── teacher.py
-├── rag/                     # RAG HTTP-сервис (FastAPI, :8082)
-│   ├── service.py           # /health /search /context /documents/*
-│   ├── _types.py            # Внутренние типы (PageDict, ChunkDict)
-│   ├── pipeline.py          # парсинг → чанкинг → embedding → ChromaDB
-│   ├── embeddings.py        # SentenceTransformerEmbedding
-│   ├── vector_store.py      # ChromaDBVectorStore
-│   ├── repository.py        # CRUD документов в SQLite/PostgreSQL
-│   ├── parser.py            # DocumentParser (PDF, DOCX, TXT, MD, HTML)
-│   ├── chunker.py           # TextChunker (semantic, recursive, sentence)
-│   ├── interfaces.py        # EmbeddingProtocol, VectorStoreProtocol
-│   ├── config.py            # RagConfig из env
-│   ├── http_models.py       # Pydantic DTO для HTTP-контракта
-│   └── tests/               # unit + integration тесты RAG
-│       ├── unit/
-│       │   ├── test_embeddings.py
-│       │   ├── test_rag_pipeline.py
-│       │   ├── test_repository.py
-│       │   ├── test_service.py
-│       │   └── test_vector_store.py
-│       └── integration/
-│           └── test_e2e_pipeline.py
-├── agent-tutor-sdk/         # Shared SDK (db connector, models, rag client)
-│   ├── pyproject.toml
+├── data-service/              # Go-сервис доступа к БД (:8084)
+│   ├── cmd/
+│   │   ├── server/main.go     # точка входа
+│   │   └── schema-gen/main.go # генератор JSON Schema из Go-моделей
+│   ├── internal/
+│   │   ├── db/                # интерфейс DB + драйверы (SQLite)
+│   │   ├── handlers/          # HTTP-обработчики (не знают SQL)
+│   │   ├── models/            # доменные модели (source of truth → JSON Schema)
+│   │   ├── repository/        # ← единственное место с SQL университета
+│   │   └── server/            # chi-роутер, middleware, Swagger UI
+│   ├── testdata/seed.sql      # тестовые данные для Go-тестов
+│   ├── Dockerfile
+│   └── README.md              # как переписать под новую БД
+├── mcp_server/                # MCP-сервер (FastMCP, HTTP :8083)
+│   ├── server.py              # роутер инструментов
+│   ├── tools_via_http.py      # инструменты → HTTP к data-service (нет SQL)
+│   ├── tools_rag.py           # RAG-инструменты → HTTP к rag
+│   └── tests/unit/            # тесты через DataServiceClient (HTTP-моки)
+├── rag/                       # RAG HTTP-сервис (FastAPI, :8082)
+│   ├── service.py             # /health /search /context /documents/*
+│   ├── db.py                  # свой SQLite-менеджер (rag_documents.db)
+│   ├── documents_schema.py    # DDL только для documents + document_chunks
+│   ├── repository.py          # CRUD документов (свой SQL, не зависит от SDK)
+│   ├── pipeline.py            # парсинг → чанкинг → embedding → ChromaDB
+│   ├── ... (parser, chunker, embeddings, vector_store, config)
+│   └── tests/
+├── agent-tutor-sdk/           # Shared SDK
 │   ├── src/agent_tutor_sdk/
-│   │   ├── db/connector.py, database.py, models.py, schema.py, fixtures.py
-│   │   └── rag/client.py, models.py
+│   │   ├── contracts/         # Pydantic-модели (контракт, семантические поля)
+│   │   ├── data_client.py     # HTTP-клиент к data-service
+│   │   ├── rag/               # HTTP-клиент к RAG + RAG-модели
+│   │   └── db/                # connector + schema + fixtures (для тестов и CLI)
 │   └── tests/
 ├── demo/
-│   ├── settings.py          # Все env-переменные demo-части
-│   ├── api/
-│   │   ├── server.py        # FastAPI — /health /api/data /api/chat /api/backlog
-│   │   ├── http_models.py   # Pydantic DTO для API
-│   │   ├── backlog.py       # JSONL-бэклог взаимодействий с моделью
-│   │   ├── data.py          # Репозиторий данных для демо
-│   │   ├── sessions.py      # Хранилище сессий (SQLite)
-│   │   ├── tests/           # unit-тесты API
-│   │   │   └── unit/
-│   │   │       ├── test_backlog.py
-│   │   │       ├── test_sessions.py
-│   │   │       └── agent/
-│   │   │           ├── test_llm_client.py
-│   │   │           ├── test_mcp_client.py
-│   │   │           ├── test_orchestrator.py
-│   │   │           └── test_tool_parser.py
-│   │   └── agent/
-│   │       ├── orchestrator.py  # Оркестратор агента
-│   │       ├── llm_client.py    # Клиент LiteLLM
-│   │       ├── mcp_client.py    # HTTP-клиент к MCP
-│   │       ├── tool_parser.py   # Парсер вызовов инструментов
-│   │       ├── types.py         # Типы событий SSE
-│   │       └── conversation.py  # Управление историей диалога
-│   └── web/
-│       ├── server.py        # FastAPI reverse-proxy + SSE-прокси + статика
-│       └── static/          # HTML/CSS/JS
-├── fixtures/                 # CLI-утилиты (dev-only, не production-сервис)
-│   ├── pyproject.toml       # Workspace-пакет fixtures
-│   ├── README.md            # Документация CLI-команд
-│   ├── src/fixtures/
-│   │   ├── ingest.py        # CLI agent-ingest (импорт/поиск/удаление документов)
-│   │   ├── agent_generate.py# CLI agent-generate (генерация материалов)
-│   │   ├── document_generator.py # Логика генерации документов через Ollama
-│   │   ├── generate.py      # Генератор fixtures.json (Faker)
-│   │   ├── catalog.py       # Каталоги и справочники
-│   │   └── rag_tools.py     # Фасад RagTools для document_generator
-├── scripts/
-│   ├── dev.sh               # Нативный запуск всех сервисов
-│   └── init-db.sql          # Инициализация PostgreSQL
-├── conftest.py              # Корневые shared fixture для всех тестов
-├── doc/                     # ROADMAP.md, TASK.md
-├── docker-compose.yml
-├── Caddyfile                # HTTPS-прокси для prod-профиля
-├── .env.example             # Все переменные окружения
-└── fixtures.json            # Тестовые данные
+│   ├── api/                   # API-сервер + агент (FastAPI, :8081)
+│   │   ├── agent/             # orchestrator, llm_client, mcp_client, tool_parser
+│   │   ├── data.py            # обзор данных через HTTP к data-service
+│   │   └── tests/
+│   └── web/                   # Веб-интерфейс (FastAPI, :8080)
+├── specs/                     # Контракты (source of truth для API)
+│   ├── schemas/               # JSON Schema (генерируются из Go-моделей)
+│   ├── data-service.openapi.yaml
+│   ├── rag.openapi.yaml
+│   ├── api.openapi.yaml
+│   └── README.md
+├── fixtures/                  # CLI-утилиты (генерация тестовых данных)
+├── scripts/                   # dev.sh, init-db.sql
+├── doc/                       # ROADMAP.md
+├── docker-compose.yml         # 5 long-running сервисов + db + caddy
+└── .env.example               # Все переменные окружения
 ```
-
-> Тесты разнесены по сервисам: каждый сервис содержит собственную `tests/` директорию.
-> Корневой `conftest.py` предоставляет общие фикстуры (temp_dir, test_db, mock_embedding).
-> `uv run pytest` из корня запускает все тесты сразу.
-> `uv run pytest rag/tests/` — только RAG-тесты.
-> `uv run pytest mcp_server/tests/` — только MCP-тесты.
-> `uv run pytest demo/api/tests/` — только API-тесты.
-> `uv run pytest agent-tutor-sdk/tests/` — только SDK-тесты.
 
 ## Инструменты MCP-сервера
 
@@ -280,10 +236,10 @@ agent-tutor/
 без переписывания ядра:
 
 ### Смена базы данных
-- `DATABASE_URL` не задан → SQLite (`university.db`), zero setup
-- `DATABASE_URL=postgresql://...` → PostgreSQL. `db/connector.py` выбирает драйвер
-  автоматически (sqlite3 vs psycopg2), `db/schema.py` генерирует DDL под нужный диалект
-- Сессии чата (`demo_sessions.sqlite`) пока на SQLite — это кэш, не основные данные
+- Университетские данные — через `data-service` (Go). Схема БД изолирована в `data-service/internal/repository/`.
+- При смене реальной БД вуза переписывается только Go-код репозиториев, HTTP-контракт не меняется.
+- `agent_tutor_sdk/db/connector.py` — для тестов, CLI-утилит и RAG (отдельная `rag_documents.db`).
+- Сессии чата (`demo_sessions.sqlite`) — на SQLite, это кэш, не основные данные.
 
 ### Смена LLM-провайдера
 - LiteLLM — единый клиент под Ollama, OpenAI, Mistral, Anthropic, Groq и др.
@@ -291,13 +247,15 @@ agent-tutor/
 
 ### Замена любого сервиса
 - Каждый long-running сервис имеет HTTP-контракт (OpenAPI/Swagger на `/docs`)
+- `data-service` (Go) — контракт в `specs/data-service.openapi.yaml` + JSON Schema в `specs/schemas/`
 - Если переписать `rag` на Go — `mcp_server` продолжает ходить к `http://rag:8082`
 - Если переписать `mcp_server` на Rust — `api` продолжает слать MCP-over-HTTP
-- Единственная точка связности — shared Python-модели (будут вынесены в SDK на Этапе 2.6)
+- Если переписать `data-service` на Rust — все потребители видят тот же JSON Schema контракт
 - CLI-утилиты (`fixtures/`) не привязаны к Python-коду сервисов — работают по HTTP
 
 ### Почему это важно
-- База вуза может быть PostgreSQL, MySQL, Oracle — адаптер пишется в `db/connector.py`
+- База вуза может быть PostgreSQL, MySQL, Oracle — меняется только `data-service/internal/repository/`
+- JSON Schema в `specs/schemas/` — язык-независимый контракт, можно генерировать клиентов на любом языке
 - LLM-провайдер может меняться каждый семестр — LiteLLM проксирует любой API
 - Если вуз хочет свой кастомный RAG на Go — не надо переписывать агента
 
@@ -420,16 +378,15 @@ uv run agent-ingest clear-generated                  # Удалить сгене
 - **Этап 2**: Контейнеризация (5 Dockerfile'ов, docker-compose с 7 сервисами, Caddy, healthchecks)
 - **Этап 2.x**: Тесты разнесены по сервисам (rag/tests/, mcp_server/tests/, demo/api/tests/, agent-tutor-sdk/tests/),
   Dockerfile'ы копируют только нужные исходники, а не весь проект целиком
-- **Этап 2.6 (выполнен)**: Инкапсуляция сервисов — перекрёстные импорты убраны,
-  `rag/client.py`, `rag/models.py`, `db/`, `mcp_server/tools/rag.py` удалены из корня,
-  всё вынесено в `agent-tutor-sdk/`. `specs/` создан с OpenAPI-спецификациями для rag и api.
-  `tools/` удалён, `fixtures` переведён на workspace.
+- **Этап 2.7 (выполнен)**: Data-service на Go — изоляция схемы БД. `mcp_server` и `demo/api` не содержат SQL университетских данных. `specs/schemas/` с JSON Schema, авто-генерация из Go-моделей.
+- **Этап 2.7.x (выполнен)**: RAG отделён в `rag_documents.db`. Репозитории SDK удалены. `agent_tutor_sdk/db/` — только connector + schema + fixtures для тестов и CLI.
 
 Полный план — в `doc/ROADMAP.md`.
 
 Работает:
-- MCP-сервер (FastMCP, HTTP-транспорт, `/health` endpoint)
-- RAG HTTP-сервис (FastAPI, ChromaDB + SQLite/PostgreSQL)
+- Data-service (Go, chi, modernc/sqlite) — единственный сервис со знанием схемы БД
+- MCP-сервер (FastMCP, HTTP-транспорт, `/health` endpoint) — инструменты через HTTP к data-service
+- RAG HTTP-сервис (FastAPI, своя `rag_documents.db` + ChromaDB)
 - API-сервер с агентом (FastAPI, LiteLLM, SSE-стриминг, память сессий, бэклог)
 - Веб-интерфейс (FastAPI, reverse-proxy, SSE-прокси)
 - База: SQLite (по умолчанию) или PostgreSQL (через `DATABASE_URL`)
@@ -440,6 +397,76 @@ uv run agent-ingest clear-generated                  # Удалить сгене
 - OpenAPI/Swagger у всех HTTP-сервисов
 - Тесты разнесены по пакетам сервисов: `uv run pytest rag/tests/`, `uv run pytest mcp_server/tests/`
 - Dockerfile'ы копируют в runtime только нужные исходники (минимальный размер образа)
+
+## Генерация JSON Schema
+
+JSON Schema в `specs/schemas/` — это контракт между data-service (Go) и его потребителями (Python).
+Go-модели — **source of truth**. JSON Schema генерируется из них автоматически через
+`invopop/jsonschema` (рефлексия Go-структур).
+
+### Принцип
+
+```
+data-service/internal/models/models.go    ← source of truth
+    │  jsonschema:"description=..." теги
+    │
+    ▼  go generate (cmd/schema-gen)
+specs/schemas/*.schema.json               ← генерируются автоматически
+    │
+    ▼  go test (TestJSONSchemaUpToDate)
+    │  сравнивает сгенерированное ≡ закоммиченное → FAIL если расходятся
+```
+
+### Как изменить схему данных
+
+1. **Отредактировать Go-модель** в `data-service/internal/models/models.go`
+   - Добавить/удалить/переименовать поле
+   - Обновить `jsonschema:"description=..."` тег
+
+2. **Сгенерировать JSON Schema**:
+   ```bash
+   cd data-service
+   go generate ./internal/models/
+   ```
+   Это запустит `cmd/schema-gen/main.go` и перезапишет файлы в `specs/schemas/`.
+
+3. **Проверить что схемы актуальны**:
+   ```bash
+   go test ./internal/models/ -run TestJSONSchema
+   ```
+   Тест сравнивает сгенерированные схемы с закоммиченными. Если кто-то изменил
+   Go-модель но забыл перегенерировать — тест упадёт с понятным сообщением.
+
+4. **Обновить Python-модели** в `agent_tutor_sdk/contracts/__init__.py`:
+   - Пока вручную (скопировать поля из JSON Schema).
+   - В будущем: `datamodel-codegen --input specs/schemas/ --output contracts/`.
+
+5. **Обновить SQL-запросы** в `data-service/internal/repository/`:
+   - Это единственное место, которое нужно править при изменении схемы БД.
+   - Handlers и HTTP-контракт не трогаются.
+
+6. **Прогнать тесты**:
+   ```bash
+   go test ./...                             # Go-тесты (18)
+   uv run pytest                             # Python-тесты (105)
+   ```
+
+### Структура specs/
+
+```
+specs/
+├── schemas/                     # JSON Schema — source of truth для доменных типов
+│   ├── student.schema.json      # генерируется из Go-модели Student
+│   ├── teacher.schema.json      # генерируется из Go-модели Teacher
+│   ├── discipline.schema.json
+│   ├── grade.schema.json
+│   ├── schedule-entry.schema.json
+│   └── lesson.schema.json
+├── data-service.openapi.yaml    # OpenAPI-контракт data-service (ссылается на schemas/)
+├── rag.openapi.yaml             # OpenAPI-контракт RAG
+├── api.openapi.yaml             # OpenAPI-контракт API
+└── README.md                    # Как обновлять spec, генерировать клиент
+```
 
 ## Осторожность
 

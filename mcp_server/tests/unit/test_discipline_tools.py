@@ -1,39 +1,57 @@
-"""Тесты DisciplineRepo — дисциплины."""
+"""Тесты дисциплин — через DataServiceClient (HTTP)."""
 
-from agent_tutor_sdk.db.repositories import DisciplineRepo
-from agent_tutor_sdk.db.models import Discipline
+from unittest.mock import patch
 
-
-def test_get_disciplines_for_student(test_db):
-    """Test getting disciplines for a student."""
-    repo = DisciplineRepo(test_db.connector)
-
-    # Use a known student from fixtures.json
-    student = test_db.get_id_student("Валерия Константиновна Макарова")
-    assert student is not None
-
-    disciplines = repo.get_disciplines(student.id)
-    assert isinstance(disciplines, list)
-    assert len(disciplines) >= 0
+from agent_tutor_sdk.data_client import DataServiceClient
+from agent_tutor_sdk.contracts import Discipline
 
 
-def test_get_disciplines_empty_for_unknown_student(test_db):
-    """Test getting disciplines for a student that doesn't exist."""
-    repo = DisciplineRepo(test_db.connector)
+def test_get_disciplines_for_student():
+    """Дисциплины студента через HTTP."""
+    client = DataServiceClient("http://mock")
 
-    disciplines = repo.get_disciplines("non-existent-student-id")
+    mock_disciplines = [
+        {"id": "d1", "name": "Алгоритмы и структуры данных", "description": "Курс по алгоритмам"},
+        {"id": "d2", "name": "Базы данных", "description": "Курс по SQL"},
+    ]
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_disciplines
+
+        disciplines = client.get_student_disciplines("s1")
+
+    assert len(disciplines) == 2
+    assert disciplines[0].name == "Алгоритмы и структуры данных"
+
+
+def test_get_disciplines_empty():
+    """Пустой список для неизвестного студента."""
+    client = DataServiceClient("http://mock")
+
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = []
+
+        disciplines = client.get_student_disciplines("nonexistent")
+
     assert disciplines == []
 
 
-def test_get_disciplines_contains_valid_data(test_db):
-    """Test that disciplines returned have valid structure."""
-    repo = DisciplineRepo(test_db.connector)
+def test_get_disciplines_contains_valid_data():
+    """Структура возвращаемых дисциплин."""
+    client = DataServiceClient("http://mock")
 
-    # Use a known student
-    student = test_db.get_id_student("Валерия Константиновна Макарова")
-    assert student is not None
+    mock_disciplines = [
+        {"id": "d1", "name": "Алгоритмы", "description": "Описание"},
+    ]
 
-    disciplines = repo.get_disciplines(student.id)
+    with patch.object(client, "_get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = mock_disciplines
+
+        disciplines = client.get_student_disciplines("s1")
+
     for discipline in disciplines:
         assert isinstance(discipline, Discipline)
         assert isinstance(discipline.id, str)

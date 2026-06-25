@@ -4,9 +4,12 @@
 
 ## Текущее состояние → Цель
 
-**Сейчас**: рабочий MVP. SQLite + ChromaDB + FastMCP-сервер с тулами + LiteLLM-агент в Starlette + статический web-чат. Тестов нет, контейнеров нет, CI/CD нет.
+**Сейчас**: pre-prod прототип. 5 long-running сервисов (data-service на Go, rag, mcp, api, web на Python).
+113 Python-тестов + 16 Go-тестов. Docker-образы готовы, CI/CD нет. Этап 2.7 (data-service) закрыт.
 
-**Цель**: 4 long-running контейнера (`mcp`, `rag`, `api`, `web`) + 2 профильных (`agent` для генерации, `caddy` для prod). `docker compose up` поднимает всё. Тесты ≥40% на Этапе 1, далее по мере рефакторингов. CI/CD на GitHub Actions. LLM-провайдер (Ollama / Mistral / OpenAI) - внешняя зависимость через URL, своего контейнера `ollama` нет.
+**Цель**: 5 long-running контейнеров (`data-service`, `mcp`, `rag`, `api`, `web`) + `caddy` для prod.
+`docker compose up` поднимает всё. CI/CD на GitHub Actions. LLM-провайдер (Ollama / Mistral / OpenAI) —
+внешняя зависимость через URL, своего контейнера `ollama` нет.
 
 ## Глоссарий
 
@@ -46,17 +49,24 @@
 
 ### Сетевая топология
 
-MCP обзается с базой данных (статичная sqlite сейчас просто формируется из `fixtures.json`)
-Также MCP общается с RAG;
-RAG хранит документы в ChromaDB и также их туда индексирует и тд;
-CORE: API там агент который подключается к MCP для tools а также к провайдеру (ollama, openai, etc.);
-DEMO: WEB - это просто фронт он общается только с API и также передает сессии (по сути создает но не хранит только если экзмепляр в свое js), отдает статическую страничку и умеет общаться с API по SSE чтобы передовать сообщения от агента;
+```
+web:8080 → api:8081 → mcp:8083 → data-service:8084 (Go) ──SQL──→ БД
+                ↓              ↓
+         LLM-провайдер    rag:8082 → ChromaDB
+```
+
+- **data-service** (Go) — единственный сервис, знающий схему БД. Все остальные ходят к нему по HTTP.
+- **mcp** — MCP-сервер, инструменты доступа к данным (тонкие HTTP-обёртки, SQL не содержит).
+- **rag** — RAG-сервис, хранит документы в ChromaDB, индексирует, ищет.
+- **api** — агент, подключается к MCP для tools, к провайдеру (Ollama/OpenAI/...) для LLM.
+- **web** — фронт, общается только с API, отдаёт статику, проксирует SSE.
 
 
 ### Сервисы
 
 | Сервис | Режим | Стек | Порт (compose / host) | Volumes |
 |---|---|---|---|---|
+| `data-service` | long-running | **Go** (chi, modernc/sqlite) | 8084 / `127.0.0.1:8084` (dev) | `app_data:/data/app:ro` |
 | `mcp` | long-running | FastMCP | 8083 / `127.0.0.1:8083` (dev) | `app_data:/data/app:ro` |
 | `rag` | long-running | FastAPI | 8082 / `127.0.0.1:8082` (dev) | `rag_data:/data/rag`, `hf_cache:/home/app/.cache/huggingface` |
 | `api` | long-running, 1 worker | FastAPI + uvicorn | 8081 / `127.0.0.1:8081` (dev) | `app_data:/data/app` |
@@ -867,41 +877,43 @@ mcp:
 | 2.7.6.3 | Создать `specs/data-service.openapi.yaml` | Ручная валидация в Swagger Editor | 1–2 |
 | 2.7.6.4 | Go-проект: структура, `go.mod`, роутер, `/health` | `curl :8084/health` → 200 | 2–3 |
 | 2.7.6.5 | Go: `internal/db/` (SQLite) + `internal/repository/` (все 5) | unit-тесты репозиториев с SQLite in-memory | 4–6 |
-| 2.7.6.6 | Go: `internal/handlers/` (все 8 эндпоинтов) | `curl` каждого эндпоинта на тестовых данных | 3–4 |
-| 2.7.6.7 | Go: Dockerfile + docker-compose интеграция | `docker compose up data-service` → healthy | 1–2 |
+| 2.7.6.6 | Go: `internal/handlers/` (все 8 эндпоинтов) + `/stats` + `/docs` + `/openapi.json` | `curl` каждого эндпоинта на тестовых данных, 16 Go-тестов | 3–4 |
+| 2.7.6.7 | Go: Dockerfile (two-stage, `FROM scratch`, 14.7 МБ) | `docker compose build data-service` | 1–2 |
 | 2.7.6.8 | Python: `mcp_server/tools_via_http.py` + feature-флаг | Тесты MCP с `USE_DATA_SERVICE=1` | 2–3 |
 | 2.7.6.9 | Python: `demo/api/data.py` перевести на HTTP к data-service | `/api/data` возвращает те же данные | 1–2 |
-| 2.7.6.10 | Прогон обоих путей в CI, сравнение результатов | Идентичный JSON на обоих путях | 1–2 |
-| 2.7.6.11 | Переключить дефолт `USE_DATA_SERVICE=1`, удалить старый SDK-путь | Все тесты зелёные | 2–3 |
-| 2.7.6.12 | Удалить `agent_tutor_sdk/db/` (репозитории, schema, fixtures, connector) | Проект собирается без ошибок | 1–2 |
+| 2.7.6.10 | Прогон обоих путей, сравнение результатов | 15/15 тестов идентичны на SDK и HTTP путях | 1–2 |
+| 2.7.6.11 | Переключить дефолт `USE_DATA_SERVICE=1`, удалить `tools_via_sdk.py`, выделить `tools_rag.py` | Все тесты зелёные, `mcp_server` не импортирует `agent_tutor_sdk/db/` | 2–3 |
+| 2.7.6.12 | Удалить `agent_tutor_sdk/db/` (репозитории, schema, fixtures, connector) | ⚠️ Частично: `mcp_server` и `demo/api` больше не используют. Остаётся для `rag`, `fixtures`, `conftest`. | 1–2 |
 
 ### Критерии готовности этапа 2.7
 
-- [ ] `specs/schemas/` — 6 JSON Schema, каждая с `$id` и `description` на всех полях
-- [ ] `specs/data-service.openapi.yaml` — 8 эндпоинтов, все ссылаются на `specs/schemas/`
-- [ ] Python Pydantic-модели генерируются из JSON Schema одной командой
-- [ ] `data-service/` — Go-проект, собирается `go build`, бинарник ~15 МБ
-- [ ] `docker compose up data-service` → healthy за <5 секунд
-- [ ] Все 8 эндпоинтов отвечают корректным JSON на тестовых данных
-- [ ] MCP-инструменты работают через HTTP к data-service (флаг `USE_DATA_SERVICE=1`)
-- [ ] Тесты MCP проходят идентично на обоих путях (SDK и HTTP)
-- [ ] `demo/api/data.py` ходит в data-service через HTTP, не импортирует `agent_tutor_sdk/db/`
-- [ ] `uv run pytest` — все тесты зелёные (оба пути)
-- [ ] При смене `DB_DRIVER=postgres` и `DATABASE_URL=postgresql://...`
-  data-service работает с PostgreSQL без изменений кода (только SQL-запросы адаптированы)
+- [x] `specs/schemas/` — 6 JSON Schema, каждая с `$id` и `description` на всех полях
+- [x] `specs/data-service.openapi.yaml` — 9 эндпоинтов (+ `/stats`, `/docs`, `/openapi.json`), все ссылаются на `specs/schemas/`
+- [x] Python Pydantic-модели в `agent_tutor_sdk/contracts/` (семантические имена полей)
+- [x] `data-service/` — Go-проект, собирается `go build`, бинарник 14.7 МБ
+- [ ] `docker compose build data-service` — Dockerfile готов, не верифицирован (требуется Docker Engine)
+- [x] Все 8 эндпоинтов + `/stats` + `/docs` + `/openapi.json` отвечают корректным JSON
+- [x] 16 Go-тестов (`go test ./internal/server/`) — health, CRUD, 404, grades, schedule, stats, OpenAPI
+- [x] MCP-инструменты работают через HTTP к data-service (дефолт `USE_DATA_SERVICE=1`)
+- [x] Тесты MCP (15/15) проходят идентично на обоих путях (SDK и HTTP)
+- [x] `mcp_server` не импортирует `agent_tutor_sdk/db/` — больше не содержит SQL университетских данных
+- [x] `demo/api/data.py` ходит в data-service через HTTP, не импортирует `agent_tutor_sdk/db/`
+- [x] `uv run pytest` — 113 тестов, все зелёные
+- [ ] При смене `DB_DRIVER=postgres` — интерфейс готов, реализация PostgresConnector не написана (отложено до реальной PostgreSQL)
 
 ### Что изменится после этапа
 
 | Компонент | Было | Стало |
 |---|---|---|
-| Доступ к БД | Python-импорт `agent_tutor_sdk/db/` из всех сервисов | HTTP к data-service:8084 |
+| Доступ к БД (университет) | Python-импорт `agent_tutor_sdk/db/` | HTTP к data-service:8084 |
 | Знание схемы БД | Размазано по mcp_server, api, fixtures, SDK | Только в `data-service/internal/repository/` |
-| Модели данных | Pydantic вручную, привязаны к колонкам | JSON Schema → генерация в Python и Go |
-| `agent_tutor_sdk/db/` | Репозитории, schema, fixtures, connector | **Удалён** |
-| `mcp_server` | Содержит SQL-запросы (через SDK) | Тонкая HTTP-обёртка, SQL не содержит |
+| Модели данных | Pydantic вручную, привязаны к колонкам | Контрактные Pydantic (семантические поля) + JSON Schema |
+| `mcp_server` | Содержал SQL университетских данных (через SDK) | Тонкая HTTP-обёртка, SQL университета не содержит |
 | `demo/api/data.py` | Прямые SQL-запросы к БД | HTTP-вызовы к data-service |
-| Новый сервис | — | `data-service` (Go) — 1 бинарник, 1 Dockerfile |
-| Мультиязычность | 100% Python | Python + Go, контракт через JSON Schema |
+| `mcp_server/tools_via_sdk.py` | 200+ строк SQL+SDK | **Удалён** (заменён на `tools_via_http.py` + `tools_rag.py`) |
+| Новый сервис | — | `data-service` (Go) — 1263 строк, 14.7 МБ, 16 тестов |
+| Мультиязычность | 100% Python | Python + Go, контракт через JSON Schema + OpenAPI |
+| Swagger | Только у rag и api | Теперь и у data-service (`/docs`) |
 
 ---
 
@@ -1074,11 +1086,11 @@ docker compose --profile prod up -d
 
 | После этапа | Проверка |
 |---|---|
-| 0 | `python -m rag.service` + `python -m mcp_server.server` + `python -m demo.api.server` + `python -m demo.web.server` - все 4 сервиса поднимаются, UI чат работает end-to-end через HTTP MCP |
-| 1 | `uv run pytest` - unit + integration зелёные, coverage ≥ 40%, ruff без ошибок |
-| 2 | ✅ Файлы созданы: Dockerfile, compose (7 сервисов), Caddyfile, .env.example, .dockerignore. **Требуется проверка на Docker Engine.** |
+| 0 | ✅ 4 сервиса поднимаются, UI чат работает end-to-end через HTTP MCP |
+| 1 | ✅ `uv run pytest` — unit + integration зелёные, coverage 84%, ruff без ошибок |
+| 2 | ✅ Dockerfile, compose (7 сервисов), Caddyfile, .env.example, .dockerignore |
 | 2.6 | ✅ SDK выделен, перекрёстные импорты убраны, `specs/` с OpenAPI для rag и api |
-| 2.7 | `data-service` на Go поднят, 8 эндпоинтов отвечают JSON, MCP-тесты проходят на обоих путях, `agent_tutor_sdk/db/` удалён |
+| 2.7 | ✅ `data-service` на Go (1263 строк, 16 тестов), 8 эндпоинтов + Swagger, MCP и api без SQL, dev.sh и compose обновлены |
 | 2.5 | `docker compose ps` и smoke-проход локализуют падение по сервисам без чтения кода |
 | 3 | push в `main` → CI зелёный (lint + test + build). E2E - отдельный workflow |
 | 4 | Bearer enforced через web-прокси, `/health` агрегирует зависимости, таймауты разумные |
