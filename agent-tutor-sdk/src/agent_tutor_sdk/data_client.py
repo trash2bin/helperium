@@ -1,7 +1,6 @@
 """HTTP-клиент для data-service (Go-сервис доступа к БД).
 
-Используется MCP-сервером и API для вызовов к data-service через HTTP.
-Контракт описан в specs/data-service.openapi.yaml.
+Использу��тся MCP-сервером и API для вызовов к data-service через HTTP.
 
 Публичный API — только асинхронный (AsyncDataServiceClient).
 Для синхронных CLI-вызовов — DataServiceClientSync (на базе httpx.Client).

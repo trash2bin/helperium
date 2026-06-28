@@ -58,27 +58,35 @@ class MCPClient:
             return self._session
 
     async def close(self) -> None:
-        """Закрыть текущую сессию (если есть). Безопасно вызывать несколько раз."""
+        """Закрыть текущую сессию (если есть). Безопасно вызывать несколько раз.
+
+        Детачит state под локом, а закрытие контекстных менеджеров делает без лока —
+        чтобы __aexit__ из anyio (cancel scope) не падал, если вызывается из другой задачи.
+        """
         async with self._lock:
             if self._session is None:
                 return
             logger.info("[MCP] Closing session")
-            try:
-                if self._session_cm is not None:
-                    await self._session_cm.__aexit__(None, None, None)
-            except Exception as exc:
-                logger.warning("[MCP] Error closing session: %s", exc)
-            finally:
-                self._session = None
-                self._session_cm = None
-            try:
-                if self._streams_cm is not None:
-                    await self._streams_cm.__aexit__(None, None, None)
-            except Exception as exc:
-                logger.warning("[MCP] Error closing streams: %s", exc)
-            finally:
-                self._streams_cm = None
-                self._session_id = None
+            session_cm = self._session_cm
+            streams_cm = self._streams_cm
+            self._session = None
+            self._session_cm = None
+            self._streams_cm = None
+            self._session_id = None
+
+        # Закрываем контекстные менеджеры без лока — они привязаны к задаче,
+        # которая создала сессию, и могут не совпадать с текущей.
+        for name, cm in [("session", session_cm), ("streams", streams_cm)]:
+            if cm is not None:
+                try:
+                    await cm.__aexit__(None, None, None)
+                except RuntimeError as exc:
+                    if "cancel scope" in str(exc).lower():
+                        logger.debug("[MCP] Cancel scope mismatch on %s (session dead)", name)
+                    else:
+                        logger.warning("[MCP] Error closing %s: %s", name, exc)
+                except Exception as exc:
+                    logger.warning("[MCP] Error closing %s: %s", name, exc)
 
     @asynccontextmanager
     async def get_session(self):

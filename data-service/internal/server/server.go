@@ -1,96 +1,104 @@
+// Package server настраивает HTTP-сервер с middleware и config-driven роутами.
+//
+// Новая архитектура (фаза 3.3+):
+//   - Нет захардкоженных репозиториев, хендлеров или моделей.
+//   - Все маршруты строятся из конфига через NewRouterFromConfig.
+//   - Middleware (Recovery, RequestID, StructuredLogging) остаются.
 package server
 
 import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
-
-	"github.com/agent-tutor/data-service/internal/db"
-	"github.com/agent-tutor/data-service/internal/handlers"
-	"github.com/agent-tutor/data-service/internal/repository"
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
 )
 
-// NewRouter создаёт chi-роутер со всеми middleware и маршрутами.
-func NewRouter(database db.DB) http.Handler {
-	r := chi.NewRouter()
+// ── Middleware ──
 
-	// Глобальные middleware
-	r.Use(RecoveryMiddleware)
-	r.Use(RequestIDMiddleware)
-	r.Use(StructuredLoggingMiddleware)
-	r.Use(chimw.RealIP)
+// RequestIDMiddleware извлекает или генерирует X-Correlation-ID,
+// добавляет его в контекст и в заголовок ответа.
+func RequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		correlationID := r.Header.Get("X-Correlation-ID")
+		if correlationID == "" {
+			correlationID = r.Header.Get("x-correlation-id")
+		}
 
-	// Инициализация репозиториев
-	studentRepo := repository.NewStudentRepo(database)
-	teacherRepo := repository.NewTeacherRepo(database)
-	gradeRepo := repository.NewGradeRepo(database)
-	disciplineRepo := repository.NewDisciplineRepo(database)
-
-	// Инициализация обработчиков
-	studentHandler := handlers.NewStudentHandler(studentRepo)
-	teacherHandler := handlers.NewTeacherHandler(teacherRepo)
-	gradeHandler := handlers.NewGradeHandler(gradeRepo)
-	disciplineHandler := handlers.NewDisciplineHandler(disciplineRepo)
-	scheduleHandler := handlers.NewScheduleHandler(studentRepo, database)
-	statsHandler := handlers.NewStatsHandler(repository.NewStatsRepo(database))
-
-	// ── Системные ──
-	r.Get("/health", healthHandler(database))
-	r.Get("/stats", statsHandler.GetStats)
-	r.Get("/docs", swaggerHandler)
-	r.Get("/openapi.json", openapiHandler)
-
-	// ── Студенты ──
-	r.Get("/students/{id}", studentHandler.GetByID)
-	r.Get("/students", studentHandler.FindByName)
-	r.Get("/students/{id}/disciplines", studentHandler.GetDisciplines)
-	r.Get("/students/{id}/grades", gradeHandler.GetByStudent)
-	r.Get("/grades", gradeHandler.ListAll)
-
-	// ── Преподаватели ──
-	r.Get("/teachers", teacherHandler.FindByName)
-	r.Get("/teachers/{name}/schedule", teacherHandler.GetSchedule)
-
-	// ── Расписание ──
-	r.Get("/groups/{id}/schedule", scheduleHandler.GetByGroup)
-	r.Get("/schedule", scheduleHandler.ListAll)
-
-	// ── Дисциплины ──
-	r.Get("/disciplines", disciplineHandler.GetAll)
-
-	slog.Info("routes registered",
-		"api_count", 8,
-		"system_count", 3,
-	)
-
-	return r
+		w.Header().Set("X-Correlation-ID", correlationID)
+		ctx := context.WithValue(r.Context(), correlationIDKey, correlationID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
-// healthHandler возвращает статус сервиса и БД.
-func healthHandler(database db.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
+// StructuredLoggingMiddleware логирует каждый запрос в JSON-формате через slog.
+func StructuredLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		correlationID, _ := r.Context().Value(correlationIDKey).(string)
 
-		dbStatus := "ok"
-		if err := database.PingContext(ctx); err != nil {
-			dbStatus = "error"
-			slog.ErrorContext(ctx, "health check: db ping failed", "error", err)
-		}
+		// Оборачиваем ResponseWriter для захвата статус-кода
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		status := "ok"
-		if dbStatus != "ok" {
-			status = "degraded"
-		}
+		next.ServeHTTP(wrapped, r)
 
-		handlers.WriteJSON(w, http.StatusOK, map[string]string{
-			"status": status,
-			"db":     dbStatus,
-		})
+		slog.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"query", r.URL.RawQuery,
+			"status", wrapped.statusCode,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"correlation_id", correlationID,
+		)
+	})
+}
+
+// RecoveryMiddleware перехватывает паники и возвращает 500.
+func RecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("panic recovered",
+					"panic", rec,
+					"path", r.URL.Path,
+					"method", r.Method,
+				)
+				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ── Вспомогательные типы ──
+
+type contextKey string
+
+const correlationIDKey contextKey = "correlation_id"
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// ── Инициализация логгера ──
+
+// InitLogger настраивает structured JSON-логирование.
+func InitLogger() {
+	level := slog.LevelInfo
+	if os.Getenv("LOG_LEVEL") == "debug" {
+		level = slog.LevelDebug
 	}
+
+	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})
+	slog.SetDefault(slog.New(handler))
+
+	slog.Info("logger initialized", "level", level.String())
 }
-
-

@@ -27,6 +27,19 @@ uv run agent-rag-docgen --help    # CLI для генерации учебных
 uv run pytest                   # Запуск тестов (unit и integration)
 ```
 
+### Data-service (Go)
+
+```bash
+cd data-service
+go build -o bin/data-service ./cmd/server/      # сборка
+./bin/data-service                                   # запуск с дефолтным конфигом
+./bin/data-service --config path/to/config.json      # кастомный конфиг
+./bin/data-service --discover > config.json          # генерация конфига из схемы БД
+
+go run ./cmd/seed-cli/                              # заливка seed-данных (dev-only)
+go run ./cmd/seed-cli/ --seed-path path/to/seed.json
+```
+
 После изменений в логике API или RAG — запускай тесты для проверки регрессий.
 
 ## Способы запуска
@@ -117,75 +130,64 @@ echo 'DATABASE_URL=postgresql://tutor:tutor@127.0.0.1:5432/agent_tutor' >> .env
 
 ### 🌱 Сидинг university.db (dev-only)
 
-Проект держит **две независимые БД** — см. раздел «Архитектурная гибкость» ниже.
-Здесь — только инструкция как их наполнить фейковыми данными.
+Проект держит **две независимые БД** — см. раздел «Архитектурная гибкость».
 
-**Pipeline сидинга** (Python faker → JSON → Go data-service):
+**Pipeline сидинга** (Python faker → JSON → Go seed-cli):
 
 ```
 agent-seedgen  (Python + faker)
        │
-       ▼  specs/fixtures/seed.json  (плоские UUID-id, storage shape)
-data-service --seed  (Go, читает JSON и пишет в БД)
+       ▼  specs/fixtures/seed.json
+seed-cli  (Go, отдельный бинарник)
        │
        ▼
 university.db (SQLite) или PostgreSQL
 ```
 
-**Шаг 1 — сгенерировать seed.json** (Python, `agent-seedgen` CLI из workspace `rag`):
+**Шаг 1 — сгенерировать seed.json**:
 
 ```bash
-# Дефолт: 8 групп, 40 студентов, 60 оценок, seed=42
-uv run agent-seedgen
-
-# Кастомный размер
+uv run agent-seedgen                              # дефолт: 8 групп, 40 студентов
 uv run agent-seedgen --students 80 --grades 200 --seed 42
-
-# В другой файл
 uv run agent-seedgen --out /tmp/my-seed.json
 ```
 
-**Шаг 2 — залить в БД** (Go, `data-service` workspace):
+**Шаг 2 — залить в БД** (отдельная утилита, не часть data-service):
 
 ```bash
-# SQLite (по умолчанию, university.db в корне)
-DB_PATH=./university.db \
-  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+cd data-service
+
+# SQLite
+go run ./cmd/seed-cli/ --seed-path ../specs/fixtures/seed.json
 
 # PostgreSQL
 DATABASE_URL=postgresql://tutor:tutor@127.0.0.1:5432/agent_tutor \
-  DB_DRIVER=postgres \
-  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+  go run ./cmd/seed-cli/ --driver postgres --seed-path ../specs/fixtures/seed.json
 ```
 
-**Защита от перезаписи prod-БД**: `data-service --seed` паникует, если
-`groups` уже содержит записи (`ErrDatabaseNotEmpty`). Сначала удали БД:
+**Защита от перезаписи**: `seed-cli` отказывается, если `groups` уже содержит
+записи (`ErrDatabaseNotEmpty`). Сначала очисти БД:
 
 ```bash
-rm -f university.db && go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+rm -f university.db && go run ./cmd/seed-cli/
 # или для PostgreSQL: DROP DATABASE agent_tutor; CREATE DATABASE agent_tutor;
 ```
 
-**Полная очистка и пересоздание** с нуля (все 5 сервисов и обе БД):
+**Полная очистка и пересоздание** с нуля:
 
 ```bash
 ./scripts/dev.sh stop
 rm -f university.db rag_documents.db
 rm -rf chroma_db/ generated_materials/
 
-# Пересоздать university.db
 uv run agent-seedgen --students 80
-DB_PATH=./university.db go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
+cd data-service && go run ./cmd/seed-cli/ --seed-path ../specs/fixtures/seed.json
 
-# Перезапустить всё
 ./scripts/dev.sh start
 
 # Импортировать тестовый PDF
 uv run agent-rag-ingest import ~/Documents/some.pdf -d <discipline-id>
 ```
-
-Подробнее про **rag_documents.db** (вторая БД) — см. секцию `## Документы и RAG`
-и `specs/fixtures/README.md` (через `agent-rag-ingest import`).
 
 ### 🧪 Запуск по одному (ручная отладка)
 
@@ -207,44 +209,45 @@ DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=8081 DEMO_WEB_PORT=8080 uv run python -m d
 
 ```
 agent-tutor/
-├── data-service/              # Go-сервис доступа к БД (:8084)
+├── data-service/              # Config-driven Go-сервис доступа к произвольной БД (:8084)
 │   ├── cmd/
-│   │   ├── server/main.go     # точка входа: --seed/--seed-path флаги, graceful shutdown
-│   │   └── schema-gen/main.go # утилита генерации JSON Schema из Go-моделей (invopop/jsonschema)
+│   │   ├── server/main.go     # точка входа: graceful shutdown, --config, --discover
+│   │   └── seed-cli/main.go   # dev-only: заливка seed-данных (не часть прод-сервера)
 │   ├── internal/
-│   │   ├── db/                # интерфейс DB + драйверы (SQLite)
-│   │   │   ├── connector.go   # интерфейс DB + фабрика New() по DB_DRIVER
-│   │   │   ├── schema.go      # //go:embed schema.sql → SchemaSQL string
-│   │   │   └── sqlite.go      # SQLiteDB (modernc.org/sqlite, WAL, FK on)
-│   │   ├── handlers/          # HTTP-обработчики (не знают SQL)
-│   │   │   ├── handlers.go    # WriteJSON, writeError, urlParam, queryParam
-│   │   │   ├── disciplines.go # GET /disciplines
-│   │   │   ├── grades.go      # GET /students/{id}/grades, /grades (с JOIN disciplines)
-│   │   │   ├── schedule.go    # GET /groups/{id}/schedule?day=, /schedule
-│   │   │   ├── stats.go       # GET /stats (COUNT по таблицам)
-│   │   │   ├── students.go    # GET /students/{id}, /students?name=, /{id}/disciplines
-│   │   │   └── teachers.go    # GET /teachers?name=, /{name}/schedule?day=
-│   │   ├── models/            # доменные модели (source of truth → JSON Schema)
-│   │   │   ├── models.go      # Group, Student, Teacher, Discipline, Grade, Lesson, ScheduleEntry
-│   │   │   ├── gen.go         # //go:generate триггер для schema-gen
-│   │   │   └── models_test.go # TestJSONSchemaUpToDate drift-тест
-│   │   ├── repository/        # ← единственное место с SQL университета
-│   │   │   ├── helpers.go     # parseLessonsJSON, extractDisciplineIDs, ListAllSchedule
-│   │   │   ├── disciplines.go # DisciplineRepo.GetAll, queryDisciplinesByIDs, queryGroup
-│   │   │   ├── grades.go      # GradeRepo с JOIN disciplines
-│   │   │   ├── stats.go       # StatsRepo (5×COUNT(*))
-│   │   │   ├── students.go    # StudentRepo с JOIN groups, GetSchedule через group_id
-│   │   │   └── teachers.go    # TeacherRepo с JOIN groups + post-фильтр lessons_json
+│   │   ├── config/            # загрузка, валидация, envsubst, типы конфига
+│   │   │   ├── loader.go      # Load(path) → *Config + JSON Schema validation
+│   │   │   ├── store.go       # FileStore / DbStore (фаза 3.7+)
+│   │   │   └── types.go       # Config, Entity, Endpoint, CustomQuery, ...
+│   │   ├── datasource/        # адаптеры БД: sqlite, postgres
+│   │   │   ├── adapter.go     # Adapter interface {Connect, Introspect, ...}
+│   │   │   ├── sqlite_adapter.go / postgres_adapter.go
+│   │   │   ├── registry.go    # реестр драйверов
+│   │   │   └── equivalence_test.go # кросс-СУБД контрактные тесты
+│   │   ├── runtime/           # generic query builder + хендлеры
+│   │   │   ├── query_builder.go    # BuildGetByID, BuildFind, BuildList
+│   │   │   ├── entity_resolver.go  # Resolve(entityName) → Entity
+│   │   │   ├── response_mapper.go  # MapRow, MapRows
+│   │   │   ├── converter.go        # Config → runtime types
+│   │   │   └── handlers/      # generic HTTP-хендлеры
+│   │   │       ├── get_by_id.go / find.go / list.go
+│   │   │       ├── custom_query.go / health.go / stats.go
+│   │   │       ├── context.go / default.go
+│   │   ├── configgen/         # генерация конфига из интроспекции БД
+│   │   │   └── configgen.go   # Generate(schema, ds) → *Config
+│   │   ├── openapigen/        # runtime-генерация OpenAPI
+│   │   │   └── openapigen.go  # Generate(cfg, host, title, version) → spec
 │   │   ├── server/            # chi-роутер, middleware, Swagger UI
-│   │   │   ├── server.go      # NewRouter, healthHandler (DB ping)
-│   │   │   ├── middleware.go  # RequestID/StructuredLogging/Recovery + InitLogger
-│   │   │   ├── swagger.go     # //go:embed openapi.json + swagger-ui.html
-│   │   │   └── server_test.go # e2e Go-тесты на in-memory SQLite + seedgen.TestSeed
-│   │   └── seedgen/           # Go-сидер: применяет seed.json к БД (--seed)
+│   │   │   ├── server.go      # middleware (Recovery, RequestID, StructuredLogging)
+│   │   │   ├── endpoint_builder.go  # NewRouterFromConfig(cfg, db, adapter, ...)
+│   │   │   ├── swagger.go     # runtime /openapi.json + Swagger UI
+│   │   │   └── server_test.go / router_config_test.go # config-driven e2e
+│   │   ├── db/                # legacy connector (только для тестов)
+│   │   │   └── connector.go   # DB interface + New() по env
+│   │   └── seedgen/           # Go-сидер (dev-only, вызывается из cmd/seed-cli)
 │   │       ├── seedgen.go     # Load/Apply, FK-порядок, ErrDatabaseNotEmpty
 │   │       └── testdata.go    # TestSeed для in-memory тестов
 │   ├── Dockerfile
-│   └── README.md              # как переписать под новую БД
+│   └── README.md              # config-driven архитектура, --discover, примеры
 ├── mcp_server/                # MCP-сервер (FastMCP, HTTP :8083)
 │   ├── server.py              # FastMCP-роутер + /health + uvicorn (:8083)
 │   ├── tools_via_http.py      # тонкие async-обёртки над AsyncDataServiceClient
@@ -368,8 +371,8 @@ agent-tutor/
 без переписывания ядра:
 
 ### Смена базы данных
-- Университетские данные — через `data-service` (Go). Схема БД изолирована в `data-service/internal/repository/`.
-- При смене реальной БД вуза переписывается только Go-код репозиториев, HTTP-контракт не меняется.
+- Университетские данные — через `data-service` (Go). Сервис config-driven: схема БД описывается в конфиге, SQL генерируется runtime query builder'ом.
+- При смене реальной БД вуза достаточно написать конфиг (или запустить `--discover`). Никакой Go-код не переписывается.
 - `agent_tutor_sdk/db/connector.py` — для тестов, CLI-утилит и RAG (отдельная `rag_documents.db`).
 - Сессии чата (`demo_sessions.sqlite`) — на SQLite, это кэш, не основные данные.
 
@@ -379,10 +382,10 @@ agent-tutor/
 
 ### Замена любого сервиса
 - Каждый long-running сервис имеет HTTP-контракт (OpenAPI/Swagger на `/docs`)
-- `data-service` (Go) — контракт в `specs/data-service.openapi.yaml` + JSON Schema в `specs/schemas/`
+- `data-service` (Go) — контракт генерируется runtime из конфига (`/openapi.json`)
 - Если переписать `rag` на Go — `mcp_server` продолжает ходить к `http://rag:8082`
 - Если переписать `mcp_server` на Rust — `api` продолжает слать MCP-over-HTTP
-- Если переписать `data-service` на Rust — все потребители видят тот же JSON Schema контракт
+- Если переписать `data-service` на Rust — все потребители видят тот же HTTP-контракт
 - CLI-утилиты (`rag/fixtures/`) не привязаны к Python-коду сервисов — работают по HTTP
 
 ### Две независимые БД в проекте
@@ -401,11 +404,10 @@ agent-tutor/
 - `rag_documents.db` — это **артефакты нашего приложения** (загруженные PDF, чанки, embeddings). В проде она пуста, пока пользователь не загрузит документы. Схема эволюционирует вместе с приложением.
 - Связь между ними только по `discipline_id` (UUID), без FK на уровне БД — каждая БД самостоятельна.
 
-**Граница**: если вуз сменит свою реальную БД — меняется **только** `data-service/internal/repository/`. RAG-слой и агенты это не замечают.
+**Граница**: если вуз сменит свою реальную БД — меняется **только** конфиг data-service (или запускается `--discover` заново). RAG-слой и агенты это не замечают.
 
 ### Почему это важно
-- База вуза может быть PostgreSQL, MySQL, Oracle — меняется только `data-service/internal/repository/`
-- JSON Schema в `specs/schemas/` — язык-независимый контракт, можно генерировать клиентов на любом языке
+- База вуза может быть PostgreSQL, MySQL, Oracle — data-service поддерживает любую через адаптеры и конфиг
 - LLM-провайдер может меняться каждый семестр — LiteLLM проксирует любой API
 - Если вуз хочет свой кастомный RAG на Go — не надо переписывать агента
 
@@ -551,74 +553,56 @@ uv run agent-rag-ingest clear-generated                  # Удалить сге
 - Тесты разнесены по пакетам сервисов: `uv run pytest rag/tests/`, `uv run pytest mcp_server/tests/`
 - Dockerfile'ы копируют в runtime только нужные исходники (минимальный размер образа)
 
-## Генерация JSON Schema
+## Конфиг data-service (новая архитектура)
 
-JSON Schema в `specs/schemas/` — это контракт между data-service (Go) и его потребителями (Python).
-Go-модели — **source of truth**. JSON Schema генерируется из них автоматически через
-`invopop/jsonschema` (рефлексия Go-структур).
+Data-service больше не содержит захардкоженных Go-моделей и SQL. Он работает
+по JSON-конфигу, который описывает сущности, эндпоинты и запросы.
 
-### Принцип
+### Генерация конфига из существующей БД
 
+```bash
+cd data-service
+go build -o bin/data-service ./cmd/server/
+
+# Автоматическая генерация из схемы
+DB_PATH=../university.db ./bin/data-service --discover > ../my-config.json
+
+# Запуск с конфигом
+./bin/data-service --config ../my-config.json
 ```
-data-service/internal/models/models.go    ← source of truth
-    │  jsonschema:"description=..." теги
-    │
-    ▼  go generate (cmd/schema-gen)
-specs/schemas/*.schema.json               ← генерируются автоматически
-    │
-    ▼  go test (TestJSONSchemaUpToDate)
-    │  сравнивает сгенерированное ≡ закоммиченное → FAIL если расходятся
+
+### Формат конфига
+
+```jsonc
+{
+  "version": 1,
+  "data_source": {
+    "driver": "sqlite",           // sqlite | postgres
+    "dsn": "${DB_PATH:-university.db}"
+  },
+  "entities": [                    // таблицы → сущности
+    { "name": "student", "table": "students", "id_column": "id", "fields": [...] }
+  ],
+  "endpoints": [                   // какие эндпоинты публикуем
+    { "method": "GET", "path": "/students/{id}", "op": "get_by_id", "entity": "student" }
+  ],
+  "custom_queries": {              // SELECT с JOIN'ами (пишутся руками)
+    "student_grades": { "sql": "SELECT ...", "params": [...], "max_rows": 500 }
+  }
+}
 ```
 
-### Как изменить схему данных
-
-1. **Отредактировать Go-модель** в `data-service/internal/models/models.go`
-   - Добавить/удалить/переименовать поле
-   - Обновить `jsonschema:"description=..."` тег
-
-2. **Сгенерировать JSON Schema**:
-   ```bash
-   cd data-service
-   go generate ./internal/models/
-   ```
-   Это запустит `cmd/schema-gen/main.go` и перезапишет файлы в `specs/schemas/`.
-
-3. **Проверить что схемы актуальны**:
-   ```bash
-   go test ./internal/models/ -run TestJSONSchema
-   ```
-   Тест сравнивает сгенерированные схемы с закоммиченными. Если кто-то изменил
-   Go-модель но забыл перегенерировать — тест упадёт с понятным сообщением.
-
-4. **Обновить Python-модели** в `agent_tutor_sdk/contracts/__init__.py`:
-   - Пока вручную (скопировать поля из JSON Schema).
-   - В будущем: `datamodel-codegen --input specs/schemas/ --output contracts/`.
-
-5. **Обновить SQL-запросы** в `data-service/internal/repository/`:
-   - Это единственное место, которое нужно править при изменении схемы БД.
-   - Handlers и HTTP-контракт не трогаются.
-
-6. **Прогнать тесты**:
-   ```bash
-   go test ./...                             # Go-тесты (18)
-   uv run pytest                             # Python-тесты (105)
-   ```
+Детали — в `specs/config.schema.json` и `data-service/README.md`.
 
 ### Структура specs/
 
 ```
 specs/
-├── schemas/                     # JSON Schema — source of truth для доменных типов
-│   ├── student.schema.json      # генерируется из Go-модели Student
-│   ├── teacher.schema.json      # генерируется из Go-модели Teacher
-│   ├── discipline.schema.json
-│   ├── grade.schema.json
-│   ├── schedule-entry.schema.json
-│   └── lesson.schema.json
-├── data-service.openapi.yaml    # OpenAPI-контракт data-service (ссылается на schemas/)
-├── rag.openapi.yaml             # OpenAPI-контракт RAG
-├── api.openapi.yaml             # OpenAPI-контракт API
-└── README.md                    # Как обновлять spec, генерировать клиент
+├── config.schema.json          # JSON Schema для конфига data-service
+├── config.example.json         # автогенерационный пример для university.db
+├── rag.openapi.yaml            # OpenAPI-контракт RAG
+├── api.openapi.yaml            # OpenAPI-контракт API
+└── fixtures/                   # pipeline сидинга
 ```
 
 ## Осторожность

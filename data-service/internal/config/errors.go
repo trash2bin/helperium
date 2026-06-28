@@ -7,10 +7,6 @@ package config
 
 import "errors"
 
-// ErrNotImplemented возвращается методами, чья реализация запланирована
-// на более поздние фазы (например, Store.Save для фазы 3.7).
-var ErrNotImplemented = errors.New("not implemented in this phase")
-
 // ErrSchemaNotFound возвращается, когда не удалось найти файл
 // config.schema.json ни одним из известных путей.
 var ErrSchemaNotFound = errors.New("config schema not found")

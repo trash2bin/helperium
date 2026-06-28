@@ -17,9 +17,27 @@
       "id_column": "id",
       "description": "Учебная группа",
       "fields": [
-        { "name": "id",         "column": "id",         "type": "string", "nullable": false, "primary_key": true },
-        { "name": "name",       "column": "name",       "type": "string", "nullable": false, "description": "Название группы. Пример: ИВТ-21" },
-        { "name": "speciality", "column": "speciality", "type": "string", "nullable": false, "description": "Специальность группы" }
+        {
+          "name": "id",
+          "column": "id",
+          "type": "string",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "name",
+          "column": "name",
+          "type": "string",
+          "nullable": false,
+          "description": "Название группы. Пример: ИВТ-21"
+        },
+        {
+          "name": "speciality",
+          "column": "speciality",
+          "type": "string",
+          "nullable": false,
+          "description": "Специальность группы"
+        }
       ]
     },
     {
@@ -28,9 +46,27 @@
       "id_column": "id",
       "description": "Карточка студента",
       "fields": [
-        { "name": "id",        "column": "id",        "type": "string", "nullable": false, "primary_key": true },
-        { "name": "full_name", "column": "name",      "type": "string", "nullable": false, "description": "Полное ФИО студента" },
-        { "name": "course",    "column": "course",    "type": "int",    "nullable": true,  "description": "Курс обучения (1-6)" }
+        {
+          "name": "id",
+          "column": "id",
+          "type": "string",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "full_name",
+          "column": "name",
+          "type": "string",
+          "nullable": false,
+          "description": "Полное ФИО студента"
+        },
+        {
+          "name": "course",
+          "column": "course",
+          "type": "int",
+          "nullable": true,
+          "description": "Курс обучения (1-6)"
+        }
       ],
       "relations": [
         {
@@ -47,9 +83,27 @@
       "id_column": "id",
       "description": "Преподаватель",
       "fields": [
-        { "name": "id",       "column": "id",                  "type": "string", "nullable": false, "primary_key": true },
-        { "name": "full_name", "column": "name",               "type": "string", "nullable": false, "description": "Полное ФИО преподавателя" },
-        { "name": "disciplines", "column": "disciplines_json", "type": "json",   "nullable": false, "description": "Список названий дисциплин" }
+        {
+          "name": "id",
+          "column": "id",
+          "type": "string",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "full_name",
+          "column": "name",
+          "type": "string",
+          "nullable": false,
+          "description": "Полное ФИО преподавателя"
+        },
+        {
+          "name": "disciplines",
+          "column": "disciplines_json",
+          "type": "json",
+          "nullable": false,
+          "description": "Список названий дисциплин"
+        }
       ]
     },
     {
@@ -58,9 +112,27 @@
       "id_column": "id",
       "description": "Учебная дисциплина",
       "fields": [
-        { "name": "id",          "column": "id",          "type": "string", "nullable": false, "primary_key": true },
-        { "name": "name",        "column": "name",        "type": "string", "nullable": false, "description": "Название дисциплины" },
-        { "name": "description", "column": "description", "type": "string", "nullable": false, "description": "Краткое описание" }
+        {
+          "name": "id",
+          "column": "id",
+          "type": "string",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "name",
+          "column": "name",
+          "type": "string",
+          "nullable": false,
+          "description": "Название дисциплины"
+        },
+        {
+          "name": "description",
+          "column": "description",
+          "type": "string",
+          "nullable": false,
+          "description": "Краткое описание"
+        }
       ]
     },
     {
@@ -69,13 +141,53 @@
       "id_column": "id",
       "description": "Оценка студента",
       "fields": [
-        { "name": "id",              "column": "id",              "type": "string",  "nullable": false, "primary_key": true },
-        { "name": "student_id",      "column": "student_id",      "type": "string",  "nullable": false },
-        { "name": "student_name",    "column": "_computed",       "type": "string",  "nullable": true,  "description": "Имя студента (подтягивается через JOIN)" },
-        { "name": "discipline_id",   "column": "discipline_id",   "type": "string",  "nullable": false },
-        { "name": "discipline_name", "column": "_computed",       "type": "string",  "nullable": true,  "description": "Название дисциплины (JOIN)" },
-        { "name": "grade",           "column": "grade",           "type": "string",  "nullable": false, "description": "Значение оценки: 5, 4, 3, 2, зачёт, незачёт" },
-        { "name": "date",            "column": "date",            "type": "date",    "nullable": false, "description": "Дата в формате YYYY-MM-DD" }
+        {
+          "name": "id",
+          "column": "id",
+          "type": "string",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "student_id",
+          "column": "student_id",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "student_name",
+          "column": "_computed",
+          "type": "string",
+          "nullable": true,
+          "description": "Имя студента (подтягивается через JOIN)"
+        },
+        {
+          "name": "discipline_id",
+          "column": "discipline_id",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "discipline_name",
+          "column": "_computed",
+          "type": "string",
+          "nullable": true,
+          "description": "Название дисциплины (JOIN)"
+        },
+        {
+          "name": "grade",
+          "column": "grade",
+          "type": "string",
+          "nullable": false,
+          "description": "Значение оценки: 5, 4, 3, 2, зачёт, незачёт"
+        },
+        {
+          "name": "date",
+          "column": "date",
+          "type": "date",
+          "nullable": false,
+          "description": "Дата в формате YYYY-MM-DD"
+        }
       ]
     },
     {
@@ -84,10 +196,33 @@
       "id_column": "id",
       "description": "Запись расписания на один день",
       "fields": [
-        { "name": "id",    "column": "id",          "type": "string", "nullable": false, "primary_key": true },
-        { "name": "day",   "column": "day",         "type": "string", "nullable": false, "description": "День недели" },
-        { "name": "group_id", "column": "group_id", "type": "string", "nullable": false },
-        { "name": "lessons", "column": "lessons_json", "type": "json", "nullable": false, "description": "Список занятий (teacher, discipline, room)" }
+        {
+          "name": "id",
+          "column": "id",
+          "type": "string",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "day",
+          "column": "day",
+          "type": "string",
+          "nullable": false,
+          "description": "День недели"
+        },
+        {
+          "name": "group_id",
+          "column": "group_id",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "lessons",
+          "column": "lessons_json",
+          "type": "json",
+          "nullable": false,
+          "description": "Список занятий (teacher, discipline, room)"
+        }
       ],
       "relations": [
         {
@@ -190,25 +325,48 @@
   "custom_queries": {
     "student_disciplines": {
       "sql": "SELECT d.id, d.name, d.description FROM disciplines d WHERE d.id IN (SELECT DISTINCT json_extract(value, '$.discipline_id') FROM schedule s, json_each(s.lessons_json) WHERE s.group_id = (SELECT group_id FROM students WHERE id = ?) AND json_extract(value, '$.discipline_id') IS NOT NULL)",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "description": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
       },
       "max_rows": 100,
       "description": "Дисциплины студента через его группу"
     },
     "student_grades": {
       "sql": "SELECT g.id, g.student_id, g.discipline_id, COALESCE(d.name, 'Неизвестная дисциплина') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN disciplines d ON d.id = g.discipline_id WHERE g.student_id = ? ORDER BY g.date DESC, d.name ASC",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {
-        "id": { "type": "string" },
-        "student_id": { "type": "string" },
-        "discipline_id": { "type": "string" },
-        "discipline_name": { "type": "string", "nullable": true },
-        "grade": { "type": "string" },
-        "date": { "type": "date" }
+        "id": {
+          "type": "string"
+        },
+        "student_id": {
+          "type": "string"
+        },
+        "discipline_id": {
+          "type": "string"
+        },
+        "discipline_name": {
+          "type": "string",
+          "nullable": true
+        },
+        "grade": {
+          "type": "string"
+        },
+        "date": {
+          "type": "date"
+        }
       },
       "max_rows": 500,
       "description": "Оценки студента"
@@ -217,26 +375,58 @@
       "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json FROM schedule s LEFT JOIN groups g ON g.id = s.group_id",
       "params": [],
       "result_mapping": {
-        "id": { "type": "string" },
-        "day": { "type": "string" },
-        "group_id": { "type": "string", "nullable": true },
-        "group_name": { "type": "string", "nullable": true },
-        "speciality": { "type": "string", "nullable": true },
-        "lessons": { "type": "string", "description": "JSON-массив занятий" }
+        "id": {
+          "type": "string"
+        },
+        "day": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string",
+          "nullable": true
+        },
+        "group_name": {
+          "type": "string",
+          "nullable": true
+        },
+        "speciality": {
+          "type": "string",
+          "nullable": true
+        },
+        "lessons": {
+          "type": "string",
+          "description": "JSON-массив занятий"
+        }
       },
       "max_rows": 1000,
       "description": "Расписание преподавателя (фильтрация по teacher_name и day — на уровне Go)"
     },
     "group_schedule": {
       "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json FROM schedule s LEFT JOIN groups g ON g.id = s.group_id WHERE s.group_id = ?",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {
-        "id": { "type": "string" },
-        "day": { "type": "string" },
-        "group_id": { "type": "string" },
-        "group_name": { "type": "string", "nullable": true },
-        "speciality": { "type": "string", "nullable": true },
-        "lessons": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "day": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "group_name": {
+          "type": "string",
+          "nullable": true
+        },
+        "speciality": {
+          "type": "string",
+          "nullable": true
+        },
+        "lessons": {
+          "type": "string"
+        }
       },
       "max_rows": 1000,
       "description": "Расписание группы"
@@ -245,12 +435,27 @@
       "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json FROM schedule s LEFT JOIN groups g ON g.id = s.group_id ORDER BY g.name, s.day",
       "params": [],
       "result_mapping": {
-        "id": { "type": "string" },
-        "day": { "type": "string" },
-        "group_id": { "type": "string", "nullable": true },
-        "group_name": { "type": "string", "nullable": true },
-        "speciality": { "type": "string", "nullable": true },
-        "lessons": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "day": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string",
+          "nullable": true
+        },
+        "group_name": {
+          "type": "string",
+          "nullable": true
+        },
+        "speciality": {
+          "type": "string",
+          "nullable": true
+        },
+        "lessons": {
+          "type": "string"
+        }
       },
       "max_rows": 5000,
       "description": "Всё расписание"
@@ -259,13 +464,29 @@
       "sql": "SELECT g.id, g.student_id, COALESCE(s.name, 'Неизвестный студент') AS student_name, g.discipline_id, COALESCE(d.name, 'Неизвестная дисциплина') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN students s ON s.id = g.student_id LEFT JOIN disciplines d ON d.id = g.discipline_id ORDER BY g.date DESC LIMIT 80",
       "params": [],
       "result_mapping": {
-        "id": { "type": "string" },
-        "student_id": { "type": "string" },
-        "student_name": { "type": "string", "nullable": true },
-        "discipline_id": { "type": "string" },
-        "discipline_name": { "type": "string", "nullable": true },
-        "grade": { "type": "string" },
-        "date": { "type": "date" }
+        "id": {
+          "type": "string"
+        },
+        "student_id": {
+          "type": "string"
+        },
+        "student_name": {
+          "type": "string",
+          "nullable": true
+        },
+        "discipline_id": {
+          "type": "string"
+        },
+        "discipline_name": {
+          "type": "string",
+          "nullable": true
+        },
+        "grade": {
+          "type": "string"
+        },
+        "date": {
+          "type": "date"
+        }
       },
       "max_rows": 80,
       "description": "Последние 80 оценок"
@@ -273,11 +494,26 @@
   },
   "stats": {
     "counters": [
-      { "name": "students",    "entity": "student" },
-      { "name": "teachers",    "entity": "teacher" },
-      { "name": "disciplines", "entity": "discipline" },
-      { "name": "grades",      "entity": "grade" },
-      { "name": "schedule",    "entity": "schedule" }
+      {
+        "name": "students",
+        "entity": "student"
+      },
+      {
+        "name": "teachers",
+        "entity": "teacher"
+      },
+      {
+        "name": "disciplines",
+        "entity": "discipline"
+      },
+      {
+        "name": "grades",
+        "entity": "grade"
+      },
+      {
+        "name": "schedule",
+        "entity": "schedule"
+      }
     ]
   },
   "mcp_tools": [
@@ -286,7 +522,12 @@
       "endpoint": "/students",
       "description": "Найти студента по полному ФИО. Пример: 'Иван Петров Иванович'.",
       "params": [
-        { "name": "name", "in": "query", "type": "string", "required": true, "description": "Полное ФИО студента" }
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "Полное ФИО студента"
+        }
       ]
     },
     {
@@ -294,7 +535,12 @@
       "endpoint": "/students/{id}",
       "description": "Получить карточку студента по ID. Получи ID через find_student_by_name.",
       "params": [
-        { "name": "id", "in": "path", "type": "string", "required": true, "description": "ID студента" }
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "ID студента"
+        }
       ]
     },
     {
@@ -302,8 +548,18 @@
       "endpoint": "/groups/{id}/schedule",
       "description": "Расписание группы студента на неделю или на конкретный день.",
       "params": [
-        { "name": "id",  "in": "path", "type": "string", "required": true,  "description": "ID группы (из поля group.id студента)" },
-        { "name": "day", "in": "query", "type": "string", "required": false, "description": "День недели по-русски. Без параметра — всё расписание" }
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "ID группы (из поля group.id студента)"
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "required": false,
+          "description": "День недели по-русски. Без параметра — всё расписание"
+        }
       ]
     },
     {
@@ -311,7 +567,12 @@
       "endpoint": "/students/{id}/disciplines",
       "description": "Список дисциплин студента.",
       "params": [
-        { "name": "id", "in": "path", "type": "string", "required": true, "description": "ID студента" }
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "ID студента"
+        }
       ]
     },
     {
@@ -319,8 +580,18 @@
       "endpoint": "/students/{id}/grades",
       "description": "Оценки студента, опционально отфильтрованные по дисциплине.",
       "params": [
-        { "name": "id",            "in": "path", "type": "string", "required": true,  "description": "ID студента" },
-        { "name": "discipline_id", "in": "query", "type": "string", "required": false, "description": "ID дисциплины для фильтрации" }
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "ID студента"
+        },
+        {
+          "name": "discipline_id",
+          "type": "string",
+          "required": false,
+          "description": "ID дисциплины для фильтрации"
+        }
       ]
     },
     {
@@ -328,7 +599,12 @@
       "endpoint": "/teachers",
       "description": "Найти преподавателя по полному ФИО.",
       "params": [
-        { "name": "name", "in": "query", "type": "string", "required": true, "description": "Полное ФИО преподавателя" }
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "Полное ФИО преподавателя"
+        }
       ]
     },
     {
@@ -336,8 +612,18 @@
       "endpoint": "/teachers/{name}/schedule",
       "description": "Расписание преподавателя, опционально по дню недели.",
       "params": [
-        { "name": "name", "in": "path", "type": "string", "required": true,  "description": "Полное ФИО преподавателя" },
-        { "name": "day",  "in": "query", "type": "string", "required": false, "description": "День недели" }
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "Полное ФИО преподавателя"
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "required": false,
+          "description": "День недели"
+        }
       ]
     }
   ],

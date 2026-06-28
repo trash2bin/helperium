@@ -1,3 +1,14 @@
+# SYSTEM RULES — READ BEFORE EVERY RESPONSE
+
+## REQUIRED: Context-Mode Usage
+
+You MUST call `ctx_search "<terms>"` at the start of EVERY response that
+involves the codebase — before any Read, Bash, or Grep call.
+No exceptions. This is a hard rule, not a suggestion.
+
+You MUST use `ctx_execute` instead of Bash/Read for any operation
+that produces output >1KB.
+
 ## Tool Routing
 
 ### Knowledge graph

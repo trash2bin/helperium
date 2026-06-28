@@ -148,9 +148,8 @@ go build -o /dev/null ./cmd/server/
 │   ├── api/             # API-сервер + агент (FastAPI, :8081)
 │   │   └── agent/       # orchestrator, llm_client, mcp_client, tool_parser
 │   └── web/             # Веб-интерфейс (FastAPI, :8080)
-├── specs/               # OpenAPI + JSON Schema (source of truth)
-│   ├── schemas/         # student, teacher, grade и др.
-│   ├── data-service.openapi.yaml
+├── specs/               # OpenAPI + конфиги (source of truth)
+│   ├── rag.openapi.yaml
 │   ├── rag.openapi.yaml
 │   └── api.openapi.yaml
 ├── rag/fixtures/      # CLI-утилиты (agent-rag-ingest, agent-rag-docgen, agent-seedgen)

@@ -1,18 +1,17 @@
 package server
 
 import (
+	"encoding/json"
 	_ "embed"
 	"html/template"
 	"net/http"
-	"path/filepath"
-	"strings"
+
+	"github.com/agent-tutor/data-service/internal/config"
+	"github.com/agent-tutor/data-service/internal/openapigen"
 )
 
 //go:embed swagger-ui.html
 var swaggerUI string
-
-//go:embed openapi.json
-var openapiJSON []byte
 
 // swaggerHandler отдаёт Swagger UI страницу.
 func swaggerHandler(w http.ResponseWriter, r *http.Request) {
@@ -25,14 +24,16 @@ func swaggerHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, nil)
 }
 
-// openapiHandler отдаёт OpenAPI JSON-спецификацию.
-func openapiHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Write(openapiJSON)
-}
-
-// trimExt удаляет расширение файла.
-func trimExt(path string) string {
-	return strings.TrimSuffix(path, filepath.Ext(path))
+// NewOpenAPIHandler создаёт HTTP-хендлер для /openapi.json,
+// который генерирует спецификацию из runtime-конфига на КАЖДЫЙ запрос.
+//
+// Это значит что конфиг изменился → openapi.json сам подстроится.
+// Без рестарта.
+func NewOpenAPIHandler(cfg *config.Config, hasAdmin bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		spec := openapigen.Generate(cfg, "http://127.0.0.1:8084", "Data Service", "0.2.0", hasAdmin)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		json.NewEncoder(w).Encode(spec)
+	}
 }

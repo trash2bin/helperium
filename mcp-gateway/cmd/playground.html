@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP Playground — developer tools</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface2: #0f3460;
+    --accent: #e94560;
+    --accent2: #533483;
+    --text: #e0e0e0;
+    --text-dim: #888;
+    --green: #2ecc71;
+    --orange: #f39c12;
+    --red: #e74c3c;
+    --mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 2px solid var(--accent);
+  }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .subtitle { color: var(--text-dim); font-size: 13px; }
+  .header .badge {
+    background: var(--accent2);
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--surface2);
+    margin-bottom: 20px;
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    border-bottom: 2px solid transparent;
+    transition: all .15s;
+    font-family: inherit;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Tool cards */
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 12px;
+  }
+  .tool-card {
+    background: var(--surface);
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .tool-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .tool-card .name {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .tool-card .desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .tool-card .endpoint {
+    font-size: 11px;
+    color: var(--orange);
+    font-family: var(--mono);
+  }
+  .tool-card .params {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    font-family: var(--mono);
+  }
+
+  /* Tool detail panel */
+  .tool-detail {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .tool-detail h2 { font-size: 18px; margin-bottom: 12px; }
+  .tool-detail .desc { color: var(--text-dim); margin-bottom: 16px; }
+  .param-row {
+    margin-bottom: 12px;
+  }
+  .param-row label {
+    display: block;
+    font-size: 13px;
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .param-row label .req {
+    color: var(--accent);
+    margin-left: 4px;
+  }
+  .param-row label .type {
+    color: var(--text-dim);
+    font-weight: 400;
+    margin-left: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .param-row input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--surface2);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .param-row input:focus { outline: none; border-color: var(--accent); }
+
+  /* Buttons */
+  .btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+    font-family: inherit;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { opacity: .85; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-secondary { background: var(--surface2); color: var(--text); }
+  .btn-secondary:hover { background: var(--accent2); }
+
+  /* Result */
+  .result-box {
+    background: #0d0d1a;
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    white-space: pre-wrap;
+    max-height: 400px;
+    overflow: auto;
+    line-height: 1.5;
+  }
+  .result-box .key { color: #e879f9; }
+  .result-box .string { color: #a5d6ff; }
+  .result-box .number { color: #7dd3fc; }
+  .result-box .bool { color: #fbbf24; }
+  .result-box .null { color: #6b7280; }
+
+  /* Raw MCP tester */
+  .raw-field {
+    width: 100%;
+    min-height: 200px;
+    background: #0d0d1a;
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    padding: 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    resize: vertical;
+  }
+  .raw-field:focus { outline: none; border-color: var(--accent); }
+
+  /* Sessions table */
+  .sessions-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .sessions-table th, .sessions-table td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--surface2);
+    font-size: 13px;
+    font-family: var(--mono);
+  }
+  .sessions-table th { color: var(--text-dim); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-dim);
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 14px; }
+
+  /* Loading */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--surface2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Status indicators */
+  .status-ok { color: var(--green); }
+  .status-err { color: var(--red); }
+
+  .method-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--mono);
+  }
+  .method-get { background: #2563eb33; color: #60a5fa; }
+  .method-post { background: #7c3aed33; color: #a78bfa; }
+
+  .endpoint-path {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🔧 MCP Playground</h1>
+  <span class="badge">dev mode</span>
+  <span class="subtitle" id="serverInfo">connecting...</span>
+</div>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="tools">🧰 Tools</button>
+    <button class="tab-btn" data-tab="raw">📡 Raw MCP</button>
+    <button class="tab-btn" data-tab="sessions">🔌 Sessions</button>
+    <button class="tab-btn" data-tab="config">⚙️ Config</button>
+  </div>
+
+  <!-- Tab: Tools -->
+  <div class="tab-content active" id="tab-tools">
+    <div style="margin-bottom:16px; display:flex; gap:8px; align-items:center;">
+      <span id="toolCount" style="font-size:14px; color:var(--text-dim);"></span>
+      <span id="toolStatus" style="font-size:13px;"></span>
+    </div>
+
+    <div id="toolDetail" class="tool-detail" style="display:none;"></div>
+
+    <div id="toolGrid" class="tool-grid">
+      <div class="empty-state">
+        <div class="icon">🔍</div>
+        <p>Loading tools...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Raw MCP -->
+  <div class="tab-content" id="tab-raw">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; min-height:60vh;">
+      <div>
+        <div style="margin-bottom:8px; display:flex; gap:8px; align-items:center;">
+          <span style="font-size:14px; font-weight:600;">JSON-RPC Request</span>
+          <span style="font-size:11px; color:var(--text-dim);">POST /mcp</span>
+        </div>
+        <textarea id="rawRequest" class="raw-field" placeholder='{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'>{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "method": "tools/list",
+  "params": {}
+}</textarea>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button class="btn btn-primary" id="rawSend">▶ Send</button>
+          <button class="btn btn-secondary" id="rawClear">Clear</button>
+        </div>
+      </div>
+      <div>
+        <div style="margin-bottom:8px; display:flex; gap:8px; align-items:center;">
+          <span style="font-size:14px; font-weight:600;">Response</span>
+          <span id="rawStatus" style="font-size:12px; color:var(--text-dim);"></span>
+        </div>
+        <pre id="rawResult" class="raw-field" style="min-height:200px; white-space:pre-wrap;">Response will appear here...</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Sessions -->
+  <div class="tab-content" id="tab-sessions">
+    <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center;">
+      <button class="btn btn-secondary" id="refreshSessions">🔄 Refresh</button>
+      <span id="sessionCount" style="font-size:13px; color:var(--text-dim);"></span>
+    </div>
+    <div id="sessionsContent">
+      <div class="empty-state">
+        <div class="icon">🔌</div>
+        <p>No active SSE sessions</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Config -->
+  <div class="tab-content" id="tab-config">
+    <div id="configContent">
+      <div class="empty-state">
+        <div class="icon">⚙️</div>
+        <p>Loading config...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = location.origin;
+
+// ── Tab switching ──
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── JSON syntax highlight ──
+function syntaxHighlight(obj) {
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj); } catch(e) { return escapeHtml(obj); }
+  }
+  const json = JSON.stringify(obj, null, 2);
+  return json.replace(/("(?:[^"\\]|\\.)*")(?=\s*:)/g, '<span class="key">$1</span>')
+    .replace(/: ("(?:[^"\\]|\\.)*")/g, ': <span class="string">$1</span>')
+    .replace(/: (-?\d+\.?\d*)/g, ': <span class="number">$1</span>')
+    .replace(/: (true|false)/g, ': <span class="bool">$1</span>')
+    .replace(/: (null)/g, ': <span class="null">$1</span>');
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── API helpers ──
+async function getJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function postJson(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await r.text();
+  let data;
+  try { data = JSON.parse(text); } catch(e) { data = text; }
+  return { status: r.status, data };
+}
+
+// ── Load tools ──
+async function loadTools() {
+  const grid = document.getElementById('toolGrid');
+  const count = document.getElementById('toolCount');
+  const status = document.getElementById('toolStatus');
+
+  try {
+    const res = await getJson(BASE + '/tools/list');
+    const tools = res?.result?.tools || (res?.result?.content?.[0]?.text ? JSON.parse(res.result.content[0].text) : []);
+
+    if (!Array.isArray(tools) || tools.length === 0) {
+      grid.innerHTML = '<div class="empty-state"><div class="icon">😕</div><p>No tools registered</p></div>';
+      count.textContent = '0 tools';
+      status.innerHTML = '<span class="status-err">✗ failed to parse</span>';
+      return;
+    }
+
+    count.textContent = tools.length + ' tools registered';
+    status.innerHTML = '<span class="status-ok">✓ loaded</span>';
+
+    const toolMap = {};
+    grid.innerHTML = tools.map((t, i) => {
+      const params = t.inputSchema?.properties || {};
+      const required = t.inputSchema?.required || [];
+      const paramNames = Object.keys(params).length ?
+        Object.entries(params).map(([k, v]) =>
+          `${k}: ${v.type || 'any'}` + (required.includes(k) ? '<span style="color:var(--accent)">*</span>' : '')
+        ).join(', ') : 'no params';
+
+      toolMap[t.name] = { index: i, tool: t, params, required };
+      return `<div class="tool-card" data-tool="${t.name}" onclick="showToolDetail('${t.name}')">
+        <div class="name">${t.name}</div>
+        <div class="desc">${escapeHtml(t.description || '—')}</div>
+        <div class="params">${paramNames}</div>
+      </div>`;
+    }).join('');
+
+    window._toolMap = toolMap;
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error: ${e.message}</p></div>`;
+    count.textContent = '—';
+    status.innerHTML = `<span class="status-err">✗ ${e.message}</span>`;
+  }
+}
+
+// ── Tool detail & call ──
+function showToolDetail(name) {
+  const map = window._toolMap || {};
+  const entry = map[name];
+  if (!entry) return;
+
+  const { tool, params, required } = entry;
+  const detail = document.getElementById('toolDetail');
+  detail.style.display = 'block';
+
+  const paramFields = Object.entries(params).map(([k, v]) => {
+    const isReq = required.includes(k);
+    const placeholder = v.description ? escapeHtml(v.description) : v.type || 'any';
+    return `<div class="param-row">
+      <label>
+        ${k}
+        ${isReq ? '<span class="req">*</span>' : ''}
+        <span class="type">${v.type || 'any'}</span>
+      </label>
+      <input type="text" id="param-${k}" placeholder="${placeholder}" ${isReq ? 'required' : ''}>
+    </div>`;
+  }).join('');
+
+  detail.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:12px;">
+      <div>
+        <h2><span style="font-family:var(--mono);">${name}</span></h2>
+        <div class="desc">${escapeHtml(tool.description || '—')}</div>
+      </div>
+      <button class="btn btn-secondary" onclick="document.getElementById('toolDetail').style.display='none'" style="font-size:18px;">✕</button>
+    </div>
+    ${paramFields}
+    <div style="margin-top:16px; display:flex; gap:8px; align-items:center;">
+      <button class="btn btn-primary" id="callBtn" onclick="callTool('${name}')">▶ Call Tool</button>
+      <span id="callStatus" style="font-size:13px;"></span>
+    </div>
+    <div id="toolResult" class="result-box" style="display:none;"></div>
+  `;
+
+  detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function callTool(name) {
+  const map = window._toolMap || {};
+  const entry = map[name];
+  if (!entry) return;
+
+  const btn = document.getElementById('callBtn');
+  const status = document.getElementById('callStatus');
+  const result = document.getElementById('toolResult');
+
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span> calling...';
+  result.style.display = 'none';
+
+  const args = {};
+  for (const [k] of Object.entries(entry.params)) {
+    const el = document.getElementById('param-' + k);
+    if (el && el.value) args[k] = el.value;
+  }
+
+  try {
+    const { status: httpStatus, data } = await postJson(BASE + '/tools/call', { name, arguments: args });
+    result.style.display = 'block';
+    if (httpStatus === 200) {
+      const text = data?.result?.content?.[0]?.text || JSON.stringify(data?.result || data, null, 2);
+      let parsed;
+      try { parsed = JSON.parse(text); } catch(e) { parsed = text; }
+      result.innerHTML = syntaxHighlight(parsed);
+      status.innerHTML = `<span class="status-ok">✓ OK (${httpStatus})</span>`;
+    } else {
+      result.innerHTML = syntaxHighlight(data);
+      status.innerHTML = `<span class="status-err">✗ ${httpStatus}</span>`;
+    }
+  } catch (e) {
+    result.style.display = 'block';
+    result.innerHTML = `<span style="color:var(--red)">Error: ${escapeHtml(e.message)}</span>`;
+    status.innerHTML = `<span class="status-err">✗ ${e.message}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Raw MCP ──
+document.getElementById('rawSend').addEventListener('click', async () => {
+  const textarea = document.getElementById('rawRequest');
+  const result = document.getElementById('rawResult');
+  const status = document.getElementById('rawStatus');
+  const btn = document.getElementById('rawSend');
+
+  let body;
+  try {
+    body = JSON.parse(textarea.value);
+  } catch(e) {
+    result.innerHTML = `<span style="color:var(--red)">Invalid JSON: ${escapeHtml(e.message)}</span>`;
+    return;
+  }
+
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span> waiting...';
+  result.innerHTML = 'Sending...';
+
+  try {
+    const { status: httpStatus, data } = await postJson(BASE + '/mcp', body);
+    result.innerHTML = syntaxHighlight(data);
+    status.innerHTML = `<span style="font-size:13px;">
+      HTTP ${httpStatus}
+      ${data?.result ? '<span class="status-ok">✓ result</span>' : ''}
+      ${data?.error ? `<span class="status-err">✗ error: ${escapeHtml(data.error.message)}</span>` : ''}
+    </span>`;
+  } catch (e) {
+    result.innerHTML = `<span style="color:var(--red)">Error: ${escapeHtml(e.message)}</span>`;
+    status.innerHTML = `<span class="status-err">✗ ${e.message}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('rawClear').addEventListener('click', () => {
+  document.getElementById('rawRequest').value = '{\n  "jsonrpc": "2.0",\n  "id": "1",\n  "method": "tools/list",\n  "params": {}\n}';
+  document.getElementById('rawResult').textContent = 'Response will appear here...';
+  document.getElementById('rawStatus').textContent = '';
+});
+
+// ── Sessions ──
+async function loadSessions() {
+  const content = document.getElementById('sessionsContent');
+  const count = document.getElementById('sessionCount');
+
+  try {
+    const data = await getJson(BASE + '/debug/sessions');
+    const sessions = data.session_ids || [];
+    count.textContent = sessions.length + ' active session(s)';
+
+    if (sessions.length === 0) {
+      content.innerHTML = `<div class="empty-state">
+        <div class="icon">🔌</div>
+        <p>No active SSE sessions</p>
+        <p style="font-size:12px; margin-top:8px;">Connect via GET /mcp to see sessions here</p>
+      </div>`;
+      return;
+    }
+
+    content.innerHTML = `<table class="sessions-table">
+      <thead><tr><th>#</th><th>Session ID</th><th>Status</th></tr></thead>
+      <tbody>${sessions.map((s, i) => `<tr>
+        <td>${i + 1}</td>
+        <td style="font-family:var(--mono); font-size:12px;">${s}</td>
+        <td><span class="status-ok">● active</span></td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } catch(e) {
+    content.innerHTML = `<div class="empty-state">
+      <div class="icon">⚠️</div>
+      <p>Error: ${escapeHtml(e.message)}</p>
+    </div>`;
+  }
+}
+
+document.getElementById('refreshSessions').addEventListener('click', loadSessions);
+
+// ── Config ──
+async function loadConfig() {
+  const content = document.getElementById('configContent');
+
+  try {
+    const data = await getJson(BASE + '/debug/config');
+    content.innerHTML = `<div class="result-box">${syntaxHighlight(data)}</div>`;
+  } catch(e) {
+    content.innerHTML = `<div class="empty-state">
+      <div class="icon">⚠️</div>
+      <p>Error: ${escapeHtml(e.message)}</p>
+    </div>`;
+  }
+}
+
+// ── Init ──
+async function init() {
+  document.getElementById('serverInfo').textContent = window.location.host;
+
+  try {
+    const h = await getJson(BASE + '/health');
+    document.getElementById('serverInfo').innerHTML =
+      `<span class="status-ok">✓ connected</span> · ${document.location.host} · ${h.service || 'mcp-gateway'}`;
+  } catch(e) {
+    document.getElementById('serverInfo').innerHTML = `<span class="status-err">✗ ${e.message}</span>`;
+  }
+
+  loadTools();
+  loadSessions();
+  loadConfig();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,26 +1,26 @@
-// data-service — HTTP-сервис доступа к данным университета.
+// data-service — config-driven HTTP-сервис доступа к произвольной БД.
 //
-// Единственный сервис, который знает схему БД.
-// Предоставляет REST API для потребителей (MCP, API, CLI).
+// Читает конфиг (JSON), строит REST API на основе схемы БД клиента.
+// Никакого захардкоженного знания о домене.
 //
 // Запуск:
 //
-//	go run ./cmd/server/
-//	go run ./cmd/server/ --seed                     # залить fixtures/seed.json в пустую БД (fatal если не пустая)
-//	go run ./cmd/server/ --seed path/to/seed.json  # то же с указанием файла
+//	go run ./cmd/server/                                    # config-driven, дефолтный конфиг
+//	go run ./cmd/server/ --config path/to/config.json       # кастомный конфиг
 //
 // Переменные окружения:
 //
-//	DB_DRIVER     — sqlite (по умолчанию) или postgres
-//	DB_PATH       — путь к файлу SQLite (по умолчанию university.db)
-//	DATABASE_URL  — строка подключения PostgreSQL
 //	PORT          — порт HTTP (по умолчанию 8084)
+//	DS_CONFIG     — путь к конфигу (по умолчанию specs/config.example.json)
 //	LOG_LEVEL     — info (по умолчанию) или debug
+//
+// Seed-режим (dev-only) вынесен в отдельную утилиту cmd/seed-cli.
 package main
 
 import (
 	"context"
-	"errors"
+	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -31,41 +31,77 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agent-tutor/data-service/internal/db"
-	"github.com/agent-tutor/data-service/internal/seedgen"
+	"github.com/agent-tutor/data-service/internal/config"
+	"github.com/agent-tutor/data-service/internal/configgen"
+	"github.com/agent-tutor/data-service/internal/datasource"
 	"github.com/agent-tutor/data-service/internal/server"
 )
 
-const defaultSeedPath = "fixtures/seed.json"
+const defaultConfigPath = "specs/config.example.json"
 
 func main() {
 	// ── CLI флаги ──
-	seedFlag := flag.Bool("seed", false, "залить seed-данные в пустую БД и завершиться (dev-only)")
-	seedPath := flag.String("seed-path", defaultSeedPath, "путь к JSON с seed-данными (используется с --seed)")
+	discoverFlag := flag.Bool("discover", false, "прочитать схему БД и вывести сгенерированный конфиг в stdout")
+	cfgPath := flag.String("config", "", "путь к JSON-конфигу (по умолчанию $DS_CONFIG или specs/config.example.json)")
 	flag.Parse()
 
 	server.InitLogger()
 
-	// ── Открываем БД ──
-	database, err := db.New()
-	if err != nil {
-		slog.Error("failed to open database", "error", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	// ── Seed-режим: залить данные и выйти ──
-	if *seedFlag {
-		if err := runSeed(database, *seedPath); err != nil {
-			slog.Error("seed failed", "error", err)
+	// ── Discover-режим: прочитать схему, сгенерировать конфиг и выйти ──
+	if *discoverFlag || os.Getenv("DS_DISCOVER") != "" {
+		if err := runDiscover(); err != nil {
+			slog.Error("discover failed", "error", err)
 			os.Exit(1)
 		}
-		slog.Info("seed completed successfully, exiting")
 		return
 	}
 
-	// ── Настраиваем HTTP ──
-	router := server.NewRouter(database)
+	// ── Загружаем конфиг ──
+	cfgFile := *cfgPath
+	if cfgFile == "" {
+		cfgFile = os.Getenv("DS_CONFIG")
+	}
+	if cfgFile == "" {
+		cfgFile = defaultConfigPath
+	}
+
+	absCfgPath, err := filepath.Abs(cfgFile)
+	if err != nil {
+		slog.Error("resolve config path", "error", err)
+		os.Exit(1)
+	}
+
+	cfg, err := config.Load(absCfgPath)
+	if err != nil {
+		slog.Error("load config", "error", err)
+		os.Exit(1)
+	}
+
+	// ── Открываем БД через datasource registry ──
+	registry := datasource.NewDefaultRegistry()
+	adapter, ok := registry.Get(string(cfg.DataSource.Driver))
+	if !ok {
+		slog.Error("unsupported driver", "driver", cfg.DataSource.Driver, "drivers", registry.Drivers())
+		os.Exit(1)
+	}
+
+	dsn := cfg.DataSource.DSN
+	conn, err := adapter.Connect(context.Background(), dsn)
+	if err != nil {
+		slog.Error("connect to database", "driver", cfg.DataSource.Driver, "error", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	// ── Оборачиваем в AdapterSubset ──
+	dbAdapter := &connAdapter{conn: conn, adp: adapter}
+
+	// ── Строим config-driven роутер ──
+	router, err := server.NewRouterFromConfig(cfg, dbAdapter, dbAdapter, adapter, absCfgPath)
+	if err != nil {
+		slog.Error("build router", "error", err)
+		os.Exit(1)
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -99,7 +135,8 @@ func main() {
 
 	slog.Info("data-service starting",
 		"port", port,
-		"driver", os.Getenv("DB_DRIVER"),
+		"driver", cfg.DataSource.Driver,
+		"config", absCfgPath,
 	)
 
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
@@ -110,28 +147,77 @@ func main() {
 	slog.Info("data-service stopped")
 }
 
-// runSeed загружает JSON и применяет его к БД.
-// Паникует (os.Exit в main), если БД уже содержит данные — это защита от перезаписи prod-БД.
-func runSeed(database db.DB, path string) error {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("resolve seed path: %w", err)
-	}
-	slog.Info("seed mode", "path", absPath)
+// connAdapter combines datasource.Conn (query/ping) and datasource.Adapter
+// (quote/placeholder) into a single runtime.AdapterSubset-compatible type.
+type connAdapter struct {
+	conn datasource.Conn
+	adp  datasource.Adapter
+}
 
-	seed, err := seedgen.Load(absPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("%w: %s", seedgen.ErrSeedFileMissing, absPath)
+func (c *connAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return c.conn.QueryContext(ctx, query, args...)
+}
+func (c *connAdapter) PingContext(ctx context.Context) error          { return c.conn.PingContext(ctx) }
+func (c *connAdapter) QuoteIdentifier(name string) string            { return c.adp.QuoteIdentifier(name) }
+func (c *connAdapter) TranslatePlaceholder(index int) string         { return c.adp.TranslatePlaceholder(index) }
+
+// runDiscover открывает БД по env, интроспектирует схему и выводит конфиг в stdout.
+func runDiscover() error {
+	driver := os.Getenv("DB_DRIVER")
+	if driver == "" {
+		driver = "sqlite"
+	}
+	registry := datasource.NewDefaultRegistry()
+	adapter, ok := registry.Get(driver)
+	if !ok {
+		return fmt.Errorf("unknown driver: %s", driver)
+	}
+
+	var dsn string
+	switch driver {
+	case "sqlite":
+		p := os.Getenv("DB_PATH")
+		if p == "" {
+			p = "university.db"
 		}
-		return err
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return fmt.Errorf("resolve DB_PATH: %w", err)
+		}
+		dsn = abs
+	case "postgres":
+		url := os.Getenv("DATABASE_URL")
+		if url == "" {
+			return fmt.Errorf("DATABASE_URL required for postgres")
+		}
+		dsn = url
+	default:
+		return fmt.Errorf("unsupported driver: %s", driver)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	if err := seedgen.Apply(ctx, database, seed); err != nil {
-		return err
+	conn, err := adapter.Connect(context.Background(), dsn)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
 	}
+	defer conn.Close()
+
+
+	schema, err := adapter.Introspect(context.Background(), conn)
+	if err != nil {
+		return fmt.Errorf("introspect: %w", err)
+	}
+
+	ds := config.DataSourceConfig{Driver: config.Driver(driver), DSN: dsn}
+	cfg := configgen.Generate(schema, ds, nil)
+
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	// Выводим КОНФИГ в stdout (slog автоматически пишет в stderr с JSON-хендлером)
+	fmt.Println(string(b))
 	return nil
 }
+
+

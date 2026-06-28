@@ -1,295 +1,316 @@
 # Data Service
 
-HTTP-сервис доступа к данным университета. Написан на Go.
+HTTP-сервис доступа к произвольной БД через config-driven REST API. Написан на Go.
 
-**Это единственный сервис в проекте, который знает схему БД** — имена таблиц, колонок, JOIN'ы, типы ключей.  
-Все остальные сервисы (MCP, API, CLI) получают данные через HTTP и не имеют SQL-запросов.
+**Архитектура:** сервис читает JSON-конфиг, на его основе строит эндпоинты и query builder.
+Никакого захардкоженного знания о домене — вся семантика в конфиге.
 
-## Зачем
-
-### Проблема
-
-До появления data-service каждый сервис имел прямой доступ к БД через Python SDK (`agent_tutor_sdk/db/`). SQL-запросы были размазаны по всему проекту:
+## Принципиальная схема
 
 ```
-mcp_server (Python) ──SQL──→ SQLite
-demo/api (Python)    ──SQL──→ SQLite
-fixtures (Python)    ──SQL──→ SQLite
+                    ┌──────────────────┐
+                    │   config.json    │  ← ручной / --discover
+                    │  (entities,      │
+                    │   endpoints,     │
+                    │   custom queries)│
+                    └──────┬───────────┘
+                           ▼
+data-service ──JSON-конфиг──▶ chi-роутер ──▶ runtime handlers
+   │                                              │
+   │  ┌─────────────────────────────────┐         │
+   ├──│ Introspect (sqlite_master /     │         │
+   │  │  information_schema)            │         ▼
+   │  └────────┬────────────────────────┘      query_builder
+   │           │                                (SELECT + prepared)
+   ▼           ▼                                    │
+[клиентская БД]                                      ▼
+(SQLite / PG)                                  database/sql
 ```
 
-При смене схемы БД (реальная БД вуза вместо фикстур) нужно было править все три места одновременно.
+## Чем отличается от предыдущей версии
 
-### Решение
+| Было (хардкод) | Стало (config-driven) |
+|---|---|
+| SQL-запросы в `internal/repository/` | SQL в `config.example.json` (`custom_queries`) |
+| 7 Go-структур в `internal/models/` | 1 generic `Entity{Fields}` |
+| 6 domain-хендлеров в `internal/handlers/` | 6 runtime-хендлеров (generic: `get_by_id`, `find`, `list`, `custom_query`) |
+| `/openapi.json` зашит `//go:embed` | **Runtime-генерация** на каждый запрос |
+| Конфиг пишется руками | `--discover` / `GET /admin/discover` / `POST /admin/config/rewrite` |
+| Только university-схема | **Любая БД** — конфиг описывает что угодно |
 
-Единственный источник SQL — `internal/repository/`. Никто больше не содержит SQL, таблиц или колонок:
+## Быстрый старт
 
+```bash
+# 1. Собрать
+cd data-service && go build -o bin/data-service ./cmd/server/
+
+# 2. Сгенерировать конфиг из существующей БД
+DB_PATH=../university.db ./bin/data-service --discover > ../specs/config.generated.json
+
+# 3. Запустить
+./bin/data-service --config ../specs/config.generated.json
+
+# 4. Проверить
+curl http://127.0.0.1:8084/students/ | head -c 200
 ```
-mcp_server (Python) ──HTTP──→ data-service (Go) ──SQL──→ любая БД
-                                          ↑                (SQLite / PG / Oracle / ...)
-                                    internal/repository/
-                                    (единственное место с SQL)
-```
-
-**При смене БД переписывается только `internal/repository/`**. HTTP-контракт, модели, хендлеры — не трогаются.
 
 ## Архитектура
 
 ```
-cmd/server/main.go         ← точка входа, graceful shutdown
+cmd/server/main.go            ← точка входа, graceful shutdown, флаги
+  │
+  ├── --discover              ← прочитать схему БД → вывести config.json в stdout
+  ├── --config <path>         ← путь к config.json (по умолчанию $DS_CONFIG или specs/config.example.json)
+  ├── --seed [path]           ← dev-only: залить тестовые данные
+  └── DS_DISCOVER=true        ← env-вариант --discover
+
+internal/
+├── config/                    ← загрузка, валидация, envsubst
+│   ├── loader.go              ← Load(path) → *Config
+│   ├── validate.go            ← JSON Schema validation
+│   ├── types.go               ← Config, Entity, Endpoint, CustomQuery, ...
+│   ├── envsubst.go            ← ${ENV:-default} подстановка
+│   └── store.go               ← FileStore / DbStore (фаза 3.7+)
 │
-└── internal/
-    ├── db/
-    │   ├── connector.go   ← интерфейс DB {QueryRowContext, QueryContext, Ping}
-    │   └── sqlite.go      ← реализация для SQLite (modernc.org/sqlite)
-    │
-    ├── repository/        ← ⚡ ЕДИНСТВЕННОЕ МЕСТО С SQL ⚡
-    │   ├── students.go    ← SELECT ... FROM students JOIN groups ...
-    │   ├── teachers.go    ← SELECT ... FROM teachers ...
-    │   ├── grades.go      ← SELECT ... FROM grades LEFT JOIN disciplines ...
-    │   ├── schedule.go    ← (встроен в students.go)
-    │   ├── disciplines.go ← SELECT ... FROM disciplines ...
-    │   ├── stats.go       ← SELECT COUNT(*) FROM ...
-    │   └── helpers.go     ← парсинг lessons_json, group-хелперы
-    │
-    ├── handlers/          ← HTTP-обработчики (НЕ знают SQL!)
-    │   ├── students.go    ← GET /students/{id} → repo.GetByID → JSON
-    │   ├── teachers.go
-    │   ├── grades.go
-    │   ├── schedule.go
-    │   ├── disciplines.go
-    │   └── stats.go
-    │
-    ├── models/models.go  ← доменные модели (семантические поля: full_name, value)
-    │                         Поля не зависят от имён колонок в БД.
-    │
-    └── server/
-        ├── server.go      ← chi-роутер, регистрация всех маршрутов
-        ├── middleware.go  ← structured JSON-логи, correlation-id, recovery
-        └── swagger.go     ← /docs (Swagger UI), /openapi.json
+├── datasource/                ← адаптеры БД
+│   ├── adapter.go             ← Adapter interface {Connect, Introspect, ...}
+│   ├── sqlite_adapter.go      ← SQLite (modernc.org/sqlite)
+│   ├── postgres_adapter.go    ← PostgreSQL (pgx/v5)
+│   └── registry.go            ← реестр драйверов
+│
+├── runtime/                   ← generic query builder + хендлеры
+│   ├── types.go               ← Entity, CustomQuery, AdapterSubset
+│   ├── query_builder.go       ← BuildGetByID, BuildFind, BuildList, BuildCustomQuery
+│   ├── response_mapper.go     ← MapRow, MapCustomQueryRow, MapRows
+│   ├── entity_resolver.go     ← Resolve(entityName) → Entity
+│   ├── converter.go           ← Config → runtime types
+│   └── handlers/              ← generic HTTP-хендлеры
+│       ├── get_by_id.go       ← GET /{entity}/{id}
+│       ├── find.go            ← GET /{entity}?search=...
+│       ├── list.go            ← GET /{entity} (fallback)
+│       ├── custom_query.go    ← произвольный SELECT из конфига
+│       ├── health.go          ← GET /health
+│       ├── stats.go           ← GET /stats
+│       ├── context.go         ← Context {DB, Builder, Resolver, ...}
+│       └── default.go         ← 404, 405
+│
+├── configgen/                 ← генерация конфига из интроспекции
+│   └── configgen.go           ← Generate(schema, ds) → *Config
+│
+├── openapigen/                ← runtime-генерация OpenAPI
+│   └── openapigen.go          ← Generate(cfg, host, title, version, hasAdmin) → spec
+│
+├── server/                    ← HTTP-сервер
+│   ├── server.go              ← middleware (recovery, request ID, structured logging)
+│   ├── endpoint_builder.go    ← NewRouterFromConfig + discover/rewrite handlers
+│   └── swagger.go             ← /docs (Swagger UI), /openapi.json (runtime)
+│
+├── seedgen/                   ← dev-only: загрузка seed.json
+│   └── seedgen.go             ← Load, Apply, TestSeed
+│
+└── db/                        ← legacy connector (только для тестов)
+    └── connector.go           ← DB interface + New()
 ```
 
 ## API
 
+### Пользовательские эндпоинты (из конфига)
+
+Эндпоинты определяются в `config.json` → `endpoints[]`. Типовой набор:
+
+| Метод | Путь | Описание | Тип |
+|---|---|---|---|
+| GET | `/health` | Статус сервиса и БД | builtin |
+| GET | `/stats` | Количество записей во всех сущностях | builtin |
+| GET | `/{entity}/{id}` | Одна запись по ID | `get_by_id` |
+| GET | `/{entity}?field=...` | Поиск по полю или список всех | `find` |
+| GET | `/{entity}/{id}/...` | Произвольные связанные данные | `custom_query` |
+
+Точный список — в `/openapi.json` живого сервиса или в `specs/config.example.json`.
+
+### Админские эндпоинты
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/admin/discover` | Прочитать схему БД, сгенерировать и отдать конфиг |
+| GET | `/admin/discover?raw=true` | То же, но чистый JSON (можно сохранить в файл) |
+| POST | `/admin/config/rewrite` | Прочитать схему, сгенерировать, **сохранить в config-файл** |
+
+> Админские эндпоинты доступны только если адаптер данных передан в роутер.
+
+### Системные
+
 | Путь | Описание |
 |---|---|
-| `GET /health` | Статус сервиса и БД |
-| `GET /stats` | Количество записей во всех таблицах |
-| `GET /docs` | Swagger UI |
-| `GET /openapi.json` | OpenAPI 3.1.0 спецификация |
-| `GET /students/:id` | Карточка студента |
-| `GET /students?name=...` | Поиск студента по ФИО |
-| `GET /students/:id/disciplines` | Дисциплины студента |
-| `GET /students/:id/grades?discipline_id=` | Оценки студента (опционально по дисциплине) |
-| `GET /teachers?name=...` | Поиск преподавателя по ФИО |
-| `GET /teachers/:name/schedule?day=` | Расписание преподавателя |
-| `GET /groups/:id/schedule?day=` | Расписание группы |
-| `GET /disciplines` | Все дисциплины |
+| `/docs` | Swagger UI |
+| `/openapi.json` | OpenAPI 3.1.0 — **runtime-генерация из текущего конфига** |
 
-Все ответы соответствуют JSON Schema из `specs/schemas/*.schema.json`.
+## Конфигурация
+
+### Формат
+
+Конфиг — JSON, валидируется по `specs/config.schema.json`. Ключевые секции:
+
+```jsonc
+{
+  "version": 1,
+  "data_source": {
+    "driver": "sqlite",                    // sqlite | postgres
+    "dsn": "${DB_PATH:-university.db}",    // поддержка ${ENV}
+    "pool_size": 10,
+    "read_only": true
+  },
+  "entities": [                            // описание таблиц
+    {
+      "name": "student",                   // публичное имя
+      "table": "students",                 // имя в БД
+      "id_column": "id",
+      "fields": [
+        { "name": "full_name", "column": "name", "type": "string" },
+        { "name": "course",   "column": "course", "type": "int" }
+      ]
+    }
+  ],
+  "endpoints": [                           // какие эндпоинты публикуем
+    { "method": "GET", "path": "/students/{id}", "op": "get_by_id", "entity": "student" },
+    { "method": "GET", "path": "/students", "op": "find", "entity": "student", "search_field": "full_name" },
+    { "method": "GET", "path": "/students/{id}/grades", "op": "custom_query", "query_id": "student_grades" }
+  ],
+  "custom_queries": {                      // whitelist SELECT-запросов
+    "student_grades": {
+      "sql": "SELECT g.id, g.grade, d.name AS discipline_name FROM grades g LEFT JOIN disciplines d ON d.id = g.discipline_id WHERE g.student_id = ?",
+      "params": ["id"],
+      "result_mapping": { "id": {"type": "string"}, "grade": {"type": "string"}, "discipline_name": {"type": "string"} },
+      "max_rows": 500
+    }
+  },
+  "stats": {
+    "counters": [{ "name": "students", "entity": "student" }]
+  }
+}
+```
+
+### Генерация конфига (--discover)
+
+Если подключиться к БД — конфиг можно сгенерировать автоматически:
+
+```bash
+# CLI
+./data-service/bin/data-service --discover > config.json
+
+# Env
+DS_DISCOVER=true ./data-service/bin/data-service > config.json
+
+# HTTP (на живом сервисе)
+curl http://localhost:8084/admin/discover?raw=true > config.json
+
+# HTTP — переписать конфиг на диске (сохраняется в тот же путь что и текущий)
+curl -X POST http://localhost:8084/admin/config/rewrite
+```
+
+Генерируется:
+- Entities для каждой таблицы (колонки, PK, типы)
+- `get_by_id` для таблиц с одной PK
+- `find` для таблиц с name-полем
+- `/health`, `/stats`
+
+Не генерируется (дописывается руками):
+- `custom_queries` (JOIN'ы, вложенные объекты)
+- `params` для path/query параметров
+- MCP tools
+
+### Пример: смена БД
+
+```bash
+# PostgreSQL
+cat > pg-config.json << 'EOF'
+{
+  "version": 1,
+  "data_source": {
+    "driver": "postgres",
+    "dsn": "postgres://user:pass@host:5432/mydb?sslmode=disable",
+    "pool_size": 25
+  }
+}
+EOF
+
+# Сгенерировать entities из реальной схемы
+DS_CONFIG=pg-config.json ./data-service/bin/data-service --discover > full-config.json
+
+# Запустить
+./data-service/bin/data-service --config full-config.json
+```
+
+## Ключевые принципы безопасности
+
+1. **Подготовленные выражения** — все параметры через `?`/`$1`, никогда не конкатенируются
+2. **Whitelist операций** — только SELECT, обязателен `max_rows` для custom_query
+3. **Чужая БД — read-only** — data-service не пишет в клиентскую БД
+4. **Read-only режим** — `read_only: true` по умолчанию, принудительно
+5. **Валидация конфига** — JSON Schema (`specs/config.schema.json`) при загрузке
 
 ## Запуск
 
 ```bash
-# Dev (SQLite, из корня проекта)
-cd data-service
-DB_PATH=../university.db go run ./cmd/server/
+# Из корня проекта
+# Сборка
+cd data-service && go build -o bin/data-service ./cmd/server/
 
-# Seed-режим (залить тестовые данные в пустую БД и выйти)
-DB_PATH=../university.db go run ./cmd/server/ --seed
+# Dev (SQLite)
+./bin/data-service
 
-# С кастомным файлом сида
-DB_PATH=../university.db go run ./cmd/server/ --seed --seed-path ../specs/fixtures/seed.json
+# Dev (PostgreSQL)
+DATABASE_URL=postgresql://... ./bin/data-service --config pg-config.json
 
-# С другими портом
-PORT=8085 DB_PATH=../university.db go run ./cmd/server/
+# Seed-режим (dev-only, залить тестовые данные)
+./bin/data-service --seed
+
+# Кастомный порт
+PORT=8085 ./bin/data-service
 ```
 
-Переменные окружения:
+### Переменные окружения
 
 | Переменная | Дефолт | Описание |
 |---|---|---|
-| `DB_DRIVER` | `sqlite` | Драйвер БД (`sqlite` или `postgres`) |
-| `DB_PATH` | `university.db` | Путь к файлу SQLite |
-| `DATABASE_URL` | — | Строка подключения PostgreSQL |
+| `DS_CONFIG` | `specs/config.example.json` | Путь к конфигу |
 | `PORT` | `8084` | Порт HTTP |
-| `LOG_LEVEL` | `info` | Уровень лога (`info` или `debug`) |
+| `LOG_LEVEL` | `info` | `info` или `debug` |
+| `DS_DISCOVER` | — | Включить режим --discover (генерировать конфиг из БД и выйти) |
+| `DB_DRIVER` | `sqlite` | Для --seed режима |
+| `DB_PATH` | `university.db` | Для --seed режима |
+| `DATABASE_URL` | — | Для --seed режима (PostgreSQL) |
+| `CONFIG_SCHEMA` | `specs/config.schema.json` | Путь к JSON Schema |
 
-## Сидинг данных (Dev-режим)
-
-Data-service **только принимает** seed-данные и пишет в БД. **Генерацию** фейковых данных делает Python-утилита `agent-seedgen` (живёт в `rag/fixtures/`, бывший `fixtures/src/fixtures/seedgen.py`).
-
-```
-┌─────────────────────┐    seed.json     ┌──────────────────┐    SQL     ┌──────────┐
-│ agent-seedgen       │ ──────────────▶ │ data-service      │ ─────────▶ │ university│
-│ (Python + faker)    │  UUID, плоская  │ --seed (Go)       │            │ .db / PG  │
-│                     │  storage shape  │                   │            │           │
-└─────────────────────┘                 └──────────────────┘            └──────────┘
-```
-
-### 1. Сгенерировать seed.json (Python)
+### Docker
 
 ```bash
-# Из корня проекта (cwd — репо)
-uv run agent-seedgen                                  # дефолт: 8 групп, 40 студентов
-uv run agent-seedgen --students 80 --grades 200       # кастомный размер
-uv run agent-seedgen --out /tmp/my-seed.json           # в другой файл
-```
-
-Файл `specs/fixtures/seed.json` содержит плоские UUID-id и структуру, совместимую с Go-сервисом. Источник данных (дисциплины, специальности, расписание) — `rag/fixtures/catalog.py`.
-
-### 2. Залить в БД (Go)
-
-```bash
-# SQLite (по умолчанию — university.db в cwd)
-DB_PATH=./university.db \
-  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
-
-# PostgreSQL
-DATABASE_URL=postgresql://tutor:tutor@127.0.0.1:5432/agent_tutor \
-  DB_DRIVER=postgres \
-  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
-```
-
-**Что делает `--seed`**:
-
-1. **Применяет DDL**: если таблиц в БД нет, они создаются автоматически из embedded SQL (`data-service/internal/db/schema.sql`).
-2. **Проверяет пустоту**: сидинг выполняется **только** если таблица `groups` содержит 0 записей. Это защита от случайной перезаписи реальных данных на проде.
-3. **Заливает в порядке FK** (соблюдая зависимости):
-   `groups` → `disciplines` → `teachers` → `students` → `schedule` → `grades`.
-4. **Завершается** после успешного сидинга (HTTP-сервер не стартует).
-
-Если БД не пуста — сервис паникует с `database already contains data, seed aborted`.
-
-### 3. Полный pipeline с нуля (университет + RAG)
-
-```bash
-# 1. Остановить всё и почистить артефакты
-./scripts/dev.sh stop
-rm -f university.db rag_documents.db
-rm -rf chroma_db/ generated_materials/
-
-# 2. Сгенерировать seed.json
-uv run agent-seedgen --students 80 --grades 200 --seed 42
-
-# 3. Залить в БД
-DB_PATH=./university.db \
-  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
-
-# 4. Запустить все 5 сервисов
-./scripts/dev.sh start
-
-# 5. Импортировать документы в RAG
-uv run agent-rag-ingest import ~/Documents/lecture.pdf -d <discipline-id>
-```
-
-### Защита от перезаписи
-
-`data-service --seed` **не перезаписывает** непустую БД. Это by design: продовая БД вуза не должна быть уничтожена случайным сидом. Чтобы пересоздать с нуля:
-
-```bash
-# SQLite
-rm -f university.db
-go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
-
-# PostgreSQL
-psql -c 'DROP DATABASE agent_tutor; CREATE DATABASE agent_tutor;'
-DATABASE_URL=postgresql://... DB_DRIVER=postgres \
-  go run ./data-service/cmd/server --seed --seed-path ./specs/fixtures/seed.json
-```
-
-## Docker
-
-```bash
-# Сборка
 docker build -t agent-tutor-data -f data-service/Dockerfile .
-
-# Запуск
-docker run -p 8084:8084 -v $(pwd)/university.db:/university.db \
-  -e DB_PATH=/university.db agent-tutor-data
+docker run -p 8084:8084 -v $(pwd)/config.json:/config.json \
+  -e DS_CONFIG=/config.json agent-tutor-data
 ```
 
-Образ собирается в two-stage (`golang:1.22-alpine` → `scratch`).  
-Бинарник ~15 МБ.
-
-## Как переписать под новую БД
-
-Это главная причина существования data-service. Вот аккуратная процедура:
-
-### 1. Меняете только `internal/repository/`
-
-SQL-запросы живут только здесь. При замене БД:
-
-1. **Правите SQL** в файлах `students.go`, `teachers.go`, `grades.go`, `disciplines.go`, `stats.go`
-2. **Меняете маппинг** в `helpers.go` (если новая БД не использует `lessons_json`)
-3. **Ничего больше не трогаете**
-
-Модели (`internal/models/`) не меняются — они отражают HTTP-контракт, а не схему хранения.  
-Handlers (`internal/handlers/`) не меняются — они вызывают репозиторий и возвращают JSON.  
-OpenAPI (`/openapi.json`) не меняется — контракт стабилен.
-
-### 2. Если нужен PostgreSQL вместо SQLite
-
-Добавить реализацию `db.DB` в `internal/db/postgres.go`:
-
-```go
-package db
-
-type PostgresDB struct { conn *sql.DB }
-
-func (p *PostgresDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-    return p.conn.QueryRowContext(ctx, query, args...)
-}
-// ... и т.д.
-```
-
-И зарегистрировать в `connector.go`:
-
-```go
-case "postgres":
-    return NewPostgres()
-```
-
-Репозитории не трогаются — они работают через интерфейс `DB`.
-
-### 3. Если схема полностью другая
-
-Пример: текущая БД хранит `schedule` как JSON-поле `lessons_json`, а новая БД использует нормализованную таблицу `lessons`.
-
-Меняется только `internal/repository/students.go`:
-
-```go
-// Было:
-func (r *StudentRepo) GetSchedule(ctx context.Context, groupID string, day *string) {
-    // SELECT lessons_json FROM schedule WHERE group_id = ?
-    // парсинг JSON → models.Lesson
-}
-
-// Стало:
-func (r *StudentRepo) GetSchedule(ctx context.Context, groupID string, day *string) {
-    // SELECT l.discipline_id, l.room, t.name
-    // FROM lessons l
-    // JOIN teachers t ON t.id = l.teacher_id
-    // WHERE l.group_id = $1
-}
-```
-
-Handlers, модели, HTTP-статусы — не меняются. Потребители (MCP, API, CLI) не знают, что внутри что-то изменилось.
-
-### 4. Проверка
+## Тестирование
 
 ```bash
-# Unit-тесты (с in-memory SQLite)
-go test ./internal/server/ -v
+# Все Go-тесты
+go test ./... -count=1
 
-# E2E: Python-тесты через data-service
-USE_DATA_SERVICE=1 DATA_SERVICE_URL=http://127.0.0.1:8084 \
-  uv run pytest mcp_server/tests/
+# Только unit
+go test ./internal/config/... ./internal/runtime/... ./internal/configgen/...
+
+# С реальной БД
+DB_PATH=../university.db go test ./internal/configgen/... -run TestGenerate_RealDB
 ```
 
-## Принципы
+Python-тесты (MCP, API, Web) стучатся к data-service по HTTP и не знают о его внутренней архитектуре.
 
-- **SQL только в `internal/repository/`** — ни один другой пакет не содержит SQL
-- **Handlers не знают DB** — они вызывают `repo.GetByID()` и получают готовые модели
-- **Модели семантичны** — `full_name`, а не `name`; `value`, а не `grade`
-- **OpenAPI — контракт** — стабилен независимо от схемы БД
-- **Кодогенерация моделей** (в перспективе): `datamodel-codegen --input specs/schemas/ --output models/`
+## Roadmap (следующие шаги)
+
+Следующие фазы описаны в `doc/NEW_ROADMAP.md`. Кратко:
+
+- **Фаза 3.4** — MCP-сервер на Go, инструменты генерируются из конфига
+- **Фаза 3.5** — Generic SDK контракты (Entity вместо конкретных моделей)
+- **Фаза 3.6** — Generic Web UI (рендер по схеме endpoint'а)
+- **Фаза 3.7** — Multi-tenancy, admin API, hot reload
+- **Фаза 3.9** — UI-конфигуратор

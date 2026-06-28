@@ -2,15 +2,12 @@
 
 Архитектурное решение (см. AGENTS.md):
 - Go data-service = source of truth для структуры БД
-- specs/schemas/*.schema.json = JSON Schema, генерируется из Go (cmd/schema-gen)
-- agent_tutor_sdk.contracts = Pydantic-модели, синхронизированы с JSON Schema
-  через test_contracts_drift.py
+- agent_tutor_sdk.contracts = Pydantic-модели (написаны вручную)
 - rag/fixtures/seedgen.py = генерирует seed.json, использует faker + те же
   доменные имена что и в Pydantic
 
 Тесты в этом файле проверяют что seed.json соответствует той же доменной модели,
-что и API (через Pydantic-контракты). Никакой отдельной seed.schema.json не нужно —
-Pydantic-модели уже валидируются против JSON Schema в test_contracts_drift.py.
+что и API (через Pydantic-контракты).
 
 Запуск:
     uv run pytest agent-tutor-sdk/tests/unit/test_seedgen_validation.py -v

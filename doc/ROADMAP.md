@@ -1,5 +1,10 @@
 # Roadmap: выход на pre-prod уровень
 
+> ⚠️ **Архитектура обновлена.** Этапы 0–2.7 считаются выполненными.
+> Дальнейшее развитие — **B2B SaaS платформа** с config-driven data-service,
+> generic SDK, Go-MCP и auto-discovery схемы БД клиента.
+> См. [`doc/NEW_ROADMAP.md`](NEW_ROADMAP.md) для этапов 3.0+.
+
 Контракт между владельцем и исполнителем. Только решения, инварианты, контрольные точки. Детали реализации - в отдельных задачах.
 
 ## Текущее состояние → Цель
@@ -626,7 +631,7 @@ mcp_server (Python) ────────────────────
 
 ### 2.7.1. JSON Schema как source of truth для доменных моделей
 
-Создать `specs/schemas/` — каталог с JSON Schema (Draft 2020-12) для каждой доменной сущности,
+(УДАЛЕНО) Создать `specs/schemas/` — каталог с JSON Schema (Draft 2020-12) для каждой доменной сущности,
 возвращаемой data-service:
 
 ```
@@ -663,7 +668,7 @@ diff <(datamodel-codegen --input specs/schemas/) agent_tutor_sdk/contracts/
 
 ### 2.7.2. API-контракт data-service
 
-**Создать** `specs/data-service.openapi.yaml`.
+(УДАЛЕНО) **Создать** `specs/data-service.openapi.yaml`.
 
 Эндпоинты (8 шт.):
 
@@ -872,7 +877,7 @@ mcp:
 
 | Шаг | Что делаем | Проверка | Часы |
 |---|---|---|---|
-| 2.7.6.1 | Создать `specs/schemas/` (6 JSON Schema) | Валидация через `ajv` | 2–3 |
+| 2.7.6.1 | (УДАЛЕНО) Создать `specs/schemas/` (6 JSON Schema) | Валидация через `ajv` | 2–3 |
 | 2.7.6.2 | Сгенерировать Python Pydantic в `agent_tutor_sdk/contracts/` | `uv run pytest` — все тесты проходят с новыми моделями | 1–2 |
 | 2.7.6.3 | Создать `specs/data-service.openapi.yaml` | Ручная валидация в Swagger Editor | 1–2 |
 | 2.7.6.4 | Go-проект: структура, `go.mod`, роутер, `/health` | `curl :8084/health` → 200 | 2–3 |
@@ -887,8 +892,8 @@ mcp:
 
 ### Критерии готовности этапа 2.7
 
-- [x] `specs/schemas/` — 6 JSON Schema, каждая с `$id` и `description` на всех полях
-- [x] `specs/data-service.openapi.yaml` — 9 эндпоинтов (+ `/stats`, `/docs`, `/openapi.json`), все ссылаются на `specs/schemas/`
+- [x] `specs/schemas/` — (удалено в фазе 3.2, устарело вместе с хардкодными Go-моделями)
+- [x] `specs/schemas/` + `data-service.openapi.yaml` — (удалены в фазе 3.2, OpenAPI теперь runtime-генерируется)
 - [x] Python Pydantic-модели в `agent_tutor_sdk/contracts/` (семантические имена полей)
 - [x] `data-service/` — Go-проект, собирается `go build`, бинарник 14.7 МБ
 - [ ] `docker compose build data-service` — Dockerfile готов, не верифицирован (требуется Docker Engine)

@@ -23,7 +23,9 @@ SERVICES=("data" "rag" "mcp" "api" "web")
 declare -A SERVICE_CMD=(
   [data]="DB_PATH=$PROJECT_ROOT/university.db LOG_LEVEL=info $PROJECT_ROOT/data-service/bin/data-service"
   [rag]="uv run --package rag python -m rag.service"
-  [mcp]="uv run --package mcp_server python -m mcp_server.server"
+  [mcp]="$PROJECT_ROOT/mcp-gateway/mcp-gateway"
+  # Legacy (Python): раскомментировать для отладки
+  # [mcp]="uv run --package mcp_server python -m mcp_server.server"
   [api]="uv run --package demo-api python -m demo.api.server"
   [web]="uv run --package demo-web python -m demo.web.server"
 )
@@ -102,6 +104,9 @@ health_url() {
 # =============================================================================
 
 cmd_start() {
+  MCP_DEV=true
+  echo "🧪 Dev mode enabled — MCP Playground at http://127.0.0.1:${MCP_PORT:-8083}/debug"
+
   load_env
   ensure_dirs
 
@@ -132,7 +137,7 @@ cmd_start() {
 
   echo "🔄 Starting services..."
 
-  # Собираем data-service (Go) — бинарник чтобы не было проблем с PID от go run
+  # Собираем Go-бинарники
   echo "  🔨 Building data-service..."
   mkdir -p "$PROJECT_ROOT/data-service/bin"
   (cd "$PROJECT_ROOT/data-service" && go build -o bin/data-service ./cmd/server/) || {
@@ -140,6 +145,13 @@ cmd_start() {
     exit 1
   }
   echo "  ✅ data-service built"
+
+  echo "  🔨 Building mcp-gateway..."
+  (cd "$PROJECT_ROOT/mcp-gateway" && go build -o mcp-gateway ./cmd/) || {
+    echo "  ❌ Failed to build mcp-gateway"
+    exit 1
+  }
+  echo "  ✅ mcp-gateway built"
 
   for svc in "${SERVICES[@]}"; do
     if is_running "$svc"; then
@@ -160,7 +172,12 @@ cmd_start() {
     # Доп. env для сервиса
     local extra_env=""
     case "$svc" in
-      mcp) extra_env="DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT" ;;
+      mcp)
+        extra_env="DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT DS_CONFIG=$PROJECT_ROOT/specs/config.example.json LOG_LEVEL=info"
+        if [ "$MCP_DEV" = "true" ]; then
+          extra_env="MCP_DEV=true $extra_env"
+        fi
+        ;;
       api) extra_env="MCP_SERVICE_URL=http://127.0.0.1:$MCP_PORT/mcp" ;;
       web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT" ;;
     esac
@@ -189,9 +206,10 @@ cmd_start() {
   echo "  WEB    http://127.0.0.1:$WEB_PORT    logs: $(logfile web)"
   echo ""
   echo "  Commands:"
-  echo "    ./scripts/dev.sh status     — healthcheck"
-  echo "    ./scripts/dev.sh logs api   — tail -f лога"
-  echo "    ./scripts/dev.sh stop       — остановить все"
+  echo "    ./scripts/dev.sh status          — healthcheck"
+  echo "    ./scripts/dev.sh logs api        — tail -f лога"
+  echo "    ./scripts/dev.sh stop            — остановить все"
+  echo "    ./scripts/dev.sh start          — dev-режим (MCP Playground ��строен)"
 }
 
 wait_healthy() {
@@ -269,7 +287,7 @@ _stop_svc_by_pgrep() {
   case "$svc" in
     data) pattern="data-service/bin/data-service" ;;
     rag) pattern="python -m rag.service" ;;
-    mcp) pattern="python -m mcp_server.server" ;;
+    mcp) pattern="mcp-gateway" ;; # Go-бинарник
     api) pattern="python -m demo.api.server" ;;
     web) pattern="python -m demo.web.server" ;;
   esac
@@ -348,7 +366,8 @@ cmd_logs() {
 
 case "${1:-help}" in
   start)
-    cmd_start
+    shift
+    cmd_start "$@"
     ;;
   stop)
     cmd_stop

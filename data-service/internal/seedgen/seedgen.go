@@ -1,19 +1,71 @@
-// Package seedgen загружает и применяет seed-данные к БД университета.
+// Package seedgen загружает и применяет seed-данные к БД.
 //
 // Используется ТОЛЬКО в dev-режиме через CLI-флаг --seed в data-service.
-// Если БД уже содержит данные — паникует (предотвращает перезапись реальной prod-БД).
+// Если БД уже содержит данные — отказывается (предотвращает перезапись).
+//
+// В фазе 3.3 вынесен в отдельный /cmd/seed-cli для dev/demo,
+// не является частью prod-кода data-service.
 package seedgen
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-
-	"github.com/agent-tutor/data-service/internal/db"
 )
+
+// ExecContext — минимальный интерфейс для seed-операций.
+// Не зависит от internal/db.DB (удалён в фазе 3.3).
+type ExecContext interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// schemaDDL — DDL для university-схемы.
+// Используется только в seed-режиме (dev-only).
+const schemaDDL = `
+CREATE TABLE IF NOT EXISTS groups (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    speciality TEXT
+);
+CREATE TABLE IF NOT EXISTS students (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    group_id TEXT,
+    course INTEGER,
+    FOREIGN KEY (group_id) REFERENCES groups (id)
+);
+CREATE TABLE IF NOT EXISTS teachers (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    disciplines_json TEXT
+);
+CREATE TABLE IF NOT EXISTS disciplines (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    description TEXT
+);
+CREATE TABLE IF NOT EXISTS grades (
+    id TEXT PRIMARY KEY,
+    student_id TEXT,
+    discipline_id TEXT,
+    grade TEXT,
+    date TEXT,
+    FOREIGN KEY (student_id) REFERENCES students (id),
+    FOREIGN KEY (discipline_id) REFERENCES disciplines (id)
+);
+CREATE TABLE IF NOT EXISTS schedule (
+    id TEXT PRIMARY KEY,
+    day TEXT,
+    group_id TEXT,
+    lessons_json TEXT,
+    FOREIGN KEY (group_id) REFERENCES groups (id)
+);
+`
 
 // Seed — корневая структура файла fixtures/seed.json.
 type Seed struct {
@@ -98,7 +150,7 @@ var ErrSeedFileMissing = errors.New("seed file not found")
 // groups → disciplines → teachers → students → schedule → grades.
 //
 // Если БД не пустая — возвращает ErrDatabaseNotEmpty.
-func Apply(ctx context.Context, database db.DB, seed *Seed) error {
+func Apply(ctx context.Context, database ExecContext, seed *Seed) error {
 	var tableName string
 	row := database.QueryRowContext(ctx,
 		"SELECT name FROM sqlite_master WHERE type='table' AND name='groups' LIMIT 1")
@@ -147,18 +199,15 @@ func Apply(ctx context.Context, database db.DB, seed *Seed) error {
 	return nil
 }
 
-func applySchema(ctx context.Context, database db.DB) error {
-	if db.SchemaSQL == "" {
-		return fmt.Errorf("embedded schema SQL is empty")
-	}
-	if _, err := database.ExecContext(ctx, db.SchemaSQL); err != nil {
+func applySchema(ctx context.Context, database ExecContext) error {
+	if _, err := database.ExecContext(ctx, schemaDDL); err != nil {
 		return err
 	}
-	slog.Info("schema applied from embedded SQL")
+	slog.Info("schema applied from embedded DDL")
 	return nil
 }
 
-func insertGroups(ctx context.Context, database db.DB, groups []Group) error {
+func insertGroups(ctx context.Context, database ExecContext, groups []Group) error {
 	for _, g := range groups {
 		_, err := database.ExecContext(ctx,
 			"INSERT INTO groups (id, name, speciality) VALUES (?, ?, ?)",
@@ -170,7 +219,7 @@ func insertGroups(ctx context.Context, database db.DB, groups []Group) error {
 	return nil
 }
 
-func insertDisciplines(ctx context.Context, database db.DB, disciplines []Discipline) error {
+func insertDisciplines(ctx context.Context, database ExecContext, disciplines []Discipline) error {
 	for _, d := range disciplines {
 		_, err := database.ExecContext(ctx,
 			"INSERT INTO disciplines (id, name, description) VALUES (?, ?, ?)",
@@ -182,7 +231,7 @@ func insertDisciplines(ctx context.Context, database db.DB, disciplines []Discip
 	return nil
 }
 
-func insertTeachers(ctx context.Context, database db.DB, teachers []Teacher) error {
+func insertTeachers(ctx context.Context, database ExecContext, teachers []Teacher) error {
 	for _, t := range teachers {
 		discJSON, err := json.Marshal(t.Disciplines)
 		if err != nil {
@@ -198,7 +247,7 @@ func insertTeachers(ctx context.Context, database db.DB, teachers []Teacher) err
 	return nil
 }
 
-func insertStudents(ctx context.Context, database db.DB, students []Student) error {
+func insertStudents(ctx context.Context, database ExecContext, students []Student) error {
 	for _, s := range students {
 		_, err := database.ExecContext(ctx,
 			"INSERT INTO students (id, name, group_id, course) VALUES (?, ?, ?, ?)",
@@ -210,7 +259,7 @@ func insertStudents(ctx context.Context, database db.DB, students []Student) err
 	return nil
 }
 
-func insertSchedule(ctx context.Context, database db.DB, schedule []ScheduleEntry) error {
+func insertSchedule(ctx context.Context, database ExecContext, schedule []ScheduleEntry) error {
 	for _, e := range schedule {
 		lessonsJSON, err := json.Marshal(e.Lessons)
 		if err != nil {
@@ -226,7 +275,7 @@ func insertSchedule(ctx context.Context, database db.DB, schedule []ScheduleEntr
 	return nil
 }
 
-func insertGrades(ctx context.Context, database db.DB, grades []Grade) error {
+func insertGrades(ctx context.Context, database ExecContext, grades []Grade) error {
 	for _, g := range grades {
 		_, err := database.ExecContext(ctx,
 			"INSERT INTO grades (id, student_id, discipline_id, grade, date) VALUES (?, ?, ?, ?, ?)",

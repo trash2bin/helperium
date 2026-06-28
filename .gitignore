@@ -6,9 +6,16 @@ __pycache__/
 *.sqlite-*
 chroma_db/
 generated_materials/
-# Go-built binaries (data-service: `go build -o bin/data-service ...`)
+
+# Go-built binaries
 data-service/bin/
+data-service/server
+data-service/seed-cli
+mcp-gateway/mcp-gateway
+mcp-gateway/main
 *.exe
+
+# Local config / dev artifacts
 .claude/
 fixtures.json
 TECHNICAL_DOC.md
@@ -21,8 +28,10 @@ backlog/
 .env
 *.egg-info
 dist/
+context.md
 
+# Graph / knowledge
 graphify-out/
-# specs/fixtures/seed.json — регенерируется через `uv run agent-seedgen`.
-# Детерминирован при --seed 42. Не храним в репе, чтобы не раздувать историю.
+
+# Regened seed
 specs/fixtures/seed.json

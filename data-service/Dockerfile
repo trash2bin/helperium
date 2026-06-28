@@ -13,8 +13,6 @@ RUN go mod download
 
 # Копируем исходники и собираем
 COPY data-service/ ./
-COPY specs/schemas/ /specs/schemas/
-
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /data-service ./cmd/server/
 
 # ── Runtime ──

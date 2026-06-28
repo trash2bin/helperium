@@ -18,8 +18,8 @@ import (
 //
 // Поиск schemaPath (первый существующий побеждает):
 //  1. Переменная окружения CONFIG_SCHEMA (если задана).
-//  2. "../specs/config.schema.json" относительно текущей рабочей директории.
-//  3. "../specs/config.schema.json" относительно os.Executable().
+//  2. "specs/config.schema.json" относительно текущей рабочей директории.
+//  3. "../../specs/config.schema.json" относительно os.Executable().
 //
 // Если схема не найдена ни одним путём — возвращается ErrSchemaNotFound
 // с обёрткой про все проверенные пути.
@@ -68,12 +68,14 @@ func findSchema() (string, error) {
 	}
 
 	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(cwd, "..", "specs", "config.schema.json"))
+		// Относительно CWD: specs/config.schema.json (проект в корне агента)
+		candidates = append(candidates, filepath.Join(cwd, "specs", "config.schema.json"))
 	}
 
 	if exe, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exe)
-		candidates = append(candidates, filepath.Join(exeDir, "..", "specs", "config.schema.json"))
+		// Относительно бинарника (data-service/bin/): ../../specs/config.schema.json
+		candidates = append(candidates, filepath.Join(exeDir, "..", "..", "specs", "config.schema.json"))
 	}
 
 	for _, c := range candidates {

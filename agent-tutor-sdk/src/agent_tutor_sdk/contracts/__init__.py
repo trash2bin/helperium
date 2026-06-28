@@ -1,16 +1,11 @@
-"""Контрактные Pydantic-модели, соответствующие JSON Schema из specs/schemas/.
+"""Контрактные Pydantic-модели data-service.
 
 Эти модели — стабильный контракт между data-service и его потребителями.
 Поля названы семантически (full_name, value) и НЕ зависят от имён колонок БД.
 При смене схемы БД эти модели не меняются — меняется только data-service.
 
 Source of truth:
-- Go models: data-service/internal/models/models.go
-- JSON Schema: specs/schemas/*.schema.json (генерируется из Go через cmd/schema-gen)
-- Pydantic: эти модели (синхронизированы вручную, проверяется test_contracts_drift.py)
-
-Генерация из JSON Schema (альтернатива ручному написанию):
-    datamodel-codegen --input specs/schemas/ --output agent_tutor_sdk/src/agent_tutor_sdk/contracts/
+- Pydantic: эти модели (написаны вручную, соответствуют HTTP-ответам data-service)
 """
 
 from __future__ import annotations

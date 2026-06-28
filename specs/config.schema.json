@@ -419,7 +419,35 @@
         "params": {
           "type": "array",
           "description": "Описание параметров инструмента (model-facing).",
-          "items": { "$ref": "#/$defs/endpoint_param" }
+          "items": { "$ref": "#/$defs/mcp_param" }
+        }
+      }
+    },
+    "mcp_param": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "description": "Параметр MCP-инструмента (model-facing, без привязки к HTTP).",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "description": "Имя параметра."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "int", "float", "bool"],
+          "default": "string",
+          "description": "Тип параметра."
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "Обязательный ли параметр."
+        },
+        "description": {
+          "type": "string",
+          "description": "Описание для агента."
         }
       }
     },

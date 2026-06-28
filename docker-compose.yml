@@ -85,13 +85,39 @@ services:
       - agent-tutor-net
     <<: *restart
 
-  mcp:
+  # MCP-gateway (Go, фаза 3.4+) — основной MCP-сервер, инструменты из конфига
+  mcp-gateway:
+    image: agent-tutor-mcp-gateway:latest
+    build:
+      context: ./mcp-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8083:8083"
+    environment:
+      - DS_CONFIG=/app/config.json
+      - DATA_SERVICE_URL=http://data-service:8084
+    volumes:
+      - ./specs/config.example.json:/app/config.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8083/health"]
+      <<: *hc-curl
+    depends_on:
+      data-service:
+        condition: service_healthy
+    networks:
+      - agent-tutor-net
+    <<: *restart
+
+  # MCP (Python legacy) — fallback, будет удалён после стабилизации mcp-gateway
+  mcp-legacy:
     image: agent-tutor-mcp:latest
+    profiles:
+      - legacy
     build:
       context: .
       dockerfile: mcp_server/Dockerfile
     ports:
-      - "127.0.0.1:8083:8083"
+      - "127.0.0.1:8085:8083"
     volumes:
       - app_data:/data/app:ro
     environment:
@@ -140,7 +166,7 @@ services:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8081/health"]
       <<: *hc-curl
     depends_on:
-      mcp:
+      mcp-gateway:
         condition: service_healthy
     networks:
       - agent-tutor-net

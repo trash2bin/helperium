@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -343,30 +342,9 @@ func TestTypes_AuthStrategyValid(t *testing.T) {
 }
 
 // TestFileStore_Load — FileStore.Load работает через Load().
-func TestFileStore_Load(t *testing.T) {
-	withConfigSchema(t, specPath(t, "config.schema.json"))
 
-	store := config.NewFileStore(specPath(t, "config.example.json"))
-	cfg, err := store.Load(context.Background())
-	if err != nil {
-		t.Fatalf("FileStore.Load: %v", err)
-	}
-	if cfg.Version != 1 {
-		t.Errorf("cfg.Version = %d, want 1", cfg.Version)
-	}
-}
 
-// TestFileStore_Save_NotImplemented — Save возвращает ErrNotImplemented.
-func TestFileStore_Save_NotImplemented(t *testing.T) {
-	store := config.NewFileStore("whatever.json")
-	err := store.Save(context.Background(), &config.Config{Version: 1})
-	if err == nil {
-		t.Fatalf("expected ErrNotImplemented, got nil")
-	}
-	if err != config.ErrNotImplemented {
-		t.Errorf("err = %v, want ErrNotImplemented", err)
-	}
-}
+
 
 // TestConfig_String — smoke-тест String() (используется в логировании).
 func TestConfig_String(t *testing.T) {
