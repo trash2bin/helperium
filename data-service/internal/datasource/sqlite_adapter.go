@@ -163,10 +163,15 @@ func introspectTable(ctx context.Context, database Conn, name string) (Table, er
 			return tbl, fmt.Errorf("scan table_info: %w", err)
 		}
 
+		// nullable: PRAGMA table_info возвращает notnull=0 для PK-колонок,
+		// если в DDL не было явного NOT NULL. Но PRIMARY KEY подразумевает
+		// NOT NULL по стандарту SQL — корректная семантика nullable=false
+		// для PK-колонок нужна для консистентности с Postgres (information_schema).
+		isPK := pk > 0
 		tbl.Columns = append(tbl.Columns, Column{
 			Name:        cname,
 			Type:        mapSQLiteType(ctype),
-			Nullable:    notnull == 0,
+			Nullable:    !isPK && notnull == 0,
 			Description: "", // SQLite не хранит комментарии к колонкам
 		})
 

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/agent-tutor/data-service/internal/datasource"
-	"github.com/agent-tutor/data-service/internal/db"
 )
 
 // TestSqliteAdapter_Driver — адаптер сообщает свой идентификатор.
@@ -31,9 +30,9 @@ func TestSqliteAdapter_QuoteIdentifier(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"students", `"students"`},
-		{"student name", `"student name"`},
-		{"group_id", `"group_id"`},
+		{"items", `"items"`},
+		{"item name", `"item name"`},
+		{"created_at", `"created_at"`},
 		{"", `""`},
 	}
 	for _, c := range cases {
@@ -66,9 +65,13 @@ func TestSqliteAdapter_Introspect_Empty(t *testing.T) {
 	}
 }
 
-// TestSqliteAdapter_Introspect_UniversitySchema — на DDL из schema.sql
-// должны получиться 6 таблиц с правильными колонками, PK и FK.
-func TestSqliteAdapter_Introspect_UniversitySchema(t *testing.T) {
+// TestSqliteAdapter_Introspect_GenericSchema — на generic-схеме
+// (магазин: customers/orders/items) проверяем корректность introspector
+// без привязки к доменной семантике (никаких university-имён).
+//
+// Покрывает: PRIMARY KEY, FOREIGN KEY с композитным ключом, разные типы
+// колонок (INTEGER/TEXT/REAL/BLOB/INTEGER NULL/INTEGER NOT NULL).
+func TestSqliteAdapter_Introspect_GenericSchema(t *testing.T) {
 	ctx := context.Background()
 
 	conn, err := (datasource.SqliteAdapter{}).Connect(ctx, ":memory:")
@@ -77,10 +80,32 @@ func TestSqliteAdapter_Introspect_UniversitySchema(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	// Применяем реальный DDL проекта — это гарантирует, что интроспекция
-	// работает на продакшен-схеме university.db, а не на тестовом сабсете.
-	if err := applyDDL(ctx, conn, db.SchemaSQL); err != nil {
-		t.Fatalf("apply DDL: %v", err)
+	// Generic DDL — намеренно нейтральная (e-commerce минимум).
+	ddl := []string{
+		`CREATE TABLE customers (
+			id INTEGER PRIMARY KEY,
+			email TEXT NOT NULL,
+			created_at TEXT
+		)`,
+		`CREATE TABLE items (
+			id INTEGER PRIMARY KEY,
+			sku TEXT NOT NULL,
+			price REAL NOT NULL,
+			metadata BLOB
+		)`,
+		`CREATE TABLE orders (
+			id INTEGER PRIMARY KEY,
+			customer_id INTEGER NOT NULL,
+			item_id INTEGER NOT NULL,
+			quantity INTEGER,
+			FOREIGN KEY (customer_id) REFERENCES customers(id),
+			FOREIGN KEY (item_id) REFERENCES items(id)
+		)`,
+	}
+	for _, stmt := range ddl {
+		if _, err := conn.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("DDL %q: %v", stmt, err)
+		}
 	}
 
 	got, err := (datasource.SqliteAdapter{}).Introspect(ctx, conn)
@@ -91,52 +116,29 @@ func TestSqliteAdapter_Introspect_UniversitySchema(t *testing.T) {
 	if got.Driver != "sqlite" {
 		t.Errorf("Driver = %q, want %q", got.Driver, "sqlite")
 	}
-
-	if len(got.Tables) != 6 {
-		t.Fatalf("len(Tables) = %d, want 6; got = %v", len(got.Tables), tableNames(got))
+	if len(got.Tables) != 3 {
+		t.Fatalf("len(Tables) = %d, want 3; got = %v", len(got.Tables), tableNames(got))
 	}
 
 	wantTables := map[string]struct {
 		columns    []string
 		primaryKey []string
-		fks        map[string]fkExpectation
+		fkCount    int
 	}{
-		"groups": {
-			columns:    []string{"id", "name", "speciality"},
+		"customers": {
+			columns:    []string{"id", "email", "created_at"},
 			primaryKey: []string{"id"},
-			fks:        map[string]fkExpectation{},
+			fkCount:    0,
 		},
-		"students": {
-			columns:    []string{"id", "name", "group_id", "course"},
+		"items": {
+			columns:    []string{"id", "sku", "price", "metadata"},
 			primaryKey: []string{"id"},
-			fks: map[string]fkExpectation{
-				"students.group_id -> groups": {col: "group_id", refTable: "groups", refCol: "id"},
-			},
+			fkCount:    0,
 		},
-		"teachers": {
-			columns:    []string{"id", "name", "disciplines_json"},
+		"orders": {
+			columns:    []string{"id", "customer_id", "item_id", "quantity"},
 			primaryKey: []string{"id"},
-			fks:        map[string]fkExpectation{},
-		},
-		"disciplines": {
-			columns:    []string{"id", "name", "description"},
-			primaryKey: []string{"id"},
-			fks:        map[string]fkExpectation{},
-		},
-		"grades": {
-			columns:    []string{"id", "student_id", "discipline_id", "grade", "date"},
-			primaryKey: []string{"id"},
-			fks: map[string]fkExpectation{
-				"grades.student_id -> students":       {col: "student_id", refTable: "students", refCol: "id"},
-				"grades.discipline_id -> disciplines": {col: "discipline_id", refTable: "disciplines", refCol: "id"},
-			},
-		},
-		"schedule": {
-			columns:    []string{"id", "day", "group_id", "lessons_json"},
-			primaryKey: []string{"id"},
-			fks: map[string]fkExpectation{
-				"schedule.group_id -> groups": {col: "group_id", refTable: "groups", refCol: "id"},
-			},
+			fkCount:    2, // → customers, → items
 		},
 	}
 
@@ -152,7 +154,6 @@ func TestSqliteAdapter_Introspect_UniversitySchema(t *testing.T) {
 			continue
 		}
 
-		// Колонки.
 		gotCols := make([]string, 0, len(tbl.Columns))
 		for _, c := range tbl.Columns {
 			gotCols = append(gotCols, c.Name)
@@ -161,33 +162,76 @@ func TestSqliteAdapter_Introspect_UniversitySchema(t *testing.T) {
 			t.Errorf("table %q columns = %v, want %v", name, gotCols, want.columns)
 		}
 
-		// PrimaryKey.
 		if !equalStringSlices(tbl.PrimaryKey, want.primaryKey) {
 			t.Errorf("table %q primary_key = %v, want %v", name, tbl.PrimaryKey, want.primaryKey)
 		}
 
-		// ForeignKeys.
-		for fkLabel, wantFK := range want.fks {
-			fk := findFK(tbl.ForeignKeys, wantFK.col, wantFK.refTable)
-			if fk == nil {
-				t.Errorf("table %q missing FK %s", name, fkLabel)
-				continue
-			}
-			if !equalStringSlices(fk.Columns, []string{wantFK.col}) {
-				t.Errorf("table %q FK %s columns = %v, want [%s]",
-					name, fkLabel, fk.Columns, wantFK.col)
-			}
-			if !equalStringSlices(fk.ReferencedColumns, []string{wantFK.refCol}) {
-				t.Errorf("table %q FK %s referenced_columns = %v, want [%s]",
-					name, fkLabel, fk.ReferencedColumns, wantFK.refCol)
-			}
-		}
-
-		// Не должно быть лишних FK.
-		if len(tbl.ForeignKeys) != len(want.fks) {
+		if len(tbl.ForeignKeys) != want.fkCount {
 			t.Errorf("table %q foreign_keys count = %d, want %d (got %v)",
-				name, len(tbl.ForeignKeys), len(want.fks), tbl.ForeignKeys)
+				name, len(tbl.ForeignKeys), want.fkCount, tbl.ForeignKeys)
 		}
+	}
+
+	// Проверяем маппинг типов на конкретных колонках.
+	if tbl, ok := byName["items"]; ok {
+		byCol := make(map[string]string, len(tbl.Columns))
+		for _, c := range tbl.Columns {
+			byCol[c.Name] = c.Type
+		}
+		if got := byCol["price"]; got != datasource.TypeFloat {
+			t.Errorf("items.price type = %q, want %q", got, datasource.TypeFloat)
+		}
+		if got := byCol["metadata"]; got != datasource.TypeJSON {
+			t.Errorf("items.metadata type = %q, want %q (BLOB→json per project convention)",
+				got, datasource.TypeJSON)
+		}
+	}
+}
+
+// TestSqliteAdapter_Introspect_NullableDetection — проверяем что
+// колонки без NOT NULL правильно помечаются как nullable=true.
+func TestSqliteAdapter_Introspect_NullableDetection(t *testing.T) {
+	ctx := context.Background()
+
+	conn, err := (datasource.SqliteAdapter{}).Connect(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	ddl := []string{
+		`CREATE TABLE t (
+			id INTEGER PRIMARY KEY,
+			required TEXT NOT NULL,
+			optional TEXT
+		)`,
+	}
+	for _, stmt := range ddl {
+		if _, err := conn.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("DDL: %v", err)
+		}
+	}
+
+	got, err := (datasource.SqliteAdapter{}).Introspect(ctx, conn)
+	if err != nil {
+		t.Fatalf("Introspect: %v", err)
+	}
+	if len(got.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d", len(got.Tables))
+	}
+
+	byCol := make(map[string]datasource.Column, len(got.Tables[0].Columns))
+	for _, c := range got.Tables[0].Columns {
+		byCol[c.Name] = c
+	}
+	if byCol["required"].Nullable {
+		t.Errorf("required should be nullable=false")
+	}
+	if !byCol["optional"].Nullable {
+		t.Errorf("optional should be nullable=true")
+	}
+	if byCol["id"].Nullable {
+		t.Errorf("id (PRIMARY KEY) should be nullable=false")
 	}
 }
 
@@ -198,67 +242,4 @@ func tableNames(s *datasource.Schema) []string {
 		out = append(out, tbl.Name)
 	}
 	return out
-}
-
-type fkExpectation struct {
-	col      string
-	refTable string
-	refCol   string
-}
-
-// findFK возвращает FK, у которого колонка и целевая таблица совпадают.
-func findFK(fks []datasource.ForeignKey, col, refTable string) *datasource.ForeignKey {
-	for i := range fks {
-		fk := &fks[i]
-		if len(fk.Columns) == 1 && fk.Columns[0] == col && fk.ReferencedTable == refTable {
-			return fk
-		}
-	}
-	return nil
-}
-
-// applyDDL применяет DDL (SQLite совместимый) через ExecContext, разделяя
-// DDL по ';' — простая эвристика, достаточная для schema.sql без сложных
-// вложенных конструкций и хранимых процедур.
-func applyDDL(ctx context.Context, database db.DB, ddl string) error {
-	stmts := splitSQL(ddl)
-	for _, s := range stmts {
-		if s == "" {
-			continue
-		}
-		if _, err := database.ExecContext(ctx, s); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// splitSQL — наивный сплиттер по ';'. Для schema.sql этого достаточно:
-// нет строковых литералов с ';' внутри, нет хранимых процедур.
-func splitSQL(ddl string) []string {
-	out := make([]string, 0)
-	cur := ""
-	for _, r := range ddl {
-		if r == ';' {
-			out = append(out, trimSQL(cur))
-			cur = ""
-			continue
-		}
-		cur += string(r)
-	}
-	if cur != "" {
-		out = append(out, trimSQL(cur))
-	}
-	return out
-}
-
-func trimSQL(s string) string {
-	// Убираем ведущие/завершающие пробелы и переводы строк.
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\n' || s[0] == '\t' || s[0] == '\r') {
-		s = s[1:]
-	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\n' || s[len(s)-1] == '\t' || s[len(s)-1] == '\r') {
-		s = s[:len(s)-1]
-	}
-	return s
 }

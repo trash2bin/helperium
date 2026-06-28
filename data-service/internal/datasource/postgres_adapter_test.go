@@ -41,9 +41,9 @@ func TestPostgresAdapter_QuoteIdentifier(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"students", `"students"`},
-		{"student name", `"student name"`},
-		{"group_id", `"group_id"`},
+		{"orders", `"orders"`},
+		{"order line", `"order line"`},
+		{"customer_id", `"customer_id"`},
 		{"", `""`},
 	}
 	for _, c := range cases {
