@@ -87,9 +87,14 @@ func (b *Builder) BuildFind(entity Entity, searchField, value string) (Query, er
 	cols := buildColumnList(b.adapter, entity)
 	ph := b.adapter.TranslatePlaceholder(1)
 
+	// LIKE-поиск: совместимость со старыми хендлерами (поиск по подстроке).
+	// Безопасность: value в prepared statement, wildcards %/_ интерпретируются LIKE —
+	// это желаемое поведение для поиска.
+	searchVal := "%" + value + "%"
+
 	q := Query{
-		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` = ` + ph,
-		Args: []any{value},
+		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` LIKE ` + ph,
+		Args: []any{searchVal},
 	}
 	return q, nil
 }

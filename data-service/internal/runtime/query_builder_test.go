@@ -40,6 +40,10 @@ func (a *testAdapter) TranslatePlaceholder(index int) string {
 	return "?"
 }
 
+func (a *testAdapter) PingContext(ctx context.Context) error {
+	return a.db.PingContext(ctx)
+}
+
 // newTestAdapter поднимает in-memory SQLite с тестовой схемой.
 //
 // DDL — generic, не привязан к доменной семантике вуза:
@@ -158,7 +162,7 @@ func TestBuildFind(t *testing.T) {
 	wantSubstrs := []string{
 		`SELECT "id", "email", "created_at"`,
 		`FROM "customers"`,
-		`WHERE "email" = ?`,
+		`WHERE "email" LIKE ?`,
 	}
 	for _, s := range wantSubstrs {
 		if !strings.Contains(q.SQL, s) {
@@ -166,8 +170,8 @@ func TestBuildFind(t *testing.T) {
 		}
 	}
 
-	if len(q.Args) != 1 || q.Args[0] != "x@y.com" {
-		t.Errorf("Args = %v, want [x@y.com]", q.Args)
+	if len(q.Args) != 1 || q.Args[0] != "%x@y.com%" {
+		t.Errorf("Args = %v, want [%%x@y.com%%]", q.Args)
 	}
 }
 

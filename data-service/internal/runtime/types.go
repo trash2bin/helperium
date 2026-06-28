@@ -134,6 +134,9 @@ type AdapterSubset interface {
 	// Сигнатура совпадает с database/sql.Conn и с datasource.Conn.
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 
+	// PingContext проверяет доступность соединения с БД.
+	PingContext(ctx context.Context) error
+
 	// QuoteIdentifier корректно квотирует идентификатор для SQL.
 	QuoteIdentifier(name string) string
 
