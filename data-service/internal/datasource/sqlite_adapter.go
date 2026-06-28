@@ -7,8 +7,8 @@
 //   - квотирование идентификаторов через двойные кавычки.
 //
 // Связь с internal/db:
-//   - internal/db.DB — низкоуровневый интерфейс к database/sql.
-//   - SqliteAdapter возвращает обёртку SqliteConn, реализующую db.DB
+//   - internal/Conn — низкоуровневый интерфейс к database/sql.
+//   - SqliteAdapter возвращает обёртку SqliteConn, реализующую Conn
 //     через композицию над *sql.DB. Это позволяет драйверу datasource
 //     оставаться независимым от NewSQLite() и его env-логики.
 package datasource
@@ -20,8 +20,6 @@ import (
 	"strings"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
-
-	"github.com/agent-tutor/data-service/internal/db"
 )
 
 // SqliteAdapter — реализация Adapter для SQLite (modernc.org/sqlite).
@@ -37,10 +35,10 @@ func (SqliteAdapter) Driver() string { return "sqlite" }
 //
 // Если путь — ":memory:", открывается in-memory БД (для тестов).
 //
-// Возвращает обёртку SqliteConn, реализующую db.DB через композицию
+// Возвращает обёртку SqliteConn, реализующую Conn через композицию
 // над *sql.DB — чтобы datasource-слой не зависел от internal/db.NewSQLite()
 // и его переменных окружения.
-func (SqliteAdapter) Connect(ctx context.Context, dsn string) (db.DB, error) {
+func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("sqlite: empty DSN")
 	}
@@ -86,7 +84,7 @@ func (SqliteAdapter) QuoteIdentifier(name string) string { return `"` + name + `
 // поэтому идентификатор безопасно подставляется через QuoteIdentifier.
 //
 // SQLite не хранит комментарии к колонкам, поэтому Description всегда пуст.
-func (SqliteAdapter) Introspect(ctx context.Context, database db.DB) (*Schema, error) {
+func (SqliteAdapter) Introspect(ctx context.Context, database Conn) (*Schema, error) {
 	const listSQL = `
 		SELECT type, name
 		FROM sqlite_master
@@ -142,7 +140,7 @@ func (SqliteAdapter) Introspect(ctx context.Context, database db.DB) (*Schema, e
 // QuoteIdentifier. Так как имена приходят из sqlite_master, они
 // доверенные, но квотирование всё равно обязательно для имён с
 // пробелами или спецсимволами.
-func introspectTable(ctx context.Context, database db.DB, name string) (Table, error) {
+func introspectTable(ctx context.Context, database Conn, name string) (Table, error) {
 	quoted := SqliteAdapter{}.QuoteIdentifier(name)
 	tbl := Table{Name: name}
 
@@ -283,11 +281,11 @@ func mapSQLiteType(native string) string {
 	return TypeString
 }
 
-// SqliteConn — обёртка над *sql.DB, реализующая интерфейс db.DB
+// SqliteConn — обёртка над *sql.DB, реализующая интерфейс Conn
 // через композицию. Не дублирует логику internal/db.NewSQLite() и
 // не зависит от переменных окружения.
 //
-// Используется SqliteAdapter.Connect для возврата db.DB.
+// Используется SqliteAdapter.Connect для возврата Conn.
 type SqliteConn struct {
 	conn *sql.DB
 }

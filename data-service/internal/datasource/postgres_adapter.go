@@ -7,8 +7,8 @@
 //   - квотирование идентификаторов через двойные кавычки (ANSI SQL).
 //
 // Связь с internal/db:
-//   - internal/db.DB — низкоуровневый интерфейс к database/sql.
-//   - PostgresAdapter возвращает обёртку PostgresConn, реализующую db.DB
+//   - internal/Conn — низкоуровневый интерфейс к database/sql.
+//   - PostgresAdapter возвращает обёртку PostgresConn, реализующую Conn
 //     через композицию над *sql.DB. Это позволяет драйверу datasource
 //     оставаться независимым от internal/db.NewPostgres() (который живёт
 //     в ветке 3.1.a и ещё не смержен).
@@ -34,8 +34,6 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql-совместимый драйвер pgx
-
-	"github.com/agent-tutor/data-service/internal/db"
 )
 
 // PostgresAdapter — реализация Adapter для PostgreSQL (pgx/v5 stdlib).
@@ -53,10 +51,10 @@ func (PostgresAdapter) Driver() string { return "postgres" }
 // Перед возвратом выполняется PingContext для проверки доступности
 // (отлавливает неверные учётки, недоступный хост и пр.).
 //
-// Возвращает обёртку PostgresConn, реализующую db.DB через композицию
+// Возвращает обёртку PostgresConn, реализующую Conn через композицию
 // над *sql.DB — datasource-слой не зависит от internal/db.NewPostgres()
 // и не подгружает его переменные окружения.
-func (PostgresAdapter) Connect(ctx context.Context, dsn string) (db.DB, error) {
+func (PostgresAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("postgres: empty DSN")
 	}
@@ -109,7 +107,7 @@ func (PostgresAdapter) QuoteIdentifier(name string) string {
 //
 // Description может быть пустым — это нормально, если COMMENT ON COLUMN
 // не выполнялся (см. контракт Column.Description: omitempty).
-func (PostgresAdapter) Introspect(ctx context.Context, database db.DB) (*Schema, error) {
+func (PostgresAdapter) Introspect(ctx context.Context, database Conn) (*Schema, error) {
 	const listSQL = `
 		SELECT table_schema, table_name
 		FROM information_schema.tables
@@ -164,7 +162,7 @@ func (PostgresAdapter) Introspect(ctx context.Context, database db.DB) (*Schema,
 // Имя таблицы отражается в Table.Name как "schema.table" — это позволяет
 // не терять информацию о схеме при матчинге в тестах и runtime-слое
 // (см. contract: имя нативное, как в БД).
-func introspectPostgresTable(ctx context.Context, database db.DB, schemaName, tableName string) (Table, error) {
+func introspectPostgresTable(ctx context.Context, database Conn, schemaName, tableName string) (Table, error) {
 	tbl := Table{Name: schemaName + "." + tableName}
 
 	// Шаг 2: колонки.
@@ -238,7 +236,7 @@ func introspectPostgresTable(ctx context.Context, database db.DB, schemaName, ta
 // Используем information_schema.table_constraints, а не pg_index с regclass,
 // потому что information_schema стабильнее для типизированного доступа
 // и не требует привилегий на pg_catalog.
-func queryPostgresPrimaryKey(ctx context.Context, database db.DB, schemaName, tableName string) ([]string, error) {
+func queryPostgresPrimaryKey(ctx context.Context, database Conn, schemaName, tableName string) ([]string, error) {
 	const q = `
 		SELECT k.column_name
 		FROM information_schema.table_constraints t
@@ -276,7 +274,7 @@ func queryPostgresPrimaryKey(ctx context.Context, database db.DB, schemaName, ta
 // Если таблица ссылается на колонку в другой схеме, ReferencedTable
 // сохраняется в формате "schema.table" — это согласуется с форматом
 // Table.Name и упрощает матчинг в runtime.
-func queryPostgresForeignKeys(ctx context.Context, database db.DB, schemaName, tableName string) ([]ForeignKey, error) {
+func queryPostgresForeignKeys(ctx context.Context, database Conn, schemaName, tableName string) ([]ForeignKey, error) {
 	const q = `
 		SELECT tc.constraint_name,
 		       kcu.column_name,
@@ -380,7 +378,7 @@ func queryPostgresForeignKeys(ctx context.Context, database db.DB, schemaName, t
 // обычно нестрогий по схеме (может вернуть oid таблицы из другой схемы,
 // если имена совпадают). Поэтому фильтруем дополнительно по schema:
 //   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $2.
-func fillColumnDescriptions(ctx context.Context, database db.DB, schemaName, tableName string, columns []Column) error {
+func fillColumnDescriptions(ctx context.Context, database Conn, schemaName, tableName string, columns []Column) error {
 	if len(columns) == 0 {
 		return nil
 	}
@@ -503,11 +501,11 @@ func mapPostgresType(native string) string {
 	return TypeString
 }
 
-// PostgresConn — обёртка над *sql.DB, реализующая интерфейс db.DB
+// PostgresConn — обёртка над *sql.DB, реализующая интерфейс Conn
 // через композицию. Не дублирует логику internal/db.NewPostgres() и
 // не зависит от переменных окружения.
 //
-// Используется PostgresAdapter.Connect для возврата db.DB.
+// Используется PostgresAdapter.Connect для возврата Conn.
 type PostgresConn struct {
 	conn *sql.DB
 }

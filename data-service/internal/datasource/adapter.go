@@ -9,13 +9,31 @@
 //     инкапсулирует драйвер + интроспекцию схемы.
 //
 // В фазе 3.2 runtime-слой будет работать с Adapter, не с конкретным драйвером.
+//
+// Цикл импортов:
+// Чтобы избежать цикла db → datasource → db (когда connector.go использует
+// Registry), интерфейс DB определён здесь локально как Conn. db.DB остаётся
+// как псевдоним для backward-compat с репозиториями (будут удалены в 3.3).
 package datasource
 
 import (
 	"context"
-
-	"github.com/agent-tutor/data-service/internal/db"
+	"database/sql"
 )
+
+// Conn — минимальный интерфейс, который Adapter ожидает от подключения.
+// Совместим с *sql.DB и с обёртками (PostgresConn/SqliteConn).
+//
+// Контракт совпадает с internal/db.DB, но определён здесь, чтобы разорвать
+// import cycle: db → datasource → db. В фазе 3.3 db.DB исчезнет вместе с
+// репозиториями, и останется только этот тип.
+type Conn interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	PingContext(ctx context.Context) error
+	Close() error
+}
 
 // Adapter — интерфейс адаптера источника данных.
 //
@@ -31,13 +49,13 @@ type Adapter interface {
 	Driver() string
 
 	// Connect открывает соединение с БД по DSN.
-	// Возвращает обёртку над *sql.DB, реализующую интерфейс db.DB.
-	Connect(ctx context.Context, dsn string) (db.DB, error)
+	// Возвращает Conn, реализующий тот же контракт, что и db.DB.
+	Connect(ctx context.Context, dsn string) (Conn, error)
 
 	// Introspect читает метаданные схемы БД.
 	// Возвращает generic-описание, одинаковое для всех СУБД:
 	// таблицы, колонки (с generic-типами), FK, индексы.
-	Introspect(ctx context.Context, database db.DB) (*Schema, error)
+	Introspect(ctx context.Context, database Conn) (*Schema, error)
 
 	// TranslatePlaceholder преобразует порядковый номер placeholder'а
 	// в нативный синтаксис СУБД.
