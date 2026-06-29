@@ -71,6 +71,14 @@ func main() {
 		"endpoints", len(mcpCfg.Endpoints),
 	)
 
+	ragInfo := "disabled"
+	if registry.RagEnabled() {
+		ragInfo = "enabled"
+	} else {
+		ragInfo = "disabled (" + registry.RagDisabledReason() + ")"
+	}
+	slog.Info("RAG tools", "status", ragInfo)
+
 	// ── HTTP-роутер ──
 	r := buildRouter(mcpServer, registry, mcpCfg, devMode)
 
@@ -227,19 +235,22 @@ func debugSessionsHandler(sessions *sync.Map) http.HandlerFunc {
 func debugConfigHandler(registry *tools.Registry, cfg *config.Config, devMode bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		toolDefs := registry.GetToolDefs()
-		toolNames := make([]string, 0, len(toolDefs))
-		for _, td := range toolDefs {
-			toolNames = append(toolNames, td.Name)
+		ragStatus := "disabled"
+		ragReason := ""
+		if registry.RagEnabled() {
+			ragStatus = "enabled"
+		} else {
+			ragReason = registry.RagDisabledReason()
 		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"source":        "data-service /mcp/manifest",
 			"entities":      len(cfg.Entities),
 			"endpoints":     len(cfg.Endpoints),
-			"tools":         toolNames,
-			"tools_count":   len(toolDefs),
+			"all_tools":     registry.GetToolNames(),
+			"auto_tools":    len(registry.GetToolDefs()),
 			"mcp_tools_cfg": len(cfg.MCPTools),
-			"auto_tools":    true,
+			"rag_status":    ragStatus,
+			"rag_reason":    ragReason,
 			"dev_mode":      devMode,
 		})
 	}

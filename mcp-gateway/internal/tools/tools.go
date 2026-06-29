@@ -13,15 +13,17 @@ import (
 
 	"github.com/agent-tutor/agent-tutor-go/config"
 	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
+	"github.com/agent-tutor/mcp-gateway/internal/ragclient"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
 // Registry manages auto-generated + explicit MCP tools.
 type Registry struct {
-	cfg      *config.Config
-	client   *httpclient.Client
-	toolDefs []toolDef
+	cfg       *config.Config
+	client    *httpclient.Client
+	ragClient *ragclient.Client
+	toolDefs  []toolDef
 }
 
 // toolDef — внутреннее описание одного MCP-инструмента.
@@ -33,13 +35,42 @@ type toolDef struct {
 }
 
 // NewRegistry creates a registry and auto-builds tool definitions from config.
+// ragClient will be auto-initialised from the RAG_SERVICE_URL environment variable.
+// If RAG is not available (nil client or health check fails), RAG tools are
+// still registered but return a friendly error message at call time.
 func NewRegistry(cfg *config.Config) *Registry {
 	r := &Registry{
-		cfg:    cfg,
-		client: httpclient.New(),
+		cfg:       cfg,
+		client:    httpclient.New(),
+		ragClient: ragclient.New(),
 	}
 	r.buildTools()
 	return r
+}
+
+// RagEnabled reports whether RAG tools are available.
+func (r *Registry) RagEnabled() bool {
+	return r.ragClient != nil && r.ragClient.IsAvailable()
+}
+
+// RagDisabledReason returns a human-readable explanation when RAG is unavailable.
+func (r *Registry) RagDisabledReason() string {
+	if r.ragClient == nil {
+		return "RAG_SERVICE_URL not set"
+	}
+	if !r.ragClient.IsAvailable() {
+		return fmt.Sprintf("RAG health check failed at %s", r.ragClient.BaseURL())
+	}
+	return ""
+}
+
+// toolDefCount returns total tool count including RAG tools.
+func (r *Registry) toolDefCount() int {
+	n := len(r.toolDefs)
+	if r.RagEnabled() {
+		n += 3 // search_documents, list_documents, get_rag_context
+	}
+	return n
 }
 
 // buildTools generates tool definitions from endpoints, overridden by explicit mcp_tools.
@@ -81,11 +112,118 @@ func (r *Registry) RegisterAll(mcpServer *server.MCPServer) {
 	for _, td := range r.toolDefs {
 		registerOne(mcpServer, td, r.client)
 	}
+	r.registerRagTools(mcpServer)
+}
+
+// registerRagTools registers static RAG tools (search_documents, list_documents,
+// get_rag_context). Tools are always registered — if RAG is unavailable the
+// handlers return a descriptive error.
+func (r *Registry) registerRagTools(mcpServer *server.MCPServer) {
+	// search_documents — семантический поиск по документам
+	searchTool := mcp.NewTool(
+		"search_documents",
+		mcp.WithDescription("Поиск наиболее релевантных фрагментов загруженных документов (лекций, методичек) по текстовому запросу. Возвращает массив фрагментов с оценкой релевантности."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Поисковый запрос — вопрос или ключевые слова")),
+		mcp.WithString("discipline_id", mcp.Description("ID дисциплины для фильтрации (опционально)")),
+		mcp.WithNumber("limit", mcp.Description("Максимум результатов (1-20, по умолчанию 5)")),
+	)
+	mcpServer.AddTool(searchTool, r.makeRagHandler("search"))
+
+	// list_documents — список документов в RAG
+	listTool := mcp.NewTool(
+		"list_documents",
+		mcp.WithDescription("Список документов, загруженных в базу знаний (лекции, методички, учебные материалы). Можно фильтровать по дисциплине."),
+		mcp.WithString("discipline_id", mcp.Description("ID дисциплины для фильтрации (опционально)")),
+	)
+	mcpServer.AddTool(listTool, r.makeRagHandler("list"))
+
+	// get_rag_context — готовый контекст для LLM
+	contextTool := mcp.NewTool(
+		"get_rag_context",
+		mcp.WithDescription("Формирует готовую строку контекста из релевантных фрагментов документов для подстановки в ответ модели. Возвращает контекст и список источников."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Вопрос пользователя для поиска релевантных фрагментов")),
+		mcp.WithString("discipline_id", mcp.Description("ID дисциплины для фильтрации (опционально)")),
+		mcp.WithNumber("limit", mcp.Description("Максимум фрагментов (1-20, по умолчанию 5)")),
+	)
+	mcpServer.AddTool(contextTool, r.makeRagHandler("context"))
+}
+
+// makeRagHandler creates a handler that delegates to RAG service via HTTP.
+func (r *Registry) makeRagHandler(kind string) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if !r.RagEnabled() {
+			return mcp.NewToolResultError(fmt.Sprintf("RAG недоступен: %s. Проверьте RAG_SERVICE_URL и запущен ли rag-сервис.", r.RagDisabledReason())), nil
+		}
+
+		args := request.Params.Arguments
+		query, _ := args["query"].(string)
+		disciplineID, _ := args["discipline_id"].(string)
+
+		var limit int
+		switch v := args["limit"].(type) {
+		case float64:
+			limit = int(v)
+		case int:
+			limit = v
+		}
+
+		switch kind {
+		case "search":
+			results, err := r.ragClient.SearchDocuments(query, disciplineID, limit)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Ошибка поиска: %v", err)), nil
+			}
+			data, err := json.MarshalIndent(results, "", "  ")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Ошибка форматирования: %v", err)), nil
+			}
+			return mcp.NewToolResultText(string(data)), nil
+
+		case "list":
+			docs, err := r.ragClient.ListDocuments(disciplineID, 0)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Ошибка получения списка: %v", err)), nil
+			}
+			data, err := json.MarshalIndent(docs, "", "  ")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Ошибка форматирования: %v", err)), nil
+			}
+			return mcp.NewToolResultText(string(data)), nil
+
+		case "context":
+			ctxResp, err := r.ragClient.GetRagContext(query, disciplineID, limit)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Ошибка сборки контекста: %v", err)), nil
+			}
+			data, err := json.MarshalIndent(ctxResp, "", "  ")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Ошибка форматирования: %v", err)), nil
+			}
+			return mcp.NewToolResultText(string(data)), nil
+
+		default:
+			return mcp.NewToolResultError(fmt.Sprintf("Неизвестная RAG-операция: %s", kind)), nil
+		}
+	}
 }
 
 // GetToolDefs returns tool definitions (for debug/inspection).
 func (r *Registry) GetToolDefs() []toolDef {
 	return r.toolDefs
+}
+
+// GetToolNames returns all tool names including RAG tools.
+func (r *Registry) GetToolNames() []string {
+	names := make([]string, 0, len(r.toolDefs)+3)
+	for _, td := range r.toolDefs {
+		names = append(names, td.Name)
+	}
+	if r.RagEnabled() {
+		names = append(names, "search_documents", "list_documents", "get_rag_context")
+	} else {
+		names = append(names, "search_documents", "list_documents", "get_rag_context")
+	}
+	return names
 }
 
 // registerOne registers a single tool on the MCP server.

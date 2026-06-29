@@ -95,6 +95,7 @@ services:
       - "127.0.0.1:8083:8083"
     environment:
       - DATA_SERVICE_URL=http://data-service:8084
+      - RAG_SERVICE_URL=http://rag:8082
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8083/health"]
       <<: *hc-curl
