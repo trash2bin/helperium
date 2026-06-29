@@ -65,19 +65,19 @@ class TestDataServiceProxy:
         assert response.json() == {"students": 42, "teachers": 15}
 
     @respx.mock
-    @pytest.mark.parametrize("endpoint,upstream_path", [
-        ("/api/data/students", "/students"),
-        ("/api/data/teachers", "/teachers"),
-        ("/api/data/disciplines", "/disciplines"),
-        ("/api/data/schedule", "/schedule"),
-        ("/api/data/grades", "/grades"),
+    @pytest.mark.parametrize("entity_key,upstream_path", [
+        ("students", "/students"),
+        ("teachers", "/teachers"),
+        ("disciplines", "/disciplines"),
+        ("schedule", "/schedule"),
+        ("grades", "/grades"),
     ])
-    def test_proxy_data_collection(self, client, endpoint, upstream_path):
-        """Все коллекции проксируются на правильный upstream URL."""
+    def test_proxy_generic_data_collection(self, client, entity_key, upstream_path):
+        """Generic /api/data/{entity} proshens correct upstream path."""
         respx.get(f"http://127.0.0.1:8084{upstream_path}").mock(
             return_value=httpx.Response(200, json=[])
         )
-        response = client.get(endpoint)
+        response = client.get(f"/api/data/{entity_key}")
         assert response.status_code == 200
         assert response.json() == []
 
@@ -125,6 +125,37 @@ class TestDataServiceProxy:
         )
         response = client.get("/api/data/students")
         assert response.headers["content-type"] == "application/json"
+
+
+# === MANIFEST PROXY ===
+
+class TestManifestProxy:
+    """Тест /api/manifest -> data-service /mcp/manifest."""
+
+    @respx.mock
+    def test_proxy_manifest(self, client):
+        """GET /api/manifest проксирует на data-service GET /mcp/manifest."""
+        manifest = {
+            "entities": [{"name": "student", "fields": []}],
+            "endpoints": [{"method": "GET", "path": "/students", "entity": "student", "op": "list"}],
+            "custom_queries": {},
+            "mcp_tools": [],
+        }
+        respx.get("http://127.0.0.1:8084/mcp/manifest").mock(
+            return_value=httpx.Response(200, json=manifest)
+        )
+        response = client.get("/api/manifest")
+        assert response.status_code == 200
+        assert response.json()["entities"][0]["name"] == "student"
+
+    @respx.mock
+    def test_proxy_manifest_upstream_error(self, client):
+        """Если data-service упал — возвращаем ошибку клиенту."""
+        respx.get("http://127.0.0.1:8084/mcp/manifest").mock(
+            return_value=httpx.Response(500, json={"detail": "error"})
+        )
+        response = client.get("/api/manifest")
+        assert response.status_code == 500
 
 
 # === RAG PROXY ===

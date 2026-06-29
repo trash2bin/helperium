@@ -10,7 +10,7 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">MCP + Ollama</p>
-        <h1>Университетский ассистент</h1>
+        <h1>AI Agent Dashboard</h1>
       </div>
       <div class="status" id="status">API: проверка</div>
     </header>
@@ -18,20 +18,15 @@
     <main>
       <section class="hero">
         <div>
-          <h2>Локальная база учебного процесса</h2>
-          <p>Студенты, преподаватели, расписание, оценки и RAG-документы доступны модели через MCP-инструменты.</p>
+          <h2>Данные из подключённой базы</h2>
+          <p>Все сущности доступны модели через MCP-инструменты.</p>
         </div>
         <div class="metric-grid" id="metrics"></div>
       </section>
 
-      <section class="tabs" aria-label="Разделы данных">
-        <button class="tab active" data-tab="students">Студенты</button>
-        <button class="tab" data-tab="schedule">Расписание</button>
-        <button class="tab" data-tab="disciplines">Дисциплины</button>
-        <button class="tab" data-tab="teachers">Преподаватели</button>
-        <button class="tab" data-tab="documents">Документы</button>
-        <button class="tab" data-tab="grades">Оценки</button>
-      </section>
+      <section class="tabs" aria-label="Разделы данных" id="tabBar">
+      <span class="tab-placeholder">Загрузка сущностей…</span>
+    </section>
 
       <section class="data-shell">
         <div class="section-title">

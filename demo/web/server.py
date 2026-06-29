@@ -265,29 +265,16 @@ async def proxy_data_stats(request: Request) -> Response:
     return await _proxy_to_data_service(request, "/stats")
 
 
-@app.get("/api/data/students")
-async def proxy_data_students(request: Request) -> Response:
-    return await _proxy_to_data_service(request, "/students")
+@app.get("/api/manifest")
+async def proxy_manifest(request: Request) -> Response:
+    """Proxy to data-service /mcp/manifest — единый источник метаданных."""
+    return await _proxy_to_data_service(request, "/mcp/manifest")
 
 
-@app.get("/api/data/teachers")
-async def proxy_data_teachers(request: Request) -> Response:
-    return await _proxy_to_data_service(request, "/teachers")
-
-
-@app.get("/api/data/disciplines")
-async def proxy_data_disciplines(request: Request) -> Response:
-    return await _proxy_to_data_service(request, "/disciplines")
-
-
-@app.get("/api/data/schedule")
-async def proxy_data_schedule(request: Request) -> Response:
-    return await _proxy_to_data_service(request, "/schedule")
-
-
-@app.get("/api/data/grades")
-async def proxy_data_grades(request: Request) -> Response:
-    return await _proxy_to_data_service(request, "/grades")
+@app.get("/api/data/{entity_name:path}")
+async def proxy_data_entity(request: Request, entity_name: str) -> Response:
+    """Generic data-service proxy: /api/data/students -> GET /students, etc."""
+    return await _proxy_to_data_service(request, f"/{entity_name}")
 
 
 # --- RAG reverse proxy (документы для web UI) ---

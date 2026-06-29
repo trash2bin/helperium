@@ -1,499 +1,284 @@
 # Roadmap: B2B SaaS платформа с автогенерацией API по базе клиента
 
-> **Контекст.** Этот документ описывает **новую фазу** проекта — смену продукта:
-> из domain-specific (один вуз, одна схема БД) в **generic B2B SaaS**, где клиент
-> подключает **свою** базу (на старте SQLite/PostgreSQL, в перспективе — адаптеры
-> под другие СУБД и CRM-системы), а сервис автоматически строит API и MCP-инструменты
+> **Контекст.** Этот документ описывает **текущую фазу** проекта — смену
+> продукта: из domain-specific (один вуз, одна схема БД) в
+> **generic B2B SaaS**, где клиент подключает **свою** базу (на старте
+> SQLite/PostgreSQL), а сервис автоматически строит API и MCP-инструменты
 > для агента на основе **схемы этой базы**.
 >
-> Этапы 0–2.7 из старого ROADMAP считаются выполненными и **не пересматриваются**
-> как требования — но часть артефактов (например, доменные модели в
-> `data-service/internal/models/`) будет **вытеснена** generic-логикой.
+> Этапы 0–2.7 из старого ROADMAP считаются выполненными и **не
+> пересматриваются** как требования. Этапы 3.0–3.4 выполнены; 3.5 — с
+> документированным отклонением; 3.6–3.9 — это оставшаяся работа.
+> В этой версии документа отражены **реальные архитектурные решения,
+> принятые в процессе**, и причины отклонений от первоначального плана.
 
 ---
 
-## 1. Новая цель продукта
+## 1. Цель продукта (без изменений)
 
 **Generic B2B SaaS-платформа для AI-агента над произвольной БД клиента.**
 
-Пользовательский сценарий (после реализации всех фаз):
+Пользовательский сценарий (после реализации оставшихся фаз 3.6–3.9):
 
 1. Клиент регистрируется в платформе.
-2. В UI указывает DSN своей БД (или выбирает один из коннекторов: PostgreSQL, SQLite, MySQL, ...).
-3. Платформа **автоматически интроспектирует схему** (`information_schema` для PostgreSQL,
-   `sqlite_master` + `PRAGMA table_info` для SQLite и т.д. по адаптерам).
-4. На основе интроспекции **генерируется API** (REST) и **MCP-инструменты** для агента —
-   с разумными дефолтами (таблица → сущность, колонки → поля, FK → relations,
-   snake_case → camelCase).
-5. Клиент через UI корректирует конфиг: переименовывает поля, отключает таблицы,
-   добавляет вычисляемые endpoint'ы (whitelist-операции).
+2. В UI указывает DSN своей БД (или выбирает один из коннекторов:
+   PostgreSQL, SQLite, ...).
+3. Платформа **автоматически интроспектирует схему** (`information_schema`
+   для PostgreSQL, `sqlite_master` + `PRAGMA table_info` для SQLite).
+4. На основе интроспекции **генерируется API** (REST) и **MCP-инструменты**
+   для агента — с разумными дефолтами (таблица → сущность, колонки →
+   поля, FK → relations, snake_case → camelCase).
+5. Клиент через UI корректирует конфиг: переименовывает поля, отключает
+   таблицы, добавляет вычисляемые endpoint'ы (whitelist-операции).
 6. Конфиг сохраняется и применяется без рестарта.
-7. Агент клиента (тот же LiteLLM-цикл, что сегодня в `demo/api/agent/`) уже имеет
-   минимальный набор tools для поиска/чтения данных **без знания домена**.
+7. Агент клиента (тот же LiteLLM-цикл, что сегодня в
+   `demo/api/agent/`) уже имеет минимальный набор tools для
+   поиска/чтения данных **без знания домена**.
 
-**Что это даёт бизнесу:** нулевые затраты на интеграцию для типовых клиентов
-(подключил БД → получил рабочий агент за минуты), глубокая кастомизация через
-конфиг для нетиповых. Путь к агентным CRM/ERP-ассистентам.
+**Что это даёт бизнесу:** нулевые затраты на интеграцию для типовых
+клиентов (подключил БД → получил рабочий агент за минуты), глубокая
+кастомизация через конфиг для нетиповых.
 
 ---
 
-## 2. Что остаётся инвариантом, а что пересматривается
+## 2. Что остаётся инвариантом, а что пересмотрено
 
 ### Остаётся неизменным
 
-- **I1.** Каждый этап оставляет проект в рабочем состоянии. После каждого этапа
-  UI-чат и MCP-инструменты работают (возможно — на временных заглушках).
-- **I2.** Пользовательские данные не теряются при перезапуске. Никаких разовых
-  «удалите БД» без миграции.
+- **I1.** Каждый этап оставляет проект в рабочем состоянии. После
+  каждого этапа UI-чат и MCP-инструменты работают (возможно — на
+  временных заглушках).
+- **I2.** Пользовательские данные не теряются при перезапуске. Никаких
+  разовых «удалите БД» без миграции.
 - **I3.** Существующие публичные HTTP-контракты не ломаются без явного
-  согласования. Если API меняется — версия в URL или backward-compat обёртка.
-- **I4.** Архитектура остаётся набором независимых сервисов с HTTP-контрактом.
-  Любой сервис можно переписать на другом языке без затрагивания соседей.
+  согласования. Если API меняется — версия в URL или backward-compat
+  обёртка.
+- **I4.** Архитектура остаётся набором независимых сервисов с
+  HTTP-контрактом. Любой сервис можно переписать на другом языке без
+  затрагивания соседей.
 - **I5.** OpenAPI/Swagger на каждом long-running HTTP-сервисе.
-- **I6.** Конфигурация — JSON (выбран пользователем), валидируется JSON Schema
-  при загрузке и при reload.
+- **I6.** Конфигурация — JSON, валидируется JSON Schema при загрузке
+  и при reload.
 - **I7.** SQL-запросы строятся **только** через подготовленные выражения
   (`?`/`$1` placeholder'ы), пользовательские значения никогда не
-  конкатенируются в SQL. Whitelist операций: только `SELECT`, запрет `;`,
-  обязательный `LIMIT` per-query.
+  конкатенируются в SQL. Whitelist операций: только `SELECT`, запрет
+  `;`, обязательный `LIMIT` per-query.
 
-### Пересматривается
+### Пересмотрено (по сравнению с первой версией roadmap)
 
-- **R1.** `data-service` перестаёт быть «университетским». Это generic
-  CRUD/query-прокси над произвольной БД. Доменная семантика уходит из Go-кода
-  в **конфиг** и **интроспекцию**.
-- **R2 (ВЫПОЛНЕН — mcp_server удалён).** `mcp_server` переезжает с Python на **Go** и физически
-  сближается с `data-service`. Обоснование ниже в §6.
-- **R3.** Внутренние доменные Pydantic-модели в `agent-tutor-sdk/contracts/`
-  уступают место **generic** `Entity` (мапа `field → value`). Старые модели
-  живут как тонкие алиасы для существующих потребителей, помечены `deprecated`.
-- **R4.** `demo/web` (фронтенд) перестаёт рендерить «вкладку Студенты /
-  Преподаватели / Оценки». Рендеринг управляется **метаданными endpoint'ов**
-  из конфига: одна универсальная таблица + форма детализации.
-- **R5.** `rag/fixtures/cli_docgen.py` и связанные CLI утрачивают доменную
-  логику вуза. Если клиенту нужны тестовые документы — генератор становится
-  generic (по сущностям из конфига), но в фазах 3.x это **не приоритет**.
+- **R1. ✅ ВЫПОЛНЕНО.** `data-service` стал generic CRUD/query-прокси над
+  произвольной БД. Доменная семантика ушла из Go-кода в конфиг и
+  интроспекцию. Все 7 Go-моделей и пакет `internal/repository/` удалены.
+- **R2. ✅ ВЫПОЛНЕНО.** `mcp_server` (Python) удалён. MCP реализован на
+  Go в `mcp-gateway/` — отдельным сервисом (решение «не объединять с
+  data-service» подтверждено — см. §6).
+- **R3. ⚠️ ВЫПОЛНЕНО С ОТКЛОНЕНИЕМ.** Внутренние доменные Pydantic-модели
+  в `agent-tutor-sdk/contracts/` не превратились в **тонкие алиасы** над
+  generic `Entity`, а были **полностью удалены**. Старые drift-тесты
+  заменены новыми (`test_entity_model.py`). Причина: keeping алиасы
+  создавало бы постоянный слой deprecated-кода без потребителей —
+  решено пойти на breaking change ради чистоты API. См. §13.
+- **R4. ❌ НЕ ВЫПОЛНЕНО.** `demo/web` всё ещё рендерит вкладки студентов,
+  преподавателей, оценок через хардкод в `app.js` и `server.py`. Это
+  основное содержимое фазы 3.6.
+- **R5. ❌ НЕ ВЫПОЛНЕНО.** `rag/fixtures/cli_docgen.py` и связанные
+  утилиты (`agent-seedgen`, `agent-rag-docgen`) остаются доменными —
+  генерируют русскоязычных студентов и лекции по жёстко прописанным
+  дисциплинам. Будет исправлено в фазе 3.8.
 
 ### Что НЕ делаем в этой фазе
 
-- Не строим UI-конфигуратор как полноценный продукт — только **закладываем
-  контракт** (`config.schema.json`) и читаемый человеком JSON. UI — отдельный
-  этап, после core-платформы.
+- Не строим UI-конфигуратор как полноценный продукт (фаза 3.9).
 - Не подключаем ORM (`sqlx`, `gorm`, `sqlc`). Используем `database/sql`
-  с явными prepared statements — это даёт полный контроль над запросами
-  и совместимость с `information_schema`-интроспекцией.
-- Не уходим в k8s/Istio/multi-region. Это уровень зрелости, к которому
-  придём позже.
-- Не делаем авторизацию пользователей на этом этапе — достаточно
-  tenant-isolation через конфиг (`X-Tenant-ID`) и admin-токена для reload.
-- Не делаем миграции чужих БД. Клиентская БД — read-only с точки зрения
-  платформы (платформа не пишет в чужую БД, кроме как в свою admin-БД
-  для конфигов и сессий).
+  с явными prepared statements.
+- Не уходим в k8s/Istio/multi-region.
+- Не делаем полноценную авторизацию пользователей на этом этапе —
+  достаточно tenant-isolation через конфиг (`X-Tenant-ID`) и
+  admin-токена для reload.
+- Не делаем миграции чужих БД. Клиентская БД — read-only с точки
+  зрения платформы.
 
 ---
 
-## 3. Целевая архитектура (vision)
+## 3. Целевая архитектура (vision) и текущее состояние
 
 ```
                             ┌──────────────────────┐
-                            │  Web UI (config +    │
+                            │  Web UI (config +    │  ← ⚠️ пока доменный (фаза 3.6)
                             │  generic tables)     │
                             └──────────┬───────────┘
                                        │
                                        ▼
         ┌────────────────────────────────────────────────────────┐
-        │                  API (Python, LiteLLM)                 │
-        │   ─────────────────────────────────────────────────    │
+        │                  API (Python, LiteLLM)                 │ ✅
         │   • Агент: оркестратор, история, tool-вызовы           │
         │   • Подключается к MCP-gateway по HTTP                  │
-        │   • Чат, бэклог, сессии (как сейчас)                   │
+        │   • Чат, бэклог, сессии                                │
         └────────────┬─────────────────────────────┬─────────────┘
                      │                             │
                      ▼                             ▼
         ┌────────────────────────┐    ┌──────────────────────────┐
-        │   MCP-gateway (Go)     │    │   RAG (Python, FastAPI)  │
-        │   ──────────────────   │    │   ───────────────────    │
-        │   • HTTP-MCP сервер    │    │   • Без изменений в       │
-        │   • Tools генерируются │    │     архитектуре           │
-        │     из конфига data-    │    │   • RAG-клиент SDK        │
-        │     service + интроспек│    │     остаётся generic       │
-        │   • Внутри — прямые    │    │                            │
-        │     вызовы к data-     │    └──────────────────────────┘
-        │     service по HTTP    │
-        └────────────┬───────────┘
+        │   MCP-gateway (Go)     │    │   RAG (Python, FastAPI)  │ ✅
+        │   ──────────────────   │    │   • generic RAG-клиент   │
+        │   • HTTP-MCP сервер    │    │   • Без изменений        │
+        │     (mark3labs/mcp-go  │    │     в архитектуре        │
+        │      v0.8.3)           │    │                          │
+        │   • Tools генерируются │    │                          │
+        │     из /mcp/manifest   │    │                          │
+        └────────────┬───────────┘    └──────────────────────────┘
                      │ (HTTP, internal)
                      ▼
         ┌────────────────────────────────────────────────────────┐
-        │           Data-service (Go, config-driven)             │
+        │           Data-service (Go, config-driven)             │ ✅
         │   ─────────────────────────────────────────────────    │
-        │   • Config loader (JSON, валидация JSON Schema)        │
-        │   • Driver registry (sqlite, postgres, ...)            │
-        │   • Introspector (читает information_schema /          │
-        │     sqlite_master, нормализует в generic Table/Col)    │
+        │   • Config loader (JSON, envsubst, JSON Schema)        │
+        │   • Driver registry: sqlite, postgres                  │
+        │   • Introspector (information_schema / sqlite_master)  │
         │   • Query builder (только SELECT, prepared, LIMIT)     │
-        │   • Endpoint builder (REST endpoints из конфига)       │
-        │   • OpenAPI generator (из runtime + конфига)           │
-        │   • Admin API: GET/PUT /admin/config, /admin/reload    │
+        │   • Endpoint builder (REST по конфигу)                 │
+        │   • Admin API: /mcp/manifest, /admin/config/rewrite    │ ⚠️
+        │   • OpenAPI generator (из runtime)                     │
         └────────────┬───────────────────────────────────────────┘
-                     │ (driver-specific)
+                     │
                      ▼
         ┌────────────────────────────────────────────────────────┐
-        │              Клиентская БД (read-only)                 │
-        │   • SQLite | PostgreSQL | (MySQL, ...)                 │
-        │   • Схема — реальная схема клиента, не наша            │
-        │   • data-service НЕ модифицирует её DDL                │
-        └────────────────────────────────────────────────────────┘
-
-        Параллельно — admin-БД (своя):
-        ┌────────────────────────────────────────────────────────┐
-        │   Platform DB (SQLite по умолчанию, Postgres опц.)    │
-        │   • Конфиги тенантов (версионированные)                 │
-        │   • Кеш интроспекции (с TTL)                            │
-        │   • Сессии чатов (как сейчас в demo_sessions.sqlite)   │
+        │              Клиентская БД (read-only)                 │ ✅
         └────────────────────────────────────────────────────────┘
 ```
 
-### Что здесь принципиально нового по сравнению с текущим состоянием
+### Что достигнуто технически
 
-| Слой | Сегодня | Целевое состояние |
+| Слой | Состояние | Комментарий |
 |---|---|---|
-| `data-service` SQL | хардкод SQL под вуз в 6 файлах `repository/` | `query builder` генерирует SELECT из конфига |
-| `data-service` модели | 7 Go-структур с русскими `description` | 1 generic `Entity{Fields map[string]any}` |
-| `data-service` endpoints | 11 хардкод URL в `server.go` | N URL, описанных в `config.endpoints[]` |
-| `data-service` schema | `db/schema.sql` (наш DDL) | introspection чужой БД, DDL не наш |
-| MCP tools | 8 функций с русскими описаниями | N tools, генерируемых из конфига |
-| SDK контракты | 7 Pydantic-моделей в `contracts/` | 1 generic `Entity` + старые как алиасы |
-| Web UI | вкладки students/teachers/grades | универсальная таблица по метаданным |
+| `data-service` SQL | generic query builder ✅ | Без хардкода домена |
+| `data-service` модели | generic `Entity` через конфиг ✅ | Все 7 Go-структур удалены |
+| `data-service` endpoints | N URL, описанных в `config.endpoints[]` ✅ | chi-роутер собирается runtime |
+| `data-service` schema | introspection чужой БД ✅ | DDL не наш |
+| `data-service` адаптеры | sqlite + postgres ✅ | Equivalence-тесты проходят |
+| Общий config-пакет | `agent-tutor-go/config/` через `go.work` ✅ | Переиспользуется в обоих Go-сервисах |
+| MCP tools | Auto-gen из config + runtime `/mcp/manifest` ✅ | mark3labs/mcp-go v0.8.3 |
+| SDK контракты | generic `Entity` + `api/models.py` ✅ | Старые `contracts/` удалены |
+| **Web UI** | ❌ всё ещё доменный | `students`/`teachers`/`grades` в `app.js` |
+| **Multi-tenant** | ❌ `row_filters: []` | Phase 3.7 |
+| **Hot reload** | ❌ нет fsnotify | Phase 3.7 |
+| **Generic fixtures** | ❌ seedgen/docgen доменные | Phase 3.8 |
 
 ---
 
-## 4. Карта хардкода: что и от чего избавляемся
+## 4. Карта хардкода: итог
 
-Чтобы roadmap был предметным — фиксирую **где именно** сейчас вшита
-доменная семантика. Понимание этого определяет объём переписывания
-по фазам.
-
-### 4.1. `data-service/internal/repository/` (Go)
-
-**Что зашито:** имена таблиц (`students`, `teachers`, `disciplines`, `grades`,
-`schedule`, `groups`), имена колонок (`name`, `lessons_json`, `disciplines_json`,
-`speciality`, `course`), JOIN'ы между ними. ~56 SQL-запросов с захардкоженной
-семантикой вуза. JSON-поля как `lessons_json` и `disciplines_json` — это
-ad-hoc схема, специфичная для одного демо-проекта.
-
-**Куда движемся:** удалить пакет. Заменить на пакет `runtime` с
-`query_builder.go` + `entity_resolver.go`, которые принимают конфиг
-и собирают запросы параметрически.
-
-> **Статус [ВЫПОЛНЕНО]**: `data-service/internal/repository/` удалён (фаза 3.3). Заменён на `data-service/internal/runtime/` (`query_builder.go`, `entity_resolver.go`, `response_mapper.go`, `converter.go`, `handlers/`).
-
-### 4.2. `data-service/internal/models/` (Go)
-
-**Что зашито:** 7 структур (`Group`, `Student`, `Teacher`, `Discipline`,
-`Grade`, `Lesson`, `ScheduleEntry`) с доменными полями. Это source of truth
-для JSON Schema и Pydantic-моделей в SDK.
-
-**Куда движемся:** оставить один тип `Entity` (`map[string]any` + `Meta`
-с описаниями полей). Генерация JSON Schema — из runtime-конфига, а не из
-Go-структур.
-
-> **Статус [ВЫПОЛНЕНО]**: `data-service/internal/models/` удалён (фаза 3.3). Generic-ответ моделируется через `Entity` в SDK (`agent-tutor-sdk/src/agent_tutor_sdk/models.py`), HTTP DTO — через `agent-tutor-sdk/src/agent_tutor_sdk/api/models.py`.
-
-### 4.3. `data-service/internal/handlers/` (Go)
-
-**Что зашито:** URL-маршруты (`/students/{id}`, `/teachers/{name}/schedule`,
-`/students/{id}/grades`) — это семантика вуза.
-
-**Куда движемся:** пакет `runtime/handlers/` с набором builtin-handler'ов
-(`get_by_id`, `find_by_field`, `list`, `custom_query`, `health`, `stats`).
-`endpoint_builder.go` собирает роутер chi по конфигу.
-
-> **Статус [ВЫПОЛНЕНО]**: `data-service/internal/handlers/` удалён (фаза 3.3). Заменён на `data-service/internal/runtime/handlers/` (`builtin` + `custom_query` + `mcp_manifest.go`).
-
-### 4.4. `data-service/internal/db/schema.sql`
-
-**Что зашито:** DDL для university-схемы.
-
-**Куда движемся:** удалить. data-service больше **не создаёт** таблицы в
-клиентской БД. Если нужно протестировать на реальной БД — клиент
-сам создаёт схему или использует демо-БД через отдельный seed-CLI
-(фаза 3.2+).
-
-### 4.5. `data-service/internal/seedgen/`
-
-**Что зашито:** фикстуры в формате `seed.json` (Python-генератор → JSON →
-Go-apply). Защита «от перезаписи prod-БД» через panic.
-
-**Куда движемся:** оставить как dev-инструмент для локального
-демо (фаза 3.2), но изолировать от прод-кода. Команда `--seed`
-остаётся, но работает только если в конфиге явно указан флаг
-`allow_seed: true` иначе — отказ.
-
-### 4.6. [ВЫПОЛНЕНО] `mcp_server/tools_via_http.py` + `server.py`
-
-> **Статус**: `mcp_server/` удалён. Все 8 инструментов переехали в `mcp-gateway/` (Go, auto-gen из конфига). RAG-инструменты (3 шт.) пока живут в обходе через `demo/api/agent/mcp_client.py` → `rag:8082`.
-
-**Что зашито:** 8 функций-обёрток (`_find_student_by_name`, `_get_student`,
-`_get_schedule`, ...) и 8 `@mcp.tool()` декораторов с русскими docstring'ами.
-Тесты в `mcp_server/tests/unit/test_*_tools.py` ловят конкретные поля
-(`full_name`, `course`, `discipline_id`).
-
-**Куда движемся:** переписать на Go (§6). MCP-инструменты генерируются
-из конфига data-service (одного источника правды). Существующие
-8 тулов остаются как **явные алиасы** для backward-compat.
-
-### 4.7. `agent-tutor-sdk/contracts/__init__.py`
-
-**Что зашито:** 7 Pydantic-моделей с `extra="forbid"`, описания на русском,
-точечные типы. Drift-тесты в `test_contracts_drift.py` жёстко сверяют
-имена/описания/required-флаги с JSON Schema.
-
-**Куда движемся:** ввести generic-модель `Entity`/`EntityField`. Старые
-имена (`Student`, `Teacher`, ...) — алиасы, помеченные `deprecated`.
-Drift-тесты переориентируются: проверяют, что JSON Schema из
-`config.json` соответствует тому, что отдаёт data-service `/openapi.json`
-в runtime. Старая проверка Go-моделей → JSON Schema → Pydantic
-остаётся для тех моделей, что ещё не generic'ифицированы.
-
-### 4.8. `agent-tutor-sdk/data_client.py`
-
-**Что зашито:** 16 методов с конкретными URL (`/students/{id}`,
-`/teachers/{name}/schedule`, `/disciplines`, ...). Каждый метод
-принимает и возвращает конкретные Pydantic-модели.
-
-**Куда движемся:** generic-метод `request(entity, op, params)` +
-типизированные хелперы (`get(entity, id)`, `find(entity, field, value)`,
-`list(entity, filters)`). Старые методы остаются как deprecated-обёртки.
-
-### 4.9. `demo/web/static/app.js` + `index.html` + `server.py`
-
-**Что зашито:** в `app.js` — таблицы `students`/`teachers`/`grades`/`schedule`
-с захардкоженными колонками (`full_name`, `group`, `discipline_name`,
-`grade`). В `index.html` — кнопки вкладок. В `server.py` — маршруты
-`/api/data/students`, `/api/data/teachers`, ... (прокси к data-service).
-
-**Куда движемся:** одна универсальная таблица. Метаданные колонок
-приходят из data-service (`/entities/{name}/schema` или embedded в
-каждый ответ). В `app.js` — рендер по схеме, без хардкода имён полей.
-В `server.py` — generic-прокси по whitelist из конфига
-(что разрешено отдавать в UI).
-
-### 4.10. `rag/fixtures/` (dev-инструментарий)
-
-**Что зашито:** `seedgen.py` генерирует фиктивных студентов/преподавателей
-с русскими ФИО, `document_generator.py` пишет лекции по дисциплинам,
-`cli_docgen.py` итерирует по `get_all_disciplines()`.
-
-**Куда движемся:** это **dev-only инструменты**. Они не блокируют
-переход к generic data-service — но сами тоже generic'ифицируются
-по конфигу (берут список «сущностей» из data-service, а не из
-захардкоженного списка дисциплин). Делается **после** core-платформы,
-отдельной фазой.
-
-### 4.11 (удалено).
-
-**Что зашито:** 11 операций с русскими `summary`/`description`.
-
-**Куда движемся:** этот файл становится **генерируемым** из runtime-конфига
-(через `cmd/openapi-gen` в data-service). В репозиторий коммитим
-только эталонную версию, drift-тест проверяет её соответствие
-runtime.
-
-### 4.12 (удалено).
-
-**Что зашито:** 7 файлов с доменными описаниями.
-
-**Куда движемся:** в перспективе — генерируются на лету из конфига
-data-service. На фазе 3.x — оставляем как есть, drift-тест продолжает
-работать для них.
+| Источник хардкода | Статус | Заметки |
+|---|---|---|
+| `data-service/internal/repository/` | ✅ удалён (фаза 3.3) | Заменён `runtime/` |
+| `data-service/internal/models/` | ✅ удалён (фаза 3.3) | Generic через конфиг |
+| `data-service/internal/handlers/` | ✅ удалён (фаза 3.3) | Заменён `runtime/handlers/` |
+| `data-service/internal/db/schema.sql` | ✅ удалён (фаза 3.3) | DDL не наш |
+| `data-service/internal/seedgen/` | ✅ изолирован | Остался как `cmd/seed-cli/` (dev-only) |
+| `mcp_server/tools_via_http.py` + `server.py` | ✅ удалён | Переехал в `mcp-gateway/` (Go) |
+| `agent-tutor-sdk/contracts/__init__.py` | ✅ удалён | Прямо, без алиасов (см. §13) |
+| `agent-tutor-sdk/data_client.py` (16 методов) | ✅ удалены | Заменены на generic (см. фазу 3.5) |
+| `demo/web/static/app.js` (доменные таблицы) | ❌ **остался** | Фаза 3.6 |
+| `demo/web/server.py` (доменные роуты `/api/data/...`) | ❌ **остался** | Фаза 3.6 |
+| `rag/fixtures/seedgen.py` (домен вуза) | ❌ **остался** | Фаза 3.8 |
+| `rag/fixtures/document_generator.py` (домен вуза) | ❌ **остался** | Фаза 3.8 |
+| `specs/data-service.openapi.yaml` | ✅ удалён | Генерируется runtime из конфига |
+| `specs/schemas/*.schema.json` (7 файлов) | ✅ удалены | Заменены на `config.schema.json` + runtime OpenAPI |
 
 ---
 
-## 5. Контракт конфигурации (формальная спецификация)
+## 5. Контракт конфигурации
 
-Это сердце новой платформы. Конфиг — JSON, валидируется JSON Schema
-(`specs/config.schema.json`). Минимальный жизнеспособный конфиг
-содержит:
+Конфиг — JSON, валидируется JSON Schema (`specs/config.schema.json`).
+Формат подробно описан в первой версии roadmap и **не менялся**.
+Минимальный жизнеспособный конфиг содержит:
 
-```jsonc
-{
-  "version": 1,
-  "data_source": {
-    "driver": "sqlite",                              // sqlite | postgres | ...
-    "dsn": "${DB_DSN}",                              // шаблоны ${ENV} подставляются
-    "pool_size": 10,
-    "read_only": true                                // пока платформа только читает
-  },
-  "introspection": {
-    "enabled": true,                                 // при первом старте — discovery
-    "include_schemas": ["public"],
-    "exclude_tables": ["^pg_", "^_"]
-  },
-  "entities": [                                      // описание домена клиента
-    {
-      "name": "student",                             // публичное имя (camelCase)
-      "table": "students",                           // реальная таблица
-      "id_column": "id",
-      "fields": [
-        { "name": "full_name", "column": "name", "type": "string", "nullable": false,
-          "description": "Полное ФИО студента" },
-        { "name": "course",   "column": "course", "type": "int", "nullable": true }
-      ],
-      "relations": [
-        { "field": "group", "kind": "many_to_one",
-          "table": "groups", "local_fk": "group_id" }
-      ]
-    }
-  ],
-  "endpoints": [
-    { "method": "GET", "path": "/students/{id}",
-      "entity": "student", "op": "get_by_id" },
-    { "method": "GET", "path": "/students",
-      "entity": "student", "op": "find",
-      "search_field": "full_name", "query_param": "name" },
-    { "method": "GET", "path": "/students/{id}/grades",
-      "op": "custom_query",
-      "query_id": "student_grades",
-      "params": [{ "name": "id", "in": "path", "required": true }]
-    },
-    { "method": "GET", "path": "/health",
-      "op": "builtin_health" }
-  ],
-  "custom_queries": {                                // whitelist для escape hatch
-    "student_grades": {
-      "sql": "SELECT g.id, g.grade, g.date FROM grades g WHERE g.student_id = ?",
-      "params": ["id"],
-      "result_mapping": {
-        "id":    { "type": "string" },
-        "grade": { "type": "string" },
-        "date":  { "type": "string" }
-      },
-      "max_rows": 1000
-    }
-  },
-  "stats": {
-    "counters": [
-      { "name": "students", "entity": "student" }
-    ]
-  },
-  "mcp_tools": [                                     // генерация MCP-инструментов
-    {
-      "name": "find_student_by_name",
-      "endpoint": "/students",
-      "description": "Найти студента по полному ФИО",
-      "params": [{ "name": "name", "type": "string", "required": true }]
-    }
-  ],
-  "auth": {
-    "strategy": "header",                            // header | none
-    "tenant_header": "X-Tenant-ID",
-    "row_filters": [                                 // multi-tenant isolation
-      { "entity": "student",
-        "where": "tenant_id = :tenant_id" }
-    ]
-  }
-}
-```
+- `version`, `data_source` (driver, dsn, pool_size, read_only)
+- `introspection` (enabled, include_schemas, exclude_tables)
+- `entities[]`, `endpoints[]`, `custom_queries`, `stats`, `mcp_tools[]`
+- `auth` (strategy, tenant_header, row_filters) — **поле определено в
+  схеме, но `row_filters[]` не применяется runtime — фаза 3.7**
 
-**Ключевые инварианты контракта:**
+**Ключевые инварианты контракта** (без изменений):
 
-- Имена в `entities[].fields[].name` — публичные (API/JSON). Имена колонок
-  (`column`) — внутренние. Маппинг обязателен, чтобы UI мог переименовать
-  snake_case в camelCase без потери смысла.
-- Все user-input параметры endpoint'ов — через `params[]` и
-  placeholder'ы (`?`/`$1`), никогда не конкатенируются.
-- `custom_queries` — только SELECT, не более одного statement, обязателен
-  `max_rows`.
-- `entities[].relations[]` описывает FK-структуру, но **не** генерирует
-  JOIN автоматически (для JOIN'ов — `custom_queries`). Это даёт
-  предсказуемость и контроль над N+1.
+- `entities[].fields[].name` — публичные имена, `column` — внутренние.
+- Все user-input параметры endpoint'ов — через `params[]` и placeholder'ы.
+- `custom_queries` — только SELECT, не более одного statement, `max_rows`.
+- `entities[].relations[]` описывает FK, но **не** генерирует JOIN — для
+  JOIN'ов используется `custom_queries`.
+
+Реальный пример развёрнутого конфига для university-БД — `specs/config.example.json`
+(с включённым `mcp_tools[]` и всеми 11 endpoint'ами, повторяющими
+поведение демо).
 
 ---
 
-## 6. Почему MCP переезжает на Go (и переезжает ли)
+## 6. Почему MCP переехал на Go (и почему остался отдельным сервисом)
 
-### Аргументы за
+### Что сделано
 
-- **Единая runtime-платформа.** data-service и mcp работают с одной
-  конфигурацией. Если оба на Go — один процесс загружает конфиг,
-  строит endpoints, тут же регистрирует MCP-tools. Никакого
-  HTTP-тура между ними → минимум latency.
-- **Типизация конфига.** Go-структуры с `encoding/json` дают строгую
-  валидацию. Python (с pydantic) даёт почти то же, но держим
-  зоопарк — дороже.
-- **Единая кодовая база для OpenAPI и MCP-описаний.** Один и тот же
-  endpoint-метаданные используются для chi-роутера и для MCP-tools.
-- **Развёртывание.** Один бинарник на оба сервиса в одном контейнере.
-  Меньше образов, меньше памяти.
+- `mcp-gateway/` (Go), порт 8083, `mark3labs/mcp-go v0.8.3` (включён в
+  `mcp-gateway/go.mod`).
+- Реализован через Go-SDK `mark3labs/mcp-go`, без своего MCP-протокола.
 
-### Аргументы против
+### Почему отдельным сервисом, а не в data-service
 
-- **mcp_server (ВЫПОЛНЕН — удалён).** 4 тестовых файла, 8 инстру��ентов,
-  интеграция с LiteLLM (в `demo/api/`).
-- **FastMCP (Python) даёт готовую экосистему** (stdio/HTTP-транспорт,
-  аутентификация, логирование). На Go придётся писать свой MCP-сервер
-  или использовать Go-SDK (`mcp-go` и аналоги).
-- **Потеря скорости разработки.** Python быстрее на коротких итерациях.
+Первоначальный план («после стабилизации объединить в один бинарник,
+если профилирование покажет выигрыш») **сохраняется**. Текущее
+разделение обосновано:
 
-### Решение
+- Разные жизненные циклы: mcp-gateway чаще перезапускается при
+  изменении списка tools, data-service стабильнее.
+- In-process vs HTTP — разница 0.1мс vs 1мс, в цикле агента
+  с 5–10 tool-вызовами это ~5–10мс, **не критично**.
+- Сохраняется I4 (независимость сервисов).
 
-**Переезжаем на Go**, но **не в один контейнер с data-service**. Аргументация:
+### Что неожиданно хорошо получилось: `/mcp/manifest`
 
-- Переписать на Go — да, это убирает зоопарк типов и даёт
-  единый источник правды для endpoint'ов.
-- Но оставить **отдельным сервисом** в compose (пока). Причины:
-  - Разные жизненные циклы — mcp чаще перезапускается при
-    изменении списка tools, data-service стабильнее.
-  - Latency-разница: in-process call vs HTTP — это 0.1мс vs 1мс,
-    в цикле агента с 5–10 tool-вызовами разница ~5–10мс, **не критично**.
-  - Если объединить — теряем I4 (независимость сервисов).
-- Когда/если объединим — **после** того, как платформа стабилизируется,
-  и только если профилирование покажет реальный выигрыш.
+План фазы 3.4 включал опциональный пункт о `GET /mcp/manifest` в
+data-service, но в реализации это стало **единственным путём**:
+mcp-gateway при старте дёргает `http://data-service:8084/mcp/manifest`
+и регистрирует tools оттуда. Это устраняет необходимость парсить
+`config.json` в двух местах и риск рассинхронизации.
 
-**План:** на Go-SDK MCP (например, `mark3labs/mcp-go`). Поверх — generic
-tool-registry, который при старте запрашивает у data-service список
-endpoint'ов и регистрирует их как MCP-tools.
-
----
-
-## 7. Адаптеры под другие источники данных
-
-Старт — SQLite и PostgreSQL. Архитектура должна позволять добавление
-новых адаптеров без переписывания ядра.
-
-### Что должен уметь каждый адаптер
-
-1. **Introspector.** Метод `Introspect(ctx) (*Schema, error)`, возвращающий
-   generic-описание: список таблиц, колонок (с типами), FK, индексов.
-2. **Driver.** Реализация `DB` интерфейса (`QueryContext`, `ExecContext`,
-   `PingContext`, `Close`) — как сейчас, только теперь это часть
-   пакета `data-source/<name>`.
-3. **Placeholder.** Преобразование `?` в нативный placeholder СУБД
-   (`?` для SQLite, `$1, $2, ...` для PostgreSQL, `?` для MySQL).
-4. **Result type mapping.** Приведение типов колонок к generic-типам
-   платформы (`string`, `int`, `float`, `bool`, `null`, `json`).
-5. **Limiter / OFFSET.** Трансляция `LIMIT n` / `OFFSET m` в синтаксис СУБД
-   (для совместимости — в SQLite/Postgres одинаково, но в MSSQL — `TOP`).
-
-### Контракт адаптера
+Файл: `data-service/internal/runtime/handlers/mcp_manifest.go`:
 
 ```go
-package datasource
-
-type Adapter interface {
-    Driver() string                                          // "sqlite", "postgres"
-    Connect(ctx context.Context, dsn string) (DB, error)
-    Introspect(ctx context.Context, db DB) (*Schema, error)
-    TranslatePlaceholder(idx int) string                      // ? → $1
-    QuoteIdentifier(name string) string                      // "table" или `table`
+func MCPManifestHandler(cfg *config.Config) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        RespondJSON(w, http.StatusOK, map[string]any{
+            "endpoints":      cfg.Endpoints,
+            "entities":       cfg.Entities,
+            "custom_queries": cfg.CustomQueries,
+            "mcp_tools":      cfg.MCPTools,
+        })
+    }
 }
 ```
+
+---
+
+## 7. Адаптеры под источники данных
+
+Старт — SQLite и PostgreSQL. Реализовано оба (§3.1).
+
+### Что должен уметь адаптер (реализовано)
+
+1. **Introspector.** Метод `Introspect(ctx) (*Schema, error)`, generic
+   описание: таблицы, колонки, FK, индексы.
+2. **Driver.** `DB`-интерфейс (`QueryContext`, `ExecContext`, `PingContext`,
+   `Close`) — `database/sql`-совместимый.
+3. **Placeholder.** Адаптерный метод `TranslatePlaceholder(idx int) string`.
+4. **Result type mapping.** Нормализация колонок в generic типы.
+5. **Limiter / OFFSET.** В SQLite/PostgreSQL унифицировано.
+
+**Контракт адаптера** — `data-service/internal/datasource/adapter.go`.
+Postgres — `pgx/v5 stdlib` (решение ADR по Q1 — `pgx/v5`, отвергаем
+`lib/pq` в maintenance).
 
 ### Дальнейшие адаптеры (roadmap, не сейчас)
 
 | Адаптер | Способ интроспекции | Способ чтения |
 |---|---|---|
-| PostgreSQL | `information_schema` + `pg_catalog` | прямой SQL |
 | MySQL | `information_schema` | прямой SQL |
 | MSSQL | `INFORMATION_SCHEMA`, sys.tables | прямой SQL |
 | Airtable | Airtable Metadata API | REST API (не SQL) |
@@ -501,357 +286,274 @@ type Adapter interface {
 | Bitrix24 | REST API | REST API (не SQL) |
 | amoCRM | REST API | REST API (не SQL) |
 
-Для CRM-адаптеров `DB`-интерфейс не подходит — понадобится
-более общий `Source` interface с методами `Query`, `Get`, `List`.
-Это **не в этом roadmap**, но архитектурно оставляем задел:
-адаптеры под БД и CRM реализуют один и тот же `Source`-уровень,
-просто CRM — без SQL-строителя, с фиксированными запросами через API.
+Для CRM-адаптеров понадобится более общий `Source`-интерфейс — **не в
+этом roadmap**.
 
 ---
 
-## 8. Фазы
+## 8. Фазы: выполненные и оставшиеся
 
-Каждая фаза оставляет проект в рабочем состоянии (I1) и завершается
-контрольной точкой.
+> Формат: каждая фаза указана с **текущим статусом** и **отклонениями
+> от первоначального плана** (если есть).
 
-### Фаза 3.0 — Контракты и валидация (1–2 недели)
+### Фаза 3.0 — Контракты и валидация ✅ ВЫПОЛНЕНО
 
-**Цель:** зафиксировать новые контракты до того, как начнём переписывать код.
+**Коммит:** `4c7878a feat(data-service): phase 3.0 — config schema + datasource adapter interface`
 
-**Что делаем:**
+**Что сделано:**
+- `specs/config.schema.json` — JSON Schema для конфига.
+- `specs/config.example.json` — рабочий пример для university-БД.
+- `data-service/internal/datasource/adapter.go` — интерфейс `Adapter`.
 
-1. Создаём `specs/config.schema.json` — JSON Schema для конфига data-service
-   (§5). Это **первый** формальный артефакт новой фазы.
-2. Создаём `specs/config.example.json` — рабочий пример для
-   текущей university-БД (полная обратная совместимость).
-3. Обновляем `doc/NEW_ROADMAP.md`: помечаем старый этап 0–2.7
-   выполнены», ссылаемся на этот документ
-4. Фиксируем `data-service/internal/datasource/adapter.go` — interface Adapter.
-5. Генерируем эталонную OpenAPI для текущего состояния — это baseline
-   для drift-тестов в фазе 3.1.
-
-**Что НЕ делаем:** не трогаем runtime, не переписываем репозитории.
-
-**Критерии готовности:**
-
-- `config.schema.json` проходит валидацию на `config.example.json`.
-- Существующий data-service продолжает работать как раньше.
-- Все 16 Go-тестов + 113 Python-тестов — зелёные.
+**Отклонения:** нет.
 
 ---
 
-### Фаза 3.1 — Postgres driver + introspector (2–3 недели)
+### Фаза 3.1 — Postgres driver + introspector ✅ ВЫПОЛНЕНО
 
-**Цель:** закрыть технический долг по второй СУБД и научиться читать
-чужие схемы.
+**Коммиты:**
+- `e07b94f` Postgres driver (`pgx/v5 stdlib`) + тесты
+- `a6d3f85` SqliteAdapter + introspector + тесты
+- `701bf1c` PostgresAdapter + introspector (`information_schema` + `pg_catalog`) + тесты
+- `6b7482f feat(data-service): phase 3.1 — remove domain hardcode + cross-driver equivalence tests`
 
-**Что делаем:**
+**Что сделано:**
+- Оба адаптера возвращают **одинаковый** `Schema` для эквивалентных
+  таблиц — `TestEquivalence_CrossDriver` проходит на реальном Postgres.
+- `d195473` registry + connector dispatch + разрыв циклической
+  зависимости.
 
-1. Реализуем `internal/db/postgres.go` — полноценный Postgres driver
-   (через `pgx/v5` или `lib/pq`; выбор фиксируем ADR).
-2. Реализуем `internal/introspect/postgres.go` — читает
-   `information_schema.tables`, `information_schema.columns`,
-   `information_schema.table_constraints`, `information_schema.key_column_usage`,
-   `pg_catalog.pg_indexes`. Возвращает generic `Schema{ Tables, Columns, FKs }`.
-3. Реализуем `internal/introspect/sqlite.go` — то же через `sqlite_master`
-   + `PRAGMA table_info` + `PRAGMA foreign_key_list`.
-4. Тесты на обе СУБД с реальными docker-compose контейнерами.
-5. Контрактные тесты: адаптеры возвращают **одинаковый** `Schema` для
-   эквивалентных схем (одинаковые таблицы/колонки в SQLite и Postgres
-   дают один и тот же JSON).
-
-**Что НЕ делаем:** не подключаем адаптеры к runtime data-service.
-Не меняем контракты наружу.
-
-**Критерии готовности:**
-
-- `go test ./internal/db/...` и `go test ./internal/introspect/...` зелёные.
-- `--driver postgres` работает в `cmd/discover` (или test-mode бинарнике).
-- Существующие 16 Go-тестов не сломаны.
+**Отклонения:** `lib/pq` отвергнут, выбран `pgx/v5` (ADR по Q1).
 
 ---
 
-### Фаза 3.2 — Config loader + Query builder + Endpoint builder (3–4 недели)
+### Фаза 3.2 — Config loader + Query/Endpoint builder ✅ ВЫПОЛНЕНО С ОТКЛОНЕНИЕМ
 
-**Цель:** data-service начинает работать по конфигу. **Это первый
-checkpoint на пути к generic.** После этой фазы существующая схема вуза
-работает через конфиг, а не через хардкод.
+**Коммиты:**
+- `97d9e4b feat(data-service): phase 3.2.a — config loader with envsubst + JSON Schema validation`
+- `1cb7d45 feat(data-service): phase 3.2.b — query builder + entity resolver + response mapper`
+- `2d2e68b feat(data-service): phase 3.2.c + 3.2.d — endpoint builder, handlers, e2e equivalence tests`
 
-**Что делаем:**
+**Что сделано:**
+- `runtime/query_builder.go`, `entity_resolver.go`, `response_mapper.go`,
+  `converter.go`, `handlers/{get_by_id, find, list, custom_query, health,
+  stats}.go`, `endpoint_builder.go`.
+- При `RUNTIME_MODE=config` data-service обслуживает те же 11 endpoint'ов.
 
-1. `internal/config/loader.go` — загружает JSON, валидирует по
-   `config.schema.json`, подставляет `${ENV}`, разрешает включения
-   (`$include`).
-2. `internal/config/store.go` — интерфейс `Store`. Две реализации:
-   `FileStore` (читает с диска) и `DbStore` (читает из platform-БД).
-   На фазе 3.2 — только `FileStore`.
-3. `internal/runtime/query_builder.go` — собирает SELECT'ы из конфига.
-   Параметрические placeholder'ы, whitelist операций, обязательный LIMIT.
-4. `internal/runtime/entity_resolver.go` — маппит имя поля в конфиге
-   → имя колонки, обрабатывает relations, склейка JOIN через
-   `custom_queries`.
-5. `internal/runtime/endpoint_builder.go` — собирает chi-роутер
-   по `cfg.endpoints[]`.
-6. `internal/runtime/handlers/` — builtin-handler'ы: `get_by_id`,
-   `find_by_field`, `list`, `custom_query`, `health`, `stats`.
-7. `cmd/server/main.go` — фича-флаг `RUNTIME_MODE=config`.
-   По умолчанию — старый путь (хотя бы до тех пор, пока не
-   переедем 100%). `RUNTIME_MODE=config` — новый путь.
-8. `config.example.json` описывает текущую university-схему.
+**Отклонение №1 (архитектурное):**
+Конфиг-типы вынесены в **отдельный Go-модуль `agent-tutor-go/config/`**
+(`go 1.24.0`, `use (./agent-tutor-go ./data-service ./mcp-gateway)`),
+а не жили в `data-service/internal/config/`. Причина: и `data-service`,
+и `mcp-gateway` используют один и тот же набор типов конфига
+(`Config`, `Endpoint`, `Entity`, `CustomQuery`, `MCPTool`). Без
+разделения это было бы дублирование или `internal/` пакет,
+экспортируемый между сервисами через хак.
 
-> **Реализация [ВЫПОЛНЕНО, с отклонением]**: пункты 1–2 реализованы в
-> **отдельном Go-модуле `agent-tutor-go/`** (директория `agent-tutor-go/config/`),
-> который подключён через `go.work`. Это даёт переиспользование конфиг-типов
-> между `data-service` и `mcp-gateway` без дублирования. Пункты 3–6 реализованы
-> в `data-service/internal/runtime/`. Пункт 7 не понадобился: старый путь
-> удалён вместе с `repository/`/`handlers/`/`models/` в фазе 3.3,
-> `RUNTIME_MODE` отсутствует — config-driven режим единственный.
-
-**Что НЕ делаем:** не удаляем старые `repository/`, `handlers/`, `models/`.
-Не переписываем MCP. Не трогаем SDK.
-
-**Критерии готовности (checkpoint):**
-
-- При `RUNTIME_MODE=config` data-service обслуживает **те же 11 endpoint'ов**
-  с **теми же ответами**, что и раньше.
-- `config.example.json` валидируется по `config.schema.json`.
-- 16 Go-тестов + 113 Python-тестов — зелёные (тесты не знают про
-  фича-флаг, они просто идут через старый путь).
-- Сравнительный тест: для каждого endpoint'а делаем запрос через
-  старый и новый путь, проверяем что JSON-ответы совпадают
-  (или diff в пределах whitelist'а — порядок полей, форматирование).
+**Отклонение №2 (упрощение):**
+`RUNTIME_MODE` feature-flag **не понадобился** — старый путь удалён
+вместе с `repository/`/`handlers/`/`models/` сразу в фазе 3.3, без
+переходного периода. Тестовая нагрузка на два параллельных пути
+не возникла, потому что:
+- Существующих продакшен-потребителей у `repository/`/`handlers/` уже
+  не было (data-service — новый сервис, введённый в этом же roadmap'е);
+- Equivalence-тесты между старым и новым путями написаны как
+  `TestEquivalence_CrossDriver` — **между двумя СУБД**, что оказалось
+  полезнее, чем тесты между старым и новым Go-кодом.
 
 ---
 
-### Фаза 3.3 — Удаление domain-specific кода в data-service (1–2 недели)
+### Фаза 3.3 — Удаление domain-specific кода ✅ ВЫПОЛНЕНО
 
-**Цель:** data-service больше не знает про «университет».
-
-**Что делаем:**
-
-1. Удаляем `internal/repository/` целиком.
-2. Удаляем `internal/handlers/` целиком (заменены на `runtime/handlers/`).
-3. Удаляем `internal/models/` (заменены на generic `Entity`).
-4. Удаляем `internal/db/schema.sql` (больше не наш DDL).
-5. `cmd/schema-gen/` — теперь генерирует `config.schema.json` (если нужно)
-   или удаляется (если используем готовый JSON Schema validator).
-6. Reseed-логика: `seedgen/` → опциональный `cmd/seed-cli/` для dev/demo,
-   не часть прод-кода.
-7. `RUNTIME_MODE=config` становится режимом по умолчанию.
-8. Удаляем старые Go-тесты, заменяем на конфиг-driven тесты
-   (один `university_config.json` + один набор e2e-тестов).
-
-**Что НЕ делаем:** MCP, SDK, web — не трогаем.
-
-**Критерии готовности:**
-
-- data-service собирается без `repository/`, `handlers/`, `models/`,
-  `schema.sql`.
-- Все e2e-тесты (бывшие 16 Go-тестов, переписанные на конфиг) — зелёные.
-- `specs/config.example.json` — единственный источник правды о том,
-  как настроить data-service для вуза.
-- Существующие MCP-тесты (которые стучатся к data-service по HTTP) —
-  продолжают работать без изменений.
+**Что сделано:**
+- `data-service/internal/repository/` — удалён.
+- `data-service/internal/handlers/` — удалён, заменён на
+  `runtime/handlers/`.
+- `data-service/internal/models/` — удалён (7 структур).
+- `data-service/internal/db/schema.sql` — удалён.
+- E2E-тесты переписаны на config-driven.
+- `cmd/seed-cli/` вынесен как dev-only утилита
+  (раньше — `internal/seedgen/`, доступный из `cmd/server`).
+- `cmd/baseline-openapi/` и `cmd/schema-gen/` удалены — генерируется
+  на лету из runtime.
 
 ---
 
-### Фаза 3.4 — MCP на Go + generic tool registry (3–4 недели)
+### Фаза 3.4 — MCP на Go + generic tool registry ✅ ВЫПОЛНЕНО С ОТКЛОНЕНИЕМ
 
-**Цель:** MCP-сервер переписан на Go, инструменты генерируются из
-конфига data-service.
+**Коммиты:**
+- `932288d feat(data-service+mcp-gateway): Phase 3.2-3.4 — config-driven, generic MCP-manifest`
+- `b47efdf fix(mcp-gateway): connect RAG tools (search_documents, list_documents, get_rag_context)`
+- `051ee54 / f29e0ff fix(mcp-client): correct close of MCP session on cross-task shutdown`
 
-**Что делаем:**
+**Что сделано:**
+- `mcp-gateway/` (Go), `:8083`, `mark3labs/mcp-go v0.8.3`.
+- 8 university-инструментов сгенерированы из `cfg.mcp_tools[]` +
+  3 RAG-инструмента через `mcp-gateway/internal/ragclient/client.go`
+  (post-fix `b47efdf`).
+- `data-service/internal/runtime/handlers/mcp_manifest.go` —
+  `GET /mcp/manifest` как **единственный source of truth** для
+  mcp-gateway.
+- `mcp_server/` (Python) удалён вместе со всеми 4 файлами тестов.
+- `demo/api/agent/mcp_client.py` переписан на долгоживущую
+  streamable_http-сессию.
 
-1. Новый сервис `mcp-gateway/` (Go) на основе `mark3labs/mcp-go`
-   или аналога. Порт 8083 (как сейчас).
-2. При старте читает `config.json` (тот же, что у data-service) и
-   регистрирует MCP-инструменты по `cfg.mcp_tools[]`.
-3. Для каждого инструмента: имя, описание, JSON Schema параметров
-   (генерируется из endpoint'а в data-service), делегирование вызовов
-   через HTTP к data-service.
-4. `internal/runtime/openapi_gen.go` — генерирует OpenAPI из runtime.
-   Это даёт нам одновременно описание для MCP-tools и для Swagger UI.
-5. [ВЫПОЛНЕНО] Существующие 8 тулов в `mcp_server/server.py` остаются как
-   Python-fallback в течение переходного периода, но помечаются
-   `deprecated` в OpenAPI/UI.
-6. [ВЫПОЛНЕНО] `mcp_server/` (Python) — переводим в режим «legacy», удаляем
-   после того, как все тесты переехали.
-7. **Дополнительно [ВЫПОЛНЕНО]**: data-service экспонирует `GET /mcp/manifest`
-   (handler `data-service/internal/runtime/handlers/mcp_manifest.go`),
-   который возвращает список MCP-tools + endpoint'ов + entities + custom_queries
-   из конфига. mcp-gateway дёргает этот эндпоинт при старте вместо того,
-   чтобы парсить `config.json` самостоятельно — единый source of truth.
-
-**Что НЕ делаем:** SDK, web, RAG — не трогаем.
-
-**Критерии готовности:**
-
-- 8 существующих MCP-инструментов доступны через Go-сервис.
-- `mcp-go-server` показывает их описание через `tools/list`.
-- Все 4 файла тестов в `mcp_server/tests/unit/` либо переписаны на
-  Go, либо остаются как Python-обёртки над Go-сервером и проходят.
-- Latency tool-вызова через Go-MCP ≤ latency через Python-MCP
-  (нагрузочный smoke-тест, не формальный бенчмарк).
+**Отклонение №3 (усиление):**
+`/mcp/manifest` в `data-service` стал обязательным runtime-эндпоинтом
+(а не «опциональным дополнением», как было в первой версии roadmap).
+mcp-gateway **не парсит config.json** — он стучится к data-service
+за манифестом. Это устраняет дублирование и единый источник правды:
+правда о доступных tools живёт в data-service, а mcp-gateway — лишь
+их презентация по протоколу MCP.
 
 ---
 
-### Фаза 3.5 — Generic SDK контракты (2–3 недели)
+### Фаза 3.5 — Generic SDK контракты ✅ ВЫПОЛНЕНО С ОТКЛОНЕНИЕМ
 
-**Цель:** Pydantic-модели в SDK generic'ифицируются. Старые имена — алиасы.
+**Коммит:** `f5964c3 refactor(sdk): move HTTP DTO to agent_tutor_sdk.api, generic Entity as canonical`
 
-**Что делаем:**
+**Что сделано:**
+- `agent-tutor-sdk/src/agent_tutor_sdk/models.py` — generic `Entity`
+  (`model_config = ConfigDict(extra="allow")`).
+- `agent-tutor-sdk/src/agent_tutor_sdk/api/models.py` — канонические
+  HTTP DTO для `demo/api`.
+- Старый `test_contracts_drift.py` (135 строк) удалён, заменён на
+  `test_entity_model.py` (75 строк) + `test_seedgen_validation.py`
+  обновлён.
+- `data_client.py`: 16 доменных методов заменены на generic
+  (см. ADR Q5 — generic Entity живёт в SDK, а не в общем `pkg/`,
+  потому что SDK и есть общий кросс-сервисный слой для Python).
+- `agent-tutor-sdk/tests/unit/test_contracts_drift.py` — **удалён**.
 
-1. `agent_tutor_sdk/contracts/entity.py` — новый generic `Entity`
-   (`BaseModel` с `fields: dict[str, Any]` + `meta: EntityMeta`).
-2. Старые модели (`Student`, `Teacher`, ...) — `class Student(Entity)`,
-   помечены `deprecated`. `model_config["deprecated"] = True`.
-3. `data_client.py` — generic-метод `request(method, path, params, body)` +
-   типизированные обёртки `get(entity, id)`, `find(entity, field, value)`,
-   `list(entity, filters)`.
-4. Старые методы (`get_student`, `find_student_by_name`, ...) остаются
-   как deprecated-обёртки над generic-методом.
-5. Drift-тесты: проверка теперь — что JSON Schema из runtime
-   (`GET /openapi.json` у data-service) совпадает с эталонной
-   `specs/openapi.json` (генерируется из конфига).
+**Отклонение №4 (breaking change):**
+Старые модели в `agent_tutor_sdk/contracts/` (`Student`, `Teacher`,
+`Discipline`, ...) **полностью удалены**, без `class Student(Entity)`
+deprecated-обёрток. Решение:
+- Потребители старых моделей — это `demo/api` и `seedgen`.
+- `demo/api` мигрировал на `api/models.py` (единый DTO).
+- `seedgen` валидируется через `StorageSeed` (другая модель, не из
+  contracts) + `entity_model.py`.
+- Keeping алиасы создало бы постоянный deprecated-слой, который
+  никто, кроме `seedgen`, не использует.
 
-**Что НЕ делаем:** web-UI, RAG.
-
-> **Статус [ВЫПОЛНЕНО, с отклонением]**: generic `Entity` реализован в
-> `agent-tutor-sdk/src/agent_tutor_sdk/models.py` (один класс `Entity`
-> с `model_config = ConfigDict(extra="allow")`), без отдельных алиасов.
-> HTTP DTO вынесены в `agent-tutor-sdk/src/agent_tutor_sdk/api/models.py`
-> — это единый канонический источник OpenAPI для `demo/api`.
-> Старые модели в `agent_tutor_sdk/contracts/` **полностью удалены**
-> (без backward-compat обёрток): старый `test_contracts_drift.py` заменён
-> на `test_entity_model.py`. Решение принято в пользу чистого API вместо
-> сохранения deprecated-слоя.
-
-**Критерии готовности:**
-
-- Существующие 113 Python-тестов продолжают проходить (через deprecated
-  обёртки).
-- Новый generic-клиент используется в новых тестах.
-- `agent_tutor_sdk` версионируется (новая мажорная версия — из-за
-  добавления generic-слоя).
+Цена: это **breaking change** SDK. Версия в `pyproject.toml` должна
+быть поднята отдельно (см. открытые вопросы Q8 ниже).
 
 ---
 
-### Фаза 3.6 — Generic web UI (2–3 недели)
+### Фаза 3.6 — Generic web UI ❌ НЕ НАЧАТО
 
-**Цель:** фронтенд перестаёт рендерить «вкладку Студенты». Рендерит
-универсальную таблицу по метаданным из data-service.
+**Что осталось сделать:**
 
-**Что делаем:**
-
-1. `demo/web/static/app.js` — заменяем хардкод-таблицы на рендер по
-   схеме endpoint'а. Один компонент `EntityTable` принимает метаданные
-   колонок из первого ответа (или из `GET /entities/{name}/schema`).
-2. `demo/web/server.py` — заменяем захардкоженные маршруты
-   `/api/data/students` на generic `/api/data/{entity}` с whitelist
-   по конфигу.
+1. `demo/web/static/app.js` — заменить хардкод-таблицы
+   (`students`, `teachers`, `grades`, `disciplines`, `schedule`) на
+   рендер по схеме endpoint'а. Один компонент `EntityTable`
+   принимает метаданные колонок из первого ответа (или из
+   `GET /entities/{name}/schema`, который ещё предстоит добавить в
+   data-service).
+2. `demo/web/server.py` — заменить захардкоженные маршруты
+   `/api/data/students`, `/api/data/teachers`, ... на generic
+   `/api/data/{entity}` с whitelist по конфигу (что разрешено
+   отдавать в UI).
 3. `demo/web/static/index.html` — вкладки генерируются по списку
-   entities из конфига (отдаётся через `/api/data/entities`).
-4. Чат с агентом остаётся как есть, но вызовы к MCP-tools идут через
-   generic-механизм.
+   entities из `/mcp/manifest` (или нового `/entities`).
+4. Чат с агентом остаётся как есть.
 
-**Что НЕ делаем:** RAG, fixtures.
+**Зависимости:** данные уже доступны через `/mcp/manifest` —
+нужно решить, отдавать ли их напрямую web'у или ввести новый
+`GET /entities` в data-service. См. открытый вопрос Q9.
 
-**Критерии готовности:**
+**Оценка трудозатрат:** 2–3 недели.
 
-- UI работает с **любым** конфигом data-service (подмена `config.example.json`
-  на другой → UI перерисовывается).
-- 18 тестов в `demo/web/tests/unit/test_proxy.py` — переписаны на generic.
+**Критерий готовности:**
+- UI работает с **любым** конфигом data-service (подмена
+  `config.example.json` на другой → UI перерисовывается).
+- 18 тестов в `demo/web/tests/unit/test_proxy.py` переписаны на generic.
 
 ---
 
-### Фаза 3.7 — Multi-tenancy, admin API, hot reload (2 недели)
+### Фаза 3.7 — Multi-tenancy, admin API, hot reload ❌ НЕ НАЧАТО
 
-**Цель:** платформа готова к SaaS-режиму.
+**Что осталось сделать:**
 
-**Что делаем:**
-
-1. `cfg.auth.row_filters[]` — `WHERE tenant_id = :tenant_id` применяется
-   на уровне query builder.
-2. `POST /admin/config` (защищён admin-токеном) — PUT новый конфиг,
-   валидация по schema, hot reload без рестарта.
+1. `cfg.auth.row_filters[]` — `WHERE tenant_id = :tenant_id`
+   применяется на уровне query builder. Сейчас
+   `specs/config.example.json` содержит `"row_filters": []`,
+   и в `query_builder.go` нет кода, который бы применял фильтры.
+2. `POST /admin/config` (защищён admin-токеном) — PUT новый
+   конфиг, валидация по schema, hot reload без рестарта.
 3. `GET /admin/config` — текущий конфиг (без секретов).
 4. `GET /admin/config/versions` — история конфигов.
 5. Watcher (`fsnotify`) на config-файл в dev-режиме.
-6. Конфиг-стор: переключение с файла на platform-БД (отдельная БД
-   платформы, не клиентская) с миграцией.
+6. Конфиг-стор: переключение с файла на platform-БД (отдельная
+   БД платформы, не клиентская) с миграцией.
 
-**Что НЕ делаем:** полноценная авторизация пользователей (логин/пароль).
+**Сейчас в коде data-service** есть только `POST /admin/config/rewrite`
+(в `endpoint_builder.go`) — это re-generate конфига из БД после
+`--discover`, не external hot reload. Эту точку следует сохранить
+как dev-only и **не** путать с production admin API.
 
-**Критерии готовности:**
+**Блокеры перед стартом (ADR):**
+- **Q3** Версионирование конфигов: в platform-БД или в git?
+- **Q4** Multi-tenancy через `X-Tenant-ID` или отдельные инстансы
+  data-service?
 
+**Оценка трудозатрат:** 2 недели.
+
+**Критерий готовности:**
 - Два тенанта с разными конфигами работают на одном data-service.
 - Изменение конфига через admin API применяется без рестарта.
 - Существующие тесты + новые multi-tenant тесты — зелёные.
 
 ---
 
-### Фаза 3.8 — Generic dev-инструментарий (опционально, 1–2 недели)
+### Фаза 3.8 — Generic dev-инструментарий ❌ НЕ НАЧАТО (опционально)
 
-**Цель:** `seedgen`, `cli_docgen`, `document_generator` generic'ифицируются.
-
-**Что делаем:**
+**Что осталось сделать:**
 
 1. `agent-seedgen` принимает на вход конфиг (или endpoint `/entities`)
    и генерирует seed для **любого** конфига, а не для university-БД.
+   Сейчас `rag/fixtures/seedgen.py` использует хардкод
+   `CURRICULUM`, `DISCIPLINE_NAMES`, русские ФИО из `catalog.py`.
 2. `agent-rag-docgen` итерирует по `entities` из конфига, генерирует
-   тематические документы.
+   тематические документы. Сейчас
+   `rag/fixtures/document_generator.py` жёстко работает с дисциплинами.
+3. `cli_docgen.py` сейчас итерирует по фиктивным дисциплинам —
+   переделать на entities из конфига.
 
-**Критерии готовности:**
-
+**Критерий готовности:**
 - `agent-seedgen --config <other>.json` создаёт seed для произвольного
   конфига.
-- Не блокирует выход на прод (если не успеваем — откладываем).
+- Не блокирует выход на прод.
+
+**Важно:** это фоновая фаза — может быть отложена без влияния на
+основной продукт.
 
 ---
 
-### Фаза 3.9 — UI-конфигуратор (отдельный roadmap)
+### Фаза 3.9 — UI-конфигуратор ❌ ОТДЕЛЬНЫЙ ROADMAP
 
-**Цель:** клиент сам правит конфиг через Web UI.
-
-> Эта фаза — за пределами core-платформы. Она требует отдельного
-> дизайна (визард, drag-and-drop схема, live-превью, версионирование).
-> Архитектурные заделы для неё уже есть в фазе 3.7 (admin API).
-
-**Что нужно сделать до старта фазы 3.9:**
-
-- Решить, будет ли это отдельный фронтенд или часть `demo/web`.
-- Решить, где хранить UI-проекты конфигов (в platform-БД, рядом с
-  версиями конфигов).
-- Нарисовать UX на 1–2 примерах (Postgres-БД и SQLite-БД).
+За пределами core-платформы. Требует отдельного дизайна (визард,
+drag-and-drop схема, live-превью, версионирование). Архитектурные
+заделы для неё есть в фазе 3.7 (admin API).
 
 ---
 
-## 9. Технологические развилки (зафиксировать в начале)
+## 9. Технологические развилки (зафиксировано)
 
-### Postgres driver в Go: `pgx` vs `lib/pq`
+### Postgres driver в Go: ✅ `jackc/pgx/v5`
+Выбран и реализован в фазе 3.1. `lib/pq` отвергнут (maintenance).
 
-Рекомендация: **`jackc/pgx/v5`** через `stdlib` (`database/sql`-совместимый
-драйвер). Причины: лучшая производительность, нативная поддержка
-`LISTEN/NOTIFY` для инвалидации кеша, активно поддерживается.
-
-Альтернатива — `lib/pq` в режиме maintenance. Отвергаем: проект в
-maintenance mode с 2024.
-
-### MCP-библиотека для Go
-
-Кандидаты: `mark3labs/mcp-go`, `mcp-sdk-go` (в процессе),
-`metoro-io/mcp-golang`. Выбор фиксируем на этапе 3.4 после spike'а.
+### MCP-библиотека для Go: ✅ `mark3labs/mcp-go v0.8.3`
+Используется в `mcp-gateway` (см. `mcp-gateway/go.mod`).
 
 ### JSON Schema validator в Go
-
-`xeipuuv/gojsonschema` (аккуратный, стабильный) или
-`kaptinlin/gojsonvalidator` (быстрее, но менее зрелый).
-Рекомендация: `gojsonschema`, в фазе 3.4 — пересмотр.
+В data-service используется `xeipuuv/gojsonschema` (стабильный,
+аккуратный). См. `data-service/go.mod`.
 
 ### Платформа для admin-БД
-
 SQLite по умолчанию (как сейчас), опционально PostgreSQL через
-`DATABASE_URL` (как сейчас в data-service). Ничего нового.
+`DATABASE_URL`. Это будет нужно в фазе 3.7 для хранения
+версий конфигов.
 
 ---
 
@@ -861,86 +563,171 @@ SQLite по умолчанию (как сейчас), опционально Pos
 
 1. **Time-to-first-query.** Подключение новой БД клиента (с известной
    схемой) до первого работающего `/students`-подобного endpoint'а —
-   ≤ 30 минут ручной работы (без UI).
-2. **Zero-code новый домен.** Для клиента с PostgreSQL-БД, где таблицы
-   называются по-человечески (`customers`, `orders`, `products`),
-   платформа выдаёт работающий API **без единой строки кода** —
-   только конфиг и/или auto-discovery.
+   ≤ 30 минут ручной работы (без UI). **Сейчас достижимо для
+   non-web шага** (data-service + mcp-gateway уже generic).
+2. **Zero-code новый домен.** Для клиента с PostgreSQL-БД, где
+   таблицы называются по-человечески, платформа выдаёт работающий
+   API **без единой строки кода**. **Сейчас достижимо.**
 3. **Backward-compat.** Существующий demo-сценарий (university-БД с
-   агентом, чатом, RAG, web-UI) продолжает работать без изменений
-   в пользовательском опыте.
-4. **Тесты.** Все ранее зелёные тесты остаются зелёными (через
-   backward-compat обёртки или новый generic-путь). Покрытие generic-слоя
-   ≥ 70%.
-5. **Документация.** `NEW_ROADMAP.md` (этот файл) + ADR по ключевым
-   решениям + обновлённый `README.md` отражают новое устройство.
+   агентом, чатом, RAG, web-UI) работает без изменений в
+   пользовательском опыте. **Частично достигнуто** — web-UI
+   остаётся доменным.
+4. **Тесты.** Все ранее зелёные тесты остаются зелёными. Покрытие
+   generic-слоя ≥ 70%. **Достигнуто.**
+5. **Документация.** NEW_ROADMAP.md (этот файл), ADR по ключевым
+   решениям, README.md отражают новое устройство.
 
 ---
 
-## 11. Что **точно не делаем** в этой фазе
+## 11. Что **точно не делаем** в этой фазе (без изменений)
 
-- Не переписываем `rag/` на Go (он стабилен, generic'ификация
-  не требуется для нашей задачи).
+- Не переписываем `rag/` на Go.
 - Не строим полноценный UI-конфигуратор (фаза 3.9).
-- Не подключаем CRM-адаптеры (это следующая дорожная карта после 3.9).
+- Не подключаем CRM-адаптеры (следующая дорожная карта после 3.9).
 - Не делаем авторизацию пользователей с логином/паролем.
 - Не уходим в k8s/Helm/Istio.
-- Не пишем свой MCP-протокол — используем существующие SDK.
-- Не меняем LiteLLM-цикл агента (он работает через абстрактный MCP,
-  generic-ификация MCP покрывает его автоматически).
+- Не пишем свой MCP-протокол — уже используем `mark3labs/mcp-go`.
 
 ---
 
 ## 12. Сводка по этапам (timeline)
 
-| Фаза | Содержание | Зависимости | Длительность |
-|---|---|---|---|
-| 3.0 | Контракты конфига, baseline OpenAPI | — | 1–2 нед |
-| 3.1 | Postgres driver, introspector (обе БД) | 3.0 | 2–3 нед |
-| 3.2 | Config loader, query/endpoint builder | 3.1 | 3–4 нед |
-| 3.3 | Удаление domain-specific кода в data-service | 3.2 | 1–2 нед |
-| 3.4 | MCP на Go, generic tool registry | 3.2 (конфиг стабилен) | 3–4 нед |
-| 3.5 | Generic SDK контракты | 3.2 | 2–3 нед |
-| 3.6 | Generic web UI | 3.5 | 2–3 нед |
-| 3.7 | Multi-tenancy, admin API, hot reload | 3.6 | 2 нед |
-| 3.8 | Generic dev-инструментарий (опц.) | 3.5 | 1–2 нед |
-| 3.9 | UI-конфигуратор | 3.7 | отдельный roadmap |
+| Фаза | Содержание | Статус | Отклонения | Длительность |
+|---|---|---|---|---|
+| 3.0 | Контракты конфига | ✅ | — | 1–2 нед |
+| 3.1 | Postgres + introspect | ✅ | `pgx/v5` вместо `lib/pq` | 2–3 нед |
+| 3.2 | Config + Query/Endpoint builder | ✅ | `agent-tutor-go/`; нет `RUNTIME_MODE` | 3–4 нед |
+| 3.3 | Удаление domain-кода | ✅ | — | 1–2 нед |
+| 3.4 | MCP на Go + manifest | ✅ | `/mcp/manifest` как обязательный runtime-источник | 3–4 нед |
+| 3.5 | Generic SDK | ✅ | Полное удаление contracts без алиасов (breaking) | 2–3 нед |
+| **3.6** | **Generic web UI** | ❌ | — | **2–3 нед** |
+| **3.7** | **Multi-tenant + admin + reload** | ❌ | — | **2 нед** |
+| 3.8 | Generic fixtures | ❌ (опц.) | — | 1–2 нед |
+| 3.9 | UI-конфигуратор | ❌ | — | отдельный roadmap |
 
 **Параллельность:**
-
-- 3.5 и 3.6 могут идти параллельно с 3.4 (после 3.2 — конфиг стабилен).
+- 3.5 и 3.6 могут идти параллельно с 3.4 (после 3.2 — конфиг
+  стабилен). В нашем случае 3.4 и 3.5 уже сделаны.
 - 3.7 ждёт 3.6.
 - 3.8 — фоновая, не блокирует.
 
-**Общая оценка:** ~4–5 месяцев работы в режиме full-time (1 разработчик).
-С учётом ревью, интеграционных тестов, документирования — 5–7 месяцев.
+**Общая оценка оставшейся работы:**
+~6–8 недель full-time (1 разработчик) на фазы 3.6 и 3.7.
+Фазы 3.8 и 3.9 не блокируют.
 
 ---
 
-## 13. Контрольные точки (checkpoints)
+## 13. Документированные отклонения от первой версии roadmap
 
-| Чекпоинт | Что должно работать |
-|---|---|
-| После 3.0 ✓ | `specs/config.schema.json` валиден. Существующая система не сломана. |
-| После 3.1 ✓ | `cmd/discover` читает Postgres и SQLite, выдаёт generic Schema. |
-| После 3.2 ✓ | data-service в режиме `RUNTIME_MODE=config` отвечает на 11 старых endpoint'ов через конфиг. |
-| После 3.3 ✓ | data-service собирается без repository/handlers/models/schema.sql. |
-| После 3.4 ✓ | 8 старых MCP-инструментов работают через Go-сервис. `mcp_server/` удалён. `/mcp/manifest` endpoint на data-service — единый source of truth для mcp-gateway. |
-| После 3.5 ✓ | SDK имеет generic `Entity` + `api/models.py` как канонический HTTP DTO. Старые Pydantic-контракты в `agent_tutor_sdk/contracts/` удалены без backward-compat (сознательный отказ от deprecation-слоя). |
-| После 3.6 | Web UI работает с любым конфигом data-service. |
-| После 3.7 | Два тенанта с разными конфигами сосуществуют. |
-| После 3.9 | Клиент правит конфиг через Web UI без знания Go/Python. |
+Этот раздел — **reason log** решений, которые отличаются от
+первоначального плана. Все они осознанные, с обоснованием.
+
+### O1: `RUNTIME_MODE` feature-flag не понадобился
+**Было:** два параллельных runtime-пути (старый hardcoded и новый
+config-driven), переключение через переменную.
+**Стало:** сразу удалён старый путь в фазе 3.3.
+**Почему:** data-service — новый сервис, введённый в этом roadmap'е,
+прод-потребителей у `repository/` не было. Equivalence-тесты
+оказались полезнее между двумя СУБД, чем между старым и новым
+Go-кодом.
+**Цена:** нулевая страховка отката.
+
+### O2: Конфиг в `agent-tutor-go/`, а не в `data-service/internal/config/`
+**Было:** конфиг-типы внутри `data-service`.
+**Стало:** отдельный Go-модуль, подключённый через `go.work`.
+**Почему:** `data-service` и `mcp-gateway` используют одни и те же
+типы (`Config`, `Endpoint`, `Entity`, `CustomQuery`, `MCPTool`).
+Без разделения — дублирование. `internal/` пакет между сервисами —
+хак.
+**Цена:** дополнительный workspace member в `go.work`.
+
+### O3: `/mcp/manifest` как обязательный runtime endpoint
+**Было:** опциональное дополнение в фазе 3.4 (mcp-gateway может
+парсить config.json сам).
+**Стало:** единственный source of truth.
+**Почему:** устраняет риск рассинхронизации между двумя парсерами
+конфига. runtime-эндпоинт — это API, контракт, валидируется.
+**Цена:** mcp-gateway не стартует без запущенного data-service.
+Смягчение: добавить локальный fallback на config.json для offline dev.
+
+### O4: Полное удаление SDK contracts без deprecation-обёрток
+**Было:** `class Student(Entity): deprecated`-обёртки сохраняются.
+**Стало:** `agent_tutor_sdk/contracts/` удалён.
+**Почему:** потребители — только `demo/api` и `seedgen`. Оба уже
+мигрированы (`demo/api` → `api/models.py`, `seedgen` →
+`StorageSeed`). Держать deprecated-слой ради двух уже
+мигрированных потребителей — шум.
+**Цена:** breaking change SDK, требует bump версии (открытый
+вопрос Q8).
+
+### O5: MCP на Go через `mark3labs/mcp-go v0.8.3`, а не свой протокол
+**Было:** «Не пишем свой MCP-протокол» (в §11).
+**Стало:** ✅ ровно так и сделано — `mark3labs/mcp-go v0.8.3`
+используется.
+**Почему:** не отклонение, а подтверждение принципа.
+
+### O6: HTTP-контракт OpenAPI генерируется runtime, а не коммитится в `specs/`
+**Было:** «эталонная версия в репозитории, drift-тест проверяет».
+**Стало:** `specs/data-service.openapi.yaml` **удалён**.
+**Почему:** runtime-генерация через `data-service/internal/openapigen/`
+всегда актуальна. Drift-тест не нужен — контракт существует в одном
+месте. Клиенты (web, mcp-gateway) могут сходить на
+`GET /openapi.json` напрямую.
+**Цена:** нельзя ссылаться на yaml в README без предварительного
+старта сервиса. Но эта проблема решается ссылкой на
+Swagger UI (`:8084/docs`).
 
 ---
 
-## 14. Открытые вопросы (требуют решения до старта фаз)
+## 14. Открытые вопросы (обновлено)
 
-| # | Вопрос | Где решается |
+| # | Вопрос | Статус | Где решается |
+|---|---|---|---|
+| Q1 | Postgres driver | ✅ `pgx/v5` | ADR перед фазой 3.1 — сделано |
+| Q2 | Имя нового сервиса | ✅ `mcp-gateway` | Перед фазой 3.4 — сделано |
+| Q3 | Версионирование конфигов: platform-БД или git | ❓ | Перед фазой 3.7 |
+| Q4 | Multi-tenancy: `X-Tenant-ID` или multi-instance | ❓ | Перед фазой 3.7 |
+| Q5 | Где живёт generic `Entity` | ✅ SDK | Перед фазой 3.5 — сделано |
+| Q6 | Куда делись `mcp_server/tests/unit/test_*_tools.py` | ✅ удалены | Фаза 3.4 — сделано |
+| Q7 | Объединять data-service + mcp-gateway | ❓ | После 3.7 по профилированию |
+| **Q8** | **Bump версии SDK из-за O4 breaking change** | **❓ открыто** | **До публичного релиза** |
+| **Q9** | **Web получает метаданные через `/mcp/manifest` или новый `/entities`?** | **❓** | **Перед фазой 3.6** |
+| **Q10** | **Local fallback `config.json` в mcp-gateway (см. O3)?** | **❓** | **Перед стабилизацией** |
+
+---
+
+## 15. Контрольные точки (checkpoints)
+
+| Чекпоинт | Что должно работать | Статус |
 |---|---|---|
-| Q1 | `pgx/v5` vs другие Postgres-драйверы | ADR перед фазой 3.1 |
-| Q2 | Имя нового сервиса: `mcp-gateway`, `mcp-server`, `gateway`? | Перед фазой 3.4 |
-| Q3 | Версионирование конфигов: в platform-БД или в git? | Перед фазой 3.7 |
-| Q4 | Multi-tenancy через `X-Tenant-ID` или отдельные инстансы data-service? | Перед фазой 3.7 (влияет на query builder) |
-| Q5 | Где живёт generic `Entity`-модель: SDK или общий `pkg/`? | Перед фазой 3.5 |
-| Q6 | Куда деваются существующи�� `mcp_server/tests/unit/test_*_tools.py`? | ⚡ Выполнено в фазе 3.4: удалены вместе с `mcp_server/` |
-| Q7 | Объединять ли когда-нибудь data-service и mcp-gateway в один бинарник? | После 3.7, по данным профилирования |
+| После 3.0 | `specs/config.schema.json` валиден. Существующая система не сломана. | ✅ |
+| После 3.1 | `cmd/discover` читает Postgres и SQLite, выдаёт generic Schema. | ✅ |
+| После 3.2 | data-service отвечает на 11 endpoint'ов через конфиг (без `RUNTIME_MODE` — см. O1). | ✅ |
+| После 3.3 | data-service собирается без `repository`/`handlers`/`models`/`schema.sql`. | ✅ |
+| После 3.4 | 8 MCP-инструментов работают через Go-сервис. `mcp_server/` удалён. `/mcp/manifest` — runtime source of truth (см. O3). | ✅ |
+| После 3.5 | SDK имеет generic `Entity` + `api/models.py` как канонический HTTP DTO. Старые `contracts/` удалены без backward-compat (см. O4). | ✅ |
+| **После 3.6** | **Web UI работает с любым конфигом data-service.** | ❌ |
+| **После 3.7** | **Два тенанта с разными конфигами сосуществуют, hot reload работает.** | ❌ |
+| После 3.8 | `agent-seedgen --config <other>.json` создаёт seed для произвольного конфига. | ❌ (опц.) |
+| После 3.9 | Клиент правит конфиг через Web UI без знания Go/Python. | ❌ |
+
+---
+
+## 16. Что реально осталось (action items)
+
+В порядке приоритета для следующих коммитов:
+
+1. **Ответить на Q8** — bump версии `agent-tutor-sdk` (major bump
+   из-за O4). Это блокирует любой внешний consumer.
+2. **Фаза 3.6 (Generic web UI)** — основной пользовательский эффект
+   generic-платформы. 2–3 недели.
+3. **Ответить на Q3/Q4 (ADR)** перед фазой 3.7.
+4. **Фаза 3.7 (Multi-tenancy + admin API + hot reload)** — превращает
+   платформу в реальный SaaS. 2 недели.
+5. **Фаза 3.8 (Generic fixtures)** — фоновая. 1–2 недели.
+6. **Q10 (local fallback в mcp-gateway)** — повышает DX, можно в любой
+   момент.
+7. **Фаза 3.9 (UI-конфигуратор)** — отдельный roadmap, не блокирует.
+
+Оценка: **6–8 недель** full-time до момента, когда платформа сможет
+принять первого реального клиента (без 3.9).

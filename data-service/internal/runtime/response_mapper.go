@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -138,6 +139,12 @@ func coerceValue(val, typ string) any {
 	case "bool":
 		if b, err := strconv.ParseBool(val); err == nil {
 			return b
+		}
+		return val
+	case "json":
+		var js any
+		if err := json.Unmarshal([]byte(val), &js); err == nil {
+			return js
 		}
 		return val
 	default:

@@ -399,7 +399,7 @@
       "description": "Оценки студента"
     },
     "teacher_schedule": {
-      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json FROM schedule s LEFT JOIN groups g ON g.id = s.group_id",
+      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id",
       "params": [],
       "result_mapping": {
         "id": {
@@ -421,7 +421,7 @@
           "nullable": true
         },
         "lessons": {
-          "type": "string",
+          "type": "json",
           "description": "JSON-массив занятий"
         }
       },
@@ -429,7 +429,7 @@
       "description": "Расписание преподавателя (фильтрация по teacher_name и day — на уровне Go)"
     },
     "group_schedule": {
-      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json FROM schedule s LEFT JOIN groups g ON g.id = s.group_id WHERE s.group_id = ?",
+      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id WHERE s.group_id = ?",
       "params": [
         "id"
       ],
@@ -452,14 +452,14 @@
           "nullable": true
         },
         "lessons": {
-          "type": "string"
+          "type": "json"
         }
       },
       "max_rows": 1000,
       "description": "Расписание группы"
     },
     "all_schedule": {
-      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json FROM schedule s LEFT JOIN groups g ON g.id = s.group_id ORDER BY g.name, s.day",
+      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id ORDER BY g.name, s.day",
       "params": [],
       "result_mapping": {
         "id": {
@@ -481,7 +481,7 @@
           "nullable": true
         },
         "lessons": {
-          "type": "string"
+          "type": "json"
         }
       },
       "max_rows": 5000,
