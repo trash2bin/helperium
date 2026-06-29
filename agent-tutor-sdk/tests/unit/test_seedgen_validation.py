@@ -1,13 +1,11 @@
-"""Тесты: seed.json (генерируется Python) валиден против Pydantic-контрактов.
+"""Тесты: seed.json (генерируется Python) валиден по структуре и FK-инвариантам.
 
 Архитектурное решение (см. AGENTS.md):
 - Go data-service = source of truth для структуры БД
-- agent_tutor_sdk.contracts = Pydantic-модели (написаны вручную)
-- rag/fixtures/seedgen.py = генерирует seed.json, использует faker + те же
-  доменные имена что и в Pydantic
+- rag/fixtures/seedgen.py = генерирует seed.json, использует faker
 
-Тесты в этом файле проверяют что seed.json соответствует той же доменной модели,
-что и API (через Pydantic-контракты).
+Тесты в этом файле проверяют что seed.json имеет корректную структуру,
+уникальные id и FK-целостность между коллекциями.
 
 Запуск:
     uv run pytest agent-tutor-sdk/tests/unit/test_seedgen_validation.py -v
@@ -141,14 +139,11 @@ def test_seed_ids_are_unique(collection):
     )
 
 
-# === Главный тест: seed.json валиден через Pydantic-контракты ===
+# === Главный тест: структура seed.json ===
 #
-# Идея: если seed.json парсится через Pydantic-модели из agent_tutor_sdk.contracts
-# (которые синхронизированы с JSON Schema), значит он соответствует доменной модели.
-#
-# Но! seed.json пишется в STORAGE-формате (group_id FK, name строкой), а Pydantic
-# модели описывают API-формат (group-объект, full_name). Поэтому прямой парсинг
-# невозможен — нам нужны отдельные Storage-модели.
+# seed.json пишется в STORAGE-формате (group_id FK, name строкой).
+# Тест ниже проверяет топ-уровневую структуру, количество записей
+# и FK-целостность — без Pydantic-моделей.
 
 def test_seedgen_dry_run_produces_valid_structure():
     """agent-seedgen в --out режиме выдаёт корректную структуру.

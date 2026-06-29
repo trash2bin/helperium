@@ -1,8 +1,8 @@
 """Storage-shape Pydantic-модели для seed.json.
 
 Эти модели описывают НОРМАЛИЗОВАННУЮ форму данных, которая пишется в seed.json
-и читается data-service --seed. Это НЕ API-форма — для API есть модели в
-agent_tutor_sdk.contracts (group-объект через JOIN, full_name и т.д.).
+и читается data-service --seed. Это НЕ API-форма — API возвращает
+Entity (generic-запись поля → значение через data-service).
 
 Разница между storage и API формами (намеренная):
 - Student.storage: {id, name, group_id, course}     // FK, нормализовано
