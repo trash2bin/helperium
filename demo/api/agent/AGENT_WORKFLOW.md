@@ -48,11 +48,11 @@ def _build_messages_raw(self, user_message: str, session_id: SessionId) -> list[
 
 | Параметр | Значение | Описание |
 |----------|----------|----------|
+| `agent_max_turn_tokens` | **8000** | Максимум токенов за turn — если превышено, срабатывает fallback (trim + retry) |
 | `agent_max_iterations` | **5** | Максимальное количество итераций модели за один запрос |
-| `agent_max_empty_rounds` | **3** | Сколько раз модель может ответить "ничего" до остановки, проще говоря провести цепочку размышлений |
 | `ollama_model` | `carstenuhlig/omnicoder-9b:latest` | Используемая модель |
 | `think_mode` | `True` | Включено ли reasoning (рассуждения) |
-| `agent_temperature` | `0.5` | Температура модели |
+| `agent_max_empty_rounds` | **3** | Сколько раз модель может ответить "ничего" до остановки (цепочка размышлений без действий) |
 
 **Файл:** [`settings.py`](../../settings.py) → подхватывается в конструкторе `LLMAgent`:
 
@@ -307,18 +307,34 @@ async def _handle_tool_calls(
             id=tool_call_id, name=name, arguments=arguments
         ))
         
-        # === ВЫЗОВ MCP ИНСТРУМЕНТА ===
-        tool_result: str = await self.mcp_client.call_tool(session, name, arguments)
-        backlog.tool_result(session_id, turn_id, iteration, name, tool_result, duration_ms=0)
-        
+        # === ВЫЗОВ MCP ИНСТРУМЕНТА (try/except — per-tool error recovery) ===
+        try:
+            tool_result: ToolResult = await self.mcp_client.call_tool(session, name, arguments)
+        except Exception as exc:
+            tool_result = ToolResult(
+                tool_content=json.dumps({"error": True, "message": str(exc)}),
+                reminder=f"Инструмент '{name}' завершился ошибкой: {exc}. Попробуй другой инструмент или ответь пользователю, что сервис временно недоступен.",
+                ok=False,
+                error=str(exc),
+            )
+
+        backlog.tool_result(session_id, turn_id, iteration, name, tool_result.tool_content, duration_ms=0)
+
         yield AgentEvent("tool_result", ToolResultEventData(
-            id=tool_call_id, name=name, result=tool_result
+            id=tool_call_id, name=name, result=tool_result.tool_content
         ))
-        
+
+        # === Post-tool reminder (если есть) ===
+        if tool_result.reminder:
+            messages.append({
+                "role": "system",
+                "content": tool_result.reminder
+            })
+
         # === СОХРАНЯЕМ РЕЗУЛЬТАТ В ИСТОРИЮ ДЛЯ МОДЕЛИ ===
         tool_message: dict[str, Any] = {
             "role": "tool",
-            "content": tool_result,
+            "content": tool_result.tool_content,
             "tool_call_id": tool_call_id,
             "name": name,
         }

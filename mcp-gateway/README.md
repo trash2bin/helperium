@@ -132,8 +132,10 @@ mcp-gateway/
 ├── internal/
 │   ├── httpclient/
 │   │   └── client.go           # HTTP-клиент к data-service: FetchConfig + Call
+│   ├── ragclient/
+│   │   └── client.go           # HTTP-клиент к RAG: SearchDocuments, ListDocuments, GetRagContext
 │   └── tools/
-│       └── tools.go            # авто-генерация и регистрация MCP-инструментов
+│       └── tools.go            # авто-генерация data-тулов + статические RAG-тулы
 ├── Dockerfile
 ├── go.mod / go.sum
 └── README.md
@@ -218,19 +220,32 @@ MCP_DEV=true DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 |---|---|---|
 | `DATA_SERVICE_URL` | `http://127.0.0.1:8084` | Базовый URL data-service (откуда fetch-ится `/mcp/manifest`) |
 | `DATA_SERVICE_TIMEOUT` | `30` | Таймаут HTTP-запроса в секундах |
+| `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | Базовый URL RAG-сервиса (для `search_documents` и др.) |
+| `RAG_HTTP_TIMEOUT` | `30` | Таймаут HTTP-запроса к RAG в секундах |
 | `MCP_PORT` | `8083` | Порт HTTP |
 | `MCP_DEV` | — | Включает debug endpoints + логирование |
 
 ## Ограничения
 
 - **No JOIN endpoints** — для объединения таблиц (`customer → orders`) нужны `custom_queries` в конфиге
-- **No RAG** — RAG-инструменты пока не портированы на Go (используйте `demo/api/agent/mcp_client.py` для прямого доступа к rag:8082)
 - **Только SELECT** — data-service read-only по дизайну
 - **Нет фильтрации** — `find` только по одному полю (`search_field`)
 - **Одна БД на инстанс** — multi-tenancy в фазе 3.7
 
+## RAG-инструменты (статическая регистрация)
+
+Три RAG-тула регистрируются всегда, независимо от конфига data-service:
+
+| Инструмент | RAG-эндпоинт | Описание |
+|---|---|---|
+| `search_documents` | `POST /search` | Семантический поиск по загруженным документам (лекции, методички) |
+| `list_documents` | `POST /documents/list` | Список документов в базе знаний с фильтрацией по дисциплине |
+| `get_rag_context` | `POST /context` | Готовый контекст из релевантных фрагментов для подстановки в ответ LLM |
+
+Если RAG-сервис недоступен (проверяется через `GET /health` при регистрации),
+вызов тула возвращает осмысленную ошибку вместо краша шлюза.
+
 ## Совместимость с Python mcp_server (legacy — удалён)
 
 Python-сервер `mcp_server/` был заменён на `mcp-gateway` (Go) и полностью удалён.
-RAG-инструменты (`tools_rag.py`) пока не портированы; при необходимости агент
-обращается к `rag:8082` напрямую через `demo/api/agent/mcp_client.py`.
+Все инструменты (data-service + RAG) теперь обслуживаются Go-шлюзом.

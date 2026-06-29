@@ -249,10 +249,14 @@ agent-tutor/
 │   ├── Dockerfile
 │   └── README.md              # config-driven архитектура, --discover, примеры
 ├── mcp-gateway/                # MCP-сервер (Go, HTTP :8083)
-│   ├── server.py              # FastMCP-роутер + /health + uvicorn (:8083)
-│   ├── tools_via_http.py      # тонкие async-обёртки над AsyncDataServiceClient
-│   ├── tools_rag.py           # обёртки над RagClient (list_documents, search_documents, ...)
-│   └── tests/unit/            # 4 файла: discipline/grade/student/teacher_tools через respx-моки
+│   ├── cmd/main.go            # точка входа: SSE + JSON-RPC + debug
+│   ├── internal/
+│   │   ├── httpclient/        # HTTP-клиент к data-service
+│   │   ├── ragclient/         # HTTP-клиент к RAG (search/list/context)
+│   │   └── tools/             # авто-генерация data-тулов + статические RAG-тулы
+│   ├── Dockerfile
+│   ├── go.mod / go.sum
+│   └── README.md              # config-driven MCP, auto-generated tools, RAG
 ├── rag/                       # RAG HTTP-сервис (FastAPI, :8082)
 │   ├── service.py             # FastAPI app: /health /search /context /documents/*, ServiceState singleton
 │   ├── db.py                  # RagDB singleton над sqlite3 (WAL, check_same_thread=False)
@@ -327,15 +331,13 @@ agent-tutor/
 
 | Инструмент | Что делает |
 |---|---|
-| `get_student(student_id)` | Карточка студента |
+| `get_student(id)` | Карточка студента |
 | `find_student_by_name(name)` | Поиск студента по ФИО |
 | `get_schedule(group_id, day?)` | Расписание группы, опционально по дню |
-| `get_disciplines(student_id)` | Дисциплины студента через его группу |
-| `get_materials(discipline_id, type?)` | Список файлов по дисциплине |
-| `search_materials(query, discipline_id?)` | Поиск по содержимому материалов |
-| `get_student_grades(student_id, discipline_id?)` | Оценки студента, опционально по одной дисциплине |
+| `get_disciplines(id)` | Дисциплины студента через его группу |
+| `get_student_grades(id, discipline_id?)` | Оценки студента, опционально по одной дисциплине |
 | `get_teacher_by_name(name)` | Поиск преподавателя |
-| `get_teacher_schedule(teacher_name, day?)` | Расписание преподавателя |
+| `get_teacher_schedule(name, day?)` | Расписание преподавателя |
 | `list_documents(discipline_id?)` | Список документов в RAG-индексе |
 | `search_documents(query, discipline_id?, limit?)` | Поиск релевантных фрагментов документов |
 | `get_rag_context(query, discipline_id?, limit?)` | Готовый контекст для ответа по документам |
