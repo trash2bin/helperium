@@ -1,7 +1,10 @@
 import pytest
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
+
 from mcp import ClientSession
+
 from demo.api.agent.mcp_client import MCPClient
 
 
@@ -65,3 +68,55 @@ async def test_mcp_client_call_tool_error():
     data = json.loads(response)
     assert data["ok"] is False
     assert data["error"] == "Error message"
+
+
+@pytest.mark.asyncio
+async def test_close_schedules_background_task_when_called_from_different_task():
+    """cancel-scope регрессия: close() из чужой task должен планировать
+    фоновое закрытие через create_task, а не вызывать __aexit__ напрямую.
+    """
+    client = MCPClient()
+
+    opened = AsyncMock()
+    opened.__aexit__ = AsyncMock(return_value=None)
+    streams = AsyncMock()
+    streams.__aexit__ = AsyncMock(return_value=None)
+
+    client._session = MagicMock()
+    client._session_cm = opened
+    client._streams_cm = streams
+    # owner_task — «та, что открыла» (симулируем через MagicMock —
+    # close() сравнивает через `is`, и текущая task точно не она)
+    client._owner_task = MagicMock(spec=asyncio.Task)
+
+    await client.close()
+
+    bg = getattr(client, "_background_close_task", None)
+    assert bg is not None, "background close task must be scheduled"
+    await bg
+    opened.__aexit__.assert_awaited_once()
+    streams.__aexit__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_is_idempotent_and_concurrent_safe():
+    """Повторный close() (например, в lifespan + при ошибке) не должен
+    закрывать контекст-менеджеры дважды.
+    """
+    client = MCPClient()
+
+    opened = AsyncMock()
+    opened.__aexit__ = AsyncMock(return_value=None)
+    streams = AsyncMock()
+    streams.__aexit__ = AsyncMock(return_value=None)
+
+    client._session = MagicMock()
+    client._session_cm = opened
+    client._streams_cm = streams
+    client._owner_task = asyncio.current_task()
+
+    await client.close()
+    await client.close()  # второй раз — no-op
+
+    opened.__aexit__.assert_awaited_once()
+    streams.__aexit__.assert_awaited_once()
