@@ -179,7 +179,7 @@ func buildRouter(mcpServer *server.MCPServer, registry *tools.Registry, cfg *con
 	}
 
 	// tools/list (always available)
-	r.Get("/tools/list", toolsListHandler(mcpServer, client))
+	r.Get("/tools/list", toolsListHandler(mcpServer, registry, client))
 
 	// tools/call (always available)
 	r.Post("/tools/call", toolsCallHandler(mcpServer, client))
@@ -288,7 +288,7 @@ func debugPlaygroundHandler() http.HandlerFunc {
 	}
 }
 
-func toolsListHandler(mcpServer *server.MCPServer, client *httpclient.Client) http.HandlerFunc {
+func toolsListHandler(mcpServer *server.MCPServer, registry *tools.Registry, client *httpclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		tenantID := r.Header.Get("X-Tenant-ID")
@@ -299,52 +299,30 @@ func toolsListHandler(mcpServer *server.MCPServer, client *httpclient.Client) ht
 			return
 		}
 
-		tools := make([]map[string]any, 0)
-		for _, ep := range cfg.Endpoints {
-			name := ""
-			switch ep.Op {
-			case config.OpGetByID: name = "get_" + ep.Entity
-			case config.OpFind: name = "find_" + ep.Entity
-			case config.OpList: name = "list_" + ep.Entity
-			case config.OpCustomQuery: 
-				if ep.QueryID != "" { name = ep.QueryID }
-			}
+		// Create a temporary registry for this tenant's config to reuse deriveParams logic
+		tenantRegistry := tools.NewRegistry(cfg)
+		toolDefs := tenantRegistry.GetToolDefs()
 
-			if name != "" {
-				props := make(map[string]any)
-				for _, p := range ep.Params {
-					props[p.Name] = map[string]any{
-						"type": p.Type,
-						"description": p.Description,
-					}
-				}
-				tools = append(tools, map[string]any{
-					"name": name,
-					"description": ep.Description,
-					"inputSchema": map[string]any{
-						"type": "object",
-						"properties": props,
-					},
-				})
-			}
-		}
-		for _, mt := range cfg.MCPTools {
+		tools := make([]map[string]any, 0)
+		for _, td := range toolDefs {
 			props := make(map[string]any)
-			for _, p := range mt.Params {
+			for _, p := range td.Params {
 				props[p.Name] = map[string]any{
 					"type": p.Type,
 					"description": p.Description,
 				}
 			}
 			tools = append(tools, map[string]any{
-				"name": mt.Name,
-				"description": mt.Description,
+				"name": td.Name,
+				"description": td.Description,
 				"inputSchema": map[string]any{
 					"type": "object",
 					"properties": props,
 				},
 			})
 		}
+		
+		// Add static RAG tools
 		tools = append(tools, map[string]any{
 			"name": "search_documents",
 			"description": "Search documents",
@@ -352,6 +330,30 @@ func toolsListHandler(mcpServer *server.MCPServer, client *httpclient.Client) ht
 				"type": "object",
 				"properties": map[string]any{
 					"query": map[string]any{"type": "string", "description": "Search query"},
+					"discipline_id": map[string]any{"type": "string", "description": "Discipline ID"},
+					"limit": map[string]any{"type": "integer", "description": "Limit"},
+				},
+			},
+		})
+		tools = append(tools, map[string]any{
+			"name": "list_documents",
+			"description": "List documents",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"discipline_id": map[string]any{"type": "string", "description": "Discipline ID"},
+				},
+			},
+		})
+		tools = append(tools, map[string]any{
+			"name": "get_rag_context",
+			"description": "Get RAG context",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "Search query"},
+					"discipline_id": map[string]any{"type": "string", "description": "Discipline ID"},
+					"limit": map[string]any{"type": "integer", "description": "Limit"},
 				},
 			},
 		})

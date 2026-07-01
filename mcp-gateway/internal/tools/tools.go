@@ -471,7 +471,8 @@ func extractPathParams(path string) []string {
 	out := make([]string, 0, len(matches))
 	for _, m := range matches {
 		if len(m) > 1 {
-			out = append(out, m[1])
+			paramName := m[1]
+			out = append(out, paramName)
 		}
 	}
 	return out
