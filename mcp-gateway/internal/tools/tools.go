@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
@@ -44,7 +46,9 @@ func NewRegistry(cfg *config.Config) *Registry {
 		client:    httpclient.New(),
 		ragClient: ragclient.New(),
 	}
-	r.buildTools()
+	if cfg != nil {
+		r.buildTools()
+	}
 	return r
 }
 
@@ -75,24 +79,41 @@ func (r *Registry) toolDefCount() int {
 
 // buildTools generates tool definitions from endpoints, overridden by explicit mcp_tools.
 func (r *Registry) buildTools() {
-	// Step 1: auto-generate from endpoints
 	auto := make(map[string]toolDef)
+
+	// Always auto-generate builtin tools (health, stats)
 	for _, ep := range r.cfg.Endpoints {
-		td := endpointToToolDef(ep, r.cfg.Entities, r.cfg.CustomQueries)
-		if td.Name != "" {
-			auto[td.Name] = td
+		if ep.Op == config.OpBuiltinHealth || ep.Op == config.OpBuiltinStats {
+			td := endpointToToolDef(ep, r.cfg.Entities, r.cfg.CustomQueries)
+			if td.Name != "" {
+				auto[td.Name] = td
+			}
 		}
 	}
 
-	// Step 2: apply explicit mcp_tools overrides
-	for _, mt := range r.cfg.MCPTools {
-		td := toolDef{
-			Name:        mt.Name,
-			Endpoint:    mt.Endpoint,
-			Description: mt.Description,
-			Params:      mt.Params,
+	// Prefer explicit mcp_tools from config (data-service manifest) if available.
+	// They carry richer descriptions + params. Skip auto-generation for data tools
+	// to avoid duplicates with the explicit ones.
+	if len(r.cfg.MCPTools) > 0 {
+		for _, mt := range r.cfg.MCPTools {
+			auto[mt.Name] = toolDef{
+				Name:        mt.Name,
+				Endpoint:    mt.Endpoint,
+				Description: mt.Description,
+				Params:      mt.Params,
+			}
 		}
-		auto[mt.Name] = td
+	} else {
+		// Fallback: auto-generate from endpoints (legacy, no manifest mcp_tools)
+		for _, ep := range r.cfg.Endpoints {
+			if ep.Op == config.OpBuiltinHealth || ep.Op == config.OpBuiltinStats {
+				continue
+			}
+			td := endpointToToolDef(ep, r.cfg.Entities, r.cfg.CustomQueries)
+			if td.Name != "" {
+				auto[td.Name] = td
+			}
+		}
 	}
 
 	// Step 3: collect into slice (deterministic order — stable iteration)
@@ -105,6 +126,9 @@ func (r *Registry) buildTools() {
 		seen[td.Name] = true
 		r.toolDefs = append(r.toolDefs, td)
 	}
+	sort.Slice(r.toolDefs, func(i, j int) bool {
+		return r.toolDefs[i].Name < r.toolDefs[j].Name
+	})
 }
 
 // RegisterAll registers all tools on the MCP server.
@@ -259,6 +283,7 @@ func makeHandler(td toolDef, client *httpclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// 1. Extract tenantID from context (passed by mcp-go server)
 		tenantID, _ := ctx.Value(httpclient.TenantIDKey).(string)
+		slog.Info("Tool call", "tool", td.Name, "tenantID", tenantID)
 
 		// 2. Fetch current manifest for this tenant to resolve the endpoint
 		cfg, err := client.FetchConfigWithTenant(tenantID)
@@ -285,17 +310,23 @@ func makeHandler(td toolDef, client *httpclient.Client) server.ToolHandlerFunc {
 
 		result, err := client.Call(ctx, endpoint, args)
 		if err != nil {
+			slog.Error("Data-service call failed", "endpoint", endpoint, "error", err)
 			return mcp.NewToolResultError(fmt.Sprintf("error calling %s: %v", endpoint, err)), nil
 		}
 		if result == nil {
-			return mcp.NewToolResultText("null"), nil
+			slog.Warn("Data-service returned null result", "endpoint", endpoint)
+			return mcp.NewToolResultText("No data found"), nil
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
+		data, err := json.Marshal(result)
 		if err != nil {
+			slog.Error("Error formatting result", "error", err)
 			return mcp.NewToolResultError(fmt.Sprintf("error formatting result: %v", err)), nil
 		}
-		return mcp.NewToolResultText(string(data)), nil
+		
+		resText := string(data)
+		slog.Info("Sending tool result to agent", "tool", td.Name, "content", resText)
+		return mcp.NewToolResultText(resText), nil
 	}
 }
 
@@ -325,7 +356,9 @@ func endpointToToolDef(ep config.Endpoint, entities []config.Entity, customQueri
 	}
 }
 
-// deriveToolName generates a unique tool name from endpoint metadata.
+// deriveToolName generates a valid MCP tool name from endpoint metadata.
+// Sanitises path-derived names: removes { and } which are illegal in
+// Mistral function names.
 func deriveToolName(ep config.Endpoint) string {
 	switch ep.Op {
 	case config.OpBuiltinHealth:
@@ -356,14 +389,17 @@ func deriveToolName(ep config.Endpoint) string {
 		if ep.QueryID != "" {
 			return ep.QueryID
 		}
+		// Sanitise: strip { and } — Mistral rejects these in function names.
 		path := strings.Trim(ep.Path, "/")
+		path = strings.ReplaceAll(path, "{", "")
+		path = strings.ReplaceAll(path, "}", "")
 		return strings.ReplaceAll(path, "/", "_")
 	default:
 		return ""
 	}
 }
 
-// buildDefaultDesc generates a human-readable description for auto-generated tools.
+// buildDefaultDesc generates an LLM-friendly conversational description.
 func buildDefaultDesc(ep config.Endpoint, entities []config.Entity) string {
 	entityName := ep.Entity
 	if entityName == "" {
@@ -383,30 +419,40 @@ func buildDefaultDesc(ep config.Endpoint, entities []config.Entity) string {
 
 	switch ep.Op {
 	case config.OpGetByID:
-		desc := "Get " + entityName + " by ID"
+		desc := fmt.Sprintf(
+			"Возвращает данные о %s по его уникальному идентификатору. "+
+				"Используйте, когда уже знаете ID нужной записи (например, из результатов find_%s или list_%s).",
+			entityName, entityName, entityName)
 		if entityDesc != "" {
-			desc += " (" + entityDesc + ")"
+			desc += fmt.Sprintf(" %s: %s", entityName, entityDesc)
 		}
 		return desc
 	case config.OpFind:
-		desc := "Find " + entityName
+		desc := fmt.Sprintf(
+			"Позволяет найти %s по текстовому запросу.",
+			entityName)
 		if ep.SearchField != "" {
-			desc += " by " + ep.SearchField
+			desc += fmt.Sprintf(" Поиск производится по полю '%s'.", ep.SearchField)
 		}
+		desc += " Если параметр поиска не указан, возвращает полный список всех записей."
 		if entityDesc != "" {
-			desc += " (" + entityDesc + ")"
+			desc += fmt.Sprintf(" %s: %s", entityName, entityDesc)
 		}
 		return desc
 	case config.OpList:
-		return "List all " + entityName
+		return fmt.Sprintf("Возвращает полный список всех %s.", entityName)
 	case config.OpCustomQuery:
-		return "Execute custom query: " + entityName
+		if entityName != "" {
+			return fmt.Sprintf("Выполняет пользовательский запрос: %s", entityName)
+		}
+		return "Выполняет пользовательский запрос"
 	default:
-		return "Call " + ep.Path
+		return fmt.Sprintf("Выполняет запрос %s", ep.Path)
 	}
 }
 
-// deriveParams extracts parameters from endpoint path and entity fields.
+// deriveParams extracts parameters from endpoint path and entity fields,
+// with LLM-friendly parameter descriptions.
 func deriveParams(ep config.Endpoint, entities []config.Entity) []config.EndpointParam {
 	params := make([]config.EndpointParam, 0)
 
@@ -422,14 +468,23 @@ func deriveParams(ep config.Endpoint, entities []config.Entity) []config.Endpoin
 		}
 	}
 
-	// 3. Build param for each path param
+	// 3. Build param for each path param — с понятной подсказкой для LLM
 	for _, pp := range pathParams {
 		fieldType := config.FieldTypeString
+		fieldDesc := ""
 		for _, f := range entityFields {
 			if f.Name == pp || f.Column == pp {
 				fieldType = f.Type
+				if f.Description != "" {
+					fieldDesc = f.Description
+				} else {
+					fieldDesc = fmt.Sprintf("Уникальный идентификатор %s", ep.Entity)
+				}
 				break
 			}
+		}
+		if fieldDesc == "" {
+			fieldDesc = fmt.Sprintf("Уникальный идентификатор %s", ep.Entity)
 		}
 		ptype := fieldTypeToParamType(fieldType)
 		required := true
@@ -438,11 +493,11 @@ func deriveParams(ep config.Endpoint, entities []config.Entity) []config.Endpoin
 			In:          config.ParamInPath,
 			Type:        ptype,
 			Required:    &required,
-			Description: pp,
+			Description: fieldDesc,
 		})
 	}
 
-	// 4. For find/list: add search query param
+	// 4. For find/list: add search query param — с явной подсказкой, что он опционален
 	if ep.Op == config.OpFind || ep.Op == config.OpList {
 		qp := ep.QueryParam
 		if qp == "" {
@@ -450,9 +505,10 @@ func deriveParams(ep config.Endpoint, entities []config.Entity) []config.Endpoin
 		}
 		if qp != "" {
 			required := false
-			desc := "Search query"
+			desc := fmt.Sprintf("Текстовый запрос для поиска %s по имени. Если не указан, возвращаются все записи.", ep.Entity)
 			if ep.SearchField != "" {
-				desc = "Search by " + ep.SearchField
+				desc = fmt.Sprintf("Текстовый запрос для поиска %s по полю '%s'. Если не указан, возвращаются все записи.",
+					ep.Entity, ep.SearchField)
 			}
 			params = append(params, config.EndpointParam{
 				Name:        qp,

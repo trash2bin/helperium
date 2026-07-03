@@ -1,8 +1,3 @@
-// Package mcp-gateway — MCP (Model Context Protocol) сервер на Go.
-//
-// Конфигурация MCP-инструментов получается по HTTP от data-service
-// (эндпоинт /mcp/manifest), а не прямым парсингом config.json.
-// data-service остаётся единственным source of truth для конфигурации.
 package main
 
 import (
@@ -18,21 +13,70 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
 	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
+	gwserver "github.com/agent-tutor/mcp-gateway/internal/server"
 	"github.com/agent-tutor/mcp-gateway/internal/tools"
 )
 
-// sseSession представляет активное SSE-подключение.
+var globalClient *httpclient.Client
+
+// postHandlerTimeout bounds a single JSON-RPC request/response cycle
+// (HandleMessage + write to the SSE stream). It is intentionally short
+// and scoped to the POST handler only — it must NOT be confused with the
+// old http.Server.WriteTimeout, which used to apply to the *entire*
+// lifetime of the associated GET /mcp SSE connection and silently killed
+// every session after 30s of being open. See buildHTTPServer for the fix.
+const postHandlerTimeout = 25 * time.Second
+
+// sseSession represents one long-lived SSE connection (opened via GET) and
+// the tenant-scoped MCP server state associated with it.
+//
+// mu guards mcpServer, tenantID, and all writes to writer/flusher.
+// Both are mutated from mcpPostHandler (on every POST) and read from the
+// same handler, and in principle a client could fire concurrent tool
+// calls for the same session — the Go http.ResponseWriter is not safe for
+// concurrent writes, so every write MUST go through this lock.
 type sseSession struct {
+	mu        sync.Mutex
 	writer    http.ResponseWriter
 	flusher   http.Flusher
 	done      chan struct{}
 	tenantID  string
+	mcpServer *server.MCPServer
+}
+
+// writeMessage safely writes a JSON-RPC "message" SSE event to this
+// session's underlying connection.
+func (s *sseSession) writeMessage(eventData []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fmt.Fprintf(s.writer, "event: message\ndata: %s\n\n", eventData)
+	s.flusher.Flush()
+}
+
+// ensureServerForTenant lazily creates (or re-creates, on tenant switch)
+// the per-tenant MCP server for this session. Guarded by mu so concurrent
+// POSTs on the same session can't race on server creation.
+func (s *sseSession) ensureServerForTenant(tenantID string) (*server.MCPServer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.mcpServer != nil && s.tenantID == tenantID {
+		return s.mcpServer, nil
+	}
+
+	slog.Info("Initializing MCP server for tenant in session", "tenantID", tenantID)
+	mcpServer, err := createServerForTenant(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	s.mcpServer = mcpServer
+	s.tenantID = tenantID
+	return mcpServer, nil
 }
 
 func main() {
@@ -44,87 +88,22 @@ func main() {
 	logHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 	slog.SetDefault(slog.New(logHandler))
 
-	if devMode {
-		slog.Info("🧪 MCP_DEV mode enabled — debug endpoints, request logging, message dumps")
-	}
-	slog.Info("mcp-gateway starting")
-
-	// ── Конфиг: локальный файл (если задан MCP_LOCAL_CONFIG_PATH) или HTTP от data-service ──
-	var mcpCfg *config.Config
-	var configSource string
-	var err error
-
-	if localPath := os.Getenv("MCP_LOCAL_CONFIG_PATH"); localPath != "" {
-		slog.Info("loading config from local file", "path", localPath)
-		mcpCfg, err = config.Load(localPath)
-		if err != nil {
-			slog.Error("load local config", "path", localPath, "error", err)
-			os.Exit(1)
-		}
-		configSource = fmt.Sprintf("local:%s", localPath)
-	} else {
-		client := httpclient.New()
-		mcpCfg, err = client.FetchConfig()
-		if err != nil {
-			slog.Error("fetch config from data-service", "error", err)
-			os.Exit(1)
-		}
-		configSource = fmt.Sprintf("data-service:%s", client.BaseURL())
-	}
-
-	// ── MCP-сервер + регистрация тулов ──
-	mcpServer, registry, err := buildMCPServer(mcpCfg)
-	if err != nil {
-		slog.Error("build MCP server", "error", err)
-		os.Exit(1)
-	}
-
-	slog.Info("config loaded",
-		"source", configSource,
-		"auto_tools", len(registry.GetToolDefs()),
-		"explicit_mcp_tools", len(mcpCfg.MCPTools),
-		"entities", len(mcpCfg.Entities),
-		"endpoints", len(mcpCfg.Endpoints),
-	)
-
-	ragInfo := "disabled"
-	if registry.RagEnabled() {
-		ragInfo = "enabled"
-	} else {
-		ragInfo = "disabled (" + registry.RagDisabledReason() + ")"
-	}
-	slog.Info("RAG tools", "status", ragInfo)
-
-	// ── HTTP-роутер ──
-	r := buildRouter(mcpServer, registry, mcpCfg, devMode)
-
+	globalClient = httpclient.New()
+	r := buildRouter()
 	port := os.Getenv("MCP_PORT")
 	if port == "" {
 		port = "8083"
 	}
 
-	addr := fmt.Sprintf(":%s", port)
-	httpServer := &http.Server{
-		Addr:         addr,
-		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
+	httpServer := buildHTTPServer(r, port)
 
-	// Graceful shutdown
 	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		sig := <-quit
-		slog.Info("shutting down", "signal", sig.String())
-
+		<-quit
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
-		if err := httpServer.Shutdown(ctx); err != nil {
-			slog.Error("forced shutdown", "error", err)
-		}
+		httpServer.Shutdown(ctx)
 	}()
 
 	slog.Info("mcp-gateway listening", "port", port)
@@ -132,94 +111,85 @@ func main() {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("mcp-gateway stopped")
 }
 
-// buildMCPServer создаёт MCP-сервер и регистрирует инструменты по конфигу.
-func buildMCPServer(cfg *config.Config) (*server.MCPServer, *tools.Registry, error) {
+// buildHTTPServer configures server-level timeouts.
+//
+// WriteTimeout is intentionally NOT set: it applies to the entire
+// lifetime of a connection's response, and our GET /mcp handler holds
+// that response open indefinitely to stream SSE events. A non-zero
+// WriteTimeout here silently kills every SSE session ~N seconds after it
+// opens, regardless of activity. Slow-client/slow-write protection is
+// instead applied per-request inside mcpPostHandler via context, and
+// ReadHeaderTimeout below still protects against slow/stalled request
+// headers (slowloris-style attacks) without touching long-lived SSE
+// writes.
+func buildHTTPServer(r http.Handler, port string) *http.Server {
+	return &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// WriteTimeout intentionally omitted — see doc comment above.
+	}
+}
+
+func createServerForTenant(tenantID string) (*server.MCPServer, error) {
+	slog.Info("Fetching config for tenant", "tenantID", tenantID)
+	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
+	if err != nil {
+		slog.Error("Failed to fetch config", "tenantID", tenantID, "error", err)
+		return nil, err
+	}
+	slog.Info("Config fetched, creating server", "tenantID", tenantID)
 	mcpServer := server.NewMCPServer("agent-tutor", "1.0.0")
+	slog.Info("Creating registry", "tenantID", tenantID)
 	registry := tools.NewRegistry(cfg)
+	slog.Info("Registering tools", "tenantID", tenantID)
 	registry.RegisterAll(mcpServer)
-	return mcpServer, registry, nil
+	slog.Info("MCP server ready", "tenantID", tenantID)
+	return mcpServer, nil
 }
 
-// buildRouter собирает chi-роутер со всеми endpoint'ами, включая MCP- и debug.
-func buildRouter(mcpServer *server.MCPServer, registry *tools.Registry, cfg *config.Config, devMode bool) *chi.Mux {
+func buildRouter() *chi.Mux {
 	sessions := &sync.Map{}
 	r := chi.NewRouter()
 
-	// Create a shared HTTP client for handlers
-	client := httpclient.New()
+	// Recover from panics in any handler (e.g. a misbehaving tool) so one
+	// bad request can't take down the process, and so we get a proper
+	// stack trace in the logs instead of a silently dropped connection.
+	r.Use(chimiddleware.Recoverer)
 
-	if devMode {
-		r.Use(requestLogger)
-	}
-
-	// Welcome / Instructions page
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`
-			<html>
-				<body style="font-family: sans-serif; padding: 2rem; line-height: 1.6;">
-					<h1>MCP Gateway - Multi-tenant Access</h1>
-					<p>To use tools for a specific tenant, you must provide the <code>X-Tenant-ID</code> header or a <code>tenant_id</code> query parameter.</p>
-					<div style="background: #f4f4f4; padding: 1rem; border-radius: 8px; border-left: 5px solid #007bff;">
-						<strong>How to switch tenants:</strong><br>
-						1. Go to <code>data-service</code> (port 8084) and call <code>/admin/tenants</code> to get a list of available Tenant IDs.<br>
-						2. Append the ID to the URL in Swagger: <br>
-						<code>/tools/list?tenant_id=YOUR_TENANT_ID</code><br>
-						<code>/tools/call?tenant_id=YOUR_TENANT_ID</code>
-					</div>
-					<p><a href="/docs">Go to Swagger UI &rarr;</a></p>
-					<p><a href="/debug">Go to Debug Playground &rarr;</a></p>
-				</body>
-			</html>
-		`))
+	// Global request logger to debug routing issues
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			slog.Info("INCOMING REQUEST", "method", r.Method, "path", r.URL.Path, "tenant", r.Header.Get("X-Tenant-ID"))
+			next.ServeHTTP(w, r)
+		})
 	})
 
-	// Health
 	r.Get("/health", healthHandler())
-
-	// SSE endpoint — GET /mcp
+	r.Get("/docs", gwserver.SwaggerHandler())
+	r.Get("/openapi.json", gwserver.OpenAPIHandler())
+	r.Get("/debug", debugPlaygroundHandler())
+	r.Get("/debug/sessions", debugSessionsHandler(sessions))
+	r.Get("/debug/config", debugConfigHandler())
 	r.Get("/mcp", sseHandler(sessions))
-
-	// JSON-RPC messages — POST /mcp/message
-	mcpPost := mcpPostHandler(mcpServer, sessions)
+	r.Get("/sse", sseHandler(sessions))
+	r.Get("/", sseHandler(sessions))
+	mcpPost := mcpPostHandler(sessions)
 	r.Post("/mcp/message", mcpPost)
-
-	// Fallback POST /mcp (Python SDK compat)
 	r.Post("/mcp", mcpPost)
-
-	// Dev-режим endpoints
-	if devMode {
-		r.Get("/debug/sessions", debugSessionsHandler(sessions))
-		r.Get("/debug/config", debugConfigHandler(registry, cfg, devMode))
-		r.Get("/debug", debugPlaygroundHandler())
-	}
-
-	// tools/list (always available)
-	r.Get("/tools/list", toolsListHandler(mcpServer, registry, client))
-
-	// tools/call (always available)
-	r.Post("/tools/call", toolsCallHandler(mcpServer, client))
-
-	// Proxy to data-service for manifest
-	r.Get("/mcp/manifest", manifestProxyHandler(client))
-
+	r.Post("/message", mcpPost)
+	r.Post("/", mcpPost)
+	r.Get("/mcp/manifest", manifestProxyHandler)
 	return r
 }
-
-// ── Handler constructors ──
 
 func healthHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "ok",
-			"service": "mcp-gateway",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}
 }
 
@@ -230,7 +200,6 @@ func sseHandler(sessions *sync.Map) http.HandlerFunc {
 			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 			return
 		}
-
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -238,377 +207,147 @@ func sseHandler(sessions *sync.Map) http.HandlerFunc {
 
 		sessionID := uuid.New().String()
 		session := &sseSession{
-			writer:    w,
-			flusher:   flusher,
-			done:      make(chan struct{}),
-			tenantID:  r.Header.Get("X-Tenant-ID"),
+			writer:   w,
+			flusher:  flusher,
+			done:     make(chan struct{}),
+			tenantID: r.Header.Get("X-Tenant-ID"),
 		}
 		sessions.Store(sessionID, session)
-		defer sessions.Delete(sessionID)
+		defer func() {
+			sessions.Delete(sessionID)
+			slog.Info("MCP session closed", "sessionID", sessionID)
+		}()
 
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		messageURL := fmt.Sprintf("%s://%s/mcp/message?sessionId=%s", scheme, r.Host, sessionID)
+		messageURL := fmt.Sprintf("http://%s/mcp/message?sessionId=%s", r.Host, sessionID)
 		fmt.Fprintf(w, "event: endpoint\ndata: %s\r\n\r\n", messageURL)
 		flusher.Flush()
-
 		<-r.Context().Done()
-		close(session.done)
 	}
 }
 
-func debugSessionsHandler(sessions *sync.Map) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		var sseIDs []string
-		sessions.Range(func(key, value any) bool {
-			sseIDs = append(sseIDs, fmt.Sprint(key))
-			return true
-		})
-		json.NewEncoder(w).Encode(map[string]any{
-			"total_sessions": len(sseIDs),
-			"session_ids":    sseIDs,
-			"note":           "SSE-сессии; POST/message без sessionId создаёт новый UUID",
-		})
-	}
-}
-
-func debugConfigHandler(registry *tools.Registry, cfg *config.Config, devMode bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		ragStatus := "disabled"
-		ragReason := ""
-		if registry.RagEnabled() {
-			ragStatus = "enabled"
-		} else {
-			ragReason = registry.RagDisabledReason()
-		}
-		source := "data-service /mcp/manifest"
-		if localPath := os.Getenv("MCP_LOCAL_CONFIG_PATH"); localPath != "" {
-			source = fmt.Sprintf("local file: %s", localPath)
-		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"source":        source,
-			"entities":      len(cfg.Entities),
-			"endpoints":     len(cfg.Endpoints),
-			"all_tools":     registry.GetToolNames(),
-			"auto_tools":    len(registry.GetToolDefs()),
-			"mcp_tools_cfg": len(cfg.MCPTools),
-			"rag_status":    ragStatus,
-			"rag_reason":    ragReason,
-			"dev_mode":      devMode,
-		})
-	}
-}
-
-func debugPlaygroundHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(playgroundHTML))
-	}
-}
-
-func toolsListHandler(mcpServer *server.MCPServer, registry *tools.Registry, client *httpclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		tenantID := r.Header.Get("X-Tenant-ID")
-		if tenantID == "" {
-			tenantID = r.URL.Query().Get("tenant_id")
-		}
-		
-		cfg, err := client.FetchConfigWithTenant(tenantID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"failed to fetch tenant config: %s"}`, err), http.StatusInternalServerError)
-			return
-		}
-
-		// Create a temporary registry for this tenant's config to reuse deriveParams logic
-		tenantRegistry := tools.NewRegistry(cfg)
-		toolDefs := tenantRegistry.GetToolDefs()
-
-		tools := make([]map[string]any, 0)
-		for _, td := range toolDefs {
-			props := make(map[string]any)
-			for _, p := range td.Params {
-				props[p.Name] = map[string]any{
-					"type": p.Type,
-					"description": p.Description,
-				}
-			}
-			tools = append(tools, map[string]any{
-				"name": td.Name,
-				"description": td.Description,
-				"inputSchema": map[string]any{
-					"type": "object",
-					"properties": props,
-				},
-			})
-		}
-		
-		// Add static RAG tools
-		tools = append(tools, map[string]any{
-			"name": "search_documents",
-			"description": "Search documents",
-			"inputSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query": map[string]any{"type": "string", "description": "Search query"},
-					"discipline_id": map[string]any{"type": "string", "description": "Discipline ID"},
-					"limit": map[string]any{"type": "integer", "description": "Limit"},
-				},
-			},
-		})
-		tools = append(tools, map[string]any{
-			"name": "list_documents",
-			"description": "List documents",
-			"inputSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"discipline_id": map[string]any{"type": "string", "description": "Discipline ID"},
-				},
-			},
-		})
-		tools = append(tools, map[string]any{
-			"name": "get_rag_context",
-			"description": "Get RAG context",
-			"inputSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query": map[string]any{"type": "string", "description": "Search query"},
-					"discipline_id": map[string]any{"type": "string", "description": "Discipline ID"},
-					"limit": map[string]any{"type": "integer", "description": "Limit"},
-				},
-			},
-		})
-
-		response := map[string]any{
-			"jsonrpc": "2.0",
-			"id": uuid.New().String(),
-			"result": map[string]any{
-				"tools": tools,
-			},
-		}
-		json.NewEncoder(w).Encode(response)
-	}
-}
-
-func toolsCallHandler(mcpServer *server.MCPServer, client *httpclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		tenantID := r.Header.Get("X-Tenant-ID")
-		if tenantID == "" {
-			tenantID = r.URL.Query().Get("tenant_id")
-		}
-
-		var body struct {
-			Name      string         `json:"name"`
-			Arguments map[string]any `json:"arguments"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"invalid JSON: %s"}`, err), http.StatusBadRequest)
-			return
-		}
-
-		cfg, err := client.FetchConfigWithTenant(tenantID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"failed to fetch tenant config: %s"}`, err), http.StatusInternalServerError)
-			return
-		}
-		
-		slog.Debug("tool call resolve", "name", body.Name, "tenant", tenantID)
-		var endpoint string
-		for _, ep := range cfg.Endpoints {
-			name := ""
-			switch ep.Op {
-			case config.OpGetByID: name = "get_" + ep.Entity
-			case config.OpFind: name = "find_" + ep.Entity
-			case config.OpList: name = "list_" + ep.Entity
-			case config.OpCustomQuery: 
-				if ep.QueryID != "" { name = ep.QueryID }
-			}
-			if name == body.Name {
-				slog.Debug("tool matched", "name", name, "endpoint", ep.Path)
-				endpoint = ep.Path
-				break
-			}
-		}
-		
-		if endpoint == "" {
-			for _, mt := range cfg.MCPTools {
-				if mt.Name == body.Name { endpoint = mt.Endpoint; break }
-			}
-		}
-		
-		if endpoint == "" {
-			if body.Name == "search_documents" {
-				endpoint = "/rag/search"
-			}
-			if body.Name == "list_documents" {
-				endpoint = "/rag/list"
-			}
-			if body.Name == "get_rag_context" {
-				endpoint = "/rag/context"
-			}
-			if endpoint == "" {
-				http.Error(w, fmt.Sprintf(`{"error":"tool %s not found for tenant %s"}`, body.Name, tenantID), http.StatusNotFound)
-				return
-			}
-		}
-
-		ctx := r.Context()
-		ctx = context.WithValue(ctx, httpclient.TenantIDKey, tenantID)
-		
-		result, err := client.Call(ctx, endpoint, body.Arguments)
-		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"call failed: %s"}`, err), http.StatusInternalServerError)
-			return
-		}
-
-		response := map[string]any{
-			"jsonrpc": "2.0",
-			"id": uuid.New().String(),
-			"result": map[string]any{
-				"content": result,
-			},
-		}
-		json.NewEncoder(w).Encode(response)
-	}
-}
-
-// mcpPostHandler возвращает HTTP-хендлер для JSON-RPC сообщений MCP.
-func mcpPostHandler(mcpServer *server.MCPServer, sessions *sync.Map) http.HandlerFunc {
-	devMode := os.Getenv("MCP_DEV") == "true"
+func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.URL.Query().Get("sessionId")
 		if sessionID == "" {
-			sessionID = uuid.New().String()
+			http.Error(w, "sessionId is required", http.StatusBadRequest)
+			return
+		}
+
+		si, ok := sessions.Load(sessionID)
+		if !ok {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		session := si.(*sseSession)
+
+		tenantID := r.Header.Get("X-Tenant-ID")
+		if tenantID == "" {
+			session.mu.Lock()
+			tenantID = session.tenantID
+			session.mu.Unlock()
+		}
+		if tenantID == "" {
+			http.Error(w, "X-Tenant-ID header is required", http.StatusBadRequest)
+			return
+		}
+
+		mcpServer, err := session.ensureServerForTenant(tenantID)
+		if err != nil {
+			http.Error(w, "Failed to create MCP server", http.StatusInternalServerError)
+			return
 		}
 
 		var rawMessage json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&rawMessage); err != nil {
-			writeJSONRPCError(w, nil, mcp.PARSE_ERROR, "Parse error")
+			writeJSONRPCError(w, nil, 400, "Parse error")
 			return
 		}
 
-		// Dev: лог входящего MCP-сообщения
-		if devMode {
-			var msg map[string]any
-			if err := json.Unmarshal(rawMessage, &msg); err == nil {
-				slog.Debug("→ MCP",
-					"method", msg["method"],
-					"id", msg["id"],
-					"session", sessionID,
-					"params", truncateJSON(msg["params"], 500),
-				)
-			}
-		}
+		// Bound this single request/response cycle instead of relying on
+		// http.Server.WriteTimeout (which would also cap the unrelated,
+		// long-lived GET /mcp SSE connection this response is written
+		// through). If HandleMessage hangs (e.g. a slow downstream tool),
+		// this context expires and callers get a clean timeout instead of
+		// a connection that hangs forever.
+		ctx, cancel := context.WithTimeout(r.Context(), postHandlerTimeout)
+		defer cancel()
 
-		// Extract tenant ID: priority Header > Session
-		tenantID := r.Header.Get("X-Tenant-ID")
-		if tenantID == "" {
-			if si, ok := sessions.Load(sessionID); ok {
-				s := si.(*sseSession)
-				tenantID = s.tenantID
-			}
-		}
+		// Inject tenantID into context so tool handlers in tools.go
+		// can read it via ctx.Value(httpclient.TenantIDKey) and pass
+		// it to data-service for multi-tenant isolation.
+		ctx = context.WithValue(ctx, httpclient.TenantIDKey, tenantID)
 
-		ctx := mcpServer.WithContext(r.Context(), server.NotificationContext{
+		ctx = mcpServer.WithContext(ctx, server.NotificationContext{
 			ClientID:  sessionID,
 			SessionID: sessionID,
 		})
 
-		// Inject tenant ID into context for tools
-		if tenantID != "" {
-			ctx = context.WithValue(ctx, httpclient.TenantIDKey, tenantID)
-		}
-
 		response := mcpServer.HandleMessage(ctx, rawMessage)
 		if response != nil {
-			// Dev: лог исходящего ответа
-			if devMode {
-				respBytes, _ := json.Marshal(response)
-				var respDump map[string]any
-				if json.Unmarshal(respBytes, &respDump) == nil {
-					slog.Debug("← MCP",
-						"session", sessionID,
-						"result", truncateJSON(respDump["result"], 500),
-					)
-				}
-			}
-
-			if si, ok := sessions.Load(sessionID); ok {
-				s := si.(*sseSession)
-				eventData, _ := json.Marshal(response)
-				fmt.Fprintf(s.writer, "event: message\ndata: %s\n\n", eventData)
-				s.flusher.Flush()
-				w.WriteHeader(http.StatusAccepted)
-			} else {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(response)
-			}
-		} else {
-			w.WriteHeader(http.StatusAccepted)
+			eventData, _ := json.Marshal(response)
+			session.writeMessage(eventData)
 		}
+		w.WriteHeader(http.StatusAccepted)
 	}
 }
 
+func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-ID")
+	if tenantID == "" {
+		tenantID = r.URL.Query().Get("tenant")
+	}
+	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cfg)
+}
 
-
-// requestLogger — middleware: пишет method, path, status, duration
-func requestLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		srw := &statusResponseWriter{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(srw, r)
-		slog.Debug("[HTTP]",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", srw.status,
-			"duration", time.Since(start).String(),
-		)
+func writeJSONRPCError(w http.ResponseWriter, id any, code int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"jsonrpc": "2.0", "error": map[string]any{"code": code, "message": message}, "id": id,
 	})
 }
 
-type statusResponseWriter struct {
-	http.ResponseWriter
-	status int
+// ── Debug Handlers ──
+
+func debugPlaygroundHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(playgroundHTML))
+	}
 }
 
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.status = code
-	w.ResponseWriter.WriteHeader(code)
+type sessionInfo struct {
+	SessionID string `json:"session_id"`
+	TenantID  string `json:"tenant_id"`
 }
 
-// truncateJSON обрезает значение до N байт для читаемых логов.
-func truncateJSON(v any, maxLen int) any {
-	if v == nil {
-		return nil
+func debugSessionsHandler(sessions *sync.Map) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var result []sessionInfo
+		sessions.Range(func(key, value any) bool {
+			s := value.(*sseSession)
+			s.mu.Lock()
+			tenantID := s.tenantID
+			s.mu.Unlock()
+			result = append(result, sessionInfo{
+				SessionID: key.(string),
+				TenantID:  tenantID,
+			})
+			return true
+		})
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"sessions": result})
 	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprintf("<marshal error: %s>", err)
-	}
-	if len(b) <= maxLen {
-		return json.RawMessage(b)
-	}
-	s := string(b)
-	// Для строк и компактных структур — режем с многоточием
-	truncated := s[:maxLen] + "..."
-	return truncated
 }
 
-// writeJSONRPCError пишет JSON-RPC ошибку.
-func writeJSONRPCError(w http.ResponseWriter, id any, code int, message string) {
-	resp := map[string]any{
-		"jsonrpc": "2.0",
-		"error":   map[string]any{"code": code, "message": message},
-		"id":      id,
+func debugConfigHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Reuse the same logic as manifestProxyHandler
+		manifestProxyHandler(w, r)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(resp)
 }

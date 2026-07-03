@@ -335,12 +335,12 @@ func TestBuildDefaultDesc(t *testing.T) {
 		ep     config.Endpoint
 		want   string
 	}{
-		{config.Endpoint{Op: config.OpGetByID, Entity: "student"}, "Get student by ID (A student record)"},
-		{config.Endpoint{Op: config.OpFind, Entity: "product", SearchField: "name"}, "Find product by name (Product catalog entry)"},
-		{config.Endpoint{Op: config.OpList, Entity: "order"}, "List all order"},
-		{config.Endpoint{Op: config.OpCustomQuery, Entity: "report"}, "Execute custom query: report"},
-		{config.Endpoint{Op: config.OpGetByID, Entity: "nonexistent"}, "Get nonexistent by ID"},
-		{config.Endpoint{Op: "unknown", Path: "/foo/bar"}, "Call /foo/bar"},
+		{config.Endpoint{Op: config.OpGetByID, Entity: "student"}, "Возвращает данные о student по его уникальному идентификатору. Используйте, когда уже знаете ID нужной записи (например, из результатов find_student или list_student). student: A student record"},
+		{config.Endpoint{Op: config.OpFind, Entity: "product", SearchField: "name"}, "Позволяет найти product по текстовому запросу. Поиск производится по полю 'name'. Если параметр поиска не указан, возвращает полный список всех записей. product: Product catalog entry"},
+		{config.Endpoint{Op: config.OpList, Entity: "order"}, "Возвращает полный список всех order."},
+		{config.Endpoint{Op: config.OpCustomQuery, Entity: "report"}, "Выполняет пользовательский запрос: report"},
+		{config.Endpoint{Op: config.OpGetByID, Entity: "nonexistent"}, "Возвращает данные о nonexistent по его уникальному идентификатору. Используйте, когда уже знаете ID нужной записи (например, из результатов find_nonexistent или list_nonexistent)."},
+		{config.Endpoint{Op: "unknown", Path: "/foo/bar"}, "Выполняет запрос /foo/bar"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.want[:min(len(tt.want), 30)], func(t *testing.T) {

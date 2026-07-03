@@ -90,9 +90,22 @@ func (c *Client) FetchConfigWithTenant(tenantID string) (*config.Config, error) 
 func (c *Client) Call(ctx context.Context, endpoint string, params map[string]any) (any, error) {
 	u := c.baseURL + endpoint
 
-	// Path parameters substitution
+	// Separate path params from query params.
+	// Path params: substitute {param} placeholders in URL.
+	// Query params: append as ?key=value after all path substitutions.
+	queryParts := make([]string, 0)
+
 	for k, v := range params {
-		u = strings.ReplaceAll(u, "{"+k+"}", fmt.Sprintf("%v", v))
+		placeholder := "{" + k + "}"
+		if strings.Contains(u, placeholder) {
+			u = strings.ReplaceAll(u, placeholder, fmt.Sprintf("%v", v))
+		} else {
+			queryParts = append(queryParts, fmt.Sprintf("%s=%v", k, v))
+		}
+	}
+
+	if len(queryParts) > 0 {
+		u += "?" + strings.Join(queryParts, "&")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)

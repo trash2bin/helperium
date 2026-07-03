@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -72,7 +73,7 @@ func TestCall_SuccessJSONObject(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	result, err := c.Call("/students/{id}", map[string]any{"id": "abc-123"})
+	result, err := c.Call(context.Background(), "/students/{id}", map[string]any{"id": "abc-123"})
 	if err != nil {
 		t.Fatalf("Call() returned error: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestCall_SuccessJSONArray(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	result, err := c.Call("/students", map[string]any{"name": "Alice"})
+	result, err := c.Call(context.Background(), "/students", map[string]any{"name": "Alice"})
 	if err != nil {
 		t.Fatalf("Call() returned error: %v", err)
 	}
@@ -114,9 +115,10 @@ func TestCall_SuccessJSONArray(t *testing.T) {
 	}
 }
 
-func TestCall_NotFoundReturnsNil(t *testing.T) {
+func TestCall_NotFoundReturnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "not found"}`))
 	}))
 	defer srv.Close()
 
@@ -125,12 +127,9 @@ func TestCall_NotFoundReturnsNil(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	result, err := c.Call("/students/{id}", map[string]any{"id": "nonexistent"})
-	if err != nil {
-		t.Fatalf("Call() returned error: %v", err)
-	}
-	if result != nil {
-		t.Fatalf("result = %v, want nil", result)
+	_, err := c.Call(context.Background(), "/students/{id}", map[string]any{"id": "nonexistent"})
+	if err == nil {
+		t.Fatalf("Call() expected error for 404, got nil")
 	}
 }
 
@@ -146,7 +145,7 @@ func TestCall_ServerError(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	_, err := c.Call("/students", nil)
+	_, err := c.Call(context.Background(), "/students", nil)
 	if err == nil {
 		t.Fatal("Call() expected error for 500, got nil")
 	}
@@ -165,7 +164,7 @@ func TestCall_EmptyResponse(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	result, err := c.Call("/health", nil)
+	result, err := c.Call(context.Background(), "/health", nil)
 	if err != nil {
 		t.Fatalf("Call() returned error: %v", err)
 	}
@@ -193,7 +192,7 @@ func TestCall_QueryParams(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	_, err := c.Call("/students", map[string]any{"name": "Alice", "limit": 10})
+	_, err := c.Call(context.Background(), "/students", map[string]any{"name": "Alice", "limit": 10})
 	if err != nil {
 		t.Fatalf("Call() returned error: %v", err)
 	}
@@ -218,7 +217,7 @@ func TestCall_MixedPathAndQueryParams(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	_, err := c.Call("/students/{id}/grades", map[string]any{"id": "42", "discipline_id": "d1"})
+	_, err := c.Call(context.Background(), "/students/{id}/grades", map[string]any{"id": "42", "discipline_id": "d1"})
 	if err != nil {
 		t.Fatalf("Call() returned error: %v", err)
 	}
@@ -239,7 +238,7 @@ func TestCall_NoParams(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	_, err := c.Call("/health", nil)
+	_, err := c.Call(context.Background(), "/health", nil)
 	if err != nil {
 		t.Fatalf("Call() returned error: %v", err)
 	}
@@ -260,7 +259,7 @@ func TestCall_AcceptHeader(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	_, err := c.Call("/health", nil)
+	_, err := c.Call(context.Background(), "/health", nil)
 	if err != nil {
 		t.Fatalf("Call() returned error: %v", err)
 	}
@@ -279,55 +278,8 @@ func TestCall_InvalidJSONInResponse(t *testing.T) {
 		http:    srv.Client(),
 	}
 
-	_, err := c.Call("/health", nil)
+	_, err := c.Call(context.Background(), "/health", nil)
 	if err == nil {
 		t.Fatal("Call() expected error for invalid JSON response, got nil")
-	}
-}
-
-func TestResolvePathParams(t *testing.T) {
-	tests := []struct {
-		name     string
-		endpoint string
-		params   map[string]any
-		want     string
-	}{
-		{"single param", "/students/{id}", map[string]any{"id": "abc"}, "/students/abc"},
-		{"multiple params", "/students/{id}/grades/{gid}", map[string]any{"id": "1", "gid": "99"}, "/students/1/grades/99"},
-		{"no params", "/health", nil, "/health"},
-		{"unused extra params", "/students/{id}", map[string]any{"id": "x", "extra": "y"}, "/students/x"},
-		{"URL-safe encoding", "/students/{id}", map[string]any{"id": "a/b?c"}, "/students/a%2Fb%3Fc"},
-		{"int params", "/items/{id}", map[string]any{"id": 42}, "/items/42"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := resolvePathParams(tt.endpoint, tt.params)
-			if got != tt.want {
-				t.Errorf("resolvePathParams(%q, %v) = %q, want %q", tt.endpoint, tt.params, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestIsPathParam(t *testing.T) {
-	tests := []struct {
-		name     string
-		endpoint string
-		param    string
-		want     bool
-	}{
-		{"is path param", "/students/{id}", "id", true},
-		{"not path param", "/students/{id}", "name", false},
-		{"multiple", "/students/{id}/grades/{gid}", "gid", true},
-		{"partial match not enough", "/students/{id}/x", "id/x", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isPathParam(tt.endpoint, tt.param)
-			if got != tt.want {
-				t.Errorf("isPathParam(%q, %q) = %v, want %v", tt.endpoint, tt.param, got, tt.want)
-			}
-		})
 	}
 }

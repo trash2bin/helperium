@@ -92,10 +92,11 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 		// get_by_id (по entity.IDColumn — реальному PK или fallback'у)
 		if entity.IDColumn != "" {
 			endpoints = append(endpoints, config.Endpoint{
-				Method: config.MethodGET,
-				Path:   fmt.Sprintf("/%s/{%s}", entity.Name, entity.IDColumn),
-				Op:     config.OpGetByID,
-				Entity: entity.Name,
+				Method:      config.MethodGET,
+				Path:        fmt.Sprintf("/%s/{%s}", entity.Name, entity.IDColumn),
+				Op:          config.OpGetByID,
+				Entity:      entity.Name,
+				Description: fmt.Sprintf("Возвращает %s по идентификатору", entity.Name),
 			})
 		}
 
@@ -108,6 +109,7 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 				Entity:      entity.Name,
 				SearchField: searchCol.Name,
 				QueryParam:  searchCol.Name,
+				Description: fmt.Sprintf("Ищет %s по имени. Без параметра возвращает все записи.", entity.Name),
 			})
 		}
 
@@ -135,6 +137,9 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 	cfg.Entities = entities
 	cfg.Endpoints = endpoints
 	cfg.Stats = &config.StatsConfig{Counters: counters}
+
+	// Generate MCP Tools from endpoints — с разговорными описаниями для LLM.
+	cfg.MCPTools = GenerateMCPTools(endpoints)
 
 	return cfg
 }
@@ -203,4 +208,113 @@ func shouldSkip(name string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+// GenerateMCPTools создаёт MCP-тулы из эндпоинтов с разговорными описаниями для LLM.
+// Экспортируемая функция — используется как configgen.Generate, так и
+// handlers.MCPManifestHandler для рантайм-генерации без зависимости от дискового конфига.
+func GenerateMCPTools(endpoints []config.Endpoint) []config.MCPTool {
+	tools := make([]config.MCPTool, 0, len(endpoints))
+	for _, ep := range endpoints {
+		if ep.Op == config.OpBuiltinHealth || ep.Op == config.OpBuiltinStats {
+			continue
+		}
+
+		var toolName, desc string
+		switch ep.Op {
+		case config.OpGetByID:
+			toolName = fmt.Sprintf("get_%s", ep.Entity)
+			desc = fmt.Sprintf(
+				"Возвращает данные о %s по его уникальному и��ентификатору. "+
+					"Используйте, когда уже знаете ID нужной записи (например, из результатов find_%s).",
+				ep.Entity, ep.Entity)
+		case config.OpFind:
+			toolName = fmt.Sprintf("find_%s", ep.Entity)
+			desc = fmt.Sprintf(
+				"Позволяет найти %s по текстовому запросу (имени, названию). "+
+					"Если па��аметр поиска не указан, возвращает полный список всех записей.",
+				ep.Entity)
+		case config.OpCustomQuery:
+			toolName = fmt.Sprintf("query_%s", ep.Path)
+			toolName = strings.ReplaceAll(toolName, "{", "")
+			toolName = strings.ReplaceAll(toolName, "}", "")
+			toolName = strings.ReplaceAll(toolName, "/", "_")
+			toolName = strings.TrimPrefix(toolName, "_")
+			if ep.Description != "" {
+				desc = fmt.Sprintf("Выполняет пользовательский запрос: %s", ep.Description)
+			} else {
+				desc = fmt.Sprintf("Выполняет пользовательский запрос по пути %s", ep.Path)
+			}
+		}
+
+		if toolName != "" {
+			// Derive params from endpoint structure (path params + query params)
+			params := deriveToolParams(ep)
+			tools = append(tools, config.MCPTool{
+				Name:        toolName,
+				Endpoint:    ep.Path,
+				Description: desc,
+				Params:      params,
+			})
+		}
+	}
+	return tools
+}
+
+// deriveToolParams извлекает параметры инструмента из структуры endpoint'а.
+func deriveToolParams(ep config.Endpoint) []config.EndpointParam {
+	params := make([]config.EndpointParam, 0)
+
+	// 1. Path params из {param} в URL
+	pathParams := extractPathParams(ep.Path)
+	for _, pp := range pathParams {
+		required := true
+		params = append(params, config.EndpointParam{
+			Name:        pp,
+			In:          config.ParamInPath,
+			Type:        config.ParamTypeString,
+			Required:    &required,
+			Description: fmt.Sprintf("Уникальный идентификатор %s", ep.Entity),
+		})
+	}
+
+	// 2. Query param для поиска (find/list)
+	if ep.Op == config.OpFind || ep.Op == config.OpList {
+		qp := ep.QueryParam
+		if qp == "" {
+			qp = ep.SearchField
+		}
+		if qp != "" {
+			required := false
+			desc := fmt.Sprintf("Текстовый запрос для поиска %s по полю '%s'. Если не указан, возвращаются все записи.",
+				ep.Entity, ep.SearchField)
+			params = append(params, config.EndpointParam{
+				Name:        qp,
+				In:          config.ParamInQuery,
+				Type:        config.ParamTypeString,
+				Required:    &required,
+				Description: desc,
+			})
+		}
+	}
+
+	return params
+}
+
+// extractPathParams извлекает {param_name} из URL-паттерна.
+func extractPathParams(path string) []string {
+	params := make([]string, 0)
+	for {
+		start := strings.Index(path, "{")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(path[start:], "}")
+		if end < 0 {
+			break
+		}
+		params = append(params, path[start+1:start+end])
+		path = path[start+end+1:]
+	}
+	return params
 }
