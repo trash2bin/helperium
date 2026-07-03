@@ -202,7 +202,7 @@ cmd_start() {
           extra_env="MCP_DEV=true $extra_env"
         fi
         ;;
-      api) extra_env="MCP_SERVICE_URL=http://127.0.0.1:$MCP_PORT/mcp" ;;
+      api) extra_env="MCP_SERVICE_URL=http://127.0.0.1:$MCP_PORT" ;;
       web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT" ;;
     esac
 
@@ -407,8 +407,12 @@ cmd_logs() {
 # Архитектура: data-service/README.md § "Сценарии — фабрика тестовых БД"
 # =============================================================================
 
-SCENARIOS_DIR="$PROJECT_ROOT/data-service/testdata/scenarios"
+SCENARIOS_DIR="$PROJECT_ROOT/scenarios"
 CONFIG_SCHEMA="${CONFIG_SCHEMA:-$PROJECT_ROOT/specs/config.schema.json}"
+
+# Delegate db commands to agent-db CLI
+# Set AGENT_TUTOR_ROOT so agent-db finds the project root regardless of cwd
+export AGENT_TUTOR_ROOT="$PROJECT_ROOT"
 
 # db subcommand: ./scripts/dev.sh db <list|materialize|serve|test|drop>
 cmd_db() {
@@ -417,15 +421,15 @@ cmd_db() {
   shift || true
 
   case "$op" in
-    list)        cmd_db_list "$@" ;;
-    materialize) cmd_db_materialize "$@" ;;
-    serve)       cmd_db_serve "$@" ;;
-    test)        cmd_db_test "$@" ;;
-    drop)        cmd_db_drop "$@" ;;
-    help|--help|-h) cmd_db_help ;;
+    list)       uv run agent-db scenarios "$@" ;;
+    materialize) uv run agent-db materialize "$@" ;;
+    serve)      uv run agent-db serve "$@" ;;
+    test)       uv run agent-db test "$@" ;;
+    drop)       uv run agent-db drop "$@" ;;
+    help|--help|-h) uv run agent-db --help ;;
     *)
       echo "❌ Unknown db subcommand: $op"
-      cmd_db_help
+      uv run agent-db --help
       exit 1
       ;;
   esac
