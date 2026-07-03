@@ -66,7 +66,12 @@ type ConnAdapter struct {
 }
 
 func (c *ConnAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return c.Conn.QueryContext(ctx, query, args...)
+	slog.Info("DB Query", "sql", query, "args", args)
+	rows, err := c.Conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		slog.Error("DB Error", "error", err)
+	}
+	return rows, err
 }
 func (c *ConnAdapter) PingContext(ctx context.Context) error  { return c.Conn.PingContext(ctx) }
 func (c *ConnAdapter) QuoteIdentifier(name string) string      { return c.Adp.QuoteIdentifier(name) }
@@ -94,6 +99,19 @@ func NewTenantStore(registry *datasource.Registry) *TenantStore {
 }
 
 // ── Tenant Lifecycle ──
+
+// RegisterTenantInstance registers a pre-built TenantInstance directly.
+// Used by tests that already have an adapter and router — bypasses
+// DB connection opening so in-memory DBs persist across the seed-build-test cycle.
+func (ts *TenantStore) RegisterTenantInstance(inst *TenantInstance) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if _, exists := ts.tenants[inst.ID]; exists {
+		return fmt.Errorf("tenant %q already exists", inst.ID)
+	}
+	ts.tenants[inst.ID] = inst
+	return nil
+}
 
 // AddTenant creates a new TenantInstance: validates config, connects DB,
 // builds router, and stores it atomically.
@@ -238,16 +256,17 @@ func (ts *TenantStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // resolveTenant extracts tenantID from request context or query parameter, and looks up the tenant.
 func (ts *TenantStore) resolveTenant(r *http.Request) *TenantInstance {
-	// 1. Try header from context (already populated by middleware)
+	// 1. Try context (populated by TenantIDMiddleware when present)
 	tenantID, _ := r.Context().Value(tenantIDKey).(string)
 
-	// 2. Fallback to query parameter ?tenant=... (critical for Swagger UI / Browser)
+	// 2. Fallback: direct header read (for tests / when middleware not applied)
 	if tenantID == "" {
-		tenantID = r.URL.Query().Get("tenant")
+		tenantID = r.Header.Get("X-Tenant-ID")
 	}
 
+	// 3. Fallback to query parameter ?tenant=... (critical for Swagger UI / Browser)
 	if tenantID == "" {
-		return nil
+		tenantID = r.URL.Query().Get("tenant")
 	}
 
 	ts.mu.RLock()
@@ -285,12 +304,17 @@ func (ts *TenantStore) HealthCheck(ctx context.Context) []TenantHealth {
 				Entities: len(ti.Config.Entities),
 			}
 
-			pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			defer cancel()
+			// Health from Ping, or assume healthy if no Conn (e.g. test instances)
+			if ti.Conn != nil {
+				pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				defer cancel()
 
-			if err := ti.Conn.PingContext(pingCtx); err != nil {
-				h.Status = "unhealthy"
-				h.Error = err.Error()
+				if err := ti.Conn.PingContext(pingCtx); err != nil {
+					h.Status = "unhealthy"
+					h.Error = err.Error()
+				} else {
+					h.Status = "healthy"
+				}
 			} else {
 				h.Status = "healthy"
 			}

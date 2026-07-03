@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 )
 
@@ -44,6 +45,8 @@ func FindHandler(c *Context, entityName, searchField, queryParam string) http.Ha
 				RespondError(w, http.StatusInternalServerError, "mapping_error", err.Error())
 				return
 			}
+			// DEBUG LOG
+			fmt.Printf("[DATA-SERVICE] FindHandler result count: %d\n", len(results))
 			RespondJSON(w, http.StatusOK, results)
 			return
 		}

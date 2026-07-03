@@ -25,11 +25,18 @@ func swaggerHandler(w http.ResponseWriter, r *http.Request) {
 
 // NewOpenAPIHandler creates an HTTP handler for /openapi.json.
 // It now uses the TenantStore to resolve the correct config based on the request.
+// NewOpenAPIHandler creates an HTTP handler for /openapi.json.
+// It now uses the TenantStore to resolve the correct config based on the request.
+// If no tenant is provided, returns a system-only spec (health, stats, admin).
 func NewOpenAPIHandler(ts *TenantStore, hasAdmin bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		inst := ts.resolveTenant(r)
 		if inst == nil {
-			http.Error(w, "tenant not found", http.StatusNotFound)
+			// No tenant specified — return system-only OpenAPI spec
+			spec := openapigen.GenerateSystemSpec("http://127.0.0.1:8084", "Data Service", "0.2.0", hasAdmin)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			json.NewEncoder(w).Encode(spec)
 			return
 		}
 
