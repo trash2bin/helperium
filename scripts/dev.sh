@@ -210,7 +210,7 @@ cmd_start() {
     cd "$PROJECT_ROOT"
     # shellcheck disable=SC2086
     # Detach the child so it survives after this shell exits and loses its tty.
-    setsid nohup env $extra_env ${SERVICE_CMD[$svc]} >> "$(logfile "$svc")" 2>&1 < /dev/null &
+    nohup env $extra_env ${SERVICE_CMD[$svc]} >> "$(logfile "$svc")" 2>&1 < /dev/null &
     local pid=$!
     echo "$pid" > "$(pidfile "$svc")"
 
