@@ -42,3 +42,7 @@ graphify-out/
 specs/fixtures/seed.json
 specs/test_tenants/
 .pi-subagents/
+
+# Backup files
+*.bak
+*.bak2
