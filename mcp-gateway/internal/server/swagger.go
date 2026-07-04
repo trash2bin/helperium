@@ -2,35 +2,24 @@ package server
 
 import (
 	"encoding/json"
-	_ "embed"
-	"html/template"
 	"net/http"
+
+	"github.com/agent-tutor/agent-tutor-go/pkg/swaggerui"
 )
 
-//go:embed swagger-ui.html
-var swaggerUI string
-
-// SwaggerHandler serves the Swagger UI page.
+// SwaggerHandler serves the Swagger UI page via the shared swaggerui package.
 func SwaggerHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.New("swagger").Parse(swaggerUI)
-		if err != nil {
-			http.Error(w, "template error", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		tmpl.Execute(w, nil)
-	}
+	return swaggerui.Handler("MCP Gateway", "", "", swaggerui.DefaultInit)
 }
 
-// OpenAPIHandler serves the OpenAPI 3.1.0 specification.
+// OpenAPIHandler serves a static OpenAPI 3.1.0 specification for the MCP Gateway.
 func OpenAPIHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		spec := map[string]any{
 			"openapi": "3.1.0",
 			"info": map[string]any{
-				"title":   "MCP Gateway",
-				"version": "0.1.0",
+				"title":       "MCP Gateway",
+				"version":     "0.1.0",
 				"description": "MCP Gateway - Proxy for MCP tools and SSE streaming",
 			},
 			"servers": []map[string]any{
@@ -80,10 +69,10 @@ func OpenAPIHandler() http.HandlerFunc {
 						"summary": "Get MCP tools manifest",
 						"parameters": []map[string]any{
 							{
-								"name": "tenant",
-								"in": "query",
+								"name":     "tenant",
+								"in":       "query",
 								"required": false,
-								"schema": map[string]any{"type": "string"},
+								"schema":   map[string]any{"type": "string"},
 							},
 						},
 						"responses": map[string]any{
