@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -32,21 +33,83 @@ var globalClient *httpclient.Client
 // every session after 30s of being open. See buildHTTPServer for the fix.
 const postHandlerTimeout = 25 * time.Second
 
+// Session management constants
+// Can be overridden with environment variables
+var (
+	// MaxSessions limits concurrent SSE sessions per process to prevent OOM
+	// Can be overridden with MCP_MAX_SESSIONS environment variable
+	MaxSessions = func() int {
+		if v := os.Getenv("MCP_MAX_SESSIONS"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+		}
+		return 1000 // default
+	}()
+
+	// SessionIdleTimeout closes idle SSE connections after this duration
+	// Can be overridden with MCP_SESSION_IDLE_TIMEOUT environment variable (e.g., "5m", "30s")
+	SessionIdleTimeout = func() time.Duration {
+		if v := os.Getenv("MCP_SESSION_IDLE_TIMEOUT"); v != "" {
+			if d, err := time.ParseDuration(v); err == nil {
+				return d
+			}
+		}
+		return 5 * time.Minute // default
+	}()
+
+	// SessionMaxLifetime forces session recreation after this duration
+	// Can be overridden with MCP_SESSION_MAX_LIFETIME environment variable (e.g., "30m", "1h")
+	SessionMaxLifetime = func() time.Duration {
+		if v := os.Getenv("MCP_SESSION_MAX_LIFETIME"); v != "" {
+			if d, err := time.ParseDuration(v); err == nil {
+				return d
+			}
+		}
+		return 30 * time.Minute // default
+	}()
+)
+
+const (
+// MaxSessions limits concurrent SSE sessions per process to prevent OOM
 // sseSession represents one long-lived SSE connection (opened via GET) and
 // the tenant-scoped MCP server state associated with it.
 //
 // mu guards mcpServer, tenantID, and all writes to writer/flusher.
 // Both are mutated from mcpPostHandler (on every POST) and read from the
+)
+
 // same handler, and in principle a client could fire concurrent tool
 // calls for the same session — the Go http.ResponseWriter is not safe for
 // concurrent writes, so every write MUST go through this lock.
 type sseSession struct {
-	mu        sync.Mutex
-	writer    http.ResponseWriter
-	flusher   http.Flusher
-	done      chan struct{}
-	tenantID  string
-	mcpServer *server.MCPServer
+	mu           sync.Mutex
+	writer       http.ResponseWriter
+	flusher      http.Flusher
+	done         chan struct{}
+	tenantID     string
+	mcpServer    *server.MCPServer
+	createdAt    time.Time
+	lastActivity time.Time
+}
+
+func (s *sseSession) updateActivity() {
+	s.mu.Lock()
+	s.lastActivity = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *sseSession) isExpired() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	return now.Sub(s.lastActivity) > SessionIdleTimeout || now.Sub(s.createdAt) > SessionMaxLifetime
+}
+
+func (s *sseSession) getTenantID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tenantID
 }
 
 // writeMessage safely writes a JSON-RPC "message" SSE event to this
@@ -56,6 +119,7 @@ func (s *sseSession) writeMessage(eventData []byte) {
 	defer s.mu.Unlock()
 	fmt.Fprintf(s.writer, "event: message\ndata: %s\n\n", eventData)
 	s.flusher.Flush()
+	s.lastActivity = time.Now()
 }
 
 // ensureServerForTenant lazily creates (or re-creates, on tenant switch)
@@ -66,6 +130,7 @@ func (s *sseSession) ensureServerForTenant(tenantID string) (*server.MCPServer, 
 	defer s.mu.Unlock()
 
 	if s.mcpServer != nil && s.tenantID == tenantID {
+		s.lastActivity = time.Now()
 		return s.mcpServer, nil
 	}
 
@@ -76,6 +141,7 @@ func (s *sseSession) ensureServerForTenant(tenantID string) (*server.MCPServer, 
 	}
 	s.mcpServer = mcpServer
 	s.tenantID = tenantID
+	s.lastActivity = time.Now()
 	return mcpServer, nil
 }
 
@@ -206,12 +272,26 @@ func sseHandler(sessions *sync.Map) http.HandlerFunc {
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
+		// Enforce session limit to prevent OOM
+		count := 0
+		sessions.Range(func(_, _ any) bool {
+			count++
+			return true
+		})
+		if count >= MaxSessions {
+			http.Error(w, "Too many SSE sessions", http.StatusServiceUnavailable)
+			return
+		}
+
 		sessionID := uuid.New().String()
+		now := time.Now()
 		session := &sseSession{
-			writer:   w,
-			flusher:  flusher,
-			done:     make(chan struct{}),
-			tenantID: resolveTenantID(r),
+			writer:       w,
+			flusher:      flusher,
+			done:         make(chan struct{}),
+			tenantID:     resolveTenantID(r),
+			createdAt:    now,
+			lastActivity: now,
 		}
 		sessions.Store(sessionID, session)
 		defer func() {
@@ -222,7 +302,24 @@ func sseHandler(sessions *sync.Map) http.HandlerFunc {
 		messageURL := fmt.Sprintf("http://%s/mcp/message?sessionId=%s", r.Host, sessionID)
 		fmt.Fprintf(w, "event: endpoint\ndata: %s\r\n\r\n", messageURL)
 		flusher.Flush()
-		<-r.Context().Done()
+
+		// Start idle timeout monitor for this session
+		idleTimer := time.NewTimer(SessionIdleTimeout)
+		defer idleTimer.Stop()
+
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-idleTimer.C:
+				if session.isExpired() {
+					slog.Info("Closing idle SSE session", "sessionID", sessionID)
+					sessions.Delete(sessionID)
+					return
+				}
+				idleTimer.Reset(SessionIdleTimeout)
+			}
+		}
 	}
 }
 
@@ -247,9 +344,7 @@ func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
 			session = si.(*sseSession)
 
 			if tenantID == "" {
-				session.mu.Lock()
-				tenantID = session.tenantID
-				session.mu.Unlock()
+				tenantID = session.getTenantID()
 			}
 		}
 
@@ -351,9 +446,7 @@ func debugSessionsHandler(sessions *sync.Map) http.HandlerFunc {
 		var result []sessionInfo
 		sessions.Range(func(key, value any) bool {
 			s := value.(*sseSession)
-			s.mu.Lock()
-			sTenantID := s.tenantID
-			s.mu.Unlock()
+			sTenantID := s.getTenantID()
 			// If tenantID is empty, show all sessions; otherwise filter by tenant
 			if tenantID == "" || sTenantID == tenantID {
 				result = append(result, sessionInfo{
