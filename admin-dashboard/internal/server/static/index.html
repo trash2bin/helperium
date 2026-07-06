@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard — Agent Tutor</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Inline login overlay styles so they load instantly before Alpine boots */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .login-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
+      animation: slideUp 0.25s ease;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .login-card .login-logo { text-align: center; margin-bottom: 24px; }
+    .login-card .login-logo h1 { font-size: 22px; font-weight: 700; color: #e6edf3; }
+    .login-card .login-logo p { font-size: 13px; color: #8b949e; margin-top: 4px; }
+    .login-card .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .login-card .form-group label { font-size: 12px; font-weight: 600; color: #8b949e; }
+    .login-card .form-group input {
+      padding: 10px 12px;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      background: #0d1117;
+      color: #e6edf3;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .login-card .form-group input:focus { border-color: #58a6ff; box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
+    .login-card .btn-primary {
+      width: 100%;
+      padding: 10px 16px;
+      background: #58a6ff;
+      border: 1px solid #58a6ff;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .login-card .btn-primary:hover { background: #79b8ff; }
+    .login-card .login-error { color: #f85149; font-size: 13px; margin-top: 8px; text-align: center; }
+  </style>
+</head>
+<body x-data="dashboard()" x-init="init()">
+  <!-- ── Login Overlay ── -->
+  <div x-show="!tokenSet" class="login-overlay" x-cloak>
+    <div class="login-card">
+      <div class="login-logo">
+        <h1>⚙️ Admin Dashboard</h1>
+        <p>Agent Tutor — управление платформой</p>
+      </div>
+      <form @submit.prevent="login()">
+        <div class="form-group">
+          <label>ADMIN_TOKEN</label>
+          <input type="password" x-model="tokenInput" placeholder="Введите токен доступа" autofocus>
+        </div>
+        <button type="submit" class="btn-primary">Войти</button>
+        <div x-show="error" class="login-error" x-text="error"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Main App ── -->
+  <div class="app" x-show="tokenSet">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>⚙️ Admin</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" @click.prevent="page='dashboard'; refreshDashboard(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='dashboard'}">
+          📊 Дашборд
+        </a>
+        <a href="#" @click.prevent="page='tenants'; loadTenants(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tenants'}">
+          🏪 Тенанты
+        </a>
+        <a href="#" @click.prevent="page='config'; refreshConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='config'}" x-show="selectedTenant">
+          ⚙️ Конфиг
+        </a>
+        <a href="#" @click.prevent="page='tools'; refreshPendingTools(); loadManifest(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tools'}" x-show="selectedTenant">
+          🛠️ Тулы
+        </a>
+        <a href="#" @click.prevent="page='rag'; refreshRag(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='rag'}">
+          📄 RAG
+        </a>
+        <a href="#" @click.prevent="page='agents'; loadAgents(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='agents'}">
+          🤖 Агенты
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="version">v0.1.0</span>
+        <small x-text="`DS: ${dataService}`"></small>
+        <a href="#" @click.prevent="logout()" style="font-size:11px;color:#8b949e;text-decoration:none;">🚪 Выйти</a>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <!-- Loading -->
+      <div x-show="loading" class="loading">
+        <div class="spinner"></div>
+        <span>Загрузка...</span>
+      </div>
+
+      <!-- Error -->
+      <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+      <!-- Dashboard Page -->
+      <div x-show="page === 'dashboard'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>📊 Дашборд</h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="refreshDashboard()" class="btn btn-sm">🔄</button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" x-text="dashboard.tenant_count ?? '—'"></div>
+            <div class="stat-label">Тенанты</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="font-size:16px;word-break:break-all;" x-text="dashboard.data_service ?? '—'"></div>
+            <div class="stat-label">Data Service</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">
+              <span x-show="dashboard.status === 'ok'" style="color:#3fb950;">✓</span>
+              <span x-show="dashboard.status !== 'ok' && dashboard.status" style="color:#f85149;">✗</span>
+              <span x-show="!dashboard.status" style="color:#8b949e;">—</span>
+            </div>
+            <div class="stat-label">Статус</div>
+          </div>
+        </div>
+        <div class="card" x-show="dashboard.tenants && dashboard.tenants.length">
+          <h3>Тенанты</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Статус</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="t in dashboard.tenants" :key="t.id">
+                <tr>
+                  <td x-text="t.id"></td>
+                  <td><span class="badge badge-green" x-text="t.status || 'active'"></span></td>
+                  <td>
+                    <button @click="selectTenant(t.id)" class="btn btn-sm">Открыть</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tenants Page -->
+      <div x-show="page === 'tenants'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>🏪 Тенанты</h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="showNewTenantForm = !showNewTenantForm" class="btn">+ Новый тенант</button>
+          </div>
+        </div>
+
+        <!-- New Tenant Form -->
+        <div x-show="showNewTenantForm" class="card" x-cloak>
+          <h3>Подключить базу данных</h3>
+          <form @submit.prevent="createTenantWithUpload()" class="form">
+            <div class="form-group">
+              <label>Название тенанта</label>
+              <input type="text" x-model="newTenant.tenant_id" placeholder="my-client" required>
+            </div>
+            <div class="form-group">
+              <label>Тип БД</label>
+              <select x-model="newTenant.driver" @change="newTenantUploadFile = null; newTenant.dsn = ''">
+                <option value="sqlite3">SQLite — загрузить файл</option>
+                <option value="postgres">PostgreSQL — подключение по URL</option>
+              </select>
+            </div>
+
+            <!-- SQLite: загрузка файла -->
+            <div x-show="newTenant.driver === 'sqlite3'" x-cloak>
+              <div class="upload-zone"
+                @dragover.prevent="$el.classList.add('dragover')"
+                @dragleave.prevent="$el.classList.remove('dragover')"
+                @drop.prevent="$el.classList.remove('dragover'); newTenantUploadFile = $event.dataTransfer.files[0]"
+                @click="$refs.tenantFileInput.click()">
+                <div x-show="!newTenantUploadFile">
+                  <div style="font-size:32px;margin-bottom:8px;">🗄️</div>
+                  <div style="font-weight:600;">Перетащите SQLite файл (.db) или кликните для выбора</div>
+                  <div style="font-size:11px;color:#8b949e;margin-top:4px;">Файл будет загружен и подключён как база данных тенанта</div>
+                </div>
+                <div x-show="newTenantUploadFile" style="display:flex;align-items:center;gap:10px;">
+                  <div style="font-size:24px;">📄</div>
+                  <div style="text-align:left;">
+                    <div x-text="newTenantUploadFile.name" style="font-weight:600;"></div>
+                    <div style="font-size:11px;color:#8b949e;" x-text="(newTenantUploadFile.size / 1024).toFixed(1) + ' KB'"></div>
+                  </div>
+                  <button type="button" @click="newTenantUploadFile = null" class="btn btn-sm" style="margin-left:auto;">✕</button>
+                </div>
+                <input type="file" x-ref="tenantFileInput" accept=".db,.sqlite,.sqlite3"
+                  @change="newTenantUploadFile = $event.target.files[0]" style="display:none">
+              </div>
+            </div>
+
+            <!-- PostgreSQL: DSN -->
+            <div x-show="newTenant.driver === 'postgres'" x-cloak>
+              <div class="form-group">
+                <label>DSN (URL подключения)</label>
+                <input type="text" x-model="newTenant.dsn"
+                  placeholder="postgres://user:pass@host:5432/dbname?sslmode=disable">
+                <small class="text-muted" style="font-size:11px;margin-top:2px;">
+                  Формат: <code>postgres://user:password@host:port/dbname?sslmode=disable</code>
+                </small>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" :disabled="creating || (newTenant.driver === 'sqlite3' && !newTenantUploadFile)">
+                <span x-show="creating">⏳</span>
+                <span x-show="!creating">Создать</span>
+              </button>
+              <button type="button" @click="showNewTenantForm = false" class="btn">Отмена</button>
+            </div>
+          </form>
+          <div x-show="createResult" class="mt-1">
+            <pre x-text="JSON.stringify(createResult, null, 2)" class="code-block"></pre>
+          </div>
+        </div>
+
+        <!-- Tenant List -->
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Статус</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="t in tenants" :key="t.id">
+                <tr>
+                  <td x-text="t.id"></td>
+                  <td><span class="badge badge-green" x-text="t.status || 'active'"></span></td>
+                  <td class="actions">
+                    <button @click="selectTenant(t.id)" class="btn btn-sm">⚙️ Конфиг</button>
+                    <button @click="deleteTenant(t.id)" class="btn btn-sm btn-danger">🗑️</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Config Page -->
+      <div x-show="page === 'config'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>⚙️ Конфиг: <span class="highlight" x-text="selectedTenant"></span></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="refreshConfig()" class="btn btn-sm">🔄</button>
+            <button @click="saveConfig()" class="btn btn-primary btn-sm" :disabled="saving">
+              <span x-show="saving">⏳</span>
+              <span x-show="!saving">💾 Сохранить</span>
+            </button>
+            <button @click="introspectTenant()" class="btn btn-sm" :disabled="introspecting">
+              🔍 Пересканировать
+            </button>
+          </div>
+        </div>
+
+        <!-- Read Only Toggle with save indicator -->
+        <div class="card">
+          <h3>Режим доступа</h3>
+          <div class="toggle-with-label">
+            <label class="toggle">
+              <input type="checkbox"
+                :checked="config.data_source?.read_only !== false"
+                @change="toggleReadOnly($event.target.checked)">
+              <span></span>
+            </label>
+            <div>
+              <span class="text" x-text="config.data_source?.read_only !== false ? '🔒 Read-only' : '✏️ Read-write'"></span>
+              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only !== false">Write-тулы заблокированы — нужны подтверждение или отключение read-only</span>
+              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only === false">Все тулы активны, включая write-операции</span>
+            </div>
+            <span class="save-indicator" x-show="saveIndicator === 'readonly'" x-text="saveIndicatorText" x-transition.opacity.duration.200ms></span>
+          </div>
+        </div>
+
+        <!-- Entities -->
+        <div class="card" x-show="config.entities && config.entities.length">
+          <h3>Сущности (Entities)</h3>
+          <template x-for="(entity, i) in config.entities" :key="entity.name">
+            <div class="entity-block">
+              <div class="entity-header">
+                <label class="toggle">
+                  <input type="checkbox"
+                    :checked="entity.enabled !== false"
+                    @change="entity.enabled = $event.target.checked; configDirty = true">
+                  <span></span>
+                </label>
+                <span class="entity-name" x-text="entity.name" @click="entity.enabled = !entity.enabled; configDirty = true" style="cursor:pointer;"></span>
+                <span class="badge" x-text="entity.table_name || entity.name"></span>
+              </div>
+              <div class="entity-fields" x-show="entity.fields">
+                <template x-for="field in entity.fields" :key="field.name">
+                  <div class="field-row">
+                    <span class="field-name" x-text="field.name"></span>
+                    <span class="field-type" x-text="field.type"></span>
+                    <span class="field-desc" x-text="field.description || ''"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Endpoints / Tools -->
+        <div class="card" x-show="config.endpoints && config.endpoints.length">
+          <h3>Эндпоинты (Tools)</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Метод</th>
+                <th>Путь</th>
+                <th>Операция</th>
+                <th>Описание</th>
+                <th>Вкл/Выкл</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(ep, i) in config.endpoints" :key="ep.path + ep.method">
+                <tr>
+                  <td><span class="method-badge" :class="'method-' + (ep.method || '').toLowerCase()" x-text="ep.method"></span></td>
+                  <td x-text="ep.path"></td>
+                  <td x-text="ep.op || ''"></td>
+                  <td>
+                    <input type="text" x-model="ep.description" class="input-sm" placeholder="Описание..." @input="configDirty = true">
+                  </td>
+                  <td>
+                    <label class="toggle toggle-sm">
+                      <input type="checkbox"
+                        :checked="ep.enabled !== false"
+                        @change="ep.enabled = $event.target.checked; configDirty = true">
+                      <span></span>
+                    </label>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tools Page -->
+      <div x-show="page === 'tools'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>🛠️ Тулы: <span class="highlight" x-text="selectedTenant"></span></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="loadManifest(); refreshPendingTools()" class="btn btn-sm">🔄</button>
+          </div>
+        </div>
+
+        <div x-show="!manifest && !pendingTools" class="card">
+          <p>Выберите тенант, чтобы увидеть его тулы.</p>
+        </div>
+
+        <!-- All tools from manifest -->
+        <div x-show="manifest && manifest.mcp_tools && manifest.mcp_tools.length" class="card" x-cloak>
+          <h3>📋 MCP-инструменты (<span x-text="manifest.mcp_tools.length"></span>)</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Название</th>
+                <th>Метод</th>
+                <th>Эндпоинт</th>
+                <th>Описание</th>
+                <th>Параметры</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="tool in manifest.mcp_tools" :key="tool.name">
+                <tr>
+                  <td style="font-weight:600;font-family:monospace;" x-text="tool.name"></td>
+                  <td>
+                    <span class="method-badge" :class="'method-' + ((findEndpoint(tool.endpoint)?.method || '').toLowerCase())" x-text="findEndpoint(tool.endpoint)?.method || '—'"></span>
+                  </td>
+                  <td style="font-size:11px;font-family:monospace;" x-text="tool.endpoint"></td>
+                  <td style="font-size:12px;max-width:300px;" x-text="tool.description"></td>
+                  <td style="font-size:11px;">
+                    <template x-for="p in tool.params" :key="p.name">
+                      <span class="param-badge" :title="p.description || p.name">
+                        <span x-text="p.name"></span>
+                        <span x-show="p.required" style="color:#f85149;">*</span>
+                        <span class="text-muted" x-text="':' + (p.type || 'string')"></span>
+                      </span>
+                    </template>
+                    <span x-show="!tool.params?.length" class="text-muted">нет</span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Read-only status + pending tools -->
+        <div x-show="manifest" class="card" x-cloak>
+          <h3>🔒 Режим доступа</h3>
+          <p>
+            <span x-show="manifest.data_source?.read_only !== false" style="color:#d29922;">🔒 Read-only</span>
+            <span x-show="manifest.data_source?.read_only === false" style="color:#3fb950;">✏️ Read-write</span>
+            —
+            <span x-show="pendingTools && pendingTools.mode === 'read_write'">все write-операции разрешены</span>
+            <span x-show="pendingTools && pendingTools.mode !== 'read_write'">write-тулы заблокированы, требуется подтверждение</span>
+          </p>
+        </div>
+
+        <!-- Pending tools (read-only mode) -->
+        <div x-show="pendingTools && pendingTools.mode !== 'read_write' && pendingTools.tools && pendingTools.tools.length" class="card" x-cloak>
+          <h3>⏳ Write-тулы (ожидают подтверждения)</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Тул</th>
+                <th>Метод</th>
+                <th>Путь</th>
+                <th>Статус</th>
+                <th>Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="tool in pendingTools.tools" :key="tool.name">
+                <tr>
+                  <td x-text="tool.name"></td>
+                  <td><span class="method-badge" :class="'method-' + (tool.method || '').toLowerCase()" x-text="tool.method"></span></td>
+                  <td x-text="tool.path"></td>
+                  <td>
+                    <span x-show="tool.approved" class="badge badge-green">✅ Approved</span>
+                    <span x-show="!tool.approved" class="badge badge-yellow">⏳ Pending</span>
+                  </td>
+                  <td>
+                    <button x-show="!tool.approved"
+                      @click="approveTool(tool.name)"
+                      class="btn btn-sm btn-primary">
+                      ✅ Подтвердить
+                    </button>
+                    <span x-show="tool.approved" style="color:#8b949e;font-size:12px;">—</span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- No pending tools -->
+        <div x-show="pendingTools && pendingTools.mode !== 'read_write' && (!pendingTools.tools || pendingTools.tools.length === 0)" class="card" x-cloak>
+          <p>Нет write-тулов, ожидающих подтверждения.</p>
+        </div>
+      </div>
+
+      <!-- RAG Page -->
+      <div x-show="page === 'rag'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>📄 RAG — Управление документами</h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="refreshRag()" class="btn btn-sm">🔄</button>
+          </div>
+        </div>
+
+        <!-- RAG Stats -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" x-text="ragHealth.status || '...'"></div>
+            <div class="stat-label">Статус RAG</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="font-size:18px" x-text="ragHealth.embedding?.model || '—'"></div>
+            <div class="stat-label">Embedding модель</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" x-text="ragDocsCount"></div>
+            <div class="stat-label">Документов</div>
+          </div>
+        </div>
+
+        <!-- Import Form -->
+        <div class="card">
+          <h3>📥 Импорт документа</h3>
+          <form @submit.prevent="uploadRagDoc()" class="form">
+            <div class="upload-zone"
+              @dragover.prevent="$el.classList.add('dragover')"
+              @dragleave.prevent="$el.classList.remove('dragover')"
+              @drop.prevent="$el.classList.remove('dragover'); ragDropFile($event)"
+              @click="$refs.fileInput.click()">
+              <div x-show="!ragUploadFile">
+                <div style="font-size:32px;margin-bottom:8px;">📁</div>
+                <div style="font-weight:600;">Перетащите файл сюда или кликните для выбора</div>
+                <div style="font-size:11px;color:#8b949e;margin-top:4px;">PDF, DOCX, TXT, MD, HTML</div>
+              </div>
+              <div x-show="ragUploadFile" style="display:flex;align-items:center;gap:10px;">
+                <div style="font-size:24px;">📄</div>
+                <div style="text-align:left;">
+                  <div x-text="ragUploadFile.name" style="font-weight:600;"></div>
+                  <div style="font-size:11px;color:#8b949e;" x-text="(ragUploadFile.size / 1024).toFixed(1) + ' KB'"></div>
+                </div>
+                <button type="button" @click="ragUploadFile = null" class="btn btn-sm" style="margin-left:auto;">✕</button>
+              </div>
+              <input type="file" x-ref="fileInput" accept=".pdf,.docx,.txt,.md,.html"
+                @change="ragUploadFile = $event.target.files[0]" style="display:none">
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+              <label>Название (опционально)</label>
+              <input type="text" x-model="ragImport.title" placeholder="Лекция 1: Введение">
+            </div>
+            <div class="form-group">
+              <label>Discipline ID (опционально)</label>
+              <input type="text" x-model="ragImport.discipline_id" placeholder="discipline-1">
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" :disabled="ragImporting || !ragUploadFile">
+                <span x-show="ragImporting">⏳</span>
+                <span x-show="!ragImporting">📥 Импортировать</span>
+              </button>
+            </div>
+          </form>
+          <div x-show="ragImportResult" class="mt-1">
+            <pre x-text="JSON.stringify(ragImportResult, null, 2)" class="code-block"></pre>
+          </div>
+        </div>
+
+        <!-- Documents List -->
+        <div class="card">
+          <h3>📋 Документы</h3>
+          <div x-show="!ragDocs.length" class="text-muted" style="padding:12px 0;">Нет документов. Импортируйте первый.</div>
+          <table class="table" x-show="ragDocs.length > 0">
+            <thead>
+              <tr>
+                <th>Название</th>
+                <th>ID</th>
+                <th>Путь</th>
+                <th>Чанков</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="doc in ragDocs" :key="doc.id">
+                <tr>
+                  <td x-text="doc.title || doc.filename || '—'"></td>
+                  <td style="font-family:monospace;font-size:11px;" x-text="doc.id"></td>
+                  <td style="font-size:11px;" x-text="doc.source_path || doc.path || '—'"></td>
+                  <td x-text="doc.chunks_count ?? '?'"></td>
+                  <td>
+                    <button @click="deleteRagDoc(doc)" class="btn btn-sm btn-danger">🗑️</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Agents Page -->
+      <div x-show="page === 'agents'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>🤖 Агенты</h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="openNewAgentModal()" class="btn">+ Создать агента</button>
+            <button @click="loadAgents()" class="btn btn-sm">🔄</button>
+          </div>
+        </div>
+
+        <!-- Agent Table -->
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Имя</th>
+                <th>Описание</th>
+                <th>Tenant-ы</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="agent in agents" :key="agent.name">
+                <tr>
+                  <td><strong x-text="agent.name"></strong></td>
+                  <td style="color:var(--text-muted);font-size:13px;" x-text="agent.description || '—'"></td>
+                  <td>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                      <template x-for="tid in (agent.tenant_ids || [])" :key="tid">
+                        <span style="display:inline-block;padding:2px 8px;background:var(--accent-muted);color:var(--accent);border-radius:4px;font-size:11px;font-weight:600;" x-text="tid"></span>
+                      </template>
+                      <span x-show="!(agent.tenant_ids && agent.tenant_ids.length)" style="color:var(--text-disabled);font-size:12px;">—</span>
+                    </div>
+                  </td>
+                  <td class="actions">
+                    <button @click="editAgent(agent)" class="btn btn-sm" title="Редактировать">✏️</button>
+                    <button @click="deleteAgent(agent.name)" class="btn btn-sm btn-danger" title="Удалить">🗑️</button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="agents.length === 0">
+                <td colspan="4" style="text-align:center;padding:40px 20px;color:var(--text-muted);">
+                  <div style="font-size:48px;margin-bottom:12px;">🤖</div>
+                  <p>Нет агентов. Создайте первого агента.</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── Create Agent Modal ── -->
+    <div x-show="showNewAgentForm" class="modal-overlay" x-cloak>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>🤖 Создать агента</h3>
+          <button @click="showNewAgentForm = false" class="modal-close">✕</button>
+        </div>
+        <form @submit.prevent="createAgent()" class="form">
+          <div class="form-group">
+            <label>Имя агента</label>
+            <input type="text" x-model="newAgent.name" placeholder="my-chat-agent" pattern="^[a-z][a-z0-9_-]*$" required autofocus>
+            <small class="text-muted" style="font-size:11px;">Только латиница, цифры, дефис и подчёркивание</small>
+          </div>
+          <div class="form-group">
+            <label>Описание</label>
+            <input type="text" x-model="newAgent.description" placeholder="Чат-агент для отдела продаж">
+          </div>
+          <div class="form-group">
+            <label>Tenant-ы — выберите базы данных для агента</label>
+            <div x-show="availableTenants.length === 0" class="text-muted" style="font-size:12px;">Нет доступных tenant'ов. Сначала создайте тенант.</div>
+            <div class="tenant-checkbox-list">
+              <template x-for="t in availableTenants" :key="t.id">
+                <label class="checkbox-row">
+                  <input type="checkbox" :value="t.id" x-model="newAgent.tenant_ids_selected">
+                  <span x-text="t.id" style="font-family:monospace;"></span>
+                </label>
+              </template>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" :disabled="creatingAgent">
+              <span x-show="creatingAgent">⏳</span>
+              <span x-show="!creatingAgent">🤖 Создать</span>
+            </button>
+            <button type="button" @click="showNewAgentForm = false" class="btn">Отмена</button>
+          </div>
+        </form>
+        <div x-show="agentCreateResult" class="mt-1">
+          <pre x-text="JSON.stringify(agentCreateResult, null, 2)" class="code-block"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Edit Agent Modal ── -->
+    <div x-show="editingAgent" class="modal-overlay" x-cloak>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>✏️ Редактировать: <span class="highlight" x-text="editAgentData.name"></span></h3>
+          <button @click="editingAgent = false" class="modal-close">✕</button>
+        </div>
+        <form @submit.prevent="updateAgent()" class="form">
+          <div class="form-group">
+            <label>Описание</label>
+            <input type="text" x-model="editAgentData.description" placeholder="Описание агента">
+          </div>
+          <div class="form-group">
+            <label>Tenant-ы</label>
+            <div class="tenant-checkbox-list">
+              <template x-for="t in availableTenants" :key="t.id">
+                <label class="checkbox-row">
+                  <input type="checkbox" :value="t.id" x-model="editAgentData.tenant_ids">
+                  <span x-text="t.id" style="font-family:monospace;"></span>
+                </label>
+              </template>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" :disabled="savingAgent">
+              <span x-show="savingAgent">⏳</span>
+              <span x-show="!savingAgent">💾 Сохранить</span>
+            </button>
+            <button type="button" @click="editingAgent = false" class="btn">Отмена</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
