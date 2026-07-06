@@ -407,7 +407,10 @@ async def proxy_backlog_detail(request: Request, session_id: str) -> Response:
 @app.get("/api/session/history")
 async def proxy_session_history(request: Request) -> Response:
     session_id = request.query_params.get("session_id", "")
+    agent_name = request.query_params.get("agent_name")
     path = f"/api/session/history?session_id={session_id}"
+    if agent_name:
+        path += f"&agent_name={agent_name}"
     return await _proxy_to_api(request, path)
 
 
@@ -417,12 +420,18 @@ async def proxy_chat(request: Request):
     return await _proxy_to_api(request, "/api/chat", stream=True)
 
 
+@app.post("/api/chat/{agent_name}", response_model=None)
+async def proxy_chat_by_agent(request: Request, agent_name: str):
+    """Proxy SSE chat for a named agent."""
+    return await _proxy_to_api(request, f"/api/chat/{agent_name}", stream=True)
+
+
 # Catch-all for any other /api/* path
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], response_model=None)
 async def proxy_api_any(request: Request, path: str):
     """Catch-all proxy for any undefined /api/* route."""
     is_sse = path == "chat" and request.method == "POST"
-    return await _proxy_to_api(request, f"/{path}", stream=is_sse)
+    return await _proxy_to_api(request, f"/api/{path}", stream=is_sse)
 
 
 def main() -> None:
