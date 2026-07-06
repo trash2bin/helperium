@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/agent-tutor/agent-tutor-go/config"
 	"github.com/agent-tutor/data-service/internal/configgen"
 	"github.com/agent-tutor/data-service/internal/datasource"
@@ -42,6 +44,11 @@ type AdminContext struct {
 	// Вызывается после записи нового конфига на диск, чтобы атомарно
 	// перестроить роутер.
 	ReloadFn func(configPath string) error
+
+	// ApprovedWriteEndpoints — множество утверждённых write-эндпоинтов
+	// (ключ = path эндпоинта). Используется в read-only режиме для
+	// выборочного разрешения мутирующих операций через admin API.
+	ApprovedWriteEndpoints map[string]bool
 }
 
 // adminConfigResponse — DTO для GET /admin/config (без DSN).
@@ -285,6 +292,168 @@ func archiveCurrentConfig(configPath string) error {
 
 	slog.Info("admin config: archived", "archive", archivePath)
 	return nil
+}
+
+// ── MCP Tool Management (read-only одобрение write-тулов) ──
+
+// adminPendingToolsHandler возвращает список write-эндпоинтов, ожидающих подтверждения.
+func adminPendingToolsHandler(cfg *config.Config, ctx *AdminContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		readOnly := cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly
+		if !readOnly {
+			handlers.RespondJSON(w, http.StatusOK, map[string]any{
+				"mode":  "read_write",
+				"tools": []string{},
+				"note":  "Read-only mode is OFF — all tools are active",
+			})
+			return
+		}
+
+		type pendingTool struct {
+			Name     string `json:"name"`
+			Method   string `json:"method"`
+			Path     string `json:"path"`
+			Approved bool   `json:"approved"`
+		}
+
+		pending := make([]pendingTool, 0)
+		toolNames := deriveToolNames(cfg.Endpoints)
+		for _, ep := range cfg.Endpoints {
+			if isWriteMethod(ep.Method) {
+				name := toolNames[ep.Path]
+				pending = append(pending, pendingTool{
+					Name:     name,
+					Method:   string(ep.Method),
+					Path:     ep.Path,
+					Approved: ctx.ApprovedWriteEndpoints[ep.Path],
+				})
+			}
+		}
+
+		// Считаем approved и pending на месте
+		approvedCount := 0
+		pendingCount := 0
+		for _, t := range pending {
+			if t.Approved {
+				approvedCount++
+			} else {
+				pendingCount++
+			}
+		}
+
+		handlers.RespondJSON(w, http.StatusOK, map[string]any{
+			"mode":     "read_only",
+			"tools":    pending,
+			"approved": approvedCount,
+			"pending":  pendingCount,
+		})
+	}
+}
+
+// adminApproveToolHandler подтверждает write-тул для использования в read-only режиме.
+func adminApproveToolHandler(cfg *config.Config, ctx *AdminContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		toolName := chi.URLParam(r, "toolName")
+		if toolName == "" {
+			handlers.RespondError(w, http.StatusBadRequest, "missing_tool", "toolName is required")
+			return
+		}
+
+		// Находим endpoint по имени тула
+		toolNames := deriveToolNames(cfg.Endpoints)
+		var epPath string
+		for _, ep := range cfg.Endpoints {
+			name := toolNames[ep.Path]
+			if name == toolName && isWriteMethod(ep.Method) {
+				epPath = ep.Path
+				break
+			}
+		}
+
+		if epPath == "" {
+			handlers.RespondError(w, http.StatusNotFound, "tool_not_found",
+				fmt.Sprintf("write tool %q not found", toolName))
+			return
+		}
+
+		if ctx.ApprovedWriteEndpoints == nil {
+			ctx.ApprovedWriteEndpoints = make(map[string]bool)
+		}
+		ctx.ApprovedWriteEndpoints[epPath] = true
+
+		// Сохраняем на диск для persistence между рестартами
+		if err := saveApprovedTools(ctx); err != nil {
+			slog.Warn("admin approve: failed to persist approvals", "error", err)
+		}
+
+		slog.Info("admin approve: write tool approved", "tool", toolName, "path", epPath)
+		handlers.RespondJSON(w, http.StatusOK, map[string]any{
+			"status": "approved",
+			"tool":   toolName,
+			"path":   epPath,
+		})
+	}
+}
+
+// deriveToolNames создаёт map[endpointPath]toolName для быстрого lookup'а.
+func deriveToolNames(endpoints []config.Endpoint) map[string]string {
+	names := make(map[string]string, len(endpoints))
+	for _, ep := range endpoints {
+		names[ep.Path] = deriveToolName(ep)
+	}
+	return names
+}
+
+// deriveToolName генерирует имя MCP-тула из endpoint'а.
+func deriveToolName(ep config.Endpoint) string {
+	switch ep.Op {
+	case config.OpBuiltinHealth:
+		return "health"
+	case config.OpBuiltinStats:
+		return "stats"
+	case config.OpGetByID:
+		return "get_" + ep.Entity
+	case config.OpFind:
+		return "find_" + ep.Entity
+	case config.OpList:
+		return "list_" + ep.Entity
+	case config.OpCustomQuery:
+		if ep.QueryID != "" {
+			return "query_" + ep.QueryID
+		}
+		return "query_" + strings.Trim(strings.ReplaceAll(strings.ReplaceAll(ep.Path, "{", ""), "}", ""), "/")
+	default:
+		return ""
+	}
+}
+
+func saveApprovedTools(ctx *AdminContext) error {
+	if ctx.ConfigPath == "" {
+		return nil
+	}
+	data, err := json.MarshalIndent(ctx.ApprovedWriteEndpoints, "", "  ")
+	if err != nil {
+		return err
+	}
+	approvalsPath := filepath.Join(filepath.Dir(ctx.ConfigPath), "approved_tools.json")
+	return os.WriteFile(approvalsPath, data, 0644)
+}
+
+// LoadApprovedTools загружает утверждённые write-эндпоинты из файла approved_tools.json.
+func LoadApprovedTools(ctx *AdminContext) error {
+	if ctx.ConfigPath == "" {
+		return nil
+	}
+	approvalsPath := filepath.Join(filepath.Dir(ctx.ConfigPath), "approved_tools.json")
+	data, err := os.ReadFile(approvalsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			ctx.ApprovedWriteEndpoints = make(map[string]bool)
+			return nil
+		}
+		return err
+	}
+	return json.Unmarshal(data, &ctx.ApprovedWriteEndpoints)
 }
 
 // ── Dev-only: config rewrite из БД (был до фазы 3.7) ──

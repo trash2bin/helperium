@@ -23,6 +23,9 @@ import (
 // configPath — путь к файлу конфига (для /admin/config/rewrite).
 // adminCtx — опциональный контекст для admin API (hot reload и версионирование).
 // Если nil — admin endpoints не регистрируются.
+//
+// Если cfg.DataSource.ReadOnly == true (по умолчанию), любые мутирующие HTTP-методы
+// (POST, PUT, PATCH, DELETE) не регистрируются — агент может только читать данные.
 func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.AdapterSubset, adapter runtime.AdapterSubset, introspectAdapter datasource.Adapter, configPath string, adminCtx *AdminContext) (http.Handler, error) {
 	entities := runtime.ConfigToEntities(cfg.Entities)
 	customQueries := runtime.ConfigToCustomQueries(cfg.CustomQueries)
@@ -78,10 +81,41 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 			r.Get("/config/versions", adminConfigVersionsHandler(adminCtx))
 			r.Post("/config/rewrite", adminRewriteHandler(introspectAdapter, cfg.DataSource, configPath, adminCtx))
 			r.Get("/discover", discoverHandler(introspectAdapter, cfg.DataSource))
+			// Tool management: read-only approval flow
+			r.Get("/tools/pending", adminPendingToolsHandler(cfg, adminCtx))
+			r.Post("/tools/{toolName}/approve", adminApproveToolHandler(cfg, adminCtx))
 		})
 	}
 
+	// Read-only guard: если DataSource.ReadOnly == true (по умолчанию),
+	// мутирующие методы (POST, PUT, PATCH, DELETE) не регистрируются,
+	// за исключением эндпоинтов, явно подтверждённых через admin API
+	// (POST /admin/tools/{toolName}/approve).
+	readOnly := false
+	if cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly {
+		readOnly = true
+		approvedCount := 0
+		if adminCtx != nil {
+			approvedCount = len(adminCtx.ApprovedWriteEndpoints)
+		}
+		slog.Info("read-only mode enabled — write methods are blocked by default",
+			"endpoints", len(cfg.Endpoints),
+			"approved_tools", approvedCount)
+	}
+
 	for _, ep := range cfg.Endpoints {
+		// Read-only guard: пропускаем write-методы, если они не утверждены
+		if readOnly && isWriteMethod(ep.Method) {
+			if adminCtx != nil && adminCtx.ApprovedWriteEndpoints[ep.Path] {
+				slog.Debug("approved write endpoint allowed in read-only mode",
+					"method", ep.Method, "path", ep.Path, "op", ep.Op)
+			} else {
+				slog.Debug("skipping write endpoint in read-only mode",
+					"method", ep.Method, "path", ep.Path, "op", ep.Op)
+				continue
+			}
+		}
+
 		var h http.HandlerFunc
 
 		switch ep.Op {
@@ -227,6 +261,15 @@ func rewriteHandler(adp datasource.Adapter, ds config.DataSourceConfig, configPa
 			"note":      "Конфиг сохранён. Перезапусти сервис чтобы применить.",
 		})
 	}
+}
+
+// isWriteMethod возвращает true для мутирующих HTTP-методов.
+func isWriteMethod(method config.HTTPMethod) bool {
+	switch method {
+	case config.MethodPOST, config.MethodPUT, config.MethodPATCH, config.MethodDELETE:
+		return true
+	}
+	return false
 }
 
 // tenantIDFromContext — реализация handlers.Context.TenantIDFunc.

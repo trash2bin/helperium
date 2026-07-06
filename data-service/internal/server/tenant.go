@@ -439,7 +439,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 // ── Admin Router ──
 
 // BuildAdminRouter creates the chi sub-router for /admin/* endpoints.
-func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath string) http.Handler {
+func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath string, adminCtx *AdminContext, cfg *config.Config) http.Handler {
 	r := chi.NewRouter()
 
 	// All admin endpoints require ADMIN_TOKEN
@@ -461,6 +461,12 @@ func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath s
 	// Schema discovery (operates on current tenant)
 	if adapter != nil {
 		r.Get("/discover", ts.adminDiscoverHandler(adapter))
+	}
+
+	// Tool management: read-only approval flow
+	if adminCtx != nil && cfg != nil {
+		r.Get("/tools/pending", adminPendingToolsHandler(cfg, adminCtx))
+		r.Post("/tools/{toolName}/approve", adminApproveToolHandler(cfg, adminCtx))
 	}
 
 	ts.adminRouter = r

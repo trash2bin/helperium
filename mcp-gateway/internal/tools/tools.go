@@ -578,3 +578,22 @@ func extractPathParams(path string) []string {
 	}
 	return out
 }
+
+// isWriteMethod возвращает true для мутирующих HTTP-методов.
+func isWriteMethod(method config.HTTPMethod) bool {
+	switch method {
+	case config.MethodPOST, config.MethodPUT, config.MethodPATCH, config.MethodDELETE:
+		return true
+	}
+	return false
+}
+
+// isWriteTool проверяет, соответствует ли MCPTool write-методу.
+func isWriteTool(mt config.MCPTool, endpoints []config.Endpoint) bool {
+	for _, ep := range endpoints {
+		if ep.Path == mt.Endpoint {
+			return isWriteMethod(ep.Method)
+		}
+	}
+	return false
+}

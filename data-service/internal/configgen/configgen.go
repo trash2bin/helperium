@@ -66,6 +66,13 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 	mergedSkip := append([]string{}, defaultSkipPrefixes...)
 	mergedSkip = append(mergedSkip, skipPrefixes...)
 
+	// Read-only by default: сгенерированный конфиг не должен мутировать БД.
+	// Клиент может явно выставить read_only: false вручную через admin API.
+	trueVal := true
+	if ds.ReadOnly == nil {
+		ds.ReadOnly = &trueVal
+	}
+
 	cfg := &config.Config{
 		Version:    1,
 		DataSource: ds,

@@ -23,11 +23,21 @@ func MCPManifestHandler(cfg *config.Config) http.HandlerFunc {
 	if len(tools) == 0 {
 		tools = configgen.GenerateMCPTools(cfg.Endpoints)
 	}
+	// Определяем read-only режим
+	readOnly := false
+	if cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly {
+		readOnly = true
+	}
+
 	manifest := map[string]any{
 		"endpoints":      cfg.Endpoints,
 		"entities":       cfg.Entities,
 		"custom_queries": cfg.CustomQueries,
 		"mcp_tools":      tools,
+		"read_only":      readOnly,
+		"data_source": map[string]any{
+			"read_only": readOnly,
+		},
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
