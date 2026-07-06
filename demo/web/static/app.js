@@ -6,6 +6,7 @@ const apiBase = window.DEMO_API_BASE || `${window.location.protocol}//${window.l
 
 const chatHistoryKey = "agentTutorMessages";
 const tenantStorageKey = "agentTutorTenantId";
+const agentStorageKey = "agentTutorAgentId";
 const storage = window.localStorage;
 
 const state = {
@@ -15,6 +16,8 @@ const state = {
   manifest: null,
   tenantId: null,      // current tenant
   tenants: [],          // available tenants
+  agentId: null,       // selected agent name
+  agents: [],          // agents list
 };
 
 // SSE Debug logging
@@ -55,15 +58,16 @@ async function init() {
   // Restore tenant from localStorage
   const savedTenantId = readTenantId();
 
-  currentSessionId = getSessionId();
   bindChat();
   showTabPlaceholder();
-  // Параллельно: health + история чата + tenant list + manifest
+  // Параллельно: health + tenant list + agents (загружаем всё, кроме сессии)
   await Promise.all([
     checkHealth(),
-    restoreServerHistory(),
-    loadTenants(savedTenantId),
+    loadTenants(savedTenantId),  // также вызывает loadAgents — восстанавливает state.agentId
   ]);
+  // Теперь state.agentId известен — создаём сессию под правильным ключом
+  currentSessionId = getSessionId();
+  await restoreServerHistory();
   // Manifest загружается после того как tenant выбран
   await loadManifest();
 }
@@ -236,6 +240,59 @@ async function loadTenants(preferredTenantId) {
     // Полный перезапуск UI для нового tenant'а
     await reloadForNewTenant();
   });
+
+  // Load agents
+  await loadAgents();
+}
+
+async function loadAgents() {
+  const select = $("#agentSelect");
+  if (!select) return;
+
+  try {
+    const resp = await fetch(`${apiBase}/api/agents`);
+    if (!resp.ok) throw new Error(`status ${resp.status}`);
+    const data = await resp.json();
+    state.agents = data.agents || [];
+  } catch (err) {
+    console.warn("Failed to load agents:", err);
+    state.agents = [];
+  }
+
+  // Restore stored agent
+  let activeAgent = null;
+  try { activeAgent = storage.getItem(agentStorageKey); } catch {}
+  if (activeAgent && !state.agents.find(function(a) { return a.name === activeAgent; })) {
+    activeAgent = null;
+  }
+
+  select.innerHTML = '<option value="">Нет (прямой чат с tenant)</option>' +
+    state.agents.map(function(a) {
+      var sel = a.name === activeAgent ? 'selected' : '';
+      return '<option value="' + escapeHtml(a.name) + '" ' + sel + '>' + escapeHtml(a.name) + '</option>';
+    }).join('');
+
+  if (activeAgent) {
+    state.agentId = activeAgent;
+    select.value = activeAgent;
+  }
+
+  select.addEventListener("change", function() {
+    var val = select.value;
+    state.agentId = val || null;
+    try {
+      if (val) { storage.setItem(agentStorageKey, val); }
+      else { storage.removeItem(agentStorageKey); }
+    } catch {}
+    // Switch session: новый ключ по агенту → новая сессия → грузим историю
+    currentSessionId = getSessionId();
+    restoreServerHistory();
+    // Очищаем сообщение-приветствие если есть
+    var messagesEl = $("#messages");
+    if (messagesEl) {
+      messagesEl.innerHTML = "";
+    }
+  });
 }
 
 function setTenantId(id) {
@@ -258,8 +315,7 @@ async function reloadForNewTenant() {
   manifestRetries = 0;
 
   // Генерируем новую сессию для нового tenant'а
-  currentSessionId = createSessionId();
-  storage.setItem("agentTutorSessionId", currentSessionId);
+  currentSessionId = getSessionId();
 
   // Очищаем историю чата (разные tenant'ы — разные данные)
   writeStoredMessages([]);
@@ -485,9 +541,10 @@ async function restoreServerHistory() {
   try {
     if (!currentSessionId) return;
 
-    const response = await fetchWithTenant(
-      `${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}`,
-    );
+    const url = state.agentId
+      ? `${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}&agent_name=${encodeURIComponent(state.agentId)}`
+      : `${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}`;
+    const response = await fetchWithTenant(url);
     if (!response.ok) return;
 
     const data = await response.json();
@@ -573,9 +630,20 @@ async function streamChat(message, target) {
   target.dataset.saved = "false";
   sseLog("Stream started, message:", message.substring(0, 50));
   try {
-    const response = await fetchWithTenant(`${apiBase}/api/chat`, {
+    // If agent selected, use /api/chat/{agentName} — agent's tenant_ids from config
+    // Otherwise use /api/chat with tenant from dropdown
+    var chatEndpoint = state.agentId
+      ? apiBase + "/api/chat/" + encodeURIComponent(state.agentId)
+      : apiBase + "/api/chat";
+
+    var headers = { "Content-Type": "application/json" };
+    if (!state.agentId && state.tenantId) {
+      headers["X-Tenant-ID"] = state.tenantId;
+    }
+
+    const response = await fetch(chatEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: headers,
       body: JSON.stringify({ message, session_id: currentSessionId }),
     });
     sseLog("SSE connection established, status:", response.status);
@@ -604,7 +672,10 @@ async function streamChat(message, target) {
 }
 
 function getSessionId() {
-  const storageKey = "agentTutorSessionId";
+  // Каждый агент и no-agent режим имеют свой localStorage-ключ
+  var storageKey = state.agentId
+    ? "agentTutorSessionId_" + state.agentId
+    : "agentTutorSessionId";
   try {
     const existing = storage.getItem(storageKey);
     if (existing) return existing;

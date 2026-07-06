@@ -99,3 +99,52 @@ class SessionHistoryResponse(BaseModel):
     messages: list[ChatMessage] = Field(
         ..., description="Messages (role, content, tool_calls)"
     )
+
+
+# === Agent Management ===
+
+
+class AgentCreateRequest(BaseModel):
+    """Request to create a new agent."""
+
+    name: str = Field(
+        ..., min_length=1, pattern=r"^[a-z][a-z0-9_-]*$",
+        description="Unique agent name (lowercase, no spaces)"
+    )
+    description: str = Field(
+        default="", description="Human-readable description"
+    )
+    tenant_ids: list[str] = Field(
+        default_factory=list, description="Tenant IDs for this agent"
+    )
+
+
+class AgentUpdateRequest(BaseModel):
+    """Request to update an existing agent."""
+
+    description: str | None = Field(
+        default=None, description="Human-readable description"
+    )
+    tenant_ids: list[str] | None = Field(
+        default=None, description="Tenant IDs for this agent"
+    )
+
+
+class AgentResponse(BaseModel):
+    """Agent metadata."""
+
+    name: str = Field(..., description="Unique agent name")
+    description: str = Field(default="", description="Human-readable description")
+    tenant_ids: list[str] = Field(
+        default_factory=list, description="Tenant IDs"
+    )
+    created_at: str = Field(..., description="ISO timestamp")
+    updated_at: str = Field(..., description="ISO timestamp")
+
+
+class AgentListResponse(BaseModel):
+    """List of agents."""
+
+    agents: list[AgentResponse] = Field(
+        ..., description="List of agents"
+    )

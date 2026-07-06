@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+from pathlib import Path
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Awaitable
@@ -29,7 +30,12 @@ from demo.api.http_models import (
     ChatRequest,
     HealthResponse,
     SessionHistoryResponse,
+    AgentCreateRequest,
+    AgentUpdateRequest,
+    AgentResponse,
+    AgentListResponse,
 )
+from demo.api.agent_store import AgentStore
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +54,18 @@ if os.environ.get("DEMO_DEBUG", "").lower() in ("1", "true", "yes"):
 # === Lazy agent singleton (init на первом запросе, а не при импорте) ===
 _agent_instance: LLMAgent | None = None
 _agent_lock = threading.Lock()
+_agent_store: AgentStore | None = None
+
+
+def get_agent_store() -> AgentStore:
+    global _agent_store
+    if _agent_store is None:
+        with _agent_lock:
+            if _agent_store is None:
+                db_path = os.environ.get("AGENT_DB_PATH", str(Path(settings.session_db_path).parent / "agents.sqlite"))
+                _agent_store = AgentStore(db_path)
+                logger.info("Agent store initialized at %s", db_path)
+    return _agent_store
 
 
 def get_agent() -> LLMAgent:
@@ -132,10 +150,13 @@ async def chat_handler(request: Request) -> StreamingResponse:
             _single_error("Введите session_id."), media_type="text/event-stream"
         )
 
+    # Prefix: direct sessions are isolated from agent sessions
+    effective_session_id = f"direct:{session_id}"
+
     async def events():
         try:
             async for event in get_agent().stream_events(
-                message, session_id=session_id, tenant_ids=tenant_ids
+                message, session_id=effective_session_id, tenant_ids=tenant_ids
             ):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
@@ -303,8 +324,152 @@ async def backlog_detail_endpoint(
     summary="История сессии",
     description="Возвращает историю сообщений для указанной сессии.",
 )
-async def session_history_endpoint(session_id: str = Query("default")):
-    return await get_session_history(session_id)
+async def session_history_endpoint(session_id: str = Query("default"), agent_name: str = Query(None)):
+    effective = f"agent:{agent_name}:{session_id}" if agent_name else session_id
+    return await get_session_history(effective)
+
+
+# ── Agent CRUD ──
+
+@app.post(
+    "/api/agents",
+    response_model=AgentResponse,
+    status_code=201,
+    summary="Создать агента",
+    description="Создаёт нового агента с указанными tenant_id.",
+)
+async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
+    try:
+        result = await asyncio.to_thread(
+            get_agent_store().create_agent,
+            name=req.name,
+            description=req.description,
+            tenant_ids=req.tenant_ids,
+        )
+        return AgentResponse(**result)
+    except ValueError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.get(
+    "/api/agents",
+    response_model=AgentListResponse,
+    summary="Список агентов",
+    description="Возвращает список всех созданных агентов.",
+)
+async def list_agents_endpoint() -> AgentListResponse:
+    agents = await asyncio.to_thread(get_agent_store().list_agents)
+    return AgentListResponse(agents=[AgentResponse(**a) for a in agents])
+
+
+@app.get(
+    "/api/agents/{name}",
+    response_model=AgentResponse,
+    summary="Получить агента",
+    description="Возвращает данные конкретного агента по имени.",
+)
+async def get_agent_endpoint(name: str) -> AgentResponse:
+    from fastapi import HTTPException
+    agent = await asyncio.to_thread(get_agent_store().get_agent, name)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+    return AgentResponse(**agent)
+
+
+@app.put(
+    "/api/agents/{name}",
+    response_model=AgentResponse,
+    summary="Обновить агента",
+    description="Обновляет описание и/или tenant_id агента.",
+)
+async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResponse:
+    from fastapi import HTTPException
+    result = await asyncio.to_thread(
+        get_agent_store().update_agent,
+        name=name,
+        description=req.description,
+        tenant_ids=req.tenant_ids,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+    return AgentResponse(**result)
+
+
+@app.delete(
+    "/api/agents/{name}",
+    status_code=204,
+    summary="Удалить агента",
+    description="Удаляет агента по имени.",
+)
+async def delete_agent_endpoint(name: str):
+    from fastapi import HTTPException
+    deleted = await asyncio.to_thread(get_agent_store().delete_agent, name)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+    return None
+
+
+# ── Chat by agent name ──
+
+async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
+    """Chat with a specific agent (resolves tenant_ids from agent store)."""
+    agent = await asyncio.to_thread(get_agent_store().get_agent, name)
+    if not agent:
+        return StreamingResponse(
+            _single_error(f"Agent '{name}' not found"),
+            media_type="text/event-stream",
+            status_code=404,
+        )
+
+    try:
+        body = await request.json()
+        chat_req = ChatRequest(**body)
+    except Exception as exc:
+        return StreamingResponse(
+            _single_error(f"Invalid request body: {exc}"),
+            media_type="text/event-stream",
+        )
+
+    message = chat_req.message
+    session_id = chat_req.session_id
+    tenant_ids = agent.get("tenant_ids") if agent.get("tenant_ids") else None
+
+    if not message:
+        return StreamingResponse(
+            _single_error("Введите вопрос."), media_type="text/event-stream"
+        )
+
+    if not session_id:
+        return StreamingResponse(
+            _single_error("Введите session_id."), media_type="text/event-stream"
+        )
+
+    # Prefix: each agent has isolated session namespace
+    effective_session_id = f"agent:{name}:{session_id}"
+
+    async def events():
+        try:
+            async for event in get_agent().stream_events(
+                message, session_id=effective_session_id, tenant_ids=tenant_ids
+            ):
+                payload = _event_payload(event.type, event.data)
+                if payload is not None:
+                    yield _sse(payload)
+            yield _sse({"type": "done"})
+        except Exception as exc:
+            yield _sse({"type": "error", "text": _format_error(exc)})
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
+@app.post(
+    "/api/chat/{name}",
+    summary="Чат с агентом по имени",
+    description="Стриминг чата с конкретным агентом. Tenant IDs берутся из конфига агента.",
+)
+async def chat_by_agent_endpoint(name: str, request: Request) -> StreamingResponse:
+    return await chat_agent_handler(request, name)
 
 
 def main() -> None:

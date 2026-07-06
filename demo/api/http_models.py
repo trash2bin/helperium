@@ -13,6 +13,10 @@ from agent_tutor_sdk.api.models import (
     ChatRequest,
     HealthResponse,
     SessionHistoryResponse,
+    AgentCreateRequest,
+    AgentUpdateRequest,
+    AgentResponse,
+    AgentListResponse,
 )
 
 __all__ = [
@@ -24,4 +28,8 @@ __all__ = [
     "ChatRequest",
     "HealthResponse",
     "SessionHistoryResponse",
+    "AgentCreateRequest",
+    "AgentUpdateRequest",
+    "AgentResponse",
+    "AgentListResponse",
 ]
