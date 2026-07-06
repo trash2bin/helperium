@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from typing import Any, Callable, Awaitable
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -217,6 +218,58 @@ async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to import document: {exc}",
+        )
+
+
+
+
+@app.post(
+    "/documents/upload",
+    response_model=ImportDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Загрузка файла и импорт",
+    description="Принимает multipart-файл, сохраняет во временную директорию и импортирует в RAG-индекс.",
+)
+async def upload_document(
+    file: UploadFile = File(..., description="Файл документа (PDF, DOCX, TXT, MD, HTML)"),
+    title: str | None = Form(None, description="Человекочитаемое название"),
+    discipline_id: str | None = Form(None, description="ID дисциплины для привязки"),
+    discipline_name: str | None = Form(None, description="Название дисциплины"),
+) -> ImportDocumentResponse:
+    """
+    Принимает файл через multipart/form-data, сохраняет во временную директорию
+    и передаёт в пайплайн импорта (парсинг → чанкинг → эмбеддинг → индексация).
+    """
+    upload_dir = tempfile.mkdtemp(prefix="rag-upload-")
+    save_path = os.path.join(upload_dir, file.filename or "uploaded_document")
+
+    try:
+        content = await file.read()
+        with open(save_path, "wb") as f:
+            f.write(content)
+
+        result = await run_in_threadpool(
+            state.get_pipeline().import_document,
+            path=save_path,
+            discipline_id=discipline_id,
+            discipline_name=discipline_name,
+            title=title,
+        )
+        return ImportDocumentResponse(
+            document=result.document,
+            chunks_count=result.chunks_count,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
+    except Exception as exc:
+        logger.exception("upload_document failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload document: {exc}",
         )
 
 
