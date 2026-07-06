@@ -51,10 +51,11 @@ type AdminContext struct {
 	ApprovedWriteEndpoints map[string]bool
 }
 
-// adminConfigResponse — DTO для GET /admin/config (без DSN).
+// adminConfigResponse — DTO для GET /admin/config (DSN скрыт).
 type adminConfigResponse struct {
 	Version       int                              `json:"version"`
 	Driver        config.Driver                    `json:"driver"`
+	DataSource    *adminDataSourceResponse          `json:"data_source,omitempty"`
 	Entities      []config.Entity                  `json:"entities,omitempty"`
 	Endpoints     []config.Endpoint                `json:"endpoints,omitempty"`
 	CustomQueries map[string]config.CustomQuery    `json:"custom_queries,omitempty"`
@@ -62,6 +63,13 @@ type adminConfigResponse struct {
 	Auth          *config.AuthConfig               `json:"auth,omitempty"`
 	MCPTools      []config.MCPTool                 `json:"mcp_tools,omitempty"`
 	Introspection *config.IntrospectionConfig      `json:"introspection,omitempty"`
+}
+
+// adminDataSourceResponse — часть конфига без DSN.
+type adminDataSourceResponse struct {
+	Driver   config.Driver `json:"driver"`
+	PoolSize *int          `json:"pool_size,omitempty"`
+	ReadOnly *bool         `json:"read_only,omitempty"`
 }
 
 // ── Auth middleware ──
@@ -110,6 +118,7 @@ func adminConfigHandler(cfg *config.Config) http.HandlerFunc {
 		resp := adminConfigResponse{
 			Version:       cfg.Version,
 			Driver:        cfg.DataSource.Driver,
+			DataSource:    responseFromDataSource(cfg.DataSource),
 			Entities:      cfg.Entities,
 			Endpoints:     cfg.Endpoints,
 			CustomQueries: cfg.CustomQueries,
@@ -119,6 +128,14 @@ func adminConfigHandler(cfg *config.Config) http.HandlerFunc {
 			Introspection: cfg.Introspection,
 		}
 		handlers.RespondJSON(w, http.StatusOK, resp)
+	}
+}
+
+func responseFromDataSource(ds config.DataSourceConfig) *adminDataSourceResponse {
+	return &adminDataSourceResponse{
+		Driver:   ds.Driver,
+		PoolSize: ds.PoolSize,
+		ReadOnly: ds.ReadOnly,
 	}
 }
 

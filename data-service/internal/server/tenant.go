@@ -265,6 +265,8 @@ func (ts *TenantStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveTenant extracts tenantID from request context or query parameter, and looks up the tenant.
+// Handles comma-separated X-Tenant-ID (e.g. "shop,default" from composite sessions)
+// by using the first tenant in the list.
 func (ts *TenantStore) resolveTenant(r *http.Request) *TenantInstance {
 	// 1. Try context (populated by TenantIDMiddleware when present)
 	tenantID, _ := r.Context().Value(tenantIDKey).(string)
@@ -277,6 +279,13 @@ func (ts *TenantStore) resolveTenant(r *http.Request) *TenantInstance {
 	// 3. Fallback to query parameter ?tenant=... (critical for Swagger UI / Browser)
 	if tenantID == "" {
 		tenantID = r.URL.Query().Get("tenant")
+	}
+
+	// Handle comma-separated tenant IDs (e.g. "shop,default" from composite MCP sessions)
+	// Use the first tenant only for routing to data-service
+	if tenantID != "" && strings.Contains(tenantID, ",") {
+		parts := strings.Split(tenantID, ",")
+		tenantID = strings.TrimSpace(parts[0])
 	}
 
 	ts.mu.RLock()
@@ -868,6 +877,7 @@ func adminConfigResponseFromConfig(cfg *config.Config) adminConfigResponse {
 	return adminConfigResponse{
 		Version:       cfg.Version,
 		Driver:        cfg.DataSource.Driver,
+		DataSource:    responseFromDataSource(cfg.DataSource),
 		Entities:      cfg.Entities,
 		Endpoints:     cfg.Endpoints,
 		CustomQueries: cfg.CustomQueries,

@@ -120,18 +120,7 @@ func main() {
 	// Build admin router (requires introspection adapter)
 	// We use the adapter from the initial config just to initialize the admin router's base capabilities
 	adapter, _ := registry.Get(string(cfg.DataSource.Driver))
-	store.SetHasAdmin(adapter != nil)
-
-	// Admin context with approved write tools loaded from disk
-	adminCtx := &server.AdminContext{
-		ConfigPath: absCfgPath,
-		ApprovedWriteEndpoints: make(map[string]bool),
-	}
-	if err := server.LoadApprovedTools(adminCtx); err != nil {
-		slog.Warn("failed to load approved tools", "error", err)
-	}
-
-	adminRouter := store.BuildAdminRouter(adapter, absCfgPath, adminCtx, cfg)
+	adminRouter := store.BuildAdminRouter(adapter, absCfgPath)
 
 	// ── Hot reload: fsnotify on config-file ──
 	// Now we only reload if a specific tenant is requested or through admin API.
@@ -159,21 +148,10 @@ func main() {
 	rootRouter.Use(server.RequestIDMiddleware)
 	rootRouter.Use(server.StructuredLoggingMiddleware)
 	rootRouter.Use(chimw.RealIP)
-	// ── Server limits: env → config.json → default ──
-	requestTimeout := time.Duration(server.ResolveRequestTimeout(cfg)) * time.Second
-	bodyLimit := server.ResolveBodyLimit(cfg)
-	maxConcurrent := server.ResolveMaxConcurrent(cfg)
-
-	rootRouter.Use(chimw.Timeout(requestTimeout))
-	rootRouter.Use(server.BodyLimitMiddleware(bodyLimit))
-	rootRouter.Use(server.ThrottleMiddleware(maxConcurrent))
 	rootRouter.Use(server.TenantIDMiddleware("X-Tenant-ID"))
 
 	// Mount admin endpoints separately to avoid routing conflicts
 	rootRouter.Mount("/admin", adminRouter)
-	// Mount the tenant store as the root handler — it dispatches
-	// /health, /docs, /openapi.json as system endpoints, and routes
-	// everything else through per-tenant routers.
 	rootRouter.Mount("/", store)
 
 	port := os.Getenv("PORT")
@@ -187,7 +165,7 @@ func main() {
 		Addr:         addr,
 		Handler:      rootRouter,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: requestTimeout,
+		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -210,9 +188,6 @@ func main() {
 		"port", port,
 		"driver", cfg.DataSource.Driver,
 		"config", absCfgPath,
-		"request_timeout", requestTimeout,
-		"body_limit_mb", bodyLimit>>20,
-		"max_concurrent", maxConcurrent,
 	)
 
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
