@@ -2,7 +2,7 @@
   "version": 1,
   "data_source": {
     "driver": "sqlite",
-    "dsn": "data-service/testdata/scenarios/shop/data.db",
+    "dsn": "/Users/ivan/code/agent-tutor/data-service/testdata/scenarios/shop/data.db",
     "read_only": false
   },
   "entities": [

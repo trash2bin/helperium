@@ -2,18 +2,19 @@
   "version": 1,
   "data_source": {
     "driver": "sqlite",
-    "dsn": "/Users/ivan/code/agent-tutor/university.db"
+    "dsn": "../data-service/testdata/scenarios/shop/data.db",
+    "read_only": false
   },
   "entities": [
     {
-      "name": "disciplines",
-      "table": "disciplines",
+      "name": "categories",
+      "table": "categories",
       "id_column": "id",
       "fields": [
         {
           "name": "id",
           "column": "id",
-          "type": "string",
+          "type": "int",
           "nullable": false,
           "primary_key": true
         },
@@ -21,7 +22,7 @@
           "name": "name",
           "column": "name",
           "type": "string",
-          "nullable": true,
+          "nullable": false,
           "primary_key": false
         },
         {
@@ -34,56 +35,14 @@
       ]
     },
     {
-      "name": "grades",
-      "table": "grades",
+      "name": "customers",
+      "table": "customers",
       "id_column": "id",
       "fields": [
         {
           "name": "id",
           "column": "id",
-          "type": "string",
-          "nullable": false,
-          "primary_key": true
-        },
-        {
-          "name": "student_id",
-          "column": "student_id",
-          "type": "string",
-          "nullable": true,
-          "primary_key": false
-        },
-        {
-          "name": "discipline_id",
-          "column": "discipline_id",
-          "type": "string",
-          "nullable": true,
-          "primary_key": false
-        },
-        {
-          "name": "grade",
-          "column": "grade",
-          "type": "string",
-          "nullable": true,
-          "primary_key": false
-        },
-        {
-          "name": "date",
-          "column": "date",
-          "type": "string",
-          "nullable": true,
-          "primary_key": false
-        }
-      ]
-    },
-    {
-      "name": "groups",
-      "table": "groups",
-      "id_column": "id",
-      "fields": [
-        {
-          "name": "id",
-          "column": "id",
-          "type": "string",
+          "type": "int",
           "nullable": false,
           "primary_key": true
         },
@@ -91,12 +50,33 @@
           "name": "name",
           "column": "name",
           "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "email",
+          "column": "email",
+          "type": "string",
           "nullable": true,
           "primary_key": false
         },
         {
-          "name": "speciality",
-          "column": "speciality",
+          "name": "phone",
+          "column": "phone",
+          "type": "string",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "city",
+          "column": "city",
+          "type": "string",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "registered_at",
+          "column": "registered_at",
           "type": "string",
           "nullable": true,
           "primary_key": false
@@ -104,34 +84,83 @@
       ]
     },
     {
-      "name": "schedule",
-      "table": "schedule",
+      "name": "order_items",
+      "table": "order_items",
       "id_column": "id",
       "fields": [
         {
           "name": "id",
           "column": "id",
-          "type": "string",
+          "type": "int",
           "nullable": false,
           "primary_key": true
         },
         {
-          "name": "day",
-          "column": "day",
+          "name": "order_id",
+          "column": "order_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "product_id",
+          "column": "product_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "quantity",
+          "column": "quantity",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "unit_price",
+          "column": "unit_price",
+          "type": "float",
+          "nullable": false,
+          "primary_key": false
+        }
+      ]
+    },
+    {
+      "name": "orders",
+      "table": "orders",
+      "id_column": "id",
+      "fields": [
+        {
+          "name": "id",
+          "column": "id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "customer_id",
+          "column": "customer_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "status",
+          "column": "status",
           "type": "string",
           "nullable": true,
           "primary_key": false
         },
         {
-          "name": "group_id",
-          "column": "group_id",
-          "type": "string",
-          "nullable": true,
+          "name": "total",
+          "column": "total",
+          "type": "float",
+          "nullable": false,
           "primary_key": false
         },
         {
-          "name": "lessons_json",
-          "column": "lessons_json",
+          "name": "created_at",
+          "column": "created_at",
           "type": "string",
           "nullable": true,
           "primary_key": false
@@ -139,14 +168,14 @@
       ]
     },
     {
-      "name": "students",
-      "table": "students",
+      "name": "products",
+      "table": "products",
       "id_column": "id",
       "fields": [
         {
           "name": "id",
           "column": "id",
-          "type": "string",
+          "type": "int",
           "nullable": false,
           "primary_key": true
         },
@@ -154,47 +183,96 @@
           "name": "name",
           "column": "name",
           "type": "string",
-          "nullable": true,
+          "nullable": false,
           "primary_key": false
         },
         {
-          "name": "group_id",
-          "column": "group_id",
+          "name": "description",
+          "column": "description",
           "type": "string",
           "nullable": true,
           "primary_key": false
         },
         {
-          "name": "course",
-          "column": "course",
+          "name": "price",
+          "column": "price",
+          "type": "float",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "category_id",
+          "column": "category_id",
           "type": "int",
           "nullable": true,
           "primary_key": false
-        }
-      ]
-    },
-    {
-      "name": "teachers",
-      "table": "teachers",
-      "id_column": "id",
-      "fields": [
-        {
-          "name": "id",
-          "column": "id",
-          "type": "string",
-          "nullable": false,
-          "primary_key": true
         },
         {
-          "name": "name",
-          "column": "name",
+          "name": "stock",
+          "column": "stock",
+          "type": "int",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "sku",
+          "column": "sku",
           "type": "string",
           "nullable": true,
           "primary_key": false
         },
         {
-          "name": "disciplines_json",
-          "column": "disciplines_json",
+          "name": "created_at",
+          "column": "created_at",
+          "type": "string",
+          "nullable": true,
+          "primary_key": false
+        }
+      ]
+    },
+    {
+      "name": "reviews",
+      "table": "reviews",
+      "id_column": "id",
+      "fields": [
+        {
+          "name": "id",
+          "column": "id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "product_id",
+          "column": "product_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "customer_id",
+          "column": "customer_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "rating",
+          "column": "rating",
+          "type": "int",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "comment",
+          "column": "comment",
+          "type": "string",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "column": "created_at",
           "type": "string",
           "nullable": true,
           "primary_key": false
@@ -205,71 +283,63 @@
   "endpoints": [
     {
       "method": "GET",
-      "path": "/disciplines/{id}",
+      "path": "/categories/{id}",
       "op": "get_by_id",
-      "entity": "disciplines"
+      "entity": "categories"
     },
     {
       "method": "GET",
-      "path": "/disciplines",
+      "path": "/categories",
       "op": "find",
-      "entity": "disciplines",
+      "entity": "categories",
       "search_field": "name",
       "query_param": "name"
     },
     {
       "method": "GET",
-      "path": "/grades/{id}",
+      "path": "/customers/{id}",
       "op": "get_by_id",
-      "entity": "grades"
+      "entity": "customers"
     },
     {
       "method": "GET",
-      "path": "/groups/{id}",
-      "op": "get_by_id",
-      "entity": "groups"
-    },
-    {
-      "method": "GET",
-      "path": "/groups",
+      "path": "/customers",
       "op": "find",
-      "entity": "groups",
+      "entity": "customers",
       "search_field": "name",
       "query_param": "name"
     },
     {
       "method": "GET",
-      "path": "/schedule/{id}",
+      "path": "/order_items/{id}",
       "op": "get_by_id",
-      "entity": "schedule"
+      "entity": "order_items"
     },
     {
       "method": "GET",
-      "path": "/students/{id}",
+      "path": "/orders/{id}",
       "op": "get_by_id",
-      "entity": "students"
+      "entity": "orders"
     },
     {
       "method": "GET",
-      "path": "/students",
+      "path": "/products/{id}",
+      "op": "get_by_id",
+      "entity": "products"
+    },
+    {
+      "method": "GET",
+      "path": "/products",
       "op": "find",
-      "entity": "students",
+      "entity": "products",
       "search_field": "name",
       "query_param": "name"
     },
     {
       "method": "GET",
-      "path": "/teachers/{id}",
+      "path": "/reviews/{id}",
       "op": "get_by_id",
-      "entity": "teachers"
-    },
-    {
-      "method": "GET",
-      "path": "/teachers",
-      "op": "find",
-      "entity": "teachers",
-      "search_field": "name",
-      "query_param": "name"
+      "entity": "reviews"
     },
     {
       "method": "GET",
@@ -280,39 +350,162 @@
       "method": "GET",
       "path": "/stats",
       "op": "builtin_stats"
+    },
+    {
+      "method": "GET",
+      "path": "/products/{id}/order_items",
+      "op": "custom_query",
+      "query_id": "order_items_by_products",
+      "params": [
+        {
+          "name": "id",
+          "in": "path",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "Get order_items for a specific products"
+    },
+    {
+      "method": "GET",
+      "path": "/orders/{id}/order_items",
+      "op": "custom_query",
+      "query_id": "order_items_by_orders",
+      "params": [
+        {
+          "name": "id",
+          "in": "path",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "Get order_items for a specific orders"
+    },
+    {
+      "method": "GET",
+      "path": "/customers/{id}/orders",
+      "op": "custom_query",
+      "query_id": "orders_by_customers",
+      "params": [
+        {
+          "name": "id",
+          "in": "path",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "Get orders for a specific customers"
+    },
+    {
+      "method": "GET",
+      "path": "/categories/{id}/products",
+      "op": "custom_query",
+      "query_id": "products_by_categories",
+      "params": [
+        {
+          "name": "id",
+          "in": "path",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "Get products for a specific categories"
+    },
+    {
+      "method": "GET",
+      "path": "/customers/{id}/reviews",
+      "op": "custom_query",
+      "query_id": "reviews_by_customers",
+      "params": [
+        {
+          "name": "id",
+          "in": "path",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "Get reviews for a specific customers"
+    },
+    {
+      "method": "GET",
+      "path": "/products/{id}/reviews",
+      "op": "custom_query",
+      "query_id": "reviews_by_products",
+      "params": [
+        {
+          "name": "id",
+          "in": "path",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "Get reviews for a specific products"
     }
   ],
+  "custom_queries": {
+    "order_items_by_orders": {
+      "sql": "SELECT t.* FROM order_items t WHERE t.order_id = ?",
+      "params": ["id"],
+      "result_mapping": {},
+      "max_rows": 100
+    },
+    "order_items_by_products": {
+      "sql": "SELECT t.* FROM order_items t WHERE t.product_id = ?",
+      "params": ["id"],
+      "result_mapping": {},
+      "max_rows": 100
+    },
+    "orders_by_customers": {
+      "sql": "SELECT t.* FROM orders t WHERE t.customer_id = ?",
+      "params": ["id"],
+      "result_mapping": {},
+      "max_rows": 100
+    },
+    "products_by_categories": {
+      "sql": "SELECT t.* FROM products t WHERE t.category_id = ?",
+      "params": ["id"],
+      "result_mapping": {},
+      "max_rows": 100
+    },
+    "reviews_by_customers": {
+      "sql": "SELECT t.* FROM reviews t WHERE t.customer_id = ?",
+      "params": ["id"],
+      "result_mapping": {},
+      "max_rows": 100
+    },
+    "reviews_by_products": {
+      "sql": "SELECT t.* FROM reviews t WHERE t.product_id = ?",
+      "params": ["id"],
+      "result_mapping": {},
+      "max_rows": 100
+    }
+  },
   "stats": {
     "counters": [
       {
-        "name": "disciplines",
-        "entity": "disciplines"
+        "name": "categories",
+        "entity": "categories"
       },
       {
-        "name": "grades",
-        "entity": "grades"
+        "name": "customers",
+        "entity": "customers"
       },
       {
-        "name": "groups",
-        "entity": "groups"
+        "name": "order_items",
+        "entity": "order_items"
       },
       {
-        "name": "schedule",
-        "entity": "schedule"
+        "name": "orders",
+        "entity": "orders"
       },
       {
-        "name": "students",
-        "entity": "students"
+        "name": "products",
+        "entity": "products"
       },
       {
-        "name": "teachers",
-        "entity": "teachers"
+        "name": "reviews",
+        "entity": "reviews"
       }
     ]
-  },
-  "server": {
-    "request_timeout_seconds": 30,
-    "body_limit_mb": 10,
-    "max_concurrent": 100
   }
 }

@@ -75,41 +75,28 @@ func TestLoad_GoodConfig(t *testing.T) {
 		t.Errorf("len(Endpoints) = %d, want %d", got, want)
 	}
 
-	// CustomQueries: 0 в example (полный набор — в config.postgres.json).
-	if got, want := len(cfg.CustomQueries), 0; got != want {
+	// CustomQueries: 6.
+	if got, want := len(cfg.CustomQueries), 6; got != want {
 		t.Errorf("len(CustomQueries) = %d, want %d", got, want)
 	}
 
-	// MCPTools: 0 в example (полный набор — в config.postgres.json).
-	if got, want := len(cfg.MCPTools), 0; got != want {
+	// MCPTools: 7.
+	if got, want := len(cfg.MCPTools), 7; got != want {
 		t.Errorf("len(MCPTools) = %d, want %d", got, want)
 	}
 
-	// Stats: 6 counters в example.
+	// Stats: 5 counters.
 	if cfg.Stats == nil {
 		t.Errorf("Stats is nil")
-	} else if got, want := len(cfg.Stats.Counters), 6; got != want {
+	} else if got, want := len(cfg.Stats.Counters), 5; got != want {
 		t.Errorf("len(Stats.Counters) = %d, want %d", got, want)
 	}
 
-	// Auth: не задана в example (полный набор — в config.postgres.json).
-	if cfg.Auth != nil {
-		t.Errorf("Auth = %+v, want nil (not configured in example)", cfg.Auth)
-	}
-
-	// Server: опциональная секция с лимитами.
-	if cfg.Server == nil {
-		t.Errorf("Server is nil")
-	} else {
-		if cfg.Server.RequestTimeoutSeconds == nil || *cfg.Server.RequestTimeoutSeconds != 30 {
-			t.Errorf("Server.RequestTimeoutSeconds = %v, want 30", cfg.Server.RequestTimeoutSeconds)
-		}
-		if cfg.Server.BodyLimitMB == nil || *cfg.Server.BodyLimitMB != 10 {
-			t.Errorf("Server.BodyLimitMB = %v, want 10", cfg.Server.BodyLimitMB)
-		}
-		if cfg.Server.MaxConcurrent == nil || *cfg.Server.MaxConcurrent != 100 {
-			t.Errorf("Server.MaxConcurrent = %v, want 100", cfg.Server.MaxConcurrent)
-		}
+	// Auth: strategy=none.
+	if cfg.Auth == nil {
+		t.Errorf("Auth is nil")
+	} else if cfg.Auth.Strategy != config.AuthStrategyNone {
+		t.Errorf("Auth.Strategy = %q, want %q", cfg.Auth.Strategy, config.AuthStrategyNone)
 	}
 }
 

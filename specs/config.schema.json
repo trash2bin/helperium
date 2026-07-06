@@ -141,31 +141,6 @@
           "items": { "$ref": "#/$defs/row_filter" }
         }
       }
-    },
-    "server": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Настройки HTTP-сервера data-service (таймауты, лимиты). Все поля опциональны — значения по умолчанию в коде.",
-      "properties": {
-        "request_timeout_seconds": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 30,
-          "description": "Таймаут обработки запроса в секундах. Переопределяется через DS_REQUEST_TIMEOUT."
-        },
-        "body_limit_mb": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 10,
-          "description": "Максимальный размер тела запроса в MB. Переопределяется через DS_BODY_LIMIT_MB."
-        },
-        "max_concurrent": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 100,
-          "description": "Максимум одновременных запросов. Переопределяется через DS_MAX_CONCURRENT."
-        }
-      }
     }
   },
   "$defs": {
