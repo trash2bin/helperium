@@ -22,11 +22,11 @@ import (
 
 // Registry manages auto-generated + explicit MCP tools.
 type Registry struct {
-	cfg        *config.Config
-	client     *httpclient.Client
-	ragClient  *ragclient.Client
-	toolDefs   []toolDef
-	tenantID   string // "" for single-tenant (no prefix), "tenant-a" for composite mode
+	cfg       *config.Config
+	client    *httpclient.Client
+	ragClient *ragclient.Client
+	toolDefs  []toolDef
+	tenantID  string // "" for single-tenant (no prefix), "tenant-a" for composite mode
 }
 
 // toolDef — внутреннее описание одного MCP-инструмента.
@@ -349,7 +349,7 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 			slog.Error("Error formatting result", "error", err)
 			return mcp.NewToolResultError(fmt.Sprintf("error formatting result: %v", err)), nil
 		}
-		
+
 		resText := string(data)
 		slog.Info("Sending tool result to agent", "tool", td.Name, "content", resText)
 		return mcp.NewToolResultText(resText), nil

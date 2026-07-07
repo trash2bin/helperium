@@ -173,7 +173,7 @@ func TestRegistry_EmptyConfig(t *testing.T) {
 
 func TestRegistry_OnlyMCPToolsSection(t *testing.T) {
 	cfg := &config.Config{
-		Version: 1,
+		Version:    1,
 		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
 		MCPTools: []config.MCPTool{
 			{Name: "custom1", Endpoint: "/e1", Description: "C1"},
@@ -281,9 +281,9 @@ func TestRegistry_DeriveParams_Find(t *testing.T) {
 
 func TestDeriveToolName(t *testing.T) {
 	tests := []struct {
-		ep     config.Endpoint
+		ep       config.Endpoint
 		entities []config.Entity
-		want   string
+		want     string
 	}{
 		{config.Endpoint{Op: config.OpBuiltinHealth}, nil, "health"},
 		{config.Endpoint{Op: config.OpBuiltinStats}, nil, "stats"},
@@ -332,8 +332,8 @@ func TestBuildDefaultDesc(t *testing.T) {
 		{Name: "order", Description: ""},
 	}
 	tests := []struct {
-		ep     config.Endpoint
-		want   string
+		ep   config.Endpoint
+		want string
 	}{
 		{config.Endpoint{Op: config.OpGetByID, Entity: "student"}, "Возвращает данные о student по его уникальному идентификатору. Используйте, когда уже знаете ID нужной записи (например, из результатов find_student или list_student). student: A student record"},
 		{config.Endpoint{Op: config.OpFind, Entity: "product", SearchField: "name"}, "Позволяет найти product по текстовому запросу. Поиск производится по полю 'name'. Если параметр поиска не указан, возвращает полный список всех записей. product: Product catalog entry"},

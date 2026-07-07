@@ -207,8 +207,9 @@ func main() {
 // writes.
 //
 // Can be overridden with env vars:
-//   MCP_READ_HEADER_TIMEOUT (seconds, default 10)
-//   MCP_IDLE_TIMEOUT (seconds, default 120)
+//
+//	MCP_READ_HEADER_TIMEOUT (seconds, default 10)
+//	MCP_IDLE_TIMEOUT (seconds, default 120)
 func buildHTTPServer(r http.Handler, port string) *http.Server {
 	readHeaderTimeout := 10 * time.Second
 	if v := os.Getenv("MCP_READ_HEADER_TIMEOUT"); v != "" {

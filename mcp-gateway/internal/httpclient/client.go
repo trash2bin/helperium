@@ -15,6 +15,7 @@ import (
 )
 
 type contextKey string
+
 const TenantIDKey contextKey = "x-tenant-id"
 
 type Client struct {
