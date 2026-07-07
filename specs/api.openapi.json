@@ -1,0 +1,1028 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Agent-Tutor Core API",
+    "description": "Backend API for the Agent-Tutor system. Handles orchestration, session history, and tool integration.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Проверка здоровья API",
+        "description": "Проверяет работоспособность API и доступность LLM провайдера.",
+        "operationId": "health_endpoint_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "summary": "Стриминг чата",
+        "description": "Основной эндпоинт для общения с агентом. Возвращает поток SSE событий.",
+        "operationId": "chat_endpoint_api_chat_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backlog": {
+      "get": {
+        "summary": "Список сессий бэклога",
+        "description": "Возвращает список всех сохраненных сессий из бэклога.",
+        "operationId": "backlog_list_endpoint_api_backlog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacklogListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backlog/{session_id}": {
+      "get": {
+        "summary": "Детали сессии бэклога",
+        "description": "Возвращает все события конкретной сессии.",
+        "operationId": "backlog_detail_endpoint_api_backlog__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacklogDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/history": {
+      "get": {
+        "summary": "История сессии",
+        "description": "Возвращает историю сообщений для указанной сессии.",
+        "operationId": "session_history_endpoint_api_session_history_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "default",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "agent_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Agent Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "summary": "Список агентов",
+        "description": "Возвращает список всех созданных агентов.",
+        "operationId": "list_agents_endpoint_api_agents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Создать агента",
+        "description": "Создаёт нового агента с указанными tenant_id.",
+        "operationId": "create_agent_endpoint_api_agents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{name}": {
+      "get": {
+        "summary": "Получить агента",
+        "description": "Возвращает данные конкретного агента по имени.",
+        "operationId": "get_agent_endpoint_api_agents__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Обновить агента",
+        "description": "Обновляет описание и/или tenant_id агента.",
+        "operationId": "update_agent_endpoint_api_agents__name__put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Удалить агента",
+        "description": "Удаляет агента по имени.",
+        "operationId": "delete_agent_endpoint_api_agents__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{name}/widget-config": {
+      "get": {
+        "summary": "Конфиг виджета для агента",
+        "description": "Возвращает настройки embed-виджета для указанного агента.",
+        "operationId": "agent_widget_config_endpoint_api_agents__name__widget_config_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Agent Widget Config Endpoint Api Agents  Name  Widget Config Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/{name}": {
+      "post": {
+        "summary": "Чат с агентом по имени",
+        "description": "Стриминг чата с конкретным агентом. Tenant IDs берутся из конфига агента.",
+        "operationId": "chat_by_agent_endpoint_api_chat__name__post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "title": "Name",
+            "description": "Unique agent name (lowercase, no spaces)"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Human-readable description",
+            "default": ""
+          },
+          "tenant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tenant Ids",
+            "description": "Tenant IDs for this agent"
+          },
+          "widget_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WidgetConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embed widget display configuration"
+          },
+          "llm_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-agent LLM overrides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "AgentCreateRequest",
+        "description": "Request to create a new agent."
+      },
+      "AgentListResponse": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentResponse"
+            },
+            "type": "array",
+            "title": "Agents",
+            "description": "List of agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agents"
+        ],
+        "title": "AgentListResponse",
+        "description": "List of agents."
+      },
+      "AgentResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Unique agent name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Human-readable description",
+            "default": ""
+          },
+          "tenant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tenant Ids",
+            "description": "Tenant IDs"
+          },
+          "widget_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WidgetConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embed widget display configuration"
+          },
+          "llm_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-agent LLM overrides"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "description": "ISO timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentResponse",
+        "description": "Agent metadata."
+      },
+      "AgentUpdateRequest": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Human-readable description"
+          },
+          "tenant_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Ids",
+            "description": "Tenant IDs for this agent"
+          },
+          "widget_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WidgetConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embed widget display configuration"
+          },
+          "llm_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-agent LLM overrides"
+          }
+        },
+        "type": "object",
+        "title": "AgentUpdateRequest",
+        "description": "Request to update an existing agent."
+      },
+      "BacklogDetailResponse": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/BacklogEvent"
+            },
+            "type": "array",
+            "title": "Records",
+            "description": "List of session events"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Requested session ID"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of records"
+          }
+        },
+        "type": "object",
+        "required": [
+          "records",
+          "session_id",
+          "count"
+        ],
+        "title": "BacklogDetailResponse",
+        "description": "Events of a specific backlog session."
+      },
+      "BacklogEvent": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Session ID"
+          },
+          "turn_id": {
+            "type": "string",
+            "title": "Turn Id",
+            "description": "Turn ID"
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "description": "Iteration number"
+          },
+          "event": {
+            "type": "string",
+            "title": "Event",
+            "description": "Event type"
+          },
+          "ts": {
+            "type": "string",
+            "title": "Ts",
+            "description": "Timestamp"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data",
+            "description": "Event data"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "session_id",
+          "turn_id",
+          "iteration",
+          "event",
+          "ts",
+          "data"
+        ],
+        "title": "BacklogEvent",
+        "description": "A single event/record in a backlog session.\n\nFields vary by ``event`` type — ``model_response`` events contain\n``duration_ms`` and ``tokens``. Extra fields are preserved via\n``extra='allow'``."
+      },
+      "BacklogListResponse": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/BacklogSessionMetadata"
+            },
+            "type": "array",
+            "title": "Sessions",
+            "description": "List of session metadata entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions"
+        ],
+        "title": "BacklogListResponse",
+        "description": "List of backlog sessions."
+      },
+      "BacklogSessionMetadata": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Session ID"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "File size in bytes"
+          },
+          "num_events": {
+            "type": "integer",
+            "title": "Num Events",
+            "description": "Number of events"
+          },
+          "first_event": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Event",
+            "description": "First event"
+          },
+          "last_event": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event",
+            "description": "Last event"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "size_bytes",
+          "num_events"
+        ],
+        "title": "BacklogSessionMetadata",
+        "description": "Metadata for one backlog session entry."
+      },
+      "ChatMessage": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Role: user / assistant / system"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Message text",
+            "default": ""
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls",
+            "description": "Tool calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "ChatMessage",
+        "description": "A single message in chat history."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "api": {
+            "type": "string",
+            "title": "Api",
+            "default": "ok"
+          },
+          "ollama": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ollama",
+            "description": "LLM provider connection status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ollama"
+        ],
+        "title": "HealthResponse",
+        "description": "API service health status."
+      },
+      "LLMConfig": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider",
+            "description": "LLM provider: ollama, mistral, openai, anthropic"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key",
+            "description": "API key for the provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Model name (e.g. qwen2.5:0.5b or mistral/mistral-small)"
+          },
+          "api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Base",
+            "description": "Base URL for the API"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "System prompt (overrides global)"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature",
+            "description": "Model temperature"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "description": "Maximum tokens in response"
+          }
+        },
+        "type": "object",
+        "title": "LLMConfig",
+        "description": "Per-agent LLM configuration. All fields optional — falls back to global defaults when null."
+      },
+      "SessionHistoryResponse": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array",
+            "title": "Messages",
+            "description": "Messages (role, content, tool_calls)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "SessionHistoryResponse",
+        "description": "Chat message history for a session."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WidgetConfig": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Widget header title",
+            "default": "Ассистент"
+          },
+          "greeting": {
+            "type": "string",
+            "title": "Greeting",
+            "description": "Greeting message in chat",
+            "default": "Чем могу помочь?"
+          },
+          "accent_color": {
+            "type": "string",
+            "title": "Accent Color",
+            "description": "Accent color (hex)",
+            "default": "#0f766e"
+          },
+          "position": {
+            "type": "string",
+            "title": "Position",
+            "description": "Widget position: right | left",
+            "default": "right"
+          }
+        },
+        "type": "object",
+        "title": "WidgetConfig",
+        "description": "Embed widget display configuration for an agent."
+      }
+    }
+  }
+}
