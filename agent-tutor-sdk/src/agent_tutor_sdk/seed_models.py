@@ -87,7 +87,9 @@ class StorageLesson(BaseModel):
     model_config = _BASE_CONFIG
 
     discipline_id: str = Field(description="FK на disciplines.id")
-    discipline_name: str = Field(description="Денормализованное имя для удобства вывода")
+    discipline_name: str = Field(
+        description="Денормализованное имя для удобства вывода"
+    )
     teacher_name: str = Field(description="ФИО преподавателя")
     room: int = Field(description="Номер аудитории")
     type: str = Field(description="Тип занятия: лекция, практика, лабораторная")

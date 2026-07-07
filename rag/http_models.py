@@ -104,9 +104,7 @@ class DeleteDocumentResponse(BaseModel):
     """Результат удаления документа."""
 
     deleted: str | None = Field(default=None, description="ID удалённого документа")
-    title: str | None = Field(
-        default=None, description="Название удалённого документа"
-    )
+    title: str | None = Field(default=None, description="Название удалённого документа")
     message: str | None = Field(
         default=None,
         description="Сообщение о результате (например, если документ не найден)",
@@ -116,7 +114,9 @@ class DeleteDocumentResponse(BaseModel):
 class SearchResponse(BaseModel):
     """Результаты семантического поиска."""
 
-    results: list[RagSearchResult] = Field(..., description="Список найденных фрагментов")
+    results: list[RagSearchResult] = Field(
+        ..., description="Список найденных фрагментов"
+    )
     count: int = Field(..., description="Общее количество результатов")
 
 

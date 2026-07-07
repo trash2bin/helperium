@@ -19,9 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ChatRequest(BaseModel):
     """Request to start or continue a chat."""
 
-    message: str = Field(
-        ..., min_length=1, description="Text message from the user"
-    )
+    message: str = Field(..., min_length=1, description="Text message from the user")
     session_id: str | None = Field(
         default="default", description="Session ID for history persistence"
     )
@@ -76,9 +74,7 @@ class BacklogEvent(BaseModel):
 class BacklogDetailResponse(BaseModel):
     """Events of a specific backlog session."""
 
-    records: list[BacklogEvent] = Field(
-        ..., description="List of session events"
-    )
+    records: list[BacklogEvent] = Field(..., description="List of session events")
     session_id: str = Field(..., description="Requested session ID")
     count: int = Field(..., description="Number of records")
 
@@ -88,9 +84,7 @@ class ChatMessage(BaseModel):
 
     role: str = Field(..., description="Role: user / assistant / system")
     content: str = Field(default="", description="Message text")
-    tool_calls: list[dict] | None = Field(
-        default=None, description="Tool calls"
-    )
+    tool_calls: list[dict] | None = Field(default=None, description="Tool calls")
 
 
 class SessionHistoryResponse(BaseModel):
@@ -111,7 +105,9 @@ class WidgetConfig(BaseModel):
     """Embed widget display configuration for an agent."""
 
     title: str = Field(default="Ассистент", description="Widget header title")
-    greeting: str = Field(default="Чем могу помочь?", description="Greeting message in chat")
+    greeting: str = Field(
+        default="Чем могу помочь?", description="Greeting message in chat"
+    )
     accent_color: str = Field(default="#0f766e", description="Accent color (hex)")
     position: str = Field(default="right", description="Widget position: right | left")
 
@@ -119,13 +115,24 @@ class WidgetConfig(BaseModel):
 class LLMConfig(BaseModel):
     """Per-agent LLM configuration. All fields optional — falls back to global defaults when null."""
 
-    provider: str | None = Field(default=None, description="LLM provider: ollama, mistral, openai, anthropic")
+    provider: str | None = Field(
+        default=None, description="LLM provider: ollama, mistral, openai, anthropic"
+    )
     api_key: str | None = Field(default=None, description="API key for the provider")
-    model: str | None = Field(default=None, description="Model name (e.g. qwen2.5:0.5b or mistral/mistral-small)")
+    model: str | None = Field(
+        default=None,
+        description="Model name (e.g. qwen2.5:0.5b or mistral/mistral-small)",
+    )
     api_base: str | None = Field(default=None, description="Base URL for the API")
-    system_prompt: str | None = Field(default=None, description="System prompt (overrides global)")
-    temperature: float | None = Field(default=None, ge=0, le=2, description="Model temperature")
-    max_tokens: int | None = Field(default=None, ge=1, description="Maximum tokens in response")
+    system_prompt: str | None = Field(
+        default=None, description="System prompt (overrides global)"
+    )
+    temperature: float | None = Field(
+        default=None, ge=0, le=2, description="Model temperature"
+    )
+    max_tokens: int | None = Field(
+        default=None, ge=1, description="Maximum tokens in response"
+    )
 
 
 # === Agent Management ===
@@ -135,12 +142,12 @@ class AgentCreateRequest(BaseModel):
     """Request to create a new agent."""
 
     name: str = Field(
-        ..., min_length=1, pattern=r"^[a-z][a-z0-9_-]*$",
-        description="Unique agent name (lowercase, no spaces)"
+        ...,
+        min_length=1,
+        pattern=r"^[a-z][a-z0-9_-]*$",
+        description="Unique agent name (lowercase, no spaces)",
     )
-    description: str = Field(
-        default="", description="Human-readable description"
-    )
+    description: str = Field(default="", description="Human-readable description")
     tenant_ids: list[str] = Field(
         default_factory=list, description="Tenant IDs for this agent"
     )
@@ -174,9 +181,7 @@ class AgentResponse(BaseModel):
 
     name: str = Field(..., description="Unique agent name")
     description: str = Field(default="", description="Human-readable description")
-    tenant_ids: list[str] = Field(
-        default_factory=list, description="Tenant IDs"
-    )
+    tenant_ids: list[str] = Field(default_factory=list, description="Tenant IDs")
     widget_config: WidgetConfig | None = Field(
         default=None, description="Embed widget display configuration"
     )
@@ -190,6 +195,4 @@ class AgentResponse(BaseModel):
 class AgentListResponse(BaseModel):
     """List of agents."""
 
-    agents: list[AgentResponse] = Field(
-        ..., description="List of agents"
-    )
+    agents: list[AgentResponse] = Field(..., description="List of agents")

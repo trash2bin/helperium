@@ -32,7 +32,9 @@ from rag.fixtures.catalog import (
 # Выходная директория для сгенерированных материалов.
 # По умолчанию — ./generated_materials относительно cwd.
 # Переопределяется через env DOCGEN_OUTPUT_DIR.
-DEFAULT_OUTPUT_DIR = Path(os.environ.get("DOCGEN_OUTPUT_DIR", "./generated_materials")).resolve()
+DEFAULT_OUTPUT_DIR = Path(
+    os.environ.get("DOCGEN_OUTPUT_DIR", "./generated_materials")
+).resolve()
 
 
 DEFAULT_DOCGEN_MODEL = "qwen2.5:0.5b"
@@ -464,9 +466,7 @@ class MaterialDocumentGenerator:
 
         self._remove_stale_generated_documents(discipline_id, force=force)
 
-        existing = self._valid_generated_materials(
-            self._list_materials(discipline_id)
-        )
+        existing = self._valid_generated_materials(self._list_materials(discipline_id))
         missing_types = self._expected_material_types() - {
             material.type for material in existing
         }
@@ -550,7 +550,9 @@ class MaterialDocumentGenerator:
                 title=document.title,
             )
         except Exception:
-            self._save_fallback(str(document.path), discipline_id, document.title, document.text)
+            self._save_fallback(
+                str(document.path), discipline_id, document.title, document.text
+            )
 
     def _remove_stale_generated_documents(
         self,

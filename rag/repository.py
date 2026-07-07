@@ -79,15 +79,19 @@ class DocumentRepository:
         # кэширует состояние курсора thread-local.
         # Для PostgreSQL (psycopg2/asyncpg) lock не нужен — драйвер thread-safe.
         # Детектим драйвер: SQLite → RLock, остальное → DummyLock (no-op).
-        conn_module = getattr(connection, '__module__', '')
-        is_sqlite = 'sqlite3' in conn_module or 'apsw' in conn_module
+        conn_module = getattr(connection, "__module__", "")
+        is_sqlite = "sqlite3" in conn_module or "apsw" in conn_module
         if is_sqlite:
             self._lock = threading.RLock()
         else:
             # Для pg и других thread-safe драйверов — no-op lock
             class _DummyLock:
-                def __enter__(self) -> _DummyLock: return self
-                def __exit__(self, *_: object) -> None: return None
+                def __enter__(self) -> _DummyLock:
+                    return self
+
+                def __exit__(self, *_: object) -> None:
+                    return None
+
             self._lock = _DummyLock()
 
     @property
@@ -286,7 +290,9 @@ class DocumentRepository:
     ) -> SaveResult:
         with self._lock:
             document_id = str(uuid.uuid4())
-            mime_type = mimetypes.guess_type(source_path)[0] or "application/octet-stream"
+            mime_type = (
+                mimetypes.guess_type(source_path)[0] or "application/octet-stream"
+            )
             document_title = title or Path(source_path).stem
 
             cursor = self.conn.cursor()
@@ -466,7 +472,9 @@ class DocumentRepository:
         with self._lock:
             source_path = str(Path(path).resolve())
             document_id = str(uuid.uuid4())
-            mime_type = mimetypes.guess_type(source_path)[0] or "application/octet-stream"
+            mime_type = (
+                mimetypes.guess_type(source_path)[0] or "application/octet-stream"
+            )
             created_at = datetime.now(timezone.utc).isoformat()
             cursor = self._exec(
                 "SELECT id FROM documents WHERE source_path = ?",
@@ -493,7 +501,9 @@ class DocumentRepository:
                     discipline_id,
                     None,  # discipline_name не сохраняется для fallback-документов
                     created_at,
-                    json.dumps({"generated": True, "indexed": False}, ensure_ascii=False),
+                    json.dumps(
+                        {"generated": True, "indexed": False}, ensure_ascii=False
+                    ),
                 ),
             )
             cursor.execute(

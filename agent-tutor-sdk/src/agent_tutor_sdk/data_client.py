@@ -93,15 +93,11 @@ class AsyncDataServiceClient:
 
     async def get(self, entity: str, id: str) -> Entity | None:
         """Get one entity by ID, e.g. get(\"students\", \"s1\")."""
-        return self._parse_one(
-            await self._get(f"/{entity}/{quote(id, safe='')}")
-        )
+        return self._parse_one(await self._get(f"/{entity}/{quote(id, safe='')}"))
 
     async def find(self, entity: str, field: str, value: str) -> Entity | None:
         """Find one entity by field value, e.g. find(\"students\", \"name\", \"Иван\")."""
-        return self._parse_one(
-            await self._get(f"/{entity}?{field}={quote(value)}")
-        )
+        return self._parse_one(await self._get(f"/{entity}?{field}={quote(value)}"))
 
     async def list_all(self, entity: str) -> list[Entity]:
         """List all entities, e.g. list_all(\"students\")."""
@@ -174,15 +170,11 @@ class DataServiceClientSync:
 
     def get(self, entity: str, id: str) -> Entity | None:
         """Get one entity by ID, e.g. get(\"students\", \"s1\")."""
-        return self._parse_one(
-            self._get(f"/{entity}/{quote(id, safe='')}")
-        )
+        return self._parse_one(self._get(f"/{entity}/{quote(id, safe='')}"))
 
     def find(self, entity: str, field: str, value: str) -> Entity | None:
         """Find one entity by field value, e.g. find(\"students\", \"name\", \"Иван\")."""
-        return self._parse_one(
-            self._get(f"/{entity}?{field}={quote(value)}")
-        )
+        return self._parse_one(self._get(f"/{entity}?{field}={quote(value)}"))
 
     def list_all(self, entity: str) -> list[Entity]:
         """List all entities, e.g. list_all(\"students\")."""

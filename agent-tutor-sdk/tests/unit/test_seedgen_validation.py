@@ -33,6 +33,7 @@ def _load_seed() -> dict:
 
 # === Тест: seed.json существует ===
 
+
 def test_seed_json_exists():
     """specs/fixtures/seed.json должен существовать (генерируется agent-seedgen)."""
     if not SEED_PATH.exists():
@@ -40,6 +41,7 @@ def test_seed_json_exists():
 
 
 # === Тесты: FK-целостность (реальные инварианты, не зависят от схем) ===
+
 
 def test_seed_fk_consistency_students_to_groups():
     """Каждый student.group_id указывает на существующий group.id."""
@@ -93,7 +95,9 @@ def test_seed_fk_consistency_grades_to_disciplines():
         pytest.skip("seed.json missing grades/disciplines")
 
     discipline_ids = {d["id"] for d in seed["disciplines"]}
-    orphan = [g["id"] for g in seed["grades"] if g.get("discipline_id") not in discipline_ids]
+    orphan = [
+        g["id"] for g in seed["grades"] if g.get("discipline_id") not in discipline_ids
+    ]
 
     assert not orphan, (
         f"{len(orphan)}/{len(seed['grades'])} grades reference non-existent disciplines.\n"
@@ -122,9 +126,18 @@ def test_seed_fk_consistency_schedule_lessons():
 
 # === Тест: уникальность UUID ===
 
-@pytest.mark.parametrize("collection", [
-    "groups", "students", "teachers", "disciplines", "schedule", "grades",
-])
+
+@pytest.mark.parametrize(
+    "collection",
+    [
+        "groups",
+        "students",
+        "teachers",
+        "disciplines",
+        "schedule",
+        "grades",
+    ],
+)
 def test_seed_ids_are_unique(collection):
     """Все id в коллекции уникальны."""
     seed = _load_seed()
@@ -134,9 +147,7 @@ def test_seed_ids_are_unique(collection):
     ids = [item.get("id") for item in seed[collection] if "id" in item]
     duplicates = list({i for i in ids if ids.count(i) > 1})
 
-    assert not duplicates, (
-        f"seed.json[{collection}] has duplicate id: {duplicates[:5]}"
-    )
+    assert not duplicates, f"seed.json[{collection}] has duplicate id: {duplicates[:5]}"
 
 
 # === Главный тест: структура seed.json ===
@@ -144,6 +155,7 @@ def test_seed_ids_are_unique(collection):
 # seed.json пишется в STORAGE-формате (group_id FK, name строкой).
 # Тест ниже проверяет топ-уровневую структуру, количество записей
 # и FK-целостность — без Pydantic-моделей.
+
 
 def test_seedgen_dry_run_produces_valid_structure():
     """agent-seedgen в --out режиме выдаёт корректную структуру.
@@ -157,11 +169,17 @@ def test_seedgen_dry_run_produces_valid_structure():
     try:
         result = subprocess.run(
             [
-                sys.executable, "-m", "rag.fixtures.seedgen",
-                "--students", "5",
-                "--grades", "10",
-                "--seed", "42",
-                "--out", str(out_path),
+                sys.executable,
+                "-m",
+                "rag.fixtures.seedgen",
+                "--students",
+                "5",
+                "--grades",
+                "10",
+                "--seed",
+                "42",
+                "--out",
+                str(out_path),
             ],
             cwd=REPO_ROOT,
             capture_output=True,
@@ -200,11 +218,15 @@ def test_seedgen_dry_run_produces_valid_structure():
     for s in generated["students"]:
         assert s["group_id"] in group_ids, f"student {s['id']!r} → orphan group_id"
     for entry in generated["schedule"]:
-        assert entry["group_id"] in group_ids, f"schedule {entry['id']!r} → orphan group_id"
+        assert entry["group_id"] in group_ids, (
+            f"schedule {entry['id']!r} → orphan group_id"
+        )
         for lesson in entry.get("lessons", []):
             assert lesson["discipline_id"] in discipline_ids, (
                 f"lesson in schedule {entry['id']!r} → orphan discipline_id"
             )
     for g in generated["grades"]:
         assert g["student_id"] in student_ids, f"grade {g['id']!r} → orphan student_id"
-        assert g["discipline_id"] in discipline_ids, f"grade {g['id']!r} → orphan discipline_id"
+        assert g["discipline_id"] in discipline_ids, (
+            f"grade {g['id']!r} → orphan discipline_id"
+        )

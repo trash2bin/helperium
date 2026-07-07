@@ -57,11 +57,13 @@ def generate_groups() -> list[dict]:
     for name in GROUP_NAMES:
         prefix = name.split("-")[0]
         specialty = GROUP_SPECIALTY_MAP.get(prefix, random.choice(SPECIALITIES))
-        groups.append({
-            "id": fake.uuid4(),
-            "name": name,
-            "speciality": specialty,
-        })
+        groups.append(
+            {
+                "id": fake.uuid4(),
+                "name": name,
+                "speciality": specialty,
+            }
+        )
     return groups
 
 
@@ -69,12 +71,14 @@ def generate_students(groups: list[dict], num_students: int) -> list[dict]:
     students = []
     for _ in range(num_students):
         is_male = random.choice([True, False])
-        students.append({
-            "id": fake.uuid4(),
-            "name": fake.name_male() if is_male else fake.name_female(),
-            "group_id": random.choice(groups)["id"],
-            "course": random.randint(1, 4),
-        })
+        students.append(
+            {
+                "id": fake.uuid4(),
+                "name": fake.name_male() if is_male else fake.name_female(),
+                "group_id": random.choice(groups)["id"],
+                "course": random.randint(1, 4),
+            }
+        )
     return students
 
 
@@ -83,18 +87,22 @@ def generate_teachers() -> list[dict]:
     teachers = []
     # Гарантируем покрытие каждой дисциплины
     for disc in DISCIPLINE_NAMES:
-        teachers.append({
-            "id": fake.uuid4(),
-            "name": fake.name(),
-            "disciplines": [disc],
-        })
+        teachers.append(
+            {
+                "id": fake.uuid4(),
+                "name": fake.name(),
+                "disciplines": [disc],
+            }
+        )
     # Дополнительные преподаватели, ведущие 1-3 дисциплины
     for _ in range(5):
-        teachers.append({
-            "id": fake.uuid4(),
-            "name": fake.name(),
-            "disciplines": random.sample(DISCIPLINE_NAMES, random.randint(1, 3)),
-        })
+        teachers.append(
+            {
+                "id": fake.uuid4(),
+                "name": fake.name(),
+                "disciplines": random.sample(DISCIPLINE_NAMES, random.randint(1, 3)),
+            }
+        )
     return teachers
 
 
@@ -128,7 +136,9 @@ def generate_schedule(
             continue
 
         for day in WEEK_DAYS:
-            daily_slots = sorted(random.sample(TIME_SLOTS, random.randint(2, min(4, len(TIME_SLOTS)))))
+            daily_slots = sorted(
+                random.sample(TIME_SLOTS, random.randint(2, min(4, len(TIME_SLOTS))))
+            )
             lessons = []
             for slot in daily_slots:
                 discipline = random.choice(group_disciplines)
@@ -137,22 +147,26 @@ def generate_schedule(
                 if not possible_teachers:
                     continue
                 teacher = random.choice(possible_teachers)
-                lessons.append({
-                    "discipline_id": discipline["id"],
-                    "discipline_name": discipline["name"],
-                    "teacher_name": teacher["name"],
-                    "type": lesson_type,
-                    "room": random.randint(100, 500),
-                    "time_slot": slot,
-                    "week_type": random.choice(WEEK_TYPES),
-                })
+                lessons.append(
+                    {
+                        "discipline_id": discipline["id"],
+                        "discipline_name": discipline["name"],
+                        "teacher_name": teacher["name"],
+                        "type": lesson_type,
+                        "room": random.randint(100, 500),
+                        "time_slot": slot,
+                        "week_type": random.choice(WEEK_TYPES),
+                    }
+                )
             if lessons:
-                schedule.append({
-                    "id": fake.uuid4(),
-                    "group_id": group["id"],
-                    "day": day,
-                    "lessons": lessons,
-                })
+                schedule.append(
+                    {
+                        "id": fake.uuid4(),
+                        "group_id": group["id"],
+                        "day": day,
+                        "lessons": lessons,
+                    }
+                )
     return schedule
 
 
@@ -166,7 +180,8 @@ def generate_grades(
     group_disciplines: dict[str, list[dict]] = {}
     for group in groups:
         group_disciplines[group["id"]] = [
-            d for d in disciplines
+            d
+            for d in disciplines
             if d["name"] in CURRICULUM.get(group["speciality"], [])
         ]
 
@@ -179,13 +194,17 @@ def generate_grades(
         discipline = random.choice(possible_discs)
         # Реалистичное распределение оценок
         grade_val = random.choices([5, 4, 3, 2], weights=[40, 35, 20, 5])[0]
-        grades.append({
-            "id": fake.uuid4(),
-            "student_id": student["id"],
-            "discipline_id": discipline["id"],
-            "grade": str(grade_val),
-            "date": fake.date_between(start_date="-6m", end_date="today").strftime("%Y-%m-%d"),
-        })
+        grades.append(
+            {
+                "id": fake.uuid4(),
+                "student_id": student["id"],
+                "discipline_id": discipline["id"],
+                "grade": str(grade_val),
+                "date": fake.date_between(start_date="-6m", end_date="today").strftime(
+                    "%Y-%m-%d"
+                ),
+            }
+        )
     return grades
 
 
@@ -232,7 +251,9 @@ fake = Faker("ru_RU")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Генератор seed-данных для university DB")
+    parser = argparse.ArgumentParser(
+        description="Генератор seed-данных для university DB"
+    )
     parser.add_argument("--students", type=int, default=40, help="Количество студентов")
     parser.add_argument("--grades", type=int, default=60, help="Количество оценок")
     parser.add_argument(

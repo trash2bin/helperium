@@ -17,7 +17,7 @@ agent-db scenario list
 agent-db scenario materialize university --force
 agent-db scenario validate university
 
-# Tenant management  
+# Tenant management
 agent-db tenant register university --config scenarios/university/config.json
 agent-db tenant list
 agent-db tenant delete university
@@ -48,7 +48,7 @@ agent-db/
 │   ├── http.py         # HTTP client for data-service
 │   └── paths.py        # Path resolution
 ├── scenario/           # Scenario commands
-├── tenant/             # Tenant commands  
+├── tenant/             # Tenant commands
 ├── seed/               # Seed commands
 └── test/               # Test commands
 ```

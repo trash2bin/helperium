@@ -356,12 +356,8 @@ class TestConcurrentRepository:
 
         start = time.monotonic()
         with ThreadPoolExecutor(max_workers=N_WRITERS + N_READERS) as pool:
-            writer_futures = [
-                pool.submit(writer, i) for i in range(N_WRITERS)
-            ]
-            reader_futures = [
-                pool.submit(reader, i) for i in range(N_READERS)
-            ]
+            writer_futures = [pool.submit(writer, i) for i in range(N_WRITERS)]
+            reader_futures = [pool.submit(reader, i) for i in range(N_READERS)]
 
             # Снимаем барьер — писатели стартуют
             try:
@@ -380,9 +376,9 @@ class TestConcurrentRepository:
         # Проверяем целостность: все записи писателей + baseline
         final_docs = repo.list_documents()
         expected_count = baseline_count + N_WRITERS * OPS_PER_WORKER
-        assert (
-            len(final_docs) == expected_count
-        ), f"Ожидалось {expected_count} доков, получено {len(final_docs)}"
+        assert len(final_docs) == expected_count, (
+            f"Ожидалось {expected_count} доков, получено {len(final_docs)}"
+        )
 
         logger.info(
             "Смешанная нагрузка: %d писателей + %d читателей, %d доков за %.2fс",
@@ -437,9 +433,7 @@ class TestConcurrentRepository:
         writer_thread.join(timeout=READ_TIMEOUT)
         reader_thread.join(timeout=READ_TIMEOUT)
 
-        assert (
-            read_ok.is_set()
-        ), "Reader не завершился за таймаут — возможен deadlock"
+        assert read_ok.is_set(), "Reader не завершился за таймаут — возможен deadlock"
 
         logger.info("Long write + concurrent read: OK")
 
@@ -491,4 +485,8 @@ class TestConcurrentRepository:
         # Normal должен быть
         assert repo.find_existing_by_path(NORMAL_PATH) is not None
 
-        logger.info("Concurrent rollback isolation: OK (evil=%s, normal=%s)", EVIL_PATH, NORMAL_PATH)
+        logger.info(
+            "Concurrent rollback isolation: OK (evil=%s, normal=%s)",
+            EVIL_PATH,
+            NORMAL_PATH,
+        )

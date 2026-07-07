@@ -221,8 +221,6 @@ async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
         )
 
 
-
-
 @app.post(
     "/documents/upload",
     response_model=ImportDocumentResponse,
@@ -231,7 +229,9 @@ async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
     description="Принимает multipart-файл, сохраняет во временную директорию и импортирует в RAG-индекс.",
 )
 async def upload_document(
-    file: UploadFile = File(..., description="Файл документа (PDF, DOCX, TXT, MD, HTML)"),
+    file: UploadFile = File(
+        ..., description="Файл документа (PDF, DOCX, TXT, MD, HTML)"
+    ),
     title: str | None = Form(None, description="Человекочитаемое название"),
     discipline_id: str | None = Form(None, description="ID дисциплины для привязки"),
     discipline_name: str | None = Form(None, description="Название дисциплины"),
