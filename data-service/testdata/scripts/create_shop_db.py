@@ -8,6 +8,7 @@ By default creates shop.db next to this script (data-service/testdata/scripts/sh
 Override via SHOP_DB env var to write to a custom path — e.g. the materialize
 target scenarios/shop/data.db.
 """
+
 import os
 import sqlite3
 from pathlib import Path

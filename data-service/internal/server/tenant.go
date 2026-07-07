@@ -75,9 +75,11 @@ func (c *ConnAdapter) QueryContext(ctx context.Context, query string, args ...an
 	}
 	return rows, err
 }
-func (c *ConnAdapter) PingContext(ctx context.Context) error  { return c.Conn.PingContext(ctx) }
-func (c *ConnAdapter) QuoteIdentifier(name string) string      { return c.Adp.QuoteIdentifier(name) }
-func (c *ConnAdapter) TranslatePlaceholder(index int) string   { return c.Adp.TranslatePlaceholder(index) }
+func (c *ConnAdapter) PingContext(ctx context.Context) error { return c.Conn.PingContext(ctx) }
+func (c *ConnAdapter) QuoteIdentifier(name string) string    { return c.Adp.QuoteIdentifier(name) }
+func (c *ConnAdapter) TranslatePlaceholder(index int) string {
+	return c.Adp.TranslatePlaceholder(index)
+}
 
 // ── TenantStore ──
 
@@ -89,8 +91,8 @@ type TenantStore struct {
 
 	registry *datasource.Registry // all registered datasource.Adapter drivers
 
-	adminRouter      http.Handler // chi sub-router for /admin/* (built once)
-	hasAdmin         bool         // true when introspect adapter is available (for /openapi.json)
+	adminRouter http.Handler // chi sub-router for /admin/* (built once)
+	hasAdmin    bool         // true when introspect adapter is available (for /openapi.json)
 
 	TenantsDir string // directory for persisting tenant configs (.data/tenants/)
 }
@@ -913,9 +915,6 @@ func adminConfigResponseFromConfig(cfg *config.Config) adminConfigResponse {
 		Introspection: cfg.Introspection,
 	}
 }
-
-
-
 
 // SetHasAdmin sets whether an introspect adapter is available (for /openapi.json).
 func (ts *TenantStore) SetHasAdmin(hasAdmin bool) {

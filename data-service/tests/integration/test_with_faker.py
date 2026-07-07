@@ -70,13 +70,18 @@ def generate_seed(
     Faker.seed(seed or 0)
     fake.seed_instance(seed or 0)
 
-    group_ids = [f"g{i+1}" for i in range(n_groups)]
+    group_ids = [f"g{i + 1}" for i in range(n_groups)]
     groups = [
         {
             "id": gid,
             "name": f"Группа {fake.bothify(text='??-###')}",
             "speciality": rng.choice(
-                ["Программная инженерия", "Информатика", "Кибербезопасность", "Data Science"]
+                [
+                    "Программная инженерия",
+                    "Информатика",
+                    "Кибербезопасность",
+                    "Data Science",
+                ]
             ),
         }
         for gid in group_ids
@@ -84,21 +89,24 @@ def generate_seed(
 
     disc_subset = DISCIPLINES[:n_disciplines]
     disciplines = [
-        {"id": did, "name": name, "description": desc} for did, name, desc in disc_subset
+        {"id": did, "name": name, "description": desc}
+        for did, name, desc in disc_subset
     ]
 
-    teacher_ids = [f"t{i+1}" for i in range(n_teachers)]
+    teacher_ids = [f"t{i + 1}" for i in range(n_teachers)]
     teachers = []
     for tid in teacher_ids:
         n = rng.randint(1, min(3, n_disciplines))
         teacher_disciplines = [d["id"] for d in rng.sample(disciplines, n)]
-        teachers.append({
-            "id": tid,
-            "name": f"{fake.last_name()} {fake.first_name_female()} {fake.middle_name_female()}",
-            "disciplines": teacher_disciplines,
-        })
+        teachers.append(
+            {
+                "id": tid,
+                "name": f"{fake.last_name()} {fake.first_name_female()} {fake.middle_name_female()}",
+                "disciplines": teacher_disciplines,
+            }
+        )
 
-    student_ids = [f"s{i+1}" for i in range(n_students)]
+    student_ids = [f"s{i + 1}" for i in range(n_students)]
     students = [
         {
             "id": sid,
@@ -109,7 +117,7 @@ def generate_seed(
         for sid in student_ids
     ]
 
-    schedule_ids = [f"sch{i+1}" for i in range(n_schedule_slots * n_groups)]
+    schedule_ids = [f"sch{i + 1}" for i in range(n_schedule_slots * n_groups)]
     schedule = []
     for gid in group_ids:
         for slot in range(n_schedule_slots):
@@ -120,33 +128,41 @@ def generate_seed(
             for li in range(n_lessons):
                 disc = rng.choice(disciplines)
                 teacher = rng.choice(teachers)
-                lessons.append({
-                    "discipline_id": disc["id"],
-                    "discipline_name": disc["name"],
-                    "teacher_name": teacher["name"],
-                    "type": rng.choice(LESSON_TYPES),
-                    "room": rng.randint(100, 500),
-                    "time_slot": TIME_SLOTS[li % len(TIME_SLOTS)],
-                    "week_type": rng.choice(["числитель", "знаменатель", "обе"]),
-                })
-            schedule.append({
-                "id": sch_id,
-                "group_id": gid,
-                "day": day,
-                "lessons": lessons,
-            })
+                lessons.append(
+                    {
+                        "discipline_id": disc["id"],
+                        "discipline_name": disc["name"],
+                        "teacher_name": teacher["name"],
+                        "type": rng.choice(LESSON_TYPES),
+                        "room": rng.randint(100, 500),
+                        "time_slot": TIME_SLOTS[li % len(TIME_SLOTS)],
+                        "week_type": rng.choice(["числитель", "знаменатель", "обе"]),
+                    }
+                )
+            schedule.append(
+                {
+                    "id": sch_id,
+                    "group_id": gid,
+                    "day": day,
+                    "lessons": lessons,
+                }
+            )
 
     grades = []
     for s in students:
         student_disciplines = rng.sample(disciplines, min(n_grades, n_disciplines))
         for gi, disc in enumerate(student_disciplines):
-            grades.append({
-                "id": f"gr_{s['id']}_{gi+1}",
-                "student_id": s["id"],
-                "discipline_id": disc["id"],
-                "grade": str(rng.choice([3, 4, 5])),
-                "date": fake.date_between(start_date="-2y", end_date="today").isoformat(),
-            })
+            grades.append(
+                {
+                    "id": f"gr_{s['id']}_{gi + 1}",
+                    "student_id": s["id"],
+                    "discipline_id": disc["id"],
+                    "grade": str(rng.choice([3, 4, 5])),
+                    "date": fake.date_between(
+                        start_date="-2y", end_date="today"
+                    ).isoformat(),
+                }
+            )
 
     return {
         "groups": groups,
@@ -161,6 +177,7 @@ def generate_seed(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     print(f"  RUN: {' '.join(cmd)}")
@@ -179,8 +196,8 @@ def http_get(url: str) -> "tuple[int, dict | list | str]":
             return resp.status, body
     except Exception as e:
         # HTTPError carries status code in .code
-        if hasattr(e, 'code'):
-            err_body = e.read().decode() if hasattr(e, 'read') else ""
+        if hasattr(e, "code"):
+            err_body = e.read().decode() if hasattr(e, "read") else ""
             try:
                 return e.code, json.loads(err_body)
             except Exception:
@@ -192,6 +209,7 @@ def http_get(url: str) -> "tuple[int, dict | list | str]":
 # Main test
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Faker integration test")
     parser.add_argument("--students", type=int, default=10)
@@ -201,15 +219,24 @@ def main() -> int:
     parser.add_argument("--grades", type=int, default=5)
     parser.add_argument("--schedule", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--port", type=int, default=18084, help="data-service port (avoid clash)")
-    parser.add_argument("--out", type=str, default=None, help="save seed.json to this path and exit (skip tests)")
+    parser.add_argument(
+        "--port", type=int, default=18084, help="data-service port (avoid clash)"
+    )
+    parser.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="save seed.json to this path and exit (skip tests)",
+    )
     args = parser.parse_args()
 
     # -- 1. Check PG is up --
     print("-- 1. Checking PostgreSQL --")
     pg_check = subprocess.run(
         ["docker", "exec", "agent-tutor-db-1", "pg_isready", "-U", "tutor"],
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     if pg_check.returncode != 0:
         print("FAIL: PostgreSQL not running. Run: docker compose up -d db")
@@ -227,10 +254,15 @@ def main() -> int:
         n_schedule_slots=args.schedule,
         seed=args.seed,
     )
-    total = sum(len(seed.get(k, [])) for k in ["groups", "students", "teachers", "disciplines", "schedule", "grades"])
-    print(f"   {len(seed['groups'])} groups, {len(seed['students'])} students, "
-          f"{len(seed['teachers'])} teachers, {len(seed['disciplines'])} disciplines, "
-          f"{len(seed['schedule'])} schedule entries, {len(seed['grades'])} grades")
+    total = sum(
+        len(seed.get(k, []))
+        for k in ["groups", "students", "teachers", "disciplines", "schedule", "grades"]
+    )
+    print(
+        f"   {len(seed['groups'])} groups, {len(seed['students'])} students, "
+        f"{len(seed['teachers'])} teachers, {len(seed['disciplines'])} disciplines, "
+        f"{len(seed['schedule'])} schedule entries, {len(seed['grades'])} grades"
+    )
     print(f"   total entities: {total}")
 
     # -- 2b. If --out requested, write seed.json and exit --
@@ -252,7 +284,9 @@ def main() -> int:
     )
 
     # Copy PG config from postgres-testseed and tweak DSN
-    pg_config_src = DATA_SERVICE / "testdata" / "scenarios" / "postgres-testseed" / "config.json"
+    pg_config_src = (
+        DATA_SERVICE / "testdata" / "scenarios" / "postgres-testseed" / "config.json"
+    )
     config = json.loads(pg_config_src.read_text(encoding="utf-8"))
     config["data_source"]["dsn"] = PG_DSN
     config["data_source"]["read_only"] = False
@@ -263,18 +297,35 @@ def main() -> int:
     # -- 4. Drop & recreate PG schema --
     print("-- 4. Cleaning PG schema --")
     subprocess.run(
-        ["docker", "exec", "agent-tutor-db-1", "psql", "-U", "tutor", "-d", "agent_tutor",
-         "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public"],
-        capture_output=True, text=True, timeout=10,
+        [
+            "docker",
+            "exec",
+            "agent-tutor-db-1",
+            "psql",
+            "-U",
+            "tutor",
+            "-d",
+            "agent_tutor",
+            "-c",
+            "DROP SCHEMA public CASCADE; CREATE SCHEMA public",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     print("   OK: schema reset")
 
     # -- 5. Materialize --
     print("-- 5. Materializing --")
-    result = run([
-        "go", "run", "./data-service/cmd/server/",
-        "--materialize", str(scenario_dir),
-    ])
+    result = run(
+        [
+            "go",
+            "run",
+            "./data-service/cmd/server/",
+            "--materialize",
+            str(scenario_dir),
+        ]
+    )
     last_line = result.stdout.strip().split("\n")[-1]
     print(f"   {last_line}")
 
@@ -282,8 +333,11 @@ def main() -> int:
     print(f"-- 6. Starting server on :{args.port} --")
     server = subprocess.Popen(
         [
-            "go", "run", "./data-service/cmd/server/",
-            "--config", str(scenario_dir / "config.json"),
+            "go",
+            "run",
+            "./data-service/cmd/server/",
+            "--config",
+            str(scenario_dir / "config.json"),
         ],
         cwd=str(PROJECT_ROOT),
         env={**os.environ, "PORT": str(args.port)},
@@ -297,6 +351,7 @@ def main() -> int:
         server.wait(timeout=5)
 
     import atexit
+
     atexit.register(cleanup)
 
     base_url = f"http://127.0.0.1:{args.port}"
@@ -342,57 +397,116 @@ def main() -> int:
         print(f"   OK {label}")
 
     # --- entity-independent checks (just 200) ---
-    check("health", "/health",
-          lambda s, b: (s == 200 and b.get("status") == "ok") or (_ for _ in ()).throw(AssertionError(f"bad health: {s} {b}")))
-    check("stats", "/stats",
-          lambda s, b: (s == 200 and isinstance(b.get("students"), int) and b["students"] > 0)
-          or (_ for _ in ()).throw(AssertionError(f"bad stats: {s} {b}")))
-    check("disciplines", "/disciplines",
-          lambda s, b: (s == 200 and isinstance(b, list) and len(b) == args.disciplines)
-          or (_ for _ in ()).throw(AssertionError(f"bad disciplines: {s}, len={len(b) if isinstance(b, list) else '?'}")))
-    check("teachers find", f"/teachers?name={urlencode(seed['teachers'][0]['name'])}",
-          lambda s, b: (s == 200 and b.get("full_name") == seed["teachers"][0]["name"])
-          or (_ for _ in ()).throw(AssertionError(f"bad teacher: {s} {b}")))
-    check("openapi.json", "/openapi.json",
-          lambda s, b: (s == 200 and b.get("openapi") == "3.1.0")
-          or (_ for _ in ()).throw(AssertionError("bad openapi")))
-    check("swagger ui", "/docs",
-          lambda s, b: (s == 200 and "html" in str(b)[:100].lower())
-          or (_ for _ in ()).throw(AssertionError(f"bad docs: {s}")))
+    check(
+        "health",
+        "/health",
+        lambda s, b: (s == 200 and b.get("status") == "ok")
+        or (_ for _ in ()).throw(AssertionError(f"bad health: {s} {b}")),
+    )
+    check(
+        "stats",
+        "/stats",
+        lambda s, b: (
+            s == 200 and isinstance(b.get("students"), int) and b["students"] > 0
+        )
+        or (_ for _ in ()).throw(AssertionError(f"bad stats: {s} {b}")),
+    )
+    check(
+        "disciplines",
+        "/disciplines",
+        lambda s, b: (s == 200 and isinstance(b, list) and len(b) == args.disciplines)
+        or (_ for _ in ()).throw(
+            AssertionError(
+                f"bad disciplines: {s}, len={len(b) if isinstance(b, list) else '?'}"
+            )
+        ),
+    )
+    check(
+        "teachers find",
+        f"/teachers?name={urlencode(seed['teachers'][0]['name'])}",
+        lambda s, b: (s == 200 and b.get("full_name") == seed["teachers"][0]["name"])
+        or (_ for _ in ()).throw(AssertionError(f"bad teacher: {s} {b}")),
+    )
+    check(
+        "openapi.json",
+        "/openapi.json",
+        lambda s, b: (s == 200 and b.get("openapi") == "3.1.0")
+        or (_ for _ in ()).throw(AssertionError("bad openapi")),
+    )
+    check(
+        "swagger ui",
+        "/docs",
+        lambda s, b: (s == 200 and "html" in str(b)[:100].lower())
+        or (_ for _ in ()).throw(AssertionError(f"bad docs: {s}")),
+    )
 
     # --- per-entity checks ---
     s1 = seed["students"][0]
-    check(f"student {s1['id']}", f"/students/{s1['id']}",
-          lambda s, b: (s == 200 and b.get("full_name") == s1["name"])
-          or (_ for _ in ()).throw(AssertionError(f"student mismatch: {b}")))
+    check(
+        f"student {s1['id']}",
+        f"/students/{s1['id']}",
+        lambda s, b: (s == 200 and b.get("full_name") == s1["name"])
+        or (_ for _ in ()).throw(AssertionError(f"student mismatch: {b}")),
+    )
 
-    check(f"grades {s1['id']}", f"/students/{s1['id']}/grades",
-          lambda s, b: (s == 200 and isinstance(b, list) and len(b) > 0)
-          or (_ for _ in ()).throw(AssertionError(f"no grades for {s1['id']}")))
+    check(
+        f"grades {s1['id']}",
+        f"/students/{s1['id']}/grades",
+        lambda s, b: (s == 200 and isinstance(b, list) and len(b) > 0)
+        or (_ for _ in ()).throw(AssertionError(f"no grades for {s1['id']}")),
+    )
 
     # --- not found ---
-    check("404 student", "/students/nonexistent",
-          lambda s, b: (s == 404)
-          or (_ for _ in ()).throw(AssertionError(f"expected 404: {s} {b}")))
+    check(
+        "404 student",
+        "/students/nonexistent",
+        lambda s, b: (s == 404)
+        or (_ for _ in ()).throw(AssertionError(f"expected 404: {s} {b}")),
+    )
 
     # --- all-entities list endpoints ---
-    check("all grades", "/grades",
-          lambda s, b: (s == 200 and len(b) > 0 and len(b) <= 80)  # 80 = max_rows from config
-          or (_ for _ in ()).throw(AssertionError(f"grades bad: got {len(b) if isinstance(b, list) else '?'}, expected 1-80")))
-    check("all schedule", "/schedule",
-          lambda s, b: (s == 200 and len(b) == len(seed["schedule"]))
-          or (_ for _ in ()).throw(AssertionError(f"schedule count mismatch: got {len(b)}, expected {len(seed['schedule'])}")))
-    check("all students", f"/students",
-          lambda s, b: (s == 200 and len(b) == len(seed["students"]))
-          or (_ for _ in ()).throw(AssertionError(f"students count mismatch: got {len(b)}, expected {len(seed['students'])}")))
+    check(
+        "all grades",
+        "/grades",
+        lambda s, b: (
+            s == 200 and len(b) > 0 and len(b) <= 80
+        )  # 80 = max_rows from config
+        or (_ for _ in ()).throw(
+            AssertionError(
+                f"grades bad: got {len(b) if isinstance(b, list) else '?'}, expected 1-80"
+            )
+        ),
+    )
+    check(
+        "all schedule",
+        "/schedule",
+        lambda s, b: (s == 200 and len(b) == len(seed["schedule"]))
+        or (_ for _ in ()).throw(
+            AssertionError(
+                f"schedule count mismatch: got {len(b)}, expected {len(seed['schedule'])}"
+            )
+        ),
+    )
+    check(
+        "all students",
+        "/students",
+        lambda s, b: (s == 200 and len(b) == len(seed["students"]))
+        or (_ for _ in ()).throw(
+            AssertionError(
+                f"students count mismatch: got {len(b)}, expected {len(seed['students'])}"
+            )
+        ),
+    )
 
     # -- 8. Report --
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     if failures == 0:
-        print(f"ALL PASSED ({total} entities, {len(seed['students'])} students, {len(seed['grades'])} grades)")
+        print(
+            f"ALL PASSED ({total} entities, {len(seed['students'])} students, {len(seed['grades'])} grades)"
+        )
     else:
         print(f"{failures} FAILURE(S)")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     return 0 if failures == 0 else 1
 

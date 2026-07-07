@@ -344,11 +344,11 @@ func buildSystemComponents() map[string]any {
 				},
 			},
 			"TenantRequest": map[string]any{
-				"type": "object",
+				"type":     "object",
 				"required": []string{"id", "config"},
 				"properties": map[string]any{
-					"id":         map[string]any{"type": "string"},
-					"config":     map[string]any{"type": "object", "description": "Full config.Config object"},
+					"id":          map[string]any{"type": "string"},
+					"config":      map[string]any{"type": "object", "description": "Full config.Config object"},
 					"config_path": map[string]any{"type": "string", "description": "Optional path to save config file"},
 				},
 			},
@@ -364,9 +364,9 @@ func buildSystemComponents() map[string]any {
 			"VersionInfo": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name":      map[string]any{"type": "string"},
+					"name":       map[string]any{"type": "string"},
 					"size_bytes": map[string]any{"type": "integer"},
-					"mod_time":  map[string]any{"type": "string", "format": "date-time"},
+					"mod_time":   map[string]any{"type": "string", "format": "date-time"},
 				},
 			},
 			"RewriteResponse": map[string]any{
@@ -683,11 +683,11 @@ func buildComponents(cfg *config.Config) map[string]any {
 		},
 	}
 	schemas["TenantRequest"] = map[string]any{
-		"type": "object",
+		"type":     "object",
 		"required": []string{"id", "config"},
 		"properties": map[string]any{
-			"id":         map[string]any{"type": "string"},
-			"config":     map[string]any{"type": "object", "description": "Full config.Config object"},
+			"id":          map[string]any{"type": "string"},
+			"config":      map[string]any{"type": "object", "description": "Full config.Config object"},
 			"config_path": map[string]any{"type": "string", "description": "Optional path to save config file"},
 		},
 	}
@@ -703,9 +703,9 @@ func buildComponents(cfg *config.Config) map[string]any {
 	schemas["VersionInfo"] = map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"name":      map[string]any{"type": "string"},
+			"name":       map[string]any{"type": "string"},
 			"size_bytes": map[string]any{"type": "integer"},
-			"mod_time":  map[string]any{"type": "string", "format": "date-time"},
+			"mod_time":   map[string]any{"type": "string", "format": "date-time"},
 		},
 	}
 	for _, e := range cfg.Entities {

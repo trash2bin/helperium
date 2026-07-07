@@ -75,9 +75,9 @@ func TestConcurrency_FileBased_HeavyLoad(t *testing.T) {
 	)
 
 	var (
-		ok2xx  atomic.Int64
-		ok4xx  atomic.Int64
-		ok5xx  atomic.Int64
+		ok2xx atomic.Int64
+		ok4xx atomic.Int64
+		ok5xx atomic.Int64
 	)
 
 	wg := sync.WaitGroup{}

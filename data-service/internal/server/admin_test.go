@@ -25,9 +25,9 @@ type adminTestAdapter struct {
 func (a *adminTestAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return a.db.QueryContext(ctx, query, args...)
 }
-func (a *adminTestAdapter) PingContext(ctx context.Context) error  { return a.db.PingContext(ctx) }
-func (a *adminTestAdapter) QuoteIdentifier(name string) string      { return `"` + name + `"` }
-func (a *adminTestAdapter) TranslatePlaceholder(index int) string   { return "?" }
+func (a *adminTestAdapter) PingContext(ctx context.Context) error { return a.db.PingContext(ctx) }
+func (a *adminTestAdapter) QuoteIdentifier(name string) string    { return `"` + name + `"` }
+func (a *adminTestAdapter) TranslatePlaceholder(index int) string { return "?" }
 
 func TestAdminAuthMiddleware_NoToken(t *testing.T) {
 	if tok, ok := os.LookupEnv("ADMIN_TOKEN"); ok {

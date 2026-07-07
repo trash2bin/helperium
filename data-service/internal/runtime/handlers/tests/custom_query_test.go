@@ -197,7 +197,7 @@ func TestCustomQueryHandler_DBError(t *testing.T) {
 	db.SetMaxOpenConns(1)
 
 	adapter := &errorAdapter{
-		db:      &testAdapter{db: db},
+		db: &testAdapter{db: db},
 		errFunc: func(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
 			return nil, fmt.Errorf("database error")
 		},
@@ -218,7 +218,7 @@ func TestCustomQueryHandler_DBError(t *testing.T) {
 				MaxRows: 10,
 			},
 		},
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 

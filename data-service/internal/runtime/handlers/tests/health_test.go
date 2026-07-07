@@ -25,11 +25,11 @@ func TestHealthHandler_Success(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -55,11 +55,11 @@ func TestHealthHandler_Degraded(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -85,11 +85,11 @@ func TestHealthHandler_Timeout(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 

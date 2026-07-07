@@ -3,7 +3,7 @@
 // Бенчмарки не assert-ятся (go test -bench), они только замеряют
 // производительность. Запускаются через:
 //
-//   go test -bench=. -benchmem ./internal/server/...
+//	go test -bench=. -benchmem ./internal/server/...
 //
 // Данные: big-testseed (500 студентов, 4000 оценок) — даёт реалистичную
 // нагрузку для замеров.

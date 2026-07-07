@@ -4,8 +4,8 @@
 // Тесты не ищут конкретные баги — они ловят паники и 5xx на неожиданных входах.
 //
 // Запуск:
-//   go test -fuzz=FuzzEndpoints -fuzztime=10s ./internal/server/...
 //
+//	go test -fuzz=FuzzEndpoints -fuzztime=10s ./internal/server/...
 package server_test
 
 import (

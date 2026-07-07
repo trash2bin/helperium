@@ -175,9 +175,9 @@ func TestNewRouterFromConfig_FindNoEntity(t *testing.T) {
 		},
 		Endpoints: []config.Endpoint{
 			{
-				Path:       "/students/find",
-				Op:         "find",
-				Method:     "GET",
+				Path:        "/students/find",
+				Op:          "find",
+				Method:      "GET",
 				SearchField: "name",
 			},
 		},

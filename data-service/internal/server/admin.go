@@ -2,11 +2,12 @@
 //
 // Admin endpoints защищены ADMIN_TOKEN (Bearer-токен или env).
 // Операции:
-//   GET  /admin/config           — текущий конфиг (DSN скрыт)
-//   POST /admin/config           — загрузить новый конфиг + валидация + hot reload
-//   POST /admin/config/reload    — force перезагрузка с диска
-//   GET  /admin/config/versions  — история версий (timestamp-based)
-//   POST /admin/config/rewrite   — re-generate из БД (dev-only, уже был)
+//
+//	GET  /admin/config           — текущий конфиг (DSN скрыт)
+//	POST /admin/config           — загрузить новый конфиг + валидация + hot reload
+//	POST /admin/config/reload    — force перезагрузка с диска
+//	GET  /admin/config/versions  — история версий (timestamp-based)
+//	POST /admin/config/rewrite   — re-generate из БД (dev-only, уже был)
 //
 // Все операции работают без рестарта сервиса.
 package server
@@ -53,16 +54,16 @@ type AdminContext struct {
 
 // adminConfigResponse — DTO для GET /admin/config (DSN скрыт).
 type adminConfigResponse struct {
-	Version       int                              `json:"version"`
-	Driver        config.Driver                    `json:"driver"`
-	DataSource    *adminDataSourceResponse          `json:"data_source,omitempty"`
-	Entities      []config.Entity                  `json:"entities,omitempty"`
-	Endpoints     []config.Endpoint                `json:"endpoints,omitempty"`
-	CustomQueries map[string]config.CustomQuery    `json:"custom_queries,omitempty"`
-	Stats         *config.StatsConfig              `json:"stats,omitempty"`
-	Auth          *config.AuthConfig               `json:"auth,omitempty"`
-	MCPTools      []config.MCPTool                 `json:"mcp_tools,omitempty"`
-	Introspection *config.IntrospectionConfig      `json:"introspection,omitempty"`
+	Version       int                           `json:"version"`
+	Driver        config.Driver                 `json:"driver"`
+	DataSource    *adminDataSourceResponse      `json:"data_source,omitempty"`
+	Entities      []config.Entity               `json:"entities,omitempty"`
+	Endpoints     []config.Endpoint             `json:"endpoints,omitempty"`
+	CustomQueries map[string]config.CustomQuery `json:"custom_queries,omitempty"`
+	Stats         *config.StatsConfig           `json:"stats,omitempty"`
+	Auth          *config.AuthConfig            `json:"auth,omitempty"`
+	MCPTools      []config.MCPTool              `json:"mcp_tools,omitempty"`
+	Introspection *config.IntrospectionConfig   `json:"introspection,omitempty"`
 }
 
 // adminDataSourceResponse — часть конфига без DSN.

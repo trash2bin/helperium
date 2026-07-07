@@ -11,9 +11,9 @@ import (
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 
+	"github.com/agent-tutor/agent-tutor-go/config"
 	"github.com/agent-tutor/data-service/internal/runtime"
 	"github.com/agent-tutor/data-service/internal/runtime/handlers"
-	"github.com/agent-tutor/agent-tutor-go/config"
 )
 
 // TestListHandler_Success - тестирует успешный запрос списка сущностей
@@ -22,7 +22,7 @@ func TestListHandler_Success(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
 	defer db.Close()
 	db.SetMaxOpenConns(1)
-	
+
 	// Создаем таблицу и добавляем тестовые данные
 	_, _ = db.ExecContext(context.Background(), `
 		CREATE TABLE customers (
@@ -32,7 +32,7 @@ func TestListHandler_Success(t *testing.T) {
 		);
 	`)
 	_, _ = db.ExecContext(context.Background(), `
-		INSERT INTO customers (id, name, email) VALUES 
+		INSERT INTO customers (id, name, email) VALUES
 			(1, 'John Doe', 'john@example.com'),
 			(2, 'Jane Smith', 'jane@example.com')
 	`)
@@ -42,8 +42,8 @@ func TestListHandler_Success(t *testing.T) {
 
 	// Создаем сущности и резолвер через NewEntityResolver
 	customerEntity := runtime.Entity{
-		Name:    "customer",
-		Table:   "customers",
+		Name:     "customer",
+		Table:    "customers",
 		IDColumn: "id",
 		Fields: []runtime.EntityField{
 			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
@@ -161,7 +161,7 @@ func TestListHandler_DBError(t *testing.T) {
 
 	// Создаем адаптер который возвращает ошибку
 	adapter := &errorAdapter{
-		db:      &testAdapter{db: db},
+		db: &testAdapter{db: db},
 		errFunc: func(context.Context, string, ...any) (*sql.Rows, error) {
 			return nil, fmt.Errorf("database error")
 		},
@@ -169,8 +169,8 @@ func TestListHandler_DBError(t *testing.T) {
 
 	// Создаем сущность и резолвер
 	customerEntity := runtime.Entity{
-		Name:    "customer",
-		Table:   "customers",
+		Name:     "customer",
+		Table:    "customers",
 		IDColumn: "id",
 		Fields: []runtime.EntityField{
 			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
@@ -229,7 +229,7 @@ func TestGetByIDHandler_Success(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
 	defer db.Close()
 	db.SetMaxOpenConns(1)
-	
+
 	// Создаем таблицу и добавляем тестовые данные
 	_, _ = db.ExecContext(context.Background(), `
 		CREATE TABLE customers (
@@ -239,7 +239,7 @@ func TestGetByIDHandler_Success(t *testing.T) {
 		);
 	`)
 	_, _ = db.ExecContext(context.Background(), `
-		INSERT INTO customers (id, name, email) VALUES 
+		INSERT INTO customers (id, name, email) VALUES
 			(1, 'John Doe', 'john@example.com'),
 			(2, 'Jane Smith', 'jane@example.com')
 	`)
@@ -249,8 +249,8 @@ func TestGetByIDHandler_Success(t *testing.T) {
 
 	// Создаем сущности и резолвер через NewEntityResolver
 	customerEntity := runtime.Entity{
-		Name:    "customer",
-		Table:   "customers",
+		Name:     "customer",
+		Table:    "customers",
 		IDColumn: "id",
 		Fields: []runtime.EntityField{
 			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
@@ -336,7 +336,7 @@ func TestGetByIDHandler_NotFound(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
 	defer db.Close()
 	db.SetMaxOpenConns(1)
-	
+
 	// Создаем таблицу и добавляем тестовые данные
 	_, _ = db.ExecContext(context.Background(), `
 		CREATE TABLE customers (
@@ -346,7 +346,7 @@ func TestGetByIDHandler_NotFound(t *testing.T) {
 		);
 	`)
 	_, _ = db.ExecContext(context.Background(), `
-		INSERT INTO customers (id, name, email) VALUES 
+		INSERT INTO customers (id, name, email) VALUES
 			(1, 'John Doe', 'john@example.com'),
 			(2, 'Jane Smith', 'jane@example.com')
 	`)
@@ -356,8 +356,8 @@ func TestGetByIDHandler_NotFound(t *testing.T) {
 
 	// Создаем сущности и резолвер через NewEntityResolver
 	customerEntity := runtime.Entity{
-		Name:    "customer",
-		Table:   "customers",
+		Name:     "customer",
+		Table:    "customers",
 		IDColumn: "id",
 		Fields: []runtime.EntityField{
 			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
@@ -486,7 +486,7 @@ func TestGetByIDHandler_DBError(t *testing.T) {
 
 	// Создаем адаптер который возвращает ошибку
 	adapter := &errorAdapter{
-		db:      &testAdapter{db: db},
+		db: &testAdapter{db: db},
 		errFunc: func(context.Context, string, ...any) (*sql.Rows, error) {
 			return nil, fmt.Errorf("database error")
 		},
@@ -494,8 +494,8 @@ func TestGetByIDHandler_DBError(t *testing.T) {
 
 	// Создаем сущность и резолвер
 	customerEntity := runtime.Entity{
-		Name:    "customer",
-		Table:   "customers",
+		Name:     "customer",
+		Table:    "customers",
 		IDColumn: "id",
 		Fields: []runtime.EntityField{
 			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},

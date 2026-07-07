@@ -267,8 +267,8 @@ func TestScenario_BigTestseed_NoPanicsOnRandomQueries(t *testing.T) {
 		{"/students/s500", 200},
 		{"/students/s99999", 404},
 		{"/teachers?name=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2", 200},
-		{"/groups/g1", 404},                  // get_by_id не описан в конфиге
-		{"/groups/g1/schedule", 200},         // custom_query с g1
+		{"/groups/g1", 404},          // get_by_id не описан в конфиге
+		{"/groups/g1/schedule", 200}, // custom_query с g1
 		{"/students/s1/grades", 200},
 		{"/students/s1/disciplines", 200},
 		{"/health", 200},

@@ -18,8 +18,8 @@ type testRuntimeAdapter struct {
 func (a *testRuntimeAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return a.db.QueryContext(ctx, query, args...)
 }
-func (a *testRuntimeAdapter) QuoteIdentifier(name string) string { return `"` + name + `"` }
-func (a *testRuntimeAdapter) TranslatePlaceholder(idx int) string { return "?" }
+func (a *testRuntimeAdapter) QuoteIdentifier(name string) string    { return `"` + name + `"` }
+func (a *testRuntimeAdapter) TranslatePlaceholder(idx int) string   { return "?" }
 func (a *testRuntimeAdapter) PingContext(ctx context.Context) error { return a.db.PingContext(ctx) }
 
 func newRuntimeTestAdapter(t *testing.T) (*testRuntimeAdapter, func()) {

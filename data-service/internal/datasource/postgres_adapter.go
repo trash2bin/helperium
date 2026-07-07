@@ -390,7 +390,8 @@ func queryPostgresForeignKeys(ctx context.Context, database Conn, schemaName, ta
 // На таблице: SELECT oid FROM pg_catalog.pg_class WHERE relname = $1
 // обычно нестрогий по схеме (может вернуть oid таблицы из другой схемы,
 // если имена совпадают). Поэтому фильтруем дополнительно по schema:
-//   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $2.
+//
+//	JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $2.
 func fillColumnDescriptions(ctx context.Context, database Conn, schemaName, tableName string, columns []Column) error {
 	if len(columns) == 0 {
 		return nil

@@ -73,7 +73,8 @@ type Adapter interface {
 // Schema — generic описание схемы БД, нормализованное поверх драйвера.
 //
 // Типы колонок приведены к generic-набору:
-//   "string", "int", "float", "bool", "json", "datetime", "date"
+//
+//	"string", "int", "float", "bool", "json", "datetime", "date"
 //
 // Имена таблиц/колонок сохраняются в их нативном регистре
 // (snake_case для большинства СУБД).

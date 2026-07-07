@@ -5,11 +5,13 @@
 // и seed.json (данные). Materialize генерирует DDL из entities конфига и создаёт БД.
 //
 // Пример сценария: testdata/scenarios/sqlite-testseed/
-//   config.json — entities + endpoints + custom_queries
-//   seed.json   — seedgen.Seed
+//
+//	config.json — entities + endpoints + custom_queries
+//	seed.json   — seedgen.Seed
 //
 // После materialize можно запустить data-service с этим же config.json:
-//   data-service --config testdata/scenarios/sqlite-testseed/config.json
+//
+//	data-service --config testdata/scenarios/sqlite-testseed/config.json
 package seedgen
 
 import (
@@ -132,4 +134,3 @@ func isAbsolutePath(dsn string) bool {
 	}
 	return strings.HasPrefix(dsn, "/")
 }
-

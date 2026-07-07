@@ -50,11 +50,11 @@ func TestFindHandler_Success(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -105,11 +105,11 @@ func TestFindHandler_NotFound(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -162,11 +162,11 @@ func TestFindHandler_FallbackToList(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -196,11 +196,11 @@ func TestFindHandler_EntityNotFound(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -224,7 +224,7 @@ func TestFindHandler_DBError(t *testing.T) {
 	defer db.Close()
 
 	adapter := &errorAdapter{
-		db:      &testAdapter{db: db},
+		db: &testAdapter{db: db},
 		errFunc: func(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
 			return nil, fmt.Errorf("database error")
 		},
@@ -244,11 +244,11 @@ func TestFindHandler_DBError(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 

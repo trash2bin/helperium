@@ -1,12 +1,13 @@
 // Package server — тесты всех custom_queries на сценарии shop.
 //
 // В shop 6 custom_queries:
-//   order_items_by_products  — GET /products/{id}/order_items
-//   order_items_by_orders    — GET /orders/{id}/order_items
-//   orders_by_customers      — GET /customers/{id}/orders
-//   products_by_categories   — GET /categories/{id}/products
-//   reviews_by_customers     — GET /customers/{id}/reviews
-//   reviews_by_products      — GET /products/{id}/reviews
+//
+//	order_items_by_products  — GET /products/{id}/order_items
+//	order_items_by_orders    — GET /orders/{id}/order_items
+//	orders_by_customers      — GET /customers/{id}/orders
+//	products_by_categories   — GET /categories/{id}/products
+//	reviews_by_customers     — GET /customers/{id}/reviews
+//	reviews_by_products      — GET /products/{id}/reviews
 //
 // Покрытие: позитивные кейсы (с существующими id), негативные (404),
 // проверка FK-логики (только связанные записи).

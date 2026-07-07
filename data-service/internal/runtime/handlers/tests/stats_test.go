@@ -49,11 +49,11 @@ func TestStatsHandler_Success(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -92,11 +92,11 @@ func TestStatsHandler_EmptyConfig(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -125,11 +125,11 @@ func TestStatsHandler_EmptyCounters(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -154,11 +154,11 @@ func TestStatsHandler_UnknownEntity(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 
@@ -192,7 +192,7 @@ func TestStatsHandler_DBError(t *testing.T) {
 	defer db.Close()
 
 	adapter := &errorAdapter{
-		db:      &testAdapter{db: db},
+		db: &testAdapter{db: db},
 		errFunc: func(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
 			return nil, fmt.Errorf("database error")
 		},
@@ -213,11 +213,11 @@ func TestStatsHandler_DBError(t *testing.T) {
 	// errorAdapter не реализует PingContext — а StatsHandler не вызывает Ping,
 	// он вызывает QueryContext. Поэтому errorAdapter с errFunc перехватит QueryContext.
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "" },
 	}
 

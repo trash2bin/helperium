@@ -9,45 +9,45 @@ import (
 
 func TestTenantFilter(t *testing.T) {
 	tests := []struct {
-		name            string
-		auth            *config.AuthConfig
-		tenantID        string
-		entityName      string
-		existingArgs    int
-		wantWhere       string
-		wantArgsLen     int
+		name         string
+		auth         *config.AuthConfig
+		tenantID     string
+		entityName   string
+		existingArgs int
+		wantWhere    string
+		wantArgsLen  int
 	}{
 		{
-			name:         "nil auth",
-			auth:         nil,
-			tenantID:     "t1",
-			entityName:   "student",
-			wantWhere:    "",
-			wantArgsLen:  0,
+			name:        "nil auth",
+			auth:        nil,
+			tenantID:    "t1",
+			entityName:  "student",
+			wantWhere:   "",
+			wantArgsLen: 0,
 		},
 		{
-			name:         "strategy none",
-			auth:         &config.AuthConfig{Strategy: config.AuthStrategyNone},
-			tenantID:     "t1",
-			entityName:   "student",
-			wantWhere:    "",
-			wantArgsLen:  0,
+			name:        "strategy none",
+			auth:        &config.AuthConfig{Strategy: config.AuthStrategyNone},
+			tenantID:    "t1",
+			entityName:  "student",
+			wantWhere:   "",
+			wantArgsLen: 0,
 		},
 		{
-			name:         "empty tenant_id",
-			auth:         &config.AuthConfig{Strategy: config.AuthStrategyHeader, RowFilters: []config.RowFilter{{Entity: "student", Where: "tenant_id = :tenant_id"}}},
-			tenantID:     "",
-			entityName:   "student",
-			wantWhere:    "",
-			wantArgsLen:  0,
+			name:        "empty tenant_id",
+			auth:        &config.AuthConfig{Strategy: config.AuthStrategyHeader, RowFilters: []config.RowFilter{{Entity: "student", Where: "tenant_id = :tenant_id"}}},
+			tenantID:    "",
+			entityName:  "student",
+			wantWhere:   "",
+			wantArgsLen: 0,
 		},
 		{
-			name:         "no filter for entity",
-			auth:         &config.AuthConfig{Strategy: config.AuthStrategyHeader, RowFilters: []config.RowFilter{{Entity: "teacher", Where: "tenant_id = :tenant_id"}}},
-			tenantID:     "t1",
-			entityName:   "student",
-			wantWhere:    "",
-			wantArgsLen:  0,
+			name:        "no filter for entity",
+			auth:        &config.AuthConfig{Strategy: config.AuthStrategyHeader, RowFilters: []config.RowFilter{{Entity: "teacher", Where: "tenant_id = :tenant_id"}}},
+			tenantID:    "t1",
+			entityName:  "student",
+			wantWhere:   "",
+			wantArgsLen: 0,
 		},
 		{
 			name:         "basic row_filter — sqlite (?)",

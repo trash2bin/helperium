@@ -84,11 +84,11 @@ func TestEntityResolver_ColumnFor(t *testing.T) {
 // TestEntityResolver_PublicFor - тестирует поиск публичного поля по имени колонки
 func TestEntityResolver_PublicFor(t *testing.T) {
 	tests := []struct {
-		name           string
-		entities       []runtime.Entity
-		column         string
-		expectedField  string
-		found          bool
+		name          string
+		entities      []runtime.Entity
+		column        string
+		expectedField string
+		found         bool
 	}{
 		{"exact match", []runtime.Entity{{Fields: []runtime.EntityField{{Name: "user_id", Column: "user_id"}}}}, "user_id", "user_id", true},
 		{"case sensitive", []runtime.Entity{{Fields: []runtime.EntityField{{Name: "userId", Column: "user_id"}}}}, "USER_ID", "", false},
@@ -147,17 +147,17 @@ func TestEntityResolver_CachingBehavior(t *testing.T) {
 	// Проверяем, что исходные сущности не изменились
 	// (мы не можем напрямую проверить внутреннее состояние резолвера,
 	//  но мы можем проверить, что результаты функций остаются одинаковыми)
-	
+
 	// Первый вызов
 	col1, _ := resolver.ColumnFor(originalEntities[0], "id")
 	pub1, _ := resolver.PublicFor(originalEntities[0], "ident")
 	ents1 := resolver.AllEntities()
-	
+
 	// Второй вызов
 	col2, _ := resolver.ColumnFor(originalEntities[0], "id")
 	pub2, _ := resolver.PublicFor(originalEntities[0], "ident")
 	ents2 := resolver.AllEntities()
-	
+
 	// Результаты должны быть одинаковыми
 	if col1 != col2 {
 		t.Errorf("ColumnFor returned different results: %s vs %s", col1, col2)
@@ -168,7 +168,7 @@ func TestEntityResolver_CachingBehavior(t *testing.T) {
 	if len(ents1) != len(ents2) {
 		t.Errorf("AllEntities returned different lengths: %d vs %d", len(ents1), len(ents2))
 	}
-	
+
 	// Проверяем значения
 	if col1 != "ident" {
 		t.Errorf("ColumnFor(\"id\") = %s, want \"ident\"", col1)

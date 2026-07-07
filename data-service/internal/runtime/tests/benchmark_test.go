@@ -18,8 +18,8 @@ type benchmarkAdapter struct {
 func (a *benchmarkAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return a.db.QueryContext(ctx, query, args...)
 }
-func (a *benchmarkAdapter) QuoteIdentifier(name string) string { return `"` + name + `"` }
-func (a *benchmarkAdapter) TranslatePlaceholder(idx int) string { return "?" }
+func (a *benchmarkAdapter) QuoteIdentifier(name string) string    { return `"` + name + `"` }
+func (a *benchmarkAdapter) TranslatePlaceholder(idx int) string   { return "?" }
 func (a *benchmarkAdapter) PingContext(ctx context.Context) error { return a.db.PingContext(ctx) }
 
 func benchEntity() runtime.Entity {
@@ -103,8 +103,8 @@ func BenchmarkBuildCustomQuery(b *testing.B) {
 	builder := runtime.NewBuilder(adapter)
 
 	cq := runtime.CustomQuery{
-		SQL:    "SELECT id, name, email, score, active FROM customers WHERE id = ? AND email = ?",
-		Params: []string{"id", "email"},
+		SQL:     "SELECT id, name, email, score, active FROM customers WHERE id = ? AND email = ?",
+		Params:  []string{"id", "email"},
 		MaxRows: 100,
 	}
 

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	tenantBarHead template.CSS = `.tenant-bar{position:fixed;top:12px;right:16px;z-index:9999;background:#fff;border:1px solid #e5e7eb;padding:6px 10px;border-radius:8px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,0.06);font:13px system-ui} .tenant-bar input{border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;width:160px} .tenant-bar button{border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}`
+	tenantBarHead template.CSS  = `.tenant-bar{position:fixed;top:12px;right:16px;z-index:9999;background:#fff;border:1px solid #e5e7eb;padding:6px 10px;border-radius:8px;display:flex;gap:8px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,0.06);font:13px system-ui} .tenant-bar input{border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;width:160px} .tenant-bar button{border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}`
 	tenantBarBody template.HTML = `<div class="tenant-bar"> <label for="tenant">Tenant:</label> <input id="tenant" list="tenantList" placeholder="default" /> <datalist id="tenantList"></datalist> <button id="applyTenant">Apply</button> </div>`
 )
 

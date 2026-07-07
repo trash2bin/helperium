@@ -112,10 +112,10 @@ func TestMCPManifestHandler_EmptyEndpoints(t *testing.T) {
 // TestMCPManifestHandler_NilMCPTools — MCPTools == nil → генерируем
 func TestMCPManifestHandler_NilMCPTools(t *testing.T) {
 	cfg := &config.Config{
-		Endpoints: []config.Endpoint{},
-		Entities:  []config.Entity{},
+		Endpoints:     []config.Endpoint{},
+		Entities:      []config.Entity{},
 		CustomQueries: map[string]config.CustomQuery{},
-		MCPTools:  nil,
+		MCPTools:      nil,
 	}
 
 	h := handlers.MCPManifestHandler(cfg)

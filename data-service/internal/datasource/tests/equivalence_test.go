@@ -318,7 +318,7 @@ func execDDL(ctx context.Context, conn datasource.Conn, ddl string) error {
 //     (Postgres возвращает "test_equivalence.customers", SQLite — "customers")
 //   - Имена FK-констрейнтов обнуляются
 //     (Postgres генерирует "table_col_fkey", SQLite — "fk_N",
-//      эти имена СУБД-зависимы и не должны влиять на equivalence)
+//     эти имена СУБД-зависимы и не должны влиять на equivalence)
 //
 // Возвращает canonical JSON (deterministic order, no whitespace).
 func normalize(t *testing.T, s *datasource.Schema) []byte {

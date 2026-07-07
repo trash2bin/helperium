@@ -235,7 +235,7 @@ func testConfig(t *testing.T) *config.Config {
 				MaxRows: 5000,
 			},
 			"student_disciplines": {
-				SQL: "SELECT d.id, d.name, d.description FROM disciplines d WHERE d.id IN (SELECT DISTINCT json_extract(value, '$.discipline_id') FROM schedule s, json_each(s.lessons_json) WHERE s.group_id = (SELECT group_id FROM students WHERE id = ?) AND json_extract(value, '$.discipline_id') IS NOT NULL)",
+				SQL:    "SELECT d.id, d.name, d.description FROM disciplines d WHERE d.id IN (SELECT DISTINCT json_extract(value, '$.discipline_id') FROM schedule s, json_each(s.lessons_json) WHERE s.group_id = (SELECT group_id FROM students WHERE id = ?) AND json_extract(value, '$.discipline_id') IS NOT NULL)",
 				Params: []string{"id"},
 				ResultMapping: map[string]config.ResultMappingField{
 					"id":          {Type: "string"},
@@ -285,7 +285,7 @@ func (a *testSQLite) QueryContext(ctx context.Context, query string, args ...any
 	return a.db.QueryContext(ctx, query, args...)
 }
 func (a *testSQLite) PingContext(ctx context.Context) error { return a.db.PingContext(ctx) }
-func (a *testSQLite) QuoteIdentifier(name string) string   { return `"` + name + `"` }
+func (a *testSQLite) QuoteIdentifier(name string) string    { return `"` + name + `"` }
 func (a *testSQLite) TranslatePlaceholder(index int) string { return "?" }
 
 func getJSON[T any](t *testing.T, url string) (int, T) {
@@ -474,9 +474,9 @@ func TestScenario_SqliteTestseed(t *testing.T) {
 }
 
 // TestScenario_Shop проверяет сценарий со сторонней БД (онлайн-магазин):
-//  - INTEGER-PK сущности (categories/products/customers/orders/order_items/reviews)
-//  - 17 эндпоинтов (11 generic + 6 FK-custom_queries)
-//  - DSN указывает на уже материализованный data.db (без seed.json)
+//   - INTEGER-PK сущности (categories/products/customers/orders/order_items/reviews)
+//   - 17 эндпоинтов (11 generic + 6 FK-custom_queries)
+//   - DSN указывает на уже материализованный data.db (без seed.json)
 func TestScenario_Shop(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
 	defer db.Close()
@@ -493,12 +493,12 @@ func TestScenario_Shop(t *testing.T) {
 	// shop.db дефолтно имеет: categories=3, products=4, customers=2, orders=2, order_items=3, reviews=2
 	// Структура: <plural-path, диапазоны id>
 	idRanges := map[string][]string{
-		"/categories/":   {"1", "2", "3"},
-		"/products/":     {"1", "2", "3", "4"},
-		"/customers/":    {"1", "2"},
-		"/orders/":       {"1", "2"},
-		"/order_items/":  {"1", "2", "3"},
-		"/reviews/":      {"1", "2"},
+		"/categories/":  {"1", "2", "3"},
+		"/products/":    {"1", "2", "3", "4"},
+		"/customers/":   {"1", "2"},
+		"/orders/":      {"1", "2"},
+		"/order_items/": {"1", "2", "3"},
+		"/reviews/":     {"1", "2"},
 	}
 	for prefix, ids := range idRanges {
 		prefix := prefix

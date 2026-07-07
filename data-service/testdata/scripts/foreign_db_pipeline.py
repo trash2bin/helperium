@@ -16,6 +16,7 @@ Pipeline:
 
 Phase 3.0-3.8 vision: "any db -> auto-discover -> auto-seed -> REST API"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,13 +43,16 @@ fake = Faker("ru_RU")
 
 # ── discover / schema ──────────────────────────────────────────────────
 
+
 def discover_config(db_path: Path) -> dict:
     """Run go run --discover against a foreign DB."""
     result = subprocess.run(
         [str(_GO), "run", "./data-service/cmd/server/", "--discover"],
         cwd=str(PROJECT_ROOT),
         env={"DB_PATH": str(db_path), "HOME": PROJECT_ROOT.parent},
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     lines = result.stdout.strip().split("\n")
     json_start = next(i for i, l in enumerate(lines) if l.strip().startswith("{"))
@@ -60,10 +64,14 @@ def get_schema(db_path: Path) -> dict:
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     db.execute("PRAGMA foreign_keys = ON")
     schema = {}
-    for (tname,) in db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"):
+    for (tname,) in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ):
         cols = db.execute(f"PRAGMA table_info({tname})").fetchall()
-        fks = [{"from_col": f[3], "to_table": f[2], "to_col": f[4]}
-               for f in db.execute(f"PRAGMA foreign_key_list({tname})")]
+        fks = [
+            {"from_col": f[3], "to_table": f[2], "to_col": f[4]}
+            for f in db.execute(f"PRAGMA foreign_key_list({tname})")
+        ]
         schema[tname] = {
             "columns": [(c[1], c[2], c[3]) for c in cols],
             "pks": [c[1] for c in cols if c[5]],
@@ -75,6 +83,7 @@ def get_schema(db_path: Path) -> dict:
 
 # ── DDL + seed (Python, no --materialize) ──────────────────────────────
 
+
 def _topo_sort(schema: dict) -> list[str]:
     """Sort tables so parents (FK targets) come before children."""
     tables = list(schema.keys())
@@ -85,7 +94,11 @@ def _topo_sort(schema: dict) -> list[str]:
     # Kahn's algorithm
     result, remaining = [], list(tables)
     while remaining:
-        ready = [t for t in remaining if not deps[t] or all(d not in remaining for d in deps[t])]
+        ready = [
+            t
+            for t in remaining
+            if not deps[t] or all(d not in remaining for d in deps[t])
+        ]
         if not ready:
             result.extend(remaining)
             break
@@ -103,7 +116,11 @@ def build_ddl(schema: dict) -> str:
         cols = []
         pk_cols = set(info["pks"])
         for col_name, col_type, nullable in info["columns"]:
-            typ = "INTEGER" if ("INT" in col_type.upper() or col_type.upper() == "REAL") else "TEXT"
+            typ = (
+                "INTEGER"
+                if ("INT" in col_type.upper() or col_type.upper() == "REAL")
+                else "TEXT"
+            )
             null_clause = "" if nullable is False or col_name in pk_cols else ""
             cols.append(f"    {col_name} {typ} {null_clause}".strip())
         # PK clause
@@ -111,7 +128,9 @@ def build_ddl(schema: dict) -> str:
             cols.append(f"    PRIMARY KEY ({', '.join(info['pks'])})")
         # FK clauses
         for fk in info["fks"]:
-            cols.append(f"    FOREIGN KEY ({fk['from_col']}) REFERENCES {fk['to_table']}({fk['to_col']})")
+            cols.append(
+                f"    FOREIGN KEY ({fk['from_col']}) REFERENCES {fk['to_table']}({fk['to_col']})"
+            )
         ddl_parts.append(f"CREATE TABLE {tname} (\n" + ",\n".join(cols) + "\n);")
     return "\n".join(ddl_parts)
 
@@ -120,24 +139,39 @@ def _gen_value(col_name: str, col_type: str) -> object:
     """Faker value driven by column name + type."""
     cn = col_name.lower()
     # name hints
-    if cn == "name":           return fake.company() if random.random() > 0.5 else fake.catch_phrase()
-    if cn in ("description","comment"): return fake.text(max_nb_chars=80)
-    if cn == "email":          return fake.email()
-    if cn == "phone":          return fake.phone_number()
-    if cn in ("city","address"): return fake.city()
-    if "price" in cn:          return round(random.uniform(5, 5000), 2)
-    if cn == "total":          return round(random.uniform(10, 10000), 2)
-    if "quantity" in cn:       return random.randint(1, 10)
-    if cn in ("stock","count","amount"): return random.randint(0, 200)
-    if cn == "sku":            return fake.bothify(text="??-######").upper()
-    if cn == "status":         return random.choice(["new","processing","delivered","cancelled"])
-    if cn == "rating":         return random.randint(1, 5)
-    if cn in ("created_at","registered_at","date"):
+    if cn == "name":
+        return fake.company() if random.random() > 0.5 else fake.catch_phrase()
+    if cn in ("description", "comment"):
+        return fake.text(max_nb_chars=80)
+    if cn == "email":
+        return fake.email()
+    if cn == "phone":
+        return fake.phone_number()
+    if cn in ("city", "address"):
+        return fake.city()
+    if "price" in cn:
+        return round(random.uniform(5, 5000), 2)
+    if cn == "total":
+        return round(random.uniform(10, 10000), 2)
+    if "quantity" in cn:
+        return random.randint(1, 10)
+    if cn in ("stock", "count", "amount"):
+        return random.randint(0, 200)
+    if cn == "sku":
+        return fake.bothify(text="??-######").upper()
+    if cn == "status":
+        return random.choice(["new", "processing", "delivered", "cancelled"])
+    if cn == "rating":
+        return random.randint(1, 5)
+    if cn in ("created_at", "registered_at", "date"):
         return fake.date_between(start_date="-2y", end_date="today").isoformat()
-    if cn == "unit_price":     return round(random.uniform(5, 500), 2)
+    if cn == "unit_price":
+        return round(random.uniform(5, 500), 2)
     # type fallbacks
-    if "INT" in col_type.upper():          return random.randint(1, 1000)
-    if col_type.upper() in ("REAL","FLOAT","NUMERIC"): return round(random.uniform(1, 1000), 2)
+    if "INT" in col_type.upper():
+        return random.randint(1, 1000)
+    if col_type.upper() in ("REAL", "FLOAT", "NUMERIC"):
+        return round(random.uniform(1, 1000), 2)
     return fake.word()
 
 
@@ -184,7 +218,9 @@ def materialize_python(schema: dict, db_path: Path, n_rows: int) -> int:
                 continue
 
             if info["pks"]:
-                all_ids.setdefault(tname, []).append(row_vals[col_names.index(info["pks"][0])])
+                all_ids.setdefault(tname, []).append(
+                    row_vals[col_names.index(info["pks"][0])]
+                )
             total += 1
 
     db.commit()
@@ -193,6 +229,7 @@ def materialize_python(schema: dict, db_path: Path, n_rows: int) -> int:
 
 
 # ── config enrichment ──────────────────────────────────────────────────
+
 
 def enrich_config(config: dict, schema: dict) -> dict:
     """Add custom_queries from FK relationships."""
@@ -214,7 +251,9 @@ def enrich_config(config: dict, schema: dict) -> dict:
                 "path": f"/{pt}/{{id}}/{tname}",
                 "op": "custom_query",
                 "query_id": qid,
-                "params": [{"name": "id", "in": "path", "type": "string", "required": True}],
+                "params": [
+                    {"name": "id", "in": "path", "type": "string", "required": True}
+                ],
                 "description": f"Get {tname} for a specific {pt}",
             }
             if ep not in config.get("endpoints", []):
@@ -224,6 +263,7 @@ def enrich_config(config: dict, schema: dict) -> dict:
 
 
 # ── main ───────────────────────────────────────────────────────────────
+
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Foreign DB auto-gen pipeline")
@@ -252,7 +292,12 @@ def main() -> int:
     print("── 2. Schema ──")
     schema = get_schema(src_db)
     for t, info in schema.items():
-        fk_s = ", ".join(f"{f['from_col']}->{f['to_table']}.{f['to_col']}" for f in info["fks"]) or "none"
+        fk_s = (
+            ", ".join(
+                f"{f['from_col']}->{f['to_table']}.{f['to_col']}" for f in info["fks"]
+            )
+            or "none"
+        )
         print(f"   {t}: {len(info['columns'])} cols, PK={info['pks']}, FK=[{fk_s}]")
 
     # 3. Python materialize (DDL + faker seed → new db)
@@ -272,7 +317,9 @@ def main() -> int:
 
     # 6. Write scenario
     print(f"── 5. Write scenario → {scenario} ──")
-    (scenario / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    (scenario / "config.json").write_text(
+        json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(f"   config.json: {len(json.dumps(config))} bytes")
 
     if args.skip_test:
@@ -283,11 +330,18 @@ def main() -> int:
     # 7. Start & test
     print(f"── 6. Start server & test (: {args.port}) ──")
     server = subprocess.Popen(
-        [str(_GO), "run", "./data-service/cmd/server/",
-         "--config", str(scenario / "config.json")],
+        [
+            str(_GO),
+            "run",
+            "./data-service/cmd/server/",
+            "--config",
+            str(scenario / "config.json"),
+        ],
         cwd=str(PROJECT_ROOT),
         env={**os.environ, "PORT": str(args.port)},
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
 
     def cleanup():
@@ -296,14 +350,18 @@ def main() -> int:
             server.wait(timeout=5)
         except Exception:
             pass
+
     atexit.register(cleanup)
 
     base = f"http://127.0.0.1:{args.port}"
     for i in range(20):
         try:
-            with urlopen(Request(f"{base}/health", headers={"Accept":"application/json"}), timeout=2) as r:
+            with urlopen(
+                Request(f"{base}/health", headers={"Accept": "application/json"}),
+                timeout=2,
+            ) as r:
                 if json.loads(r.read()).get("status") == "ok":
-                    print(f"   server ready ({i*0.5:.1f}s)")
+                    print(f"   server ready ({i * 0.5:.1f}s)")
                     break
         except Exception:
             time.sleep(0.5)
@@ -317,7 +375,7 @@ def main() -> int:
         nonlocal failures
         url = f"{base}{path}"
         try:
-            req = Request(url, headers={"Accept":"application/json"})
+            req = Request(url, headers={"Accept": "application/json"})
             with urlopen(req, timeout=5) as resp:
                 body = json.loads(resp.read())
                 status = resp.status
@@ -342,31 +400,55 @@ def main() -> int:
             return
         print(f"   ✅ {label}")
 
-    check("health", "/health",
-          lambda s, b: (_ for _ in ()).throw(AssertionError(f"{s}")) if s != 200 or b.get("status") != "ok" else None)
-    check("openapi", "/openapi.json",
-          lambda s, b: (_ for _ in ()).throw(AssertionError(f"{s}")) if s != 200 or b.get("openapi") != "3.1.0" else None)
+    check(
+        "health",
+        "/health",
+        lambda s, b: (_ for _ in ()).throw(AssertionError(f"{s}"))
+        if s != 200 or b.get("status") != "ok"
+        else None,
+    )
+    check(
+        "openapi",
+        "/openapi.json",
+        lambda s, b: (_ for _ in ()).throw(AssertionError(f"{s}"))
+        if s != 200 or b.get("openapi") != "3.1.0"
+        else None,
+    )
     check("stats", "/stats")
 
     # get_by_id for each entity
     for e in entities:
         name = e["name"]
-        check(f"/{name}/1", f"/{name}/1",
-              lambda s, b, n=name: (_ for _ in ()).throw(AssertionError(f"{n}: {s} {b.get('error','')}")) if s != 200 or not isinstance(b, dict) else None)
+        check(
+            f"/{name}/1",
+            f"/{name}/1",
+            lambda s, b, n=name: (_ for _ in ()).throw(
+                AssertionError(f"{n}: {s} {b.get('error', '')}")
+            )
+            if s != 200 or not isinstance(b, dict)
+            else None,
+        )
 
     # custom_queries (FK lookups) — empty list is OK (random may not hit id=1)
     for ep in config.get("endpoints", []):
         if ep.get("op") == "custom_query":
             path = ep["path"].replace("{id}", "1")
-            check(path, path,
-                  lambda s, b, p=path: (_ for _ in ()).throw(AssertionError(f"{p}: {s}")) if s != 200 else None)
+            check(
+                path,
+                path,
+                lambda s, b, p=path: (_ for _ in ()).throw(AssertionError(f"{p}: {s}"))
+                if s != 200
+                else None,
+            )
 
-    print(f"\n{'='*40}")
+    print(f"\n{'=' * 40}")
     if failures == 0:
-        print(f"✅ ALL PASSED  ({len(entities)} entities, {n_ep} endpoints, {total} rows)")
+        print(
+            f"✅ ALL PASSED  ({len(entities)} entities, {n_ep} endpoints, {total} rows)"
+        )
     else:
         print(f"❌ {failures} FAILURES")
-    print(f"{'='*40}")
+    print(f"{'=' * 40}")
     return 0 if failures == 0 else 1
 
 
