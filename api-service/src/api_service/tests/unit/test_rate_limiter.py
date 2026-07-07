@@ -9,8 +9,6 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-import pytest
-
 
 class TestRateLimiterInit:
     """Тесты что rate_limit переменная инициализируется из env."""
@@ -28,6 +26,7 @@ class TestRateLimiterInit:
             import importlib
 
             import api_service.server
+
             importlib.reload(api_service.server)
 
             from api_service.server import rate_limit
@@ -44,6 +43,7 @@ class TestRateLimiterAppInit:
             import importlib
 
             import api_service.server
+
             importlib.reload(api_service.server)
 
             from api_service.server import app
@@ -58,6 +58,7 @@ class TestRateLimiterAppInit:
             import importlib
 
             import api_service.server
+
             importlib.reload(api_service.server)
 
             from api_service.server import app, rate_limit

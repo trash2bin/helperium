@@ -27,8 +27,7 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
         return 0
 
     total_chars = sum(
-        len(json.dumps(m, ensure_ascii=False, default=str))
-        for m in messages
+        len(json.dumps(m, ensure_ascii=False, default=str)) for m in messages
     )
     return int(total_chars / 3.5)
 

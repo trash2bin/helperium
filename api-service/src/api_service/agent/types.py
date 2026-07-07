@@ -33,33 +33,33 @@ MessageContent = str | list[dict[str, Any]]
 class BaseMessage(TypedDict):
     """Base message structure."""
 
-    role: MessageRole
+    role: str
     content: MessageContent
 
 
 class SystemMessage(BaseMessage):
     """System message."""
 
-    role: Literal["system"]
+    role: Literal["system"]  # type: ignore[reportIncompatibleVariableOverride]
 
 
 class UserMessage(BaseMessage):
     """User message."""
 
-    role: Literal["user"]
+    role: Literal["user"]  # type: ignore[reportIncompatibleVariableOverride]
 
 
 class AssistantMessage(BaseMessage):
     """Assistant message with optional tool calls."""
 
-    role: Literal["assistant"]
+    role: Literal["assistant"]  # type: ignore[reportIncompatibleVariableOverride]
     tool_calls: NotRequired[list[ToolCall]]
 
 
 class ToolMessage(BaseMessage):
     """Tool response message."""
 
-    role: Literal["tool"]
+    role: Literal["tool"]  # type: ignore[reportIncompatibleVariableOverride]
     tool_call_id: str
     name: str
 

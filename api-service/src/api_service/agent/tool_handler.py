@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 from .mcp_client import MCPClient, ToolResult
@@ -46,7 +47,7 @@ class ToolHandler:
         tool_calls: list[ParsedToolCall],
         session: Any,
         ctx: TurnContext,
-    ) -> AgentEvent:
+    ) -> AsyncIterator[AgentEvent]:
         """Execute every tool call in *tool_calls* and yield events.
 
         Appends role="tool" messages to ``ctx.messages`` and
@@ -57,8 +58,7 @@ class ToolHandler:
             name: str = tool_call["name"]
             arguments: dict[str, Any] = tool_call["arguments"]
             tool_call_id: str = (
-                tool_call.get("id")
-                or f"call_{name}_{uuid.uuid4().hex[:8]}"
+                tool_call.get("id") or f"call_{name}_{uuid.uuid4().hex[:8]}"
             )
 
             # ── Log the request ────────────────────────────────────────

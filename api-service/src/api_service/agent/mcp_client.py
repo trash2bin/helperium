@@ -94,7 +94,9 @@ class MCPClient:
 
     # -- connection lifecycle -------------------------------------------------
 
-    async def _open_connection(self, tenant_ids: list[str] | None = None) -> _TenantConnection:
+    async def _open_connection(
+        self, tenant_ids: list[str] | None = None
+    ) -> _TenantConnection:
         """Perform the actual MCP handshake for a tenant or list of tenants.
 
         When multiple tenant_ids are provided, they are comma-joined into the
@@ -103,7 +105,9 @@ class MCPClient:
         tenant_key = ",".join(tenant_ids) if tenant_ids else ""
         headers = {"X-Tenant-ID": tenant_key} if tenant_key else {}
 
-        logger.info("[MCP] Opening SSE session for tenants=%s", tenant_key or "(default)")
+        logger.info(
+            "[MCP] Opening SSE session for tenants=%s", tenant_key or "(default)"
+        )
         http_ctx = sse_client(
             settings.mcp_service_url,
             headers=headers,
@@ -113,7 +117,10 @@ class MCPClient:
         try:
             read_stream, write_stream = await http_ctx.__aenter__()
         except Exception:
-            logger.exception("[MCP] Failed to open transport for tenants=%s", tenant_key or "(default)")
+            logger.exception(
+                "[MCP] Failed to open transport for tenants=%s",
+                tenant_key or "(default)",
+            )
             raise
 
         session_ctx = ClientSession(read_stream, write_stream)
@@ -121,7 +128,10 @@ class MCPClient:
             session = await session_ctx.__aenter__()
             await session.initialize()
         except Exception:
-            logger.exception("[MCP] Failed to initialize session for tenants=%s", tenant_key or "(default)")
+            logger.exception(
+                "[MCP] Failed to initialize session for tenants=%s",
+                tenant_key or "(default)",
+            )
             with contextlib.suppress(Exception):
                 await http_ctx.__aexit__(None, None, None)
             raise
@@ -134,7 +144,9 @@ class MCPClient:
             session_ctx=session_ctx,
         )
 
-    async def _get_connection(self, tenant_ids: list[str] | None = None) -> _TenantConnection:
+    async def _get_connection(
+        self, tenant_ids: list[str] | None = None
+    ) -> _TenantConnection:
         tenant_key = ",".join(tenant_ids) if tenant_ids else ""
         async with self._registry_lock:
             conn = self._connections.get(tenant_key)
@@ -144,7 +156,9 @@ class MCPClient:
             self._connections[tenant_key] = conn
             return conn
 
-    async def _reconnect(self, tenant_ids: list[str] | None = None) -> _TenantConnection:
+    async def _reconnect(
+        self, tenant_ids: list[str] | None = None
+    ) -> _TenantConnection:
         tenant_key = ",".join(tenant_ids) if tenant_ids else ""
         async with self._registry_lock:
             old = self._connections.pop(tenant_key, None)
@@ -174,11 +188,15 @@ class MCPClient:
                 result = await conn.session.list_tools()
         except Exception as exc:
             if "Tool not found" in str(exc):
-                logger.warning("[MCP] list_tools encountered Tool not found for tenants=%s, not reconnecting", session.tenant_ids)
+                logger.warning(
+                    "[MCP] list_tools encountered Tool not found for tenants=%s, not reconnecting",
+                    session.tenant_ids,
+                )
                 return []
-            
+
             logger.warning(
-                "[MCP] list_tools failed for tenants=%s, reconnecting", session.tenant_ids
+                "[MCP] list_tools failed for tenants=%s, reconnecting",
+                session.tenant_ids,
             )
             conn = await self._reconnect(session.tenant_ids)
             async with conn.call_lock:
@@ -208,13 +226,24 @@ class MCPClient:
         conn = await self._get_connection(session.tenant_ids)
         try:
             async with conn.call_lock:
-                logger.info("[MCP] Calling tool %s for tenants=%s with args=%s", name, session.tenant_ids, arguments)
+                logger.info(
+                    "[MCP] Calling tool %s for tenants=%s with args=%s",
+                    name,
+                    session.tenant_ids,
+                    arguments,
+                )
                 result = await conn.session.call_tool(name, arguments)
         except Exception as exc:
             if "Tool not found" in str(exc):
-                logger.warning("[MCP] Tool %s not found for tenants=%s, not reconnecting", name, session.tenant_ids)
+                logger.warning(
+                    "[MCP] Tool %s not found for tenants=%s, not reconnecting",
+                    name,
+                    session.tenant_ids,
+                )
                 return ToolResult(
-                    tool_content=json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False),
+                    tool_content=json.dumps(
+                        {"ok": False, "error": str(exc)}, ensure_ascii=False
+                    ),
                     reminder=f"Инструмент {name} не найден.",
                     ok=False,
                     error=str(exc),
@@ -231,10 +260,14 @@ class MCPClient:
                     result = await conn.session.call_tool(name, arguments)
             except Exception as exc2:
                 logger.exception(
-                    "[MCP] call_tool %s failed after reconnect, tenants=%s", name, session.tenant_ids
+                    "[MCP] call_tool %s failed after reconnect, tenants=%s",
+                    name,
+                    session.tenant_ids,
                 )
                 return ToolResult(
-                    tool_content=json.dumps({"ok": False, "error": str(exc2)}, ensure_ascii=False),
+                    tool_content=json.dumps(
+                        {"ok": False, "error": str(exc2)}, ensure_ascii=False
+                    ),
                     reminder=f"Инструмент {name} завершился ошибкой.",
                     ok=False,
                     error=str(exc2),
@@ -249,14 +282,18 @@ class MCPClient:
         """Convert an MCP CallToolResult into the ToolResult shape the rest of
         the codebase expects."""
         text_parts = [
-            block.text for block in result.content if getattr(block, "type", None) == "text"
+            block.text
+            for block in result.content
+            if getattr(block, "type", None) == "text"
         ]
         raw_text = "\n".join(text_parts)
 
         if getattr(result, "isError", False):
             error_text = raw_text or "Unknown error"
             return ToolResult(
-                tool_content=json.dumps({"ok": False, "error": error_text}, ensure_ascii=False),
+                tool_content=json.dumps(
+                    {"ok": False, "error": error_text}, ensure_ascii=False
+                ),
                 reminder=(
                     f"Инструмент {name} вернул ошибку. "
                     "Не повторяй запрос с теми же аргументами."

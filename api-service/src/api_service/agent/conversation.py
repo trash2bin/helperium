@@ -28,7 +28,9 @@ class ConversationManager:
         """Get history messages for a session (sync, для тестов/CLI)."""
         return session_store.history_messages(session_id)
 
-    async def aget_history_messages(self, session_id: SessionId) -> list[dict[str, Any]]:
+    async def aget_history_messages(
+        self, session_id: SessionId
+    ) -> list[dict[str, Any]]:
         """Async-обёртка: не блокирует event loop в long-running сервисах."""
         return await asyncio.to_thread(self.get_history_messages, session_id)
 
@@ -37,7 +39,9 @@ class ConversationManager:
         session_store.append_turn(session_id, cast(list[dict[str, Any]], messages))
         logger.debug("[CONVERSATION] Stored turn for session %s", session_id)
 
-    async def aremember_turn(self, session_id: SessionId, messages: TurnMessages) -> None:
+    async def aremember_turn(
+        self, session_id: SessionId, messages: TurnMessages
+    ) -> None:
         """Async-обёртка для remember_turn."""
         await asyncio.to_thread(self.remember_turn, session_id, messages)
 

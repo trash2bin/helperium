@@ -199,7 +199,9 @@ class TestFallbackHandler:
         assert len(captured) == 1
         assert len(captured[0]) == 2  # unchanged
 
-    async def test_aremember_turn_called_correctly(self, mock_llm, mock_conv_mgr, handler):
+    async def test_aremember_turn_called_correctly(
+        self, mock_llm, mock_conv_mgr, handler
+    ):
         """aremember_turn receives the right session_id and turn_messages."""
         mock_llm.get_final_message = lambda msgs: _token_stream("Hello world")
 

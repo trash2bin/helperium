@@ -8,18 +8,20 @@ from __future__ import annotations
 
 import json
 import pytest
-import pytest
 import respx
 from httpx import Response
 
-from api_service.agent.mcp_client import MCPClient, ToolResult
-from demo.settings import settings
+from api_service.agent.mcp_client import MCPClient
+
 
 @pytest.fixture
 def mcp_client():
     return MCPClient()
 
-@pytest.mark.skip(reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport")
+
+@pytest.mark.skip(
+    reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport"
+)
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_tools_success(mcp_client: MCPClient):
@@ -42,14 +44,17 @@ async def test_list_tools_success(mcp_client: MCPClient):
     assert tools[0]["function"]["description"] == "Get student info"
     assert tools[0]["function"]["parameters"] == mock_tools[0]["inputSchema"]
 
-@pytest.mark.skip(reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport")
+
+@pytest.mark.skip(
+    reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport"
+)
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_tools_with_tenant(mcp_client: MCPClient):
     """list_tools should send X-Tenant-ID header if provided via session."""
     tenant_id = "school-123"
     url = f"{mcp_client.base_url}/tools/list"
-    
+
     # Verify header in the mock
     def check_headers(request):
         assert request.headers.get("X-Tenant-ID") == tenant_id
@@ -64,7 +69,10 @@ async def test_list_tools_with_tenant(mcp_client: MCPClient):
 
     await mcp_client.list_tools(session=Session(tenant_id))
 
-@pytest.mark.skip(reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport")
+
+@pytest.mark.skip(
+    reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport"
+)
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_tool_success(mcp_client: MCPClient):
@@ -73,14 +81,19 @@ async def test_call_tool_success(mcp_client: MCPClient):
     payload = {"ok": True, "data": "Student: Ivan Ivanov"}
     respx.post(url).mock(return_value=Response(200, json=payload))
 
-    tr = await mcp_client.call_tool(session=None, name="get_student", arguments={"id": "1"})
+    tr = await mcp_client.call_tool(
+        session=None, name="get_student", arguments={"id": "1"}
+    )
 
     assert tr.ok is True
     assert tr.error is None
     assert "Student: Ivan Ivanov" in tr.tool_content
     assert "ОБЯЗАТЕЛЬНО" in tr.reminder
 
-@pytest.mark.skip(reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport")
+
+@pytest.mark.skip(
+    reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport"
+)
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_tool_gateway_error(mcp_client: MCPClient):
@@ -89,13 +102,18 @@ async def test_call_tool_gateway_error(mcp_client: MCPClient):
     payload = {"ok": False, "error": "Student not found"}
     respx.post(url).mock(return_value=Response(200, json=payload))
 
-    tr = await mcp_client.call_tool(session=None, name="get_student", arguments={"id": "999"})
+    tr = await mcp_client.call_tool(
+        session=None, name="get_student", arguments={"id": "999"}
+    )
 
     assert tr.ok is False
     assert tr.error == "Student not found"
     assert "вернул ошибку" in tr.reminder
 
-@pytest.mark.skip(reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport")
+
+@pytest.mark.skip(
+    reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport"
+)
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_tool_http_error(mcp_client: MCPClient):
@@ -103,12 +121,17 @@ async def test_call_tool_http_error(mcp_client: MCPClient):
     url = f"{mcp_client.base_url}/tools/call"
     respx.post(url).mock(return_value=Response(500))
 
-    tr = await mcp_client.call_tool(session=None, name="get_student", arguments={"id": "1"})
+    tr = await mcp_client.call_tool(
+        session=None, name="get_student", arguments={"id": "1"}
+    )
 
     assert tr.ok is False
     assert "500" in (tr.error or "")
 
-@pytest.mark.skip(reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport")
+
+@pytest.mark.skip(
+    reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport"
+)
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_tool_unwraps_json_data(mcp_client: MCPClient):
@@ -118,14 +141,19 @@ async def test_call_tool_unwraps_json_data(mcp_client: MCPClient):
     payload = {"ok": True, "data": inner_json}
     respx.post(url).mock(return_value=Response(200, json=payload))
 
-    tr = await mcp_client.call_tool(session=None, name="get_student", arguments={"id": "1"})
+    tr = await mcp_client.call_tool(
+        session=None, name="get_student", arguments={"id": "1"}
+    )
 
     # The tool_content should be the unwrapped JSON string, not the original payload
     parsed = json.loads(tr.tool_content)
     assert parsed == {"id": "1", "name": "Ivan"}
     assert "ok" not in parsed
 
-@pytest.mark.skip(reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport")
+
+@pytest.mark.skip(
+    reason="MCPClient refactored to SDK-based MCP sessions — tests need rewriting for real MCP transport"
+)
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_tool_keeps_wrapper_for_non_json(mcp_client: MCPClient):
@@ -134,7 +162,9 @@ async def test_call_tool_keeps_wrapper_for_non_json(mcp_client: MCPClient):
     payload = {"ok": True, "data": "plain text response"}
     respx.post(url).mock(return_value=Response(200, json=payload))
 
-    tr = await mcp_client.call_tool(session=None, name="get_student", arguments={"id": "1"})
+    tr = await mcp_client.call_tool(
+        session=None, name="get_student", arguments={"id": "1"}
+    )
 
     parsed = json.loads(tr.tool_content)
     assert parsed == payload

@@ -113,7 +113,7 @@ class TestToolHandler:
         assert events[1].type == "tool_result"
 
         # Tool result should contain the error
-        assert 'error' in events[1].data["result"] or True  # just check it exists
+        assert "error" in events[1].data["result"] or True  # just check it exists
         assert ctx.messages[-1]["role"] == "tool"
 
     async def test_multiple_tools(self, handler, ctx, session, mock_mcp):
@@ -128,8 +128,10 @@ class TestToolHandler:
         # 2 tools × 2 events each = 4 events
         assert len(events) == 4
         assert [e.type for e in events] == [
-            "tool_call", "tool_result",
-            "tool_call", "tool_result",
+            "tool_call",
+            "tool_result",
+            "tool_call",
+            "tool_result",
         ]
 
         # Both tool messages in messages

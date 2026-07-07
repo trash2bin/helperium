@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -21,6 +21,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Fake LLM client (совместимый с Mock-подходом)
 # ---------------------------------------------------------------------------
+
 
 async def _async_iter_final(data: dict[str, Any]):
     """Yield a (token, final) tuple expected by stream_completion."""
@@ -39,26 +40,32 @@ class FakeLLMClient:
         self.call_history.append(messages)
         if self.call_count == 1:
             # Первый вызов: возвращаем tool_call
-            yield None, {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {
-                            "name": "find_student",
-                            "arguments": json.dumps({"name": "Alice"}),
-                        },
-                    }
-                ],
-            }
+            yield (
+                None,
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "find_student",
+                                "arguments": json.dumps({"name": "Alice"}),
+                            },
+                        }
+                    ],
+                },
+            )
         else:
             # Второй вызов: финальный ответ
-            yield None, {
-                "role": "assistant",
-                "content": "Found Alice!",
-            }
+            yield (
+                None,
+                {
+                    "role": "assistant",
+                    "content": "Found Alice!",
+                },
+            )
 
     last_final_message: dict[str, Any] | None = None
 
@@ -96,21 +103,28 @@ class FakeMCPClient:
 # Tests — все пропущены до переписывания
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="Orchestrator refactored to SDK-based MCP sessions — tests need rewriting")
+
+@pytest.mark.skip(
+    reason="Orchestrator refactored to SDK-based MCP sessions — tests need rewriting"
+)
 @pytest.mark.asyncio
 async def test_llm_agent_stream_events_basic():
     """Базовый сценарий: LLM возвращает финальный ответ без tool calls."""
     pass
 
 
-@pytest.mark.skip(reason="Orchestrator refactored to SDK-based MCP sessions — tests need rewriting")
+@pytest.mark.skip(
+    reason="Orchestrator refactored to SDK-based MCP sessions — tests need rewriting"
+)
 @pytest.mark.asyncio
 async def test_tool_result_appears_in_next_turn_messages():
     """Tool result должен попасть в messages следующего turn."""
     pass
 
 
-@pytest.mark.skip(reason="Orchestrator refactored to SDK-based MCP sessions — tests need rewriting")
+@pytest.mark.skip(
+    reason="Orchestrator refactored to SDK-based MCP sessions — tests need rewriting"
+)
 @pytest.mark.asyncio
 async def test_tool_result_full_pipeline_messages():
     """Полный pipeline: tool_call → tool_result → second_llm_call с role=tool."""

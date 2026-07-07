@@ -50,7 +50,9 @@ class TestFormatSSEEvent:
 
     def test_trailing_newlines(self):
         """Every event ends with exactly \n\n."""
-        event = AgentEvent("status", {"phase": "tool_calls", "iteration": 0, "count": 2})
+        event = AgentEvent(
+            "status", {"phase": "tool_calls", "iteration": 0, "count": 2}
+        )
         result = format_sse_event(event)
         assert result.endswith("\n\n")
         # Should have at least one \n\n and end with it

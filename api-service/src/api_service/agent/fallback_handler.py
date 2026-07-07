@@ -9,7 +9,8 @@ call and saves the turn.
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from collections.abc import AsyncIterator
+from typing import cast
 
 from .conversation import ConversationManager
 from .llm_client import LLMClientProtocol
@@ -38,7 +39,7 @@ class FallbackHandler:
 
     async def run(
         self, ctx: TurnContext, *, was_finished: bool = False
-    ) -> AgentEvent:
+    ) -> AsyncIterator[AgentEvent]:
         """Stream the fallback answer.
 
         Cuts ``ctx.messages`` to system prompt + last 2 exchanges,
@@ -62,10 +63,12 @@ class FallbackHandler:
             yield AgentEvent("token", {"data": FALLBACK_GENERIC})
 
         full_answer = "".join(final_parts)
-        ctx.turn_messages.append({
-            "role": "assistant",
-            "content": full_answer,
-        })
+        ctx.turn_messages.append(
+            {
+                "role": "assistant",
+                "content": full_answer,
+            }
+        )
         await self._conv_mgr.aremember_turn(
             ctx.session_id,
             cast(TurnMessages, ctx.turn_messages),

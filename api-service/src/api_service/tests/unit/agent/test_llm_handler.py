@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -96,20 +96,23 @@ class TestLLMHandler:
         """When LLM returns tool_calls, outcome="tool_calls" and pending_tool_calls populated."""
         _install_stream(
             mock_llm,
-            (None, {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {
-                            "name": "find_student",
-                            "arguments": '{"name":"Alice"}',
-                        },
-                    }
-                ],
-            }),
+            (
+                None,
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "find_student",
+                                "arguments": '{"name":"Alice"}',
+                            },
+                        }
+                    ],
+                },
+            ),
         )
 
         ctx = _make_turn_context()
@@ -136,9 +139,7 @@ class TestLLMHandler:
         )
 
         ctx = _make_turn_context()
-        events: list[AgentEvent] = [
-            e async for e in handler.stream_and_parse(ctx)
-        ]
+        events: list[AgentEvent] = [e async for e in handler.stream_and_parse(ctx)]
 
         assert len(events) == 2
         assert events[0].type == "token"
@@ -184,11 +185,14 @@ class TestLLMHandler:
         """reasoning_content without content/tool_calls → empty_round with reasoning."""
         _install_stream(
             mock_llm,
-            (None, {
-                "role": "assistant",
-                "content": "",
-                "reasoning_content": "thinking step 1",
-            }),
+            (
+                None,
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "thinking step 1",
+                },
+            ),
         )
 
         ctx = _make_turn_context()
@@ -198,13 +202,10 @@ class TestLLMHandler:
 
         assert ctx.outcome == "empty_round"
         assert ctx.empty_rounds == 1
-        assert any(
-            m.get("content") == "thinking step 1" for m in ctx.messages
-        )
+        assert any(m.get("content") == "thinking step 1" for m in ctx.messages)
         from api_service.agent.prompts import PARTIAL_REMINDER
-        assert any(
-            m.get("content") == PARTIAL_REMINDER for m in ctx.messages
-        )
+
+        assert any(m.get("content") == PARTIAL_REMINDER for m in ctx.messages)
 
     async def test_partial_no_reasoning(self, mock_llm, handler):
         """Empty content, no reasoning → empty_round."""
@@ -275,22 +276,25 @@ class TestLLMHandler:
         """Response with multiple tool_calls extracts all of them."""
         _install_stream(
             mock_llm,
-            (None, {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "c1",
-                        "type": "function",
-                        "function": {"name": "tool_a", "arguments": '{"x":1}'},
-                    },
-                    {
-                        "id": "c2",
-                        "type": "function",
-                        "function": {"name": "tool_b", "arguments": '{"y":2}'},
-                    },
-                ],
-            }),
+            (
+                None,
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {"name": "tool_a", "arguments": '{"x":1}'},
+                        },
+                        {
+                            "id": "c2",
+                            "type": "function",
+                            "function": {"name": "tool_b", "arguments": '{"y":2}'},
+                        },
+                    ],
+                },
+            ),
         )
 
         ctx = _make_turn_context()
@@ -306,14 +310,20 @@ class TestLLMHandler:
         """outcome and pending_tool_calls reset before each call."""
         _install_stream(
             mock_llm,
-            (None, {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {"id": "c1", "type": "function",
-                     "function": {"name": "tool_a", "arguments": "{}"}}
-                ],
-            }),
+            (
+                None,
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {"name": "tool_a", "arguments": "{}"},
+                        }
+                    ],
+                },
+            ),
         )
         ctx = _make_turn_context()
         async for _ in handler.stream_and_parse(ctx):
@@ -334,14 +344,20 @@ class TestLLMHandler:
         """Tool calls outcome yields no token events."""
         _install_stream(
             mock_llm,
-            (None, {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {"id": "c1", "type": "function",
-                     "function": {"name": "test_tool", "arguments": "{}"}}
-                ],
-            }),
+            (
+                None,
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {"name": "test_tool", "arguments": "{}"},
+                        }
+                    ],
+                },
+            ),
         )
 
         ctx = _make_turn_context()

@@ -7,7 +7,6 @@ and handle the backward-compatible token-stream suffix logic.
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from .types import AgentEvent
 
@@ -33,5 +32,5 @@ def unstreamed_suffix(streamed_text: str, final_text: str) -> str:
     if not streamed_text:
         return final_text
     if final_text.startswith(streamed_text):
-        return final_text[len(streamed_text):]
+        return final_text[len(streamed_text) :]
     return ""

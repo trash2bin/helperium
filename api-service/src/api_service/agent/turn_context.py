@@ -86,9 +86,9 @@ class TurnContext:
         Returns:
             A fully initialised TurnContext ready for the agent loop.
         """
-        history: list[dict[str, Any]] = (
-            await conversation_manager.aget_history_messages(session_id)
-        )
+        history: list[
+            dict[str, Any]
+        ] = await conversation_manager.aget_history_messages(session_id)
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},

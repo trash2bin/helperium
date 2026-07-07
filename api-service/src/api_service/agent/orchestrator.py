@@ -11,7 +11,6 @@ and only owns the *sequence* of steps and the loop termination logic.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -73,7 +72,9 @@ class LLMAgent:
 
     # ── Public entry points ────────────────────��─────────────────────────
 
-    def create_per_request_llm(self, llm_config: dict | None = None) -> LLMClient:
+    def create_per_request_llm(
+        self, llm_config: dict | None = None
+    ) -> LLMClient | LLMClientProtocol:
         """Create a per-request LLM client from per-agent config.
 
         Allows each request to use a different model/provider without
@@ -98,9 +99,7 @@ class LLMAgent:
                 yield token
             elif event.type == "final":
                 content = (
-                    event.data.get("content")
-                    if isinstance(event.data, dict)
-                    else None
+                    event.data.get("content") if isinstance(event.data, dict) else None
                 )
                 if content:
                     suffix = unstreamed_suffix(streamed_text, str(content))
@@ -127,11 +126,11 @@ class LLMAgent:
         This is the main entry point for new code.
 
         Args:
-            user_message:  Raw text from the user.
-            session_id:    Conversation session identifier.
-            tenant_ids:    Scopes the MCP session to one or more tenants.
-            llm_config:    Overrides the global LLM config for this request.
-            system_prompt: Overrides the global system prompt.
+            user_message:   Raw text from the user.
+            session_id:     Conversation session identifier.
+            tenant_ids:     Scopes the MCP session to one or more tenants.
+            llm_config:     Overrides the global LLM config for this request.
+            system_prompt:  Overrides the global system prompt.
         """
         session_id = self.conversation_manager.normalize_session_id(session_id)
         logger.info(
@@ -198,9 +197,7 @@ class LLMAgent:
             )
 
         try:
-            async with self.mcp_client.get_session(
-                tenant_ids=tenant_ids
-            ) as session:
+            async with self.mcp_client.get_session(tenant_ids=tenant_ids) as session:
                 # ── 2. Discover tools ──────────────────────────────────
                 ctx.tools = await self.mcp_client.list_tools(session)
                 logger.info(

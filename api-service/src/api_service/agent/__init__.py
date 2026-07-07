@@ -20,7 +20,7 @@ types              — Shared type definitions
 from __future__ import annotations
 
 from .conversation import ConversationManager
-from .llm_client import LLMClient, LLMClientProtocol, create_client
+from .llm_client import LLMClient, LLMClientProtocol
 from .mcp_client import MCPClient
 from .orchestrator import LLMAgent, agent
 from .tool_parser import ToolCallParser

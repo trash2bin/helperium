@@ -35,7 +35,7 @@ class LLMClientProtocol(Protocol):
     api_base: str | None
     enable_thinking: bool
 
-    async def stream_completion(
+    def stream_completion(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
@@ -45,12 +45,14 @@ class LLMClientProtocol(Protocol):
 
         Yields (token, None) for each emitted token and
         (None, final_message) exactly once when the response is complete.
+
+        Implemented as ``async def`` with ``yield`` — this is a regular
+        ``def`` in the protocol so Pyright sees it as an async generator
+        return type rather than a coroutine.
         """
         ...
 
-    async def get_final_message(
-        self, messages: list[dict[str, Any]]
-    ) -> AsyncIterator[str]:
+    def get_final_message(self, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
         """Non-streaming fallback: yield tokens of the final answer."""
         ...
 
@@ -97,7 +99,7 @@ class LLMClient:
         self.temperature: float = temperature
         self.max_tokens_thinking: int = max_tokens_thinking
         self.enable_thinking: bool = enable_thinking
-        self._last_final_message: dict[str, Any] | None = None
+        self.last_final_message: dict[str, Any] | None = None
 
     def _get_extra_params(self) -> dict[str, Any]:
         """Get extra parameters for LiteLLM completion calls."""
@@ -180,7 +182,7 @@ class LLMClient:
             raise RuntimeError("ModelResponse.choices[0].message is None")
 
         result: dict[str, Any] = self._build_response_dict(msg_obj)
-        self._last_final_message = result
+        self.last_final_message = result
 
         # Log reasoning if present
         if result.get("reasoning_content"):
@@ -257,11 +259,6 @@ class LLMClient:
 
         return result
 
-    @property
-    def last_final_message(self) -> dict[str, Any] | None:
-        """Get the last final message (for fallback logic)."""
-        return self._last_final_message
-
 
 def create_client(llm_config: dict | None = None) -> LLMClient:
     """
@@ -300,7 +297,13 @@ def create_client(llm_config: dict | None = None) -> LLMClient:
 
         # Determine model prefix based on provider
         if provider == "ollama" and api_base:
-            known_prefixes = ("ollama/", "ollama_chat/", "openai/", "anthropic/", "deepseek/")
+            known_prefixes = (
+                "ollama/",
+                "ollama_chat/",
+                "openai/",
+                "anthropic/",
+                "deepseek/",
+            )
             if not model_name.startswith(known_prefixes):
                 model_name = f"ollama_chat/{model_name}"
         elif provider == "mistral":
@@ -318,7 +321,8 @@ def create_client(llm_config: dict | None = None) -> LLMClient:
             api_base=api_base_url,
             timeout=settings.request_timeout,
             temperature=temperature,
-            max_tokens_thinking=llm_config.get("max_tokens") or settings.agent_max_tokens_thinking,
+            max_tokens_thinking=llm_config.get("max_tokens")
+            or settings.agent_max_tokens_thinking,
             enable_thinking=settings.think_mode,
         )
 

@@ -160,9 +160,9 @@ class TestListAgents:
 
     def test_list_agents(self, agent_store):
         """List orders by created_at DESC."""
-        a1 = agent_store.create_agent("alpha")
-        a2 = agent_store.create_agent("beta")
-        a3 = agent_store.create_agent("gamma")
+        agent_store.create_agent("alpha")
+        agent_store.create_agent("beta")
+        agent_store.create_agent("gamma")
         agents = agent_store.list_agents()
         assert len(agents) == 3
         # created_at DESC → gamma, beta, alpha

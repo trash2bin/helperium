@@ -14,6 +14,7 @@ fallback logic (that's ``FallbackHandler``).
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 from .llm_client import LLMClientProtocol
@@ -40,9 +41,7 @@ class LLMHandler:
         self._llm = llm_client
         self._tool_parser = tool_parser or ToolCallParser()
 
-    async def stream_and_parse(
-        self, ctx: TurnContext
-    ) -> AgentEvent:
+    async def stream_and_parse(self, ctx: TurnContext) -> AsyncIterator[AgentEvent]:
         """Stream the LLM response and set outcome fields on ``ctx``.
 
         Yields ``token`` events.
@@ -69,14 +68,12 @@ class LLMHandler:
 
         # ── Stream tokens + collect final message ───────────────────────
         final_message: dict[str, Any] | None = None
-        no_tokens = True
 
         async for token, final in self._llm.stream_completion(
             ctx.messages,
             tools=ctx.tools if ctx.tools else None,
         ):
             if token:
-                no_tokens = False
                 yield AgentEvent("token", TokenEventData(data=token))
             elif final:
                 final_message = final
@@ -88,15 +85,13 @@ class LLMHandler:
 
         # ── 1. Empty response ───────────────────────────────────────────
         if final_message is None:
-            logger.warning(
-                "[LLM_HANDLER] Empty response (iteration %d)", ctx.iteration
-            )
+            logger.warning("[LLM_HANDLER] Empty response (iteration %d)", ctx.iteration)
             ctx.empty_rounds += 1
             ctx.outcome = "empty_round"
             return
 
         # ── Strip internal usage metadata ───────────────────────────────
-        usage = final_message.pop("_usage", None)
+        final_message.pop("_usage", None)
 
         # ── Extract components ──────────────────────────────────────────
         reasoning = final_message.get("reasoning_content")
@@ -116,13 +111,9 @@ class LLMHandler:
 
         # ── 2. Tool calls ───────────────────────────────────────────────
         if tool_calls:
-            logger.info(
-                "[LLM_HANDLER] Outcome: tool_calls (%d)", len(tool_calls)
-            )
+            logger.info("[LLM_HANDLER] Outcome: tool_calls (%d)", len(tool_calls))
             # Append assistant message with tool_calls to message history.
-            final_message["tool_calls"] = self._tool_parser.format_for_model(
-                tool_calls
-            )
+            final_message["tool_calls"] = self._tool_parser.format_for_model(tool_calls)
             ctx.messages.append(final_message)
             ctx.turn_messages.append(final_message)
 
@@ -132,9 +123,7 @@ class LLMHandler:
 
         # ── 3. Final content ────────────────────────────────────────────
         if content:
-            logger.info(
-                "[LLM_HANDLER] Outcome: final (%d chars)", len(content)
-            )
+            logger.info("[LLM_HANDLER] Outcome: final (%d chars)", len(content))
             final_message["content"] = content
             ctx.messages.append(final_message)
             ctx.turn_messages.append(final_message)
@@ -151,12 +140,16 @@ class LLMHandler:
         ctx.outcome = "empty_round"
 
         if reasoning:
-            ctx.messages.append({
-                "role": "assistant",
-                "content": reasoning,
-            })
+            ctx.messages.append(
+                {
+                    "role": "assistant",
+                    "content": reasoning,
+                }
+            )
 
-        ctx.messages.append({
-            "role": "system",
-            "content": PARTIAL_REMINDER,
-        })
+        ctx.messages.append(
+            {
+                "role": "system",
+                "content": PARTIAL_REMINDER,
+            }
+        )

@@ -46,7 +46,7 @@ class ToolCallParser:
             calls.append(
                 ParsedToolCall(
                     id=item.get("id") or f"call_{name}_{uuid.uuid4().hex[:8]}",
-                    name=name,
+                    name=name or "",
                     arguments=self.parse_tool_arguments(function.get("arguments", {})),
                 )
             )
@@ -56,7 +56,7 @@ class ToolCallParser:
     def _extract_json_tool_calls(self, text_content: str) -> list[ParsedToolCall]:
         """Extract tool calls from JSON blocks or custom tags in text content."""
         calls: list[ParsedToolCall] = []
-        
+
         # 1. Handle <tool_call> tags (e.g. <invoke name="foo">...)
         tag_matches = re.findall(
             r"<invoke\s+name=['\"]([^'\"]+)['\"]([^>]*)>", text_content
@@ -65,7 +65,7 @@ class ToolCallParser:
             calls.append(
                 ParsedToolCall(
                     id=f"call_{name}_{uuid.uuid4().hex[:8]}",
-                    name=name,
+                    name=name or "",
                     arguments={},
                 )
             )
@@ -86,10 +86,14 @@ class ToolCallParser:
             end_idx = text_content.rfind("}")
             if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                 potential_jsons.append(text_content[start_idx : end_idx + 1])
-            
+
             start_list_idx = text_content.find("[")
             end_list_idx = text_content.rfind("]")
-            if start_list_idx != -1 and end_list_idx != -1 and end_list_idx > start_list_idx:
+            if (
+                start_list_idx != -1
+                and end_list_idx != -1
+                and end_list_idx > start_list_idx
+            ):
                 potential_jsons.append(text_content[start_list_idx : end_list_idx + 1])
 
         for json_str in potential_jsons:
@@ -108,10 +112,14 @@ class ToolCallParser:
                 extracted_items = [data]
 
             for item in extracted_items:
-                if not isinstance(item, dict): continue
-                name: str | None = item.get("tool_name") or item.get("name") or item.get("tool")
-                if not name: continue
-                
+                if not isinstance(item, dict):
+                    continue
+                name: str | None = (
+                    item.get("tool_name") or item.get("name") or item.get("tool")
+                )
+                if not name:
+                    continue
+
                 args = item.get("arguments") or item.get("args") or {}
                 calls.append(
                     ParsedToolCall(
