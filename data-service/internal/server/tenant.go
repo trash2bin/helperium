@@ -91,13 +91,16 @@ type TenantStore struct {
 
 	adminRouter      http.Handler // chi sub-router for /admin/* (built once)
 	hasAdmin         bool         // true when introspect adapter is available (for /openapi.json)
+
+	TenantsDir string // directory for persisting tenant configs (.data/tenants/)
 }
 
 // NewTenantStore creates an empty TenantStore with the given registry.
-func NewTenantStore(registry *datasource.Registry) *TenantStore {
+func NewTenantStore(registry *datasource.Registry, tenantsDir string) *TenantStore {
 	return &TenantStore{
-		tenants:  make(map[string]*TenantInstance),
-		registry: registry,
+		tenants:    make(map[string]*TenantInstance),
+		registry:   registry,
+		TenantsDir: tenantsDir,
 	}
 }
 
@@ -554,6 +557,21 @@ func (ts *TenantStore) adminAddTenantHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	// ── Also persist to TenantsDir for durability across restarts ──
+	if ts.TenantsDir != "" {
+		persistPath := filepath.Join(ts.TenantsDir, req.ID+".json")
+		prettyJSON, err := json.MarshalIndent(cfg, "", "  ")
+		if err == nil {
+			if mkErr := os.MkdirAll(ts.TenantsDir, 0755); mkErr == nil {
+				if writeErr := os.WriteFile(persistPath, prettyJSON, 0644); writeErr != nil {
+					slog.Warn("failed to persist tenant config", "tenant", req.ID, "error", writeErr)
+				} else {
+					slog.Info("persisted tenant config", "tenant", req.ID, "path", persistPath)
+				}
+			}
+		}
+	}
+
 	// Add tenant
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -588,6 +606,14 @@ func (ts *TenantStore) adminRemoveTenantHandler(w http.ResponseWriter, r *http.R
 	if err := ts.RemoveTenant(ctx, id); err != nil {
 		handlers.RespondError(w, http.StatusNotFound, "not_found", err.Error())
 		return
+	}
+
+	// Remove persisted config file
+	if ts.TenantsDir != "" {
+		configPath := filepath.Join(ts.TenantsDir, id+".json")
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			slog.Warn("failed to remove tenant config file", "tenant", id, "error", err)
+		}
 	}
 
 	handlers.RespondJSON(w, http.StatusOK, map[string]string{

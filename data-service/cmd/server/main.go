@@ -115,8 +115,47 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ── Persist tenant configs в .data/tenants/{id}.json ──
+	tenantsDir := os.Getenv("TENANTS_DIR")
+	if tenantsDir == "" {
+		tenantsDir = filepath.Join(filepath.Dir(absCfgPath), "..", ".data", "tenants")
+	}
+
 	// ── TenantStore: multi-tenant foundation (фаза 3.7) ──
-	store := server.NewTenantStore(registry)
+	store := server.NewTenantStore(registry, tenantsDir)
+
+	// ── Загружаем все сохранённые tenants из файловой системы ──
+	// Это позволяет tenant'ам, добавленным через admin API или agent-db register,
+	// пережить рестарт data-service.
+	entries, err := os.ReadDir(tenantsDir)
+	if err != nil {
+		slog.Info("tenants directory not found — creating", "dir", tenantsDir)
+		if mkErr := os.MkdirAll(tenantsDir, 0755); mkErr != nil {
+			slog.Warn("failed to create tenants directory", "error", mkErr)
+		}
+	} else {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			tenantName := strings.TrimSuffix(entry.Name(), ".json")
+			tenantCfgPath := filepath.Join(tenantsDir, entry.Name())
+			tenantCfg, loadErr := config.Load(tenantCfgPath)
+			if loadErr != nil {
+				slog.Warn("failed to load tenant config", "tenant", tenantName, "error", loadErr)
+				continue
+			}
+			bCtx, bCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if _, addErr := store.AddTenant(bCtx, tenantName, tenantCfg, tenantCfgPath); addErr != nil {
+				slog.Warn("failed to restore tenant", "tenant", tenantName, "error", addErr)
+			} else {
+				slog.Info("restored tenant from disk", "tenant", tenantName, "path", tenantCfgPath)
+			}
+			bCancel()
+		}
+	}
+
+	// ── Bootstrap the default tenant from the config file ──
 
 	// Build admin router (requires introspection adapter)
 	adapter, _ := registry.Get(string(cfg.DataSource.Driver))

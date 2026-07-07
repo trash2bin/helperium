@@ -98,7 +98,7 @@ func fileExists(path string) bool {
 func buildTestRouter(t testing.TB, cfg *config.Config, db *sql.DB) *httptest.Server {
 	t.Helper()
 	adapter := &testSQLite{db: db}
-	store := server.NewTenantStore(datasource.NewDefaultRegistry())
+	store := server.NewTenantStore(datasource.NewDefaultRegistry(), "")
 	router, err := server.NewRouterFromConfig(store, cfg, adapter, adapter, nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewRouterFromConfig: %v", err)

@@ -65,7 +65,7 @@ func newInMemoryConfig(t *testing.T) *config.Config {
 func newTestTenantStore(t *testing.T) *TenantStore {
 	t.Helper()
 	registry := newTestRegistry(t)
-	return NewTenantStore(registry)
+	return NewTenantStore(registry, "")
 }
 
 func addDefaultTenant(t *testing.T, ts *TenantStore) {

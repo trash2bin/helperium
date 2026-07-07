@@ -28,7 +28,7 @@ func TestSwaggerHandler(t *testing.T) {
 
 // TestNewOpenAPIHandler_NoTenant — без tenant возвращает system spec
 func TestNewOpenAPIHandler_NoTenant(t *testing.T) {
-	store := server.NewTenantStore(nil)
+	store := server.NewTenantStore(nil, "")
 	h := server.NewOpenAPIHandler(store, false)
 
 	w := httptest.NewRecorder()
@@ -57,7 +57,7 @@ func TestNewOpenAPIHandler_NoTenant(t *testing.T) {
 
 // TestNewOpenAPIHandler_WithTenant — с tenant возвращает spec с эндпоинтами
 func TestNewOpenAPIHandler_WithTenant(t *testing.T) {
-	store := server.NewTenantStore(nil)
+	store := server.NewTenantStore(nil, "")
 	h := server.NewOpenAPIHandler(store, true)
 
 	w := httptest.NewRecorder()
@@ -79,7 +79,7 @@ func TestNewOpenAPIHandler_WithTenant(t *testing.T) {
 
 // TestNewOpenAPIHandler_WithAdmin — с hasAdmin=true включает admin paths
 func TestNewOpenAPIHandler_WithAdmin(t *testing.T) {
-	store := server.NewTenantStore(nil)
+	store := server.NewTenantStore(nil, "")
 	h := server.NewOpenAPIHandler(store, true)
 
 	w := httptest.NewRecorder()
@@ -116,7 +116,7 @@ func min(a, b int) int {
 
 // TestSwaggerHandlerWithTenant — добавляет tenant в URL
 func TestSwaggerHandlerWithTenant(t *testing.T) {
-	store := server.NewTenantStore(nil)
+	store := server.NewTenantStore(nil, "")
 	h := server.SwaggerHandlerWithTenant(store, "test-tenant")
 
 	w := httptest.NewRecorder()
