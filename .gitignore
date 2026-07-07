@@ -46,3 +46,8 @@ specs/test_tenants/
 # Backup files
 *.bak
 *.bak2
+
+# Playwright
+test-results/
+playwright-report/
+.playwright-mcp

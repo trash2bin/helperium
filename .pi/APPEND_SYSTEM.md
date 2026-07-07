@@ -171,6 +171,47 @@ ctx_execute("shell", `echo "HEAD: $(git rev-parse HEAD)"`)
 | Iterative fix-and-check loop | `/review-loop` |
 | Cleanup or refactor pass | `/parallel-cleanup` |
 
+### Project-specific subagent: browser-debugger
+
+Установлен project-scoped субагент для отладки UI/бэкенд-багов:
+- **name**: `browser-debugger`
+- **description**: Открывает страницу в живом браузере (Firefox), снимает ARIA snapshot, читает console/network ошибки, выдаёт структурированный bug report
+- **tools**: `read`, `bash`, `mcp:playwright` (все 34 playwright-тула — navigate, snapshot, console, network, click, type и т.д.)
+- **model**: наследуется от твоей (сейчас deepseek через polza)
+- **thinking**: high
+- **не правит код** — только диагностика
+
+#### Когда использовать:
+- Пользователь говорит "страница не грузится", "кнопка не работает", "API возвращает 500", "в консоли ошибка"
+- Нужно проверить HTTP статус, ответ сервера, ошибки JS, упавшие network запросы
+- Баг воспроизводится в браузере и нужно понять "что именно сломалось"
+
+#### Когда НЕ использовать:
+- Баг в мобильном приложении или не в браузере
+- Нужно починить код — browser-debugger не пишет код
+- Баг специфичен для Safari/Chrome и не воспроизводится в Firefox
+
+#### Контекст:
+**Контекст НЕ передаётся.** Каждый запуск browser-debugger стартует с чистым fresh-контекстом. Если нужно передать URL или детали — укажи их прямо в задаче.
+
+#### Как вызывать:
+```
+Запусти browser-debugger — проверь http://localhost:5173/login, там пустой экран
+Use browser-debugger to debug the 500 error on /api/users
+browser-debugger, открой админку и проверь консоль на ошибки
+```
+
+#### Пример задачи с URL:
+```
+browser-debugger task="Open http://localhost:5173, check console for errors, check network for failed API calls, report findings"
+```
+
+#### Ограничения:
+- Использует bundled Playwright Firefox, НЕ твой Zen Browser
+- Если баг воспроизводится только в Zen (с твоими расширениями/куками) — browser-debugger может не увидеть его
+- Для проверки на реальном Zen нужно отдельно настроить `--executable-path`
+- **Важно:** после изменения конфига агента или MCP-сервера нужен restart Pi, чтобы кеш метаданных тулов обновился. Иначе дочерний процесс не увидит playwright-тулы.
+
 ### Default flow for non-trivial tasks:
 ```
 1. ctx_search + graphify_explain → understand scope
