@@ -1,0 +1,349 @@
+/* Agent Tutor Embeddable Chat Widget Styles */
+/* These styles are also inlined in embed.js for Shadow DOM isolation */
+
+:host {
+  all: initial;
+  --accent: #0f766e;
+  --accent-strong: #0b5f59;
+  --ink: #1e293b;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --panel: #ffffff;
+  --rose: #e11d48;
+  --blue: #2563eb;
+  --shadow: 0 18px 50px rgba(23, 32, 38, 0.14);
+  --radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.agent-tutor-widget {
+  all: initial;
+  display: block;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+/* ── Trigger Button ── */
+.at-trigger {
+  position: fixed;
+  bottom: 16px;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  z-index: 2147483647;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s, transform 0.2s;
+  padding: 0;
+}
+
+.at-trigger:hover {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+.at-trigger.at-right {
+  right: 16px;
+}
+
+.at-trigger.at-left {
+  left: 16px;
+}
+
+.at-trigger svg {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+}
+
+/* ── Chat Panel ── */
+.at-panel {
+  position: fixed;
+  bottom: 16px;
+  width: min(380px, calc(100vw - 28px));
+  height: min(620px, calc(100vh - 44px));
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 2147483646;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.at-panel.at-right {
+  right: 16px;
+}
+
+.at-panel.at-left {
+  left: 16px;
+}
+
+.at-panel.at-hidden {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  pointer-events: none;
+}
+
+/* ── Header ── */
+.at-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.at-head-info strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.at-head-info span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.at-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+/* ── Messages ── */
+.at-messages {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.at-msg {
+  min-width: 0;
+  max-width: 92%;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.at-msg.at-user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: white;
+}
+
+.at-msg.at-assistant {
+  align-self: flex-start;
+  background: #eef3f4;
+  color: var(--ink);
+  white-space: normal;
+  margin-top: -3px;
+}
+
+.at-msg.at-assistant.at-thinking {
+  position: relative;
+  min-height: 12px;
+}
+
+.at-msg.at-assistant.at-thinking::before {
+  content: "Думаю и проверяю данные...";
+  display: inline-block;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.at-msg.at-error {
+  background: #fff1f3;
+  color: var(--rose);
+}
+
+.at-msg.at-assistant p {
+  margin: 0 0 5px;
+}
+
+.at-msg.at-assistant p:last-child,
+.at-msg.at-assistant ul:last-child,
+.at-msg.at-assistant ol:last-child {
+  margin-bottom: 0;
+}
+
+.at-msg.at-assistant ul,
+.at-msg.at-assistant ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.at-msg.at-assistant li {
+  margin: 3px 0;
+}
+
+.at-msg.at-assistant strong {
+  font-weight: 750;
+}
+
+.at-msg.at-assistant code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--accent-strong);
+  font-size: 0.92em;
+}
+
+/* ── Tool Strip ── */
+.at-tool-strip {
+  align-self: flex-start;
+  max-width: 92%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.at-tool-strip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ── Markdown Table ── */
+.at-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+}
+
+.at-table-wrap table {
+  min-width: 520px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.at-table-wrap th,
+.at-table-wrap td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.at-table-wrap th {
+  background: #f9fbfb;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+
+.at-table-wrap tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ── Form ── */
+.at-form {
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.at-form textarea {
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  color: var(--ink);
+  background: var(--panel);
+}
+
+.at-form textarea:focus {
+  border-color: var(--accent);
+}
+
+.at-form button {
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.at-form button:hover {
+  opacity: 0.9;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .at-panel {
+    width: 100vw;
+    height: 100vh;
+    bottom: 0;
+    right: 0 !important;
+    left: 0 !important;
+    border-radius: 0;
+    border: 0;
+  }
+
+  .at-trigger {
+    bottom: 12px;
+  }
+
+  .at-trigger.at-right {
+    right: 12px;
+  }
+
+  .at-trigger.at-left {
+    left: 12px;
+  }
+}

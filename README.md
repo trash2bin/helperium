@@ -21,7 +21,7 @@ web:8080 ─┬→ api:8081 ─→ mcp-gateway:8083 ─→ data-service:8084 ─
 | mcp-gateway | Go (chi, mcp-go) | 8083 | Stateless MCP server (SSE/JSON-RPC). Resolves tools dynamically from data-service by tenant |
 | admin-dashboard | Go (chi, Alpine.js) | 8085 | Web admin panel: tenant CRUD, config management, tool approval, RAG documents, agents |
 | rag | Python (FastAPI) | 8082 | Semantic search over documents (ChromaDB + SQLite/PostgreSQL) |
-| api | Python (FastAPI, LiteLLM) | 8081 | Agent orchestrator, LLM integration, Agent Store (CRUD), SSE streaming, session/backlog |
+| api | Python (FastAPI, LiteLLM) | 8081 | Agent orchestrator, LLM integration, Agent Store (CRUD), SSE streaming, session/backlog. [Embeddable chat widget →](api-service/embed/README.md) |
 | web | Python (FastAPI) | 8080 | UI + reverse-proxy. Proxies X-Tenant-ID to all upstream services |
 
 Storage: SQLite (default) or PostgreSQL. Vector index: ChromaDB. Embeddings: Sentence Transformers (local).
@@ -111,6 +111,7 @@ admin-dashboard/    Admin UI (Go + Alpine.js, :8085)
 rag/                RAG service (Python, :8082)
 agent-tutor-sdk/    Shared Pydantic models + HTTP clients
 api-service/src/api_service/           Agent orchestrator + API (FastAPI, :8081)
+api-service/embed/                     Embeddable chat widget (vanilla JS, Shadow DOM) — [README →](api-service/embed/README.md)
 demo/web/           Web UI + reverse-proxy (FastAPI, :8080)
 specs/              OpenAPI specs + JSON Schema config
 scripts/            dev.sh -- run all services

@@ -56,24 +56,20 @@
       </section>
     </main>
 
-    <aside class="chat-widget" id="chatWidget">
-      <div class="chat-head">
-        <div>
-          <strong>Ассистент</strong>
-          <span>Ollama + MCP</span>
-        </div>
-        <button class="icon-button" id="collapseChat" title="Свернуть">−</button>
-      </div>
-      <div class="messages" id="messages">
-        <div class="message assistant">Спросите про студента, оценки, расписание или материалы.</div>
-      </div>
-      <form class="chat-form" id="chatForm">
-        <textarea id="chatInput" rows="2" placeholder="Например: какие оценки у Иван Петров Иванович?"></textarea>
-        <button type="submit" title="Отправить">↗</button>
-      </form>
-    </aside>
+    <!-- Stub chat DOM — kept for app.js compatibility (hidden, non-interactive).
+         app.js functions (restoreServerHistory, addMessage, streamChat, etc.)
+         reference #messages, #chatForm, #chatInput, #chatWidget, #openChat.
+         Removing them causes cascading TypeError crashes in app.js. -->
+    <div id="chatWidget" style="display:none"></div>
+    <div id="messages" style="display:none"></div>
+    <div id="chatForm" style="display:none"></div>
+    <div id="chatInput" style="display:none"></div>
+    <div id="openChat" style="display:none"></div>
+    <div id="collapseChat" style="display:none"></div>
 
-    <button class="chat-open hidden" id="openChat" title="Открыть чат">✦</button>
+    <!-- Embed widget — Shadow DOM, independent from app.js -->
+    <script src="/embed/embed.js" data-agent="default">
+    </script>
 
     <script src="/static/app.js"></script>
   </body>

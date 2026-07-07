@@ -26,7 +26,7 @@
 | **MCP-gateway** (Go) | `:8083` | MCP сервер (SSE/JSON-RPC). Динамическая генерация инструментов из data-service. | [README](mcp-gateway/README.md) |
 | **Admin Dashboard** (Go) | `:8085` | Веб-интерфейс для администрирования: tenant CRUD, конфиги, тулы, RAG, агенты. Alpine.js UI. | [README](admin-dashboard/README.md) |
 | **RAG** (Python) | `:8082` | Поиск по документам (ChromaDB), чанкинг, эмбеддинги, multipart document upload. | [README](rag/README.md) |
-| **API** (Python) | `:8081` | Оркестратор агента, LiteLLM, Agent Store (CRUD), rate limiter, управление сессиями и бэклогом. | [AGENT_WORKFLOW](api-service/README.md) |
+| **API** (Python) | `:8081` | Оркестратор агента, LiteLLM, Agent Store (CRUD), rate limiter, управление сессиями и бэклогом. Встраиваемый чат-виджет: [embed/README.md](api-service/embed/README.md). | [AGENT_WORKFLOW](api-service/README.md) |
 | **Web** (Python) | `:8080` | UI-интерфейс + reverse-proxy. Проксирует `X-Tenant-ID` и поддерживает tenant routing. | [README](demo/web/README.md) |
 | **SDK** (Python) | — | Общие Pydantic-модели и клиенты для сервисов. | [pyproject.toml](agent-tutor-sdk/pyproject.toml) |
 
@@ -63,6 +63,7 @@ Web-сервис (`demo/web/server.py`) — тонкий reverse-proxy с под
 - `GET /api/data/stats` → data-service `/stats`
 - `GET /api/rag/documents` → rag-service `/documents/list`
 - `GET/POST /api/chat` → api-service `/api/chat` (SSE)
+- `GET /embed/{path}` → прокси на api-service `/embed/{path}` (виджет: [api-service/embed/README.md](api-service/embed/README.md))
 - `GET/POST /api/tenant/{tenant_id}/{path:path}` — универсальный маршрут:
   - `data/{entity}` → data-service
   - `rag/{path}` → rag-service

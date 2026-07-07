@@ -425,6 +425,15 @@ async def proxy_chat_by_agent(request: Request, agent_name: str):
     return await _proxy_to_api(request, f"/api/chat/{agent_name}", stream=True)
 
 
+# ── Embed widget proxy (from api-service /embed) ──
+
+
+@app.get("/embed/{embed_path:path}")
+async def proxy_embed(request: Request, embed_path: str):
+    """Proxy embed widget static files from api-service."""
+    return await _proxy_to_api(request, f"/embed/{embed_path}", stream=False)
+
+
 # Catch-all for any other /api/* path
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], response_model=None)
 async def proxy_api_any(request: Request, path: str):

@@ -68,6 +68,10 @@ async function init() {
   // Теперь state.agentId известен — создаём сессию под правильным ключом
   currentSessionId = getSessionId();
   await restoreServerHistory();
+  // Sync embed widget with restored agent
+  if (state.agentId && window.__agentTutorSetAgent) {
+    window.__agentTutorSetAgent(state.agentId);
+  }
   // Manifest загружается после того как tenant выбран
   await loadManifest();
 }
@@ -287,6 +291,10 @@ async function loadAgents() {
     // Switch session: новый ключ по агенту → новая сессия → грузим историю
     currentSessionId = getSessionId();
     restoreServerHistory();
+    // Notify embed widget about agent switch
+    if (window.__agentTutorSetAgent && val) {
+      window.__agentTutorSetAgent(val);
+    }
     // Очищаем сообщение-приветствие если есть
     var messagesEl = $("#messages");
     if (messagesEl) {
@@ -535,6 +543,7 @@ async function checkHealth() {
 
 async function restoreServerHistory() {
   const messages = $("#messages");
+  if (!messages) return;
   messages.innerHTML = "";
   let pendingToolNames = [];
 
@@ -595,32 +604,29 @@ function bindChat() {
   const widget = $("#chatWidget");
   const open = $("#openChat");
 
-  $("#collapseChat").addEventListener("click", () => {
-    widget.classList.add("hidden");
-    open.classList.remove("hidden");
-  });
+  // Chat is now handled by embed widget (Shadow DOM) — no-op
+  if (!form || !widget || !input) return;
 
-  open.addEventListener("click", () => {
-    widget.classList.remove("hidden");
-    open.classList.add("hidden");
-    input.focus();
-  });
+  const collapseChat = $("#collapseChat");
+  if (collapseChat) {
+    collapseChat.addEventListener("click", () => {
+      widget.classList.add("hidden");
+      open.classList.remove("hidden");
+    });
+  }
+
+  if (open) {
+    open.addEventListener("click", () => {
+      widget.classList.remove("hidden");
+      open.classList.add("hidden");
+      input.focus();
+    });
+  }
 
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      form.requestSubmit();
     }
-  });
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = "";
-    addMessage("user", text, { persist: true });
-    const answer = addMessage("assistant", "", { persist: false });
-    await streamChat(text, answer);
   });
 }
 
