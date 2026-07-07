@@ -140,7 +140,7 @@ cmd_start() {
     # uv sync ставит dev-зависимости, uv pip install -e — workspace members
     # (чтобы их транзитивные зависимости тоже установились)
     (cd "$PROJECT_ROOT" && uv sync --group dev && uv pip install -e agent-tutor-sdk -e rag -e api-service -e demo/web -e fixtures)
-    
+
     # .pth для editable install: hatchling кладёт папку пакета на sys.path вместо корня проекта
     local pyver=$("$PROJECT_ROOT/.venv/bin/python3" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
     echo "$PROJECT_ROOT" > "$PROJECT_ROOT/.venv/lib/python$pyver/site-packages/_project_root.pth"
