@@ -198,3 +198,105 @@ specs/
 - **Generic-подход**: При добавлении новых полей или сущностей не хардкодь их в коде — конфиг data-service описывает сущности декларативно.
 - **Stateless**: Сервисы не должны хранить состояние сессии локально (кроме кэша сессий в SQLite), чтобы обеспечить масштабируемость.
 - **Config schema — runtime-обязательна**: `config.schema.json` должен быть доступен по одному из путей поиска. Если удалить — data-service не стартанёт.
+
+---
+
+## ✅ 9. CI/CD и Quality Gates
+
+Проект проходит полный CI-пайплайн на GitHub Actions при каждом пуше в `main`/`master`/`develop`.
+
+### 🔄 CI Pipeline (`.github/workflows/ci.yml`)
+
+| Job | Что проверяет | Команда |
+|---|---|---|
+| `lint-python` | Ruff lint, Ruff format check, Pyright type check | `ruff check`, `ruff format --check`, `pyright` |
+| `test-python` | Все Python unit/integration тесты | `pytest api-service/src/api_service/tests/` |
+| `lint-go` | golangci-lint v2 (errcheck, staticcheck, unused, ineffassign, govet) | `golangci-lint run ./...` |
+| `test-go` | Go тесты в data-service и mcp-gateway | `go test ./... -count=1 -timeout 180s` |
+
+**Pipeline считается зелёным**, когда все 4 джобы проходят. Каждая джоба падает независимо — если хоть одна красная, CI красный.
+
+### 🐶 Pre-commit hooks (`.pre-commit-config.yaml`)
+
+```bash
+pre-commit install          # установить хуки (однократно)
+pre-commit run --all-files  # прогнать на всех файлах
+```
+
+| Hook | Источник | Проверяет |
+|---|---|---|
+| `ruff` | astral-sh/ruff-pre-commit | Lint errors |
+| `ruff-format` | astral-sh/ruff-pre-commit | Code formatting |
+| `Pyright` | jordemort/action-pyright | Type correctness |
+| `go vet (data-service, mcp-gateway)` | классический go vet | Подозрительные конструкции (быстро) |
+| `trailing-whitespace` | pre-commit-hooks | Лишние пробелы в конце строк |
+| `end-of-file-fixer` | pre-commit-hooks | Пустая строка в конце файла |
+| `check-yaml` | pre-commit-hooks | Валидность YAML |
+| `check-added-large-files` | pre-commit-hooks | Файлы >500KB в коммите |
+| `check-merge-conflict` | pre-commit-hooks | Маркеры merge conflict |
+
+> Pre-commit — быстрый (`go vet`, не `golangci-lint` — он медленный). Полный линтинг только в CI.
+
+### 🔧 Линтеры — настройка и прогон
+
+#### Python (ruff + Pyright)
+
+```bash
+# Ruff — быстрый линтер / форматтер
+uv run ruff check api-service/src/           # lint
+uv run ruff format --check api-service/src/  # check formatting
+uv run ruff format api-service/src/          # apply formatting
+
+# Pyright — статическая типизация
+npx pyright                                  # проверить всё
+```
+
+Конфиг Pyright: `pyrightconfig.json` (excludes: `tests/`, `node_modules/`, `.venv/`, `.data/`, `graphify-out/`).
+
+#### Go (golangci-lint v2)
+
+```bash
+# Установка (однократно)
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+
+# Вручную — быстрая проверка одного пакета при изменении
+cd data-service && golangci-lint run ./...
+cd mcp-gateway && golangci-lint run ./...
+```
+
+Оба модуля должны выдавать **0 issues**. Конфиг: `.golangci.yml` (v2, errcheck exclude-functions для стандартных идиом Go).
+
+### 🏁 Makefile — локальная симуляция CI
+
+```bash
+make ci         # полный прогон (линт + тесты Python и Go)
+make ci-lint-py # только Python линт + typecheck
+make ci-test-py # только Python тесты
+make ci-lint-go # только Go линтинг (data-service + mcp-gateway)
+make ci-test-go # только Go тесты
+```
+
+**Перед каждым пушем:** `make ci` — занимает ~30–60 сек, ловит ~95% проблем, которые упадут в CI.
+
+### 🐳 act — точная симуляция GitHub Actions
+
+```bash
+brew install act           # установка (однократно)
+act -j lint-go             # одна джоба в Docker
+act --pull=false           # весь пайплайн
+```
+
+Требует Docker Desktop. Использует **те же раннеры, те же версии тулов** — 100% совпадение с CI. Полезно, когда `make ci` прошёл, но CI падает на невоспроизводимых отличиях (macOS vs Ubuntu, версии тулов).
+
+### 📦 Версионирование
+
+Все 6 Python-пакетов (`agent-db`, `agent-tutor-sdk`, `api-service`, `demo-web`, `rag`, `pyproject.toml`) и 2 Go-модуля (`data-service`, `mcp-gateway`) синхронизированы на одной версии:
+- Текущая: **`0.3.0`**
+- Go: `go 1.26.4`
+
+### 🧪 Критерий готовности перед коммитом
+
+1. [ ] `make ci` — зелёный (или его части)
+2. [ ] Pre-commit hooks — все Passed
+3. [ ] `uv run agent-db e2e-full` — зелёный (если менялась логика data-service / mcp-gateway / orchestrator)
+4. [ ] `make ci` — зелёный целиком (не обязательно перед каждым коммитом, но перед пушем — обязательно)
