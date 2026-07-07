@@ -20,18 +20,26 @@ config.json → chi Router → Runtime Handlers (generic) → Query Builder → 
                 └─ /mcp/manifest         → runtime MCP tools generation
 ```
 
-**Ключевые пакеты (`internal/`):**
+**Структура пакетов (`internal/`):**
 
-| Пакет | Ответственность |
-|-------|-----------------|
-| `config/` | Load/Validate/EnvSubst JSON-конфиг + JSON Schema |
-| `datasource/` | Adapter interface (SQLite `modernc.org/sqlite`, PG `pgx/v5`) + registry |
-| `runtime/` | Generic query builder + 6 хендлеров (`get_by_id`, `find`, `list`, `custom_query`, `health`, `stats`) |
-| `configgen/` | `--discover`: интроспекция схемы → config.json |
-| `openapigen/` | Runtime OpenAPI 3.1 генерация из конфига |
-| `server/` | HTTP server, middleware, `TenantStore` (multi-tenancy), admin API |
-| `seedgen/` | Dev-only: DDL из конфига + seed.json → БД (placeholder-агностик ? / $n) |
-| `testdata/scenarios/` | Самостоятельные сценарии: `config.json + seed.json` (sqlite-testseed, postgres-testseed, big-testseed, shop) |
+```
+internal/
+├── configgen/                  # --discover: интроспекция схемы → config.json
+├── datasource/                 # Adapter interface (SQLite, PG) + registry
+│   └── tests/                  # black-box adapter тесты
+├── openapigen/                 # Runtime OpenAPI 3.1 генерация из конфига
+├── runtime/                    # Query builder + handlers
+│   ├── handlers/               # 6 хендлеров (get_by_id, find, list, custom_query, health, stats)
+│   │   └── tests/              # black-box handler тесты
+│   └── tests/                  # black-box query builder тесты
+├── server/                     # HTTP server, middleware, TenantStore, admin API
+│   └── tests/                  # black-box scenario/integration тесты
+├── seedgen/                    # DDL из конфига → seed БД
+│   └── tests/                  # black-box seed тесты
+└── testdata/scenarios/         # Самостоятельные сценарии (config.json + seed.json)
+```
+
+**Принцип:** white-box тесты (`package xxx`) остаются рядом с исходным кодом, black-box тесты (`package xxx_test`) вынесены в `tests/` внутри каждого пакета для чистоты иерархии.
 
 ---
 
@@ -112,19 +120,22 @@ CONFIG_SCHEMA=../specs/config.schema.json go run ./cmd/server/ --config testdata
 ## Тестирование
 
 ```bash
-# Unit (Go)
-go test ./internal/configgen/... ./internal/runtime/... ./internal/datasource/... -count=1
+# Все go-тесты (326 шт, 12 пакетов)
+go test ./internal/... -count=1
 
-# Сценарии (in-memory SQLite)
-go test ./internal/server/... -run TestScenario -v
+# White-box тесты (рядом с кодом)
+go test ./internal/server/ ./internal/runtime/... ./internal/datasource/ ./internal/configgen/... ./internal/seedgen/... -count=1
+
+# Black-box тесты (в tests/)
+go test ./internal/server/tests/ ./internal/runtime/tests/ ./internal/runtime/handlers/tests/ ./internal/datasource/tests/ ./internal/seedgen/tests/ -count=1
 
 # Race detector (флаки)
 go test -race ./internal/... -count=3
-for i in {1..5}; do go test ./internal/server/... -run TestConcurrency -race; done
+for i in {1..5}; do go test ./internal/server/tests/ -run TestConcurrency -race; done
 
 # Cross-driver parity (PG)
 docker compose up -d db
-AGENT_TUTOR_TEST_PG=1 go test ./internal/server/... -run TestCrossDriver -v
+AGENT_TUTOR_TEST_PG=1 go test ./internal/server/tests/ -run TestCrossDriver -v
 
 # Integration (faker + PG)
 uv run python tests/integration/test_with_faker.py --students 50 --grades 200
@@ -135,7 +146,7 @@ uv run agent-db e2e-mcp     # динамические MCP тулы
 uv run agent-db e2e         # materialize → register → web proxy
 ```
 
-**Test helpers:** `internal/server/scenario_test_helpers_test.go` — `loadScenario()`, `buildTestRouter()` для in-memory httptest.
+**Test helpers:** `internal/server/tests/scenario_test_helpers_test.go` — `loadScenario()`, `buildTestRouter()` для in-memory httptest.
 
 ---
 
@@ -171,11 +182,13 @@ uv run agent-db e2e         # materialize → register → web proxy
 
 ## Связь с остальными сервисами
 
-| Сервис | Порт | Взаимодействие |
+| Сервис | Порт | Контракт (неизменяемый HTTP API) |
 |---|---|---|
 | **mcp-gateway** | 8083 | `GET /mcp/manifest` (с `X-Tenant-ID`) → runtime MCP tools |
-| **demo-web** | 8080 | Reverse proxy `/api/data/*` → data-service (проброс `X-Tenant-ID`) |
+| **demo-web** | 8080 | Reverse proxy `/api/data/*` → `GET /{entity}` (через `X-Tenant-ID`) |
 | **demo-api** | 8081 | Через mcp-gateway вызывает тулы data-service |
-| **rag** | 8082 | Независимо, но mcp-gateway агрегирует RAG tools |
+| **admin-dashboard** | 8085 | `/admin/*` (tenant CRUD, config, tools approval) |
 
 **Agent-db CLI** — единая точка управления: `scenario list`, `materialize`, `register`, `e2e-*`.
+
+**Все эндпоинты сохранены:** `/health`, `/docs`, `/openapi.json`, `/{entity}`, `/{entity}/{id}`, `/{entity}?search=...`, `/{entity}/{id}/custom`, `/mcp/manifest`, `/admin/*`.

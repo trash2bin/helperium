@@ -459,7 +459,7 @@ func TestSwaggerUI(t *testing.T) {
 // ══════════════════════════════════════════════════════════════════════
 
 func TestScenario_SqliteTestseed(t *testing.T) {
-	cfg, db := loadScenario(t, "../../testdata/scenarios/sqlite-testseed")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 
@@ -478,7 +478,7 @@ func TestScenario_SqliteTestseed(t *testing.T) {
 //  - 17 эндпоинтов (11 generic + 6 FK-custom_queries)
 //  - DSN указывает на уже материализованный data.db (без seed.json)
 func TestScenario_Shop(t *testing.T) {
-	cfg, db := loadScenario(t, "../../testdata/scenarios/shop")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 

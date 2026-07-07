@@ -1,3 +1,24 @@
+# Binary roots
+/data-service
+/server
+/bin/
+
+# Runtime databases
+*.db
+*.db-wal
+*.db-shm
+
+# Graphify cache
+/graphify-out/
+
+# Editor artifacts
+*.bak
+*.swp
+
+# Build
+/tmp/
+
+# Scenarios (generated)
 testdata/scenarios/**/data.db
 testdata/scenarios/**/data.db-wal
 testdata/scenarios/**/data.db-shm

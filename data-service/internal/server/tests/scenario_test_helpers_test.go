@@ -30,7 +30,7 @@ func loadScenario(t testing.TB, dir string) (*config.Config, *sql.DB) {
 
 	// config.Load() needs specs/config.schema.json relative to CWD.
 	// Point it to the project root via CONFIG_SCHEMA env.
-	// dir is ../../testdata/scenarios/<name> from data-service/internal/server/
+	// dir is ../../../../testdata/scenarios/<name> from data-service/internal/server/tests/
 	// Go up 4 levels to reach project root.
 	schemaPath, err := filepath.Abs(filepath.Join(dir, "..", "..", "..", "..", "specs", "config.schema.json"))
 	if err == nil {

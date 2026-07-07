@@ -62,7 +62,7 @@ func TestConcurrency_FileBased_HeavyLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping heavy concurrent test in short mode")
 	}
-	dir := "../../testdata/scenarios/sqlite-testseed"
+	dir := "../../../testdata/scenarios/sqlite-testseed"
 	cfg, db, dbPath := loadScenarioFileBased(t, dir)
 	defer db.Close()
 	defer func() { _ = dbPath }()
@@ -140,7 +140,7 @@ func TestConcurrency_ConcurrentReadsOnDifferentIDs(t *testing.T) {
 
 	// Используем SQLite в tmp — он достаточно быстр, чтобы выдержать
 	// умеренную нагрузку параллельных reads через WAL.
-	_, db, _ := loadScenarioFileBased(t, "../../testdata/scenarios/sqlite-testseed")
+	_, db, _ := loadScenarioFileBased(t, "../../../testdata/scenarios/sqlite-testseed")
 	defer db.Close()
 
 	var wg sync.WaitGroup

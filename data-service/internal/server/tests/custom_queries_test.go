@@ -15,7 +15,7 @@ package server_test
 import "testing"
 
 func TestCustomQueries_Shop_FK_Lookups(t *testing.T) {
-	cfg, db := loadScenario(t, "../../testdata/scenarios/shop")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 
@@ -80,7 +80,7 @@ func TestCustomQueries_Shop_FK_Lookups(t *testing.T) {
 }
 
 func TestCustomQueries_Shop_Negative(t *testing.T) {
-	cfg, db := loadScenario(t, "../../testdata/scenarios/shop")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 
@@ -110,7 +110,7 @@ func TestCustomQueries_Shop_Negative(t *testing.T) {
 func TestCustomQueries_Shop_MissingIDReturnsEmpty(t *testing.T) {
 	// Проверяем что /products/{id}/order_items в SQL отвечает [] при id,
 	// которого нет в products.
-	cfg, db := loadScenario(t, "../../testdata/scenarios/shop")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 

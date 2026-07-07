@@ -13,7 +13,7 @@ import (
 )
 
 func TestEdgeCases_MalformedIDs(t *testing.T) {
-	cfg, db := loadScenario(t, "../../testdata/scenarios/sqlite-testseed")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 
@@ -75,7 +75,7 @@ func TestEdgeCases_MalformedIDs(t *testing.T) {
 }
 
 func TestEdgeCases_QueryParams(t *testing.T) {
-	cfg, db := loadScenario(t, "../../testdata/scenarios/sqlite-testseed")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 
@@ -122,7 +122,7 @@ func TestEdgeCases_QueryParams(t *testing.T) {
 }
 
 func TestEdgeCases_UnknownEndpoints(t *testing.T) {
-	cfg, db := loadScenario(t, "../../testdata/scenarios/sqlite-testseed")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 
@@ -172,7 +172,7 @@ func TestEdgeCases_UnknownEndpoints(t *testing.T) {
 
 func TestEdgeCases_DuplicateInsertions(t *testing.T) {
 	// Создаём БД и проверяем поведение при повторных запросах / вставках.
-	cfg, db := loadScenario(t, "../../testdata/scenarios/sqlite-testseed")
+	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
 	defer db.Close()
 	ts := buildTestRouter(t, cfg, db)
 
