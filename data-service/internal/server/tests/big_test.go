@@ -24,7 +24,7 @@ import (
 //   - custom_queries на тысячах записей
 func TestScenario_BigTestseed(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/big-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("health", func(t *testing.T) {
@@ -157,7 +157,7 @@ func TestScenario_BigTestseed(t *testing.T) {
 // пагинации/поиска на большом наборе данных.
 func TestScenario_BigTestseed_PaginationBoundary(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/big-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("get_100th_student_exists", func(t *testing.T) {
@@ -210,7 +210,7 @@ func TestScenario_BigTestseed_PaginationBoundary(t *testing.T) {
 // OpenAPI-спецификация валидна и содержит все endpoints.
 func TestScenario_BigTestseed_OpenAPISpecValid(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/big-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	req, _ := http.NewRequest("GET", ts.URL+"/openapi.json", nil)
@@ -255,7 +255,7 @@ func TestScenario_BigTestseed_OpenAPISpecValid(t *testing.T) {
 // TestScenario_BigTestseed_NoPanicsOnRandomQueries — стресс по 100 случайным URL-адресам.
 func TestScenario_BigTestseed_NoPanicsOnRandomQueries(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/big-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	// В big-testseed конфиге доступны не все endpoints; тут только те, что есть.

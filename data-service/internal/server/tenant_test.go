@@ -37,10 +37,10 @@ func newInMemoryConfig(t *testing.T) *config.Config {
 	if _, err := db.ExecContext(t.Context(),
 		"CREATE TABLE groups (id TEXT PRIMARY KEY, name TEXT);"+
 			"CREATE TABLE courses (id TEXT PRIMARY KEY, name TEXT);"); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatalf("create schema: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	return &config.Config{
 		Version: 1,
@@ -240,7 +240,7 @@ func TestTenantStore_HealthCheck_Degraded(t *testing.T) {
 		t.Fatalf("AddTenant: %v", err)
 	}
 
-	inst.Conn.Close()
+	_ = inst.Conn.Close()
 
 	health := ts.HealthCheck(t.Context())
 	if len(health) != 2 {

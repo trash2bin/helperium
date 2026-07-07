@@ -111,13 +111,13 @@ func (SqliteAdapter) Introspect(ctx context.Context, database Conn) (*Schema, er
 	for rows.Next() {
 		var kind, name string
 		if err := rows.Scan(&kind, &name); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, fmt.Errorf("sqlite: scan sqlite_master row: %w", err)
 		}
 		tableRefs = append(tableRefs, tableRef{kind: kind, name: name})
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close()
 		return nil, fmt.Errorf("sqlite: iterate sqlite_master: %w", err)
 	}
 	if err := rows.Close(); err != nil {
@@ -162,7 +162,7 @@ func introspectTable(ctx context.Context, database Conn, name string) (Table, er
 		var pk int
 
 		if err := colRows.Scan(&cid, &cname, &ctype, &notnull, &dflt, &pk); err != nil {
-			colRows.Close()
+			_ = colRows.Close()
 			return tbl, fmt.Errorf("scan table_info: %w", err)
 		}
 
@@ -185,10 +185,10 @@ func introspectTable(ctx context.Context, database Conn, name string) (Table, er
 		}
 	}
 	if err := colRows.Err(); err != nil {
-		colRows.Close()
+		_ = colRows.Close()
 		return tbl, fmt.Errorf("iterate table_info: %w", err)
 	}
-	colRows.Close()
+	_ = colRows.Close()
 	tbl.PrimaryKey = primaryKey
 
 	// PRAGMA foreign_key_list: id, seq, table, from, to, on_update, on_delete, match.
@@ -198,7 +198,7 @@ func introspectTable(ctx context.Context, database Conn, name string) (Table, er
 	if err != nil {
 		return tbl, fmt.Errorf("foreign_key_list: %w", err)
 	}
-	defer fkRows.Close()
+	defer fkRows.Close() //nolint:errcheck
 
 	type fkGroup struct {
 		referencedTable string

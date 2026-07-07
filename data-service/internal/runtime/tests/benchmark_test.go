@@ -123,7 +123,7 @@ func BenchmarkMapRow(b *testing.B) {
 	if err != nil {
 		b.Fatalf("sql.Open: %v", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	_, _ = db.ExecContext(context.Background(), `
@@ -147,7 +147,7 @@ func BenchmarkMapRow(b *testing.B) {
 	if err != nil {
 		b.Fatalf("query: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	if !rows.Next() {
 		b.Fatal("no rows")
@@ -162,7 +162,7 @@ func BenchmarkMapRow(b *testing.B) {
 		_ = row
 		// Перезапрашиваем строку для следующей итерации
 		if !rows.Next() {
-			rows.Close()
+			_ = rows.Close()
 			rows, err = db.QueryContext(context.Background(),
 				`SELECT id, name, email, score, active FROM customers WHERE id = ?`, 1)
 			if err != nil {
@@ -171,7 +171,7 @@ func BenchmarkMapRow(b *testing.B) {
 			rows.Next()
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 }
 
 // BenchmarkMapRow_CoerceInt — type coercion int
@@ -180,7 +180,7 @@ func BenchmarkMapRow_CoerceInt(b *testing.B) {
 	if err != nil {
 		b.Fatalf("sql.Open: %v", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	_, _ = db.ExecContext(context.Background(), `
@@ -200,7 +200,7 @@ func BenchmarkMapRow_CoerceInt(b *testing.B) {
 	builder := runtime.NewBuilder(adapter)
 
 	rows, _ := db.QueryContext(context.Background(), `SELECT id, val FROM types WHERE id = 1`)
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	rows.Next()
 
 	b.ResetTimer()
@@ -208,10 +208,10 @@ func BenchmarkMapRow_CoerceInt(b *testing.B) {
 		row, _ := builder.MapRow(rows, entity)
 		_ = row
 		if !rows.Next() {
-			rows.Close()
+			_ = rows.Close()
 			rows, _ = db.QueryContext(context.Background(), `SELECT id, val FROM types WHERE id = 1`)
 			rows.Next()
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 }

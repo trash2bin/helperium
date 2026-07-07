@@ -21,7 +21,7 @@ func makeCustomQueryContext(t *testing.T) (*handlers.Context, *testAdapter) {
 	t.Helper()
 
 	db, _ := sql.Open("sqlite", ":memory:")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
 
 	_, _ = db.ExecContext(context.Background(), `
@@ -193,7 +193,7 @@ func TestCustomQueryHandler_PathParam(t *testing.T) {
 // TestCustomQueryHandler_DBError — ошибка БД → 500 db_error
 func TestCustomQueryHandler_DBError(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	adapter := &errorAdapter{

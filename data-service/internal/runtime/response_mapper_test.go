@@ -37,7 +37,7 @@ func newRuntimeTestAdapter(t *testing.T) (*testRuntimeAdapter, func()) {
 		t.Fatalf("create table: %v", err)
 	}
 
-	return &testRuntimeAdapter{db: db}, func() { db.Close() }
+	return &testRuntimeAdapter{db: db}, func() { _ = db.Close() }
 }
 
 func TestCoerceValue(t *testing.T) {
@@ -114,7 +114,7 @@ func TestMapCustomQueryRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	if !rows.Next() {
 		t.Fatal("rows.Next: no rows")
@@ -170,7 +170,7 @@ func TestMapCustomQueryRow_NilValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	if !rows.Next() {
 		t.Fatal("rows.Next: no rows")
@@ -215,7 +215,7 @@ func TestMapCustomQueryRow_NoMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	if !rows.Next() {
 		t.Fatal("rows.Next: no rows")
@@ -259,7 +259,7 @@ func TestMapCustomQueryRow_PartialMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	if !rows.Next() {
 		t.Fatal("rows.Next: no rows")

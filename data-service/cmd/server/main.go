@@ -370,7 +370,7 @@ func watchConfig(configPath string, onReload func()) {
 
 	// Debounce: несколько событий подряд за N мс → один перезапуск
 	var debounceTimer *time.Timer
-	const debounceMs = 500 * time.Millisecond
+	const debounce = 500 * time.Millisecond
 
 	go func() {
 		defer func() { _ = watcher.Close() }()
@@ -397,7 +397,7 @@ func watchConfig(configPath string, onReload func()) {
 				if debounceTimer != nil {
 					debounceTimer.Stop()
 				}
-				debounceTimer = time.AfterFunc(debounceMs, onReload)
+				debounceTimer = time.AfterFunc(debounce, onReload)
 			case err, ok := <-watcher.Errors:
 				if !ok {
 					return

@@ -38,7 +38,7 @@ func GetByIDHandler(c *Context, entityName string) http.HandlerFunc {
 			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
 			return
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		if !rows.Next() {
 			RespondJSON(w, http.StatusNotFound, map[string]string{

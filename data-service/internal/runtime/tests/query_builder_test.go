@@ -296,7 +296,7 @@ func TestMapRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	if !rows.Next() {
 		t.Fatal("rows.Next: no rows")

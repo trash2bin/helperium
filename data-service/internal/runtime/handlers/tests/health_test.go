@@ -18,7 +18,7 @@ import (
 // TestHealthHandler_Success — Ping возвращает ok → status: ok, db: ok
 func TestHealthHandler_Success(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &testAdapter{db: db}
 	resolver, _ := runtime.NewEntityResolver([]runtime.Entity{})

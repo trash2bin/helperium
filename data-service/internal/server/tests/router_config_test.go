@@ -129,7 +129,7 @@ func TestNewRouterFromConfig_CustomQuery(t *testing.T) {
 	}
 
 	// Дисциплины студента s1
-	status, body = getJSON[[]any](t, ts.URL+"/students/s1/disciplines")
+	status, _ = getJSON[[]any](t, ts.URL+"/students/s1/disciplines")
 	if status != 200 {
 		t.Errorf("disciplines expected 200, got %d", status)
 	}

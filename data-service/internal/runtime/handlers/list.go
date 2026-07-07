@@ -29,7 +29,7 @@ func ListHandler(c *Context, entityName string) http.HandlerFunc {
 			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
 			return
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		results, err := c.Builder.MapRows(rows, func(rows *sql.Rows) (map[string]any, error) {
 			return c.Builder.MapRow(rows, entity)

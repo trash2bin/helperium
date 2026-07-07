@@ -64,7 +64,7 @@ func TestConcurrency_FileBased_HeavyLoad(t *testing.T) {
 	}
 	dir := "../../../testdata/scenarios/sqlite-testseed"
 	cfg, db, dbPath := loadScenarioFileBased(t, dir)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	defer func() { _ = dbPath }()
 
 	ts := buildTestRouter(t, cfg, db)
@@ -141,7 +141,7 @@ func TestConcurrency_ConcurrentReadsOnDifferentIDs(t *testing.T) {
 	// Используем SQLite в tmp — он достаточно быстр, чтобы выдержать
 	// умеренную нагрузку параллельных reads через WAL.
 	_, db, _ := loadScenarioFileBased(t, "../../../testdata/scenarios/sqlite-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	var wg sync.WaitGroup
 	const goroutines = 50

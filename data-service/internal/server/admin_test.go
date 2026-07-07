@@ -136,7 +136,7 @@ func TestAdminConfigUpdate_DryRunValidation(t *testing.T) {
 	}
 
 	db := newAdminDB(t)
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &adminTestAdapter{db: db}
 	var atomicRouter atomic.Value
@@ -235,9 +235,9 @@ func newAdminDB(t *testing.T) *sql.DB {
 	db.SetMaxOpenConns(1)
 	if _, err := db.ExecContext(t.Context(),
 		`CREATE TABLE groups (id TEXT PRIMARY KEY, name TEXT NOT NULL);`); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatalf("create table: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }

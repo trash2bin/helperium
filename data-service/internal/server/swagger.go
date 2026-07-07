@@ -47,9 +47,6 @@ func SwaggerHandler(w http.ResponseWriter, r *http.Request) {
 	swaggerui.Handler("Data Service", tenantBarHead, tenantBarBody, swaggerInitWithTenant)(w, r)
 }
 
-// swaggerHandler is the package-local alias used by the internal router builders.
-var swaggerHandler = SwaggerHandler
-
 // NewOpenAPIHandler creates an HTTP handler for /openapi.json.
 // Uses TenantStore to resolve the correct config per request.
 // If no tenant is provided, returns a system-only spec (health, stats, admin).

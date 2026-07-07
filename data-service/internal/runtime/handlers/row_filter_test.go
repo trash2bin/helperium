@@ -77,10 +77,10 @@ func TestTenantFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var translate runtime.PlaceholderFunc
-			switch {
-			case tt.existingArgs == 0:
+			switch tt.existingArgs {
+			case 0:
 				translate = sqlitePH
-			case tt.existingArgs == 2:
+			case 2:
 				translate = pgPH
 			default:
 				translate = sqlitePH

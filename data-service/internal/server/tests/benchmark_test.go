@@ -19,7 +19,7 @@ import (
 func benchmarkSetup(b *testing.B) *httptest.Server {
 	b.Helper()
 	cfg, db := loadScenario(&testing.T{}, "../../../testdata/scenarios/big-testseed")
-	b.Cleanup(func() { db.Close() })
+	b.Cleanup(func() { _ = db.Close() })
 	ts := buildTestRouter(&testing.T{}, cfg, db)
 	b.Cleanup(func() { ts.Close() })
 	return ts

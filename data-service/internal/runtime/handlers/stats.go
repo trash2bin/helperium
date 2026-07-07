@@ -35,12 +35,12 @@ func StatsHandler(c *Context, cfg *config.Config) http.HandlerFunc {
 			var count int
 			if rows.Next() {
 				if err := rows.Scan(&count); err != nil {
-					rows.Close()
+					_ = rows.Close()
 					RespondError(w, http.StatusInternalServerError, "scan_error", "failed to scan count for "+counter.Entity)
 					return
 				}
 			}
-			rows.Close()
+			_ = rows.Close()
 			results[counter.Name] = count
 		}
 

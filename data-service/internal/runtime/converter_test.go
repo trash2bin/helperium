@@ -76,7 +76,7 @@ func TestConfigToEntities_NilFields(t *testing.T) {
 		t.Fatalf("expected 1 entity, got %d", len(entities))
 	}
 	// Fields должен быть пустым слайсом, не nil
-	if entities[0].Fields != nil && len(entities[0].Fields) != 0 {
+	if len(entities[0].Fields) != 0 {
 		t.Errorf("expected empty fields, got %d", len(entities[0].Fields))
 	}
 }

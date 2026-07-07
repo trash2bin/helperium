@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
@@ -142,10 +141,8 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 			if ep.QueryID == "" {
 				return nil, fmt.Errorf("endpoint %q: op custom_query requires query_id", ep.Path)
 			}
-			params := make([]config.EndpointParam, 0)
-			for _, p := range ep.Params {
-				params = append(params, p)
-			}
+			params := make([]config.EndpointParam, 0, len(ep.Params))
+			params = append(params, ep.Params...)
 			h = handlers.CustomQueryHandler(ctx, ep.QueryID, params)
 		default:
 			return nil, fmt.Errorf("endpoint %q: unsupported op %q", ep.Path, ep.Op)
@@ -181,7 +178,7 @@ func discoverHandler(adp datasource.Adapter, ds config.DataSourceConfig) http.Ha
 			handlers.RespondError(w, http.StatusInternalServerError, "connect_error", err.Error())
 			return
 		}
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 
 		schema, err := adp.Introspect(r.Context(), conn)
 		if err != nil {
@@ -209,57 +206,6 @@ func discoverHandler(adp datasource.Adapter, ds config.DataSourceConfig) http.Ha
 		}
 
 		handlers.RespondJSON(w, http.StatusOK, cfg)
-	}
-}
-
-// rewriteHandler — POST /admin/config/rewrite: перегенерировать конфиг из БД и сохранить в файл.
-func rewriteHandler(adp datasource.Adapter, ds config.DataSourceConfig, configPath string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := adp.Connect(r.Context(), ds.DSN)
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "connect_error", err.Error())
-			return
-		}
-		defer conn.Close()
-
-		schema, err := adp.Introspect(r.Context(), conn)
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "introspect_error", err.Error())
-			return
-		}
-
-		dsConfig := config.DataSourceConfig{Driver: ds.Driver, DSN: ds.DSN}
-		newCfg := configgen.Generate(schema, dsConfig, nil)
-
-		data, err := json.MarshalIndent(newCfg, "", "  ")
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "marshal_error", err.Error())
-			return
-		}
-
-		if configPath == "" {
-			handlers.RespondError(w, http.StatusBadRequest, "no_config_path", "configPath not configured on this instance")
-			return
-		}
-
-		if err := os.WriteFile(configPath, data, 0644); err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "write_error", err.Error())
-			return
-		}
-
-		slog.Info("config rewritten from DB schema",
-			"path", configPath,
-			"entities", len(newCfg.Entities),
-			"endpoints", len(newCfg.Endpoints),
-		)
-
-		handlers.RespondJSON(w, http.StatusOK, map[string]any{
-			"status":    "ok",
-			"path":      configPath,
-			"entities":  len(newCfg.Entities),
-			"endpoints": len(newCfg.Endpoints),
-			"note":      "Конфиг сохранён. Перезапусти сервис чтобы применить.",
-		})
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 
 func TestEdgeCases_MalformedIDs(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("empty_id", func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestEdgeCases_MalformedIDs(t *testing.T) {
 
 func TestEdgeCases_QueryParams(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("empty_name_query", func(t *testing.T) {
@@ -123,7 +123,7 @@ func TestEdgeCases_QueryParams(t *testing.T) {
 
 func TestEdgeCases_UnknownEndpoints(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("nonexistent_path", func(t *testing.T) {
@@ -173,7 +173,7 @@ func TestEdgeCases_UnknownEndpoints(t *testing.T) {
 func TestEdgeCases_DuplicateInsertions(t *testing.T) {
 	// Создаём БД и проверяем поведение при повторных запросах / вставках.
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	// sanity: на 1-й раз OK, на повторный вставках — DB UNIQUE constraint

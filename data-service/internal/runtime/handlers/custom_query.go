@@ -30,12 +30,13 @@ func CustomQueryHandler(c *Context, queryID string, params []config.EndpointPara
 			var val string
 			var found bool
 
-			if p.In == "path" {
+			switch p.In {
+			case "path":
 				val = c.URLParam(r, p.Name)
 				if val != "" {
 					found = true
 				}
-			} else if p.In == "query" {
+			case "query":
 				val = r.URL.Query().Get(p.Name)
 				if val != "" {
 					found = true
@@ -68,7 +69,7 @@ func CustomQueryHandler(c *Context, queryID string, params []config.EndpointPara
 			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
 			return
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		results, err := c.Builder.MapRows(rows, func(rows *sql.Rows) (map[string]any, error) {
 			return c.Builder.MapCustomQueryRow(rows, cq.ResultMapping)

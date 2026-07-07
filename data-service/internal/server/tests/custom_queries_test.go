@@ -17,7 +17,7 @@ import "testing"
 
 func TestCustomQueries_Shop_FK_Lookups(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("products_1_order_items", func(t *testing.T) {
@@ -82,7 +82,7 @@ func TestCustomQueries_Shop_FK_Lookups(t *testing.T) {
 
 func TestCustomQueries_Shop_Negative(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	// Запросы с несуществующими id — должны возвращать 200 с пустым массивом
@@ -112,7 +112,7 @@ func TestCustomQueries_Shop_MissingIDReturnsEmpty(t *testing.T) {
 	// Проверяем что /products/{id}/order_items в SQL отвечает [] при id,
 	// которого нет в products.
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	status, body := getJSON[[]map[string]any](t, ts.URL+"/products/99999/order_items")

@@ -42,9 +42,7 @@ func (c *Context) tenantID(r *http.Request) string {
 func RespondJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		// Игнорируем ошибку кодирования — статус уже отправлен.
-	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // RespondError отправляет стандартную ошибку.

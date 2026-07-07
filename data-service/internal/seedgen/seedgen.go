@@ -244,9 +244,10 @@ func buildInsert(driver, table string, cols []string, phFn PlaceholderFunc) stri
 
 	prefix := "INSERT"
 	suffix := ""
-	if driver == "sqlite" {
+	switch driver {
+	case "sqlite":
 		prefix = "INSERT OR IGNORE"
-	} else if driver == "postgres" {
+	case "postgres":
 		suffix = " ON CONFLICT (\"id\") DO NOTHING"
 	}
 	return fmt.Sprintf("%s INTO %s (%s) VALUES (%s)%s",

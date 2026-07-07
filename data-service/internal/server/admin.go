@@ -486,7 +486,7 @@ func adminRewriteHandler(adp datasource.Adapter, ds config.DataSourceConfig, con
 			handlers.RespondError(w, http.StatusInternalServerError, "connect_error", err.Error())
 			return
 		}
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 
 		schema, err := adp.Introspect(r.Context(), conn)
 		if err != nil {

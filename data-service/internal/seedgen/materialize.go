@@ -75,7 +75,7 @@ func Materialize(ctx context.Context, adapter datasource.Adapter, cfg *config.Co
 			return fmt.Errorf("materialize: force connect to %q: %w", dsn, err)
 		}
 		_, err = forceConn.ExecContext(ctx, "DROP SCHEMA public CASCADE")
-		forceConn.Close()
+		_ = forceConn.Close()
 		if err != nil {
 			return fmt.Errorf("materialize: force DROP SCHEMA public: %w", err)
 		}
@@ -85,7 +85,7 @@ func Materialize(ctx context.Context, adapter datasource.Adapter, cfg *config.Co
 			return fmt.Errorf("materialize: force reconnect to %q: %w", dsn, err)
 		}
 		_, err = forceConn2.ExecContext(ctx, "CREATE SCHEMA public")
-		forceConn2.Close()
+		_ = forceConn2.Close()
 		if err != nil {
 			return fmt.Errorf("materialize: force CREATE SCHEMA public: %w", err)
 		}
@@ -96,7 +96,7 @@ func Materialize(ctx context.Context, adapter datasource.Adapter, cfg *config.Co
 	if err != nil {
 		return fmt.Errorf("materialize: connect to %q: %w", dsn, err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	// 4. Применяем DDL + seed
 	phFn := SQLitePlaceholder

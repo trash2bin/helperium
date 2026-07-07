@@ -144,13 +144,13 @@ func (PostgresAdapter) Introspect(ctx context.Context, database Conn) (*Schema, 
 	for rows.Next() {
 		var schema, name string
 		if err := rows.Scan(&schema, &name); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, fmt.Errorf("postgres: scan information_schema.tables row: %w", err)
 		}
 		tableRefs = append(tableRefs, tableRef{schema: schema, name: name})
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close()
 		return nil, fmt.Errorf("postgres: iterate information_schema.tables: %w", err)
 	}
 	if err := rows.Close(); err != nil {
@@ -191,11 +191,10 @@ func introspectPostgresTable(ctx context.Context, database Conn, schemaName, tab
 	}
 
 	columns := make([]Column, 0)
-	columnNames := make([]string, 0)
 	for colRows.Next() {
 		var cname, dtype, nullable string
 		if err := colRows.Scan(&cname, &dtype, &nullable); err != nil {
-			colRows.Close()
+			_ = colRows.Close()
 			return tbl, fmt.Errorf("scan columns: %w", err)
 		}
 		columns = append(columns, Column{
@@ -204,10 +203,9 @@ func introspectPostgresTable(ctx context.Context, database Conn, schemaName, tab
 			Nullable: strings.EqualFold(nullable, "YES"),
 			// Description заполняется отдельным запросом ниже — здесь оставляем пустым.
 		})
-		columnNames = append(columnNames, cname)
 	}
 	if err := colRows.Err(); err != nil {
-		colRows.Close()
+		_ = colRows.Close()
 		return tbl, fmt.Errorf("iterate columns: %w", err)
 	}
 	if err := colRows.Close(); err != nil {
@@ -265,7 +263,7 @@ func queryPostgresPrimaryKey(ctx context.Context, database Conn, schemaName, tab
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	out := make([]string, 0)
 	for rows.Next() {
@@ -311,7 +309,7 @@ func queryPostgresForeignKeys(ctx context.Context, database Conn, schemaName, ta
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	// Группируем строки по constraint_name. ordinal_position задаёт
 	// позицию в составе композитного ключа — но для текущей задачи
@@ -408,7 +406,7 @@ func fillColumnDescriptions(ctx context.Context, database Conn, schemaName, tabl
 	if err != nil {
 		return fmt.Errorf("col_description: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	// Индексируем по имени колонки.
 	descs := make(map[string]string, len(columns))

@@ -19,7 +19,7 @@ import (
 // TestStatsHandler_Success — несколько счётчиков, возвращает корректные значения
 func TestStatsHandler_Success(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	_, _ = db.ExecContext(context.Background(), `
@@ -85,7 +85,7 @@ func TestStatsHandler_Success(t *testing.T) {
 // TestStatsHandler_EmptyConfig — нет счётчиков → пустой JSON
 func TestStatsHandler_EmptyConfig(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &testAdapter{db: db}
 	resolver, _ := runtime.NewEntityResolver([]runtime.Entity{})
@@ -118,7 +118,7 @@ func TestStatsHandler_EmptyConfig(t *testing.T) {
 // TestStatsHandler_EmptyCounters — Stats.Counters пуст → пустой JSON
 func TestStatsHandler_EmptyCounters(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &testAdapter{db: db}
 	resolver, _ := runtime.NewEntityResolver([]runtime.Entity{})
@@ -147,7 +147,7 @@ func TestStatsHandler_EmptyCounters(t *testing.T) {
 // TestStatsHandler_UnknownEntity — счётчик для несуществующей сущности → skip (не падает)
 func TestStatsHandler_UnknownEntity(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &testAdapter{db: db}
 	resolver, _ := runtime.NewEntityResolver([]runtime.Entity{})
@@ -189,7 +189,7 @@ func TestStatsHandler_UnknownEntity(t *testing.T) {
 // TestStatsHandler_DBError — ошибка БД во время COUNT → 500 db_error
 func TestStatsHandler_DBError(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &errorAdapter{
 		db: &testAdapter{db: db},

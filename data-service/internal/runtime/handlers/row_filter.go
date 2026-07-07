@@ -45,12 +45,6 @@ func tenantFilter(
 	return "", nil
 }
 
-// placeholderAdapter — adapter-интерфейс, нужный только для row_filter
-// чтоб не импортировать datasource в handlers.
-type placeholderAdapter interface {
-	TranslatePlaceholder(idx int) string
-}
-
 // asPlaceholderFunc извлекает функцию перевода плейсхолдеров из адаптера.
 func asPlaceholderFunc(adapter runtime.AdapterSubset) runtime.PlaceholderFunc {
 	if adapter == nil {

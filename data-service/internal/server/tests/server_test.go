@@ -95,7 +95,7 @@ func testDB(t *testing.T) *sql.DB {
 	}
 
 	if _, err := db.ExecContext(context.Background(), testSchema); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatalf("apply schema: %v", err)
 	}
 
@@ -273,7 +273,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	ts := httptest.NewServer(router)
 	t.Cleanup(func() {
 		ts.Close()
-		sqlDB.Close()
+		_ = sqlDB.Close()
 	})
 	return ts
 }
@@ -460,7 +460,7 @@ func TestSwaggerUI(t *testing.T) {
 
 func TestScenario_SqliteTestseed(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/sqlite-testseed")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("health", func(t *testing.T) { testHealth(t, ts) })
@@ -479,7 +479,7 @@ func TestScenario_SqliteTestseed(t *testing.T) {
 //   - DSN указывает на уже материализованный data.db (без seed.json)
 func TestScenario_Shop(t *testing.T) {
 	cfg, db := loadScenario(t, "../../../testdata/scenarios/shop")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	ts := buildTestRouter(t, cfg, db)
 
 	t.Run("health", func(t *testing.T) {

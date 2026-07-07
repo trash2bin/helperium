@@ -18,7 +18,7 @@ import (
 // TestFindHandler_Success — поиск по email, находит одну запись
 func TestFindHandler_Success(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	_, _ = db.ExecContext(context.Background(), `
@@ -75,7 +75,7 @@ func TestFindHandler_Success(t *testing.T) {
 // TestFindHandler_NotFound — поиск по email, ничего не найдено → 404
 func TestFindHandler_NotFound(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	_, _ = db.ExecContext(context.Background(), `
@@ -130,7 +130,7 @@ func TestFindHandler_NotFound(t *testing.T) {
 // TestFindHandler_FallbackToList — без search-параметра → список всех записей
 func TestFindHandler_FallbackToList(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	_, _ = db.ExecContext(context.Background(), `
@@ -189,7 +189,7 @@ func TestFindHandler_FallbackToList(t *testing.T) {
 // TestFindHandler_EntityNotFound — неверное имя сущности → 500 config_error
 func TestFindHandler_EntityNotFound(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &testAdapter{db: db}
 	resolver, _ := runtime.NewEntityResolver([]runtime.Entity{})
@@ -221,7 +221,7 @@ func TestFindHandler_EntityNotFound(t *testing.T) {
 // TestFindHandler_DBError — ошибка БД → 500 db_error
 func TestFindHandler_DBError(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	adapter := &errorAdapter{
 		db: &testAdapter{db: db},

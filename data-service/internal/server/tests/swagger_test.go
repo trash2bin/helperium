@@ -87,7 +87,7 @@ func TestNewOpenAPIHandler_WithAdmin(t *testing.T) {
 	h.ServeHTTP(w, r)
 
 	var spec map[string]any
-	json.Unmarshal(w.Body.Bytes(), &spec)
+	_ = json.Unmarshal(w.Body.Bytes(), &spec)
 
 	paths, ok := spec["paths"].(map[string]any)
 	if !ok {

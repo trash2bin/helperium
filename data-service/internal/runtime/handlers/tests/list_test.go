@@ -20,7 +20,7 @@ import (
 func TestListHandler_Success(t *testing.T) {
 	// Создаем тестовую БД с тестовыми данными
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	// Создаем таблицу и добавляем тестовые данные
@@ -102,7 +102,7 @@ func TestListHandler_Success(t *testing.T) {
 func TestListHandler_EntityNotFound(t *testing.T) {
 	// Создаем пустую БД
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	// Создаем адаптер
 	adapter := &testAdapter{db: db}
@@ -157,7 +157,7 @@ func TestListHandler_EntityNotFound(t *testing.T) {
 func TestListHandler_DBError(t *testing.T) {
 	// Создаем тестовую БД
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	// Создаем адаптер который возвращает ошибку
 	adapter := &errorAdapter{
@@ -227,7 +227,7 @@ func TestListHandler_DBError(t *testing.T) {
 func TestGetByIDHandler_Success(t *testing.T) {
 	// Создаем тестовую БД с тестовыми данными
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	// Создаем таблицу и добавляем тестовые данные
@@ -334,7 +334,7 @@ func TestGetByIDHandler_Success(t *testing.T) {
 func TestGetByIDHandler_NotFound(t *testing.T) {
 	// Создаем тестовую БД с тестовыми данными
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 	db.SetMaxOpenConns(1)
 
 	// Создаем таблицу и добавляем тестовые данные
@@ -419,7 +419,7 @@ func TestGetByIDHandler_NotFound(t *testing.T) {
 func TestGetByIDHandler_EntityNotFound(t *testing.T) {
 	// Создаем пустую БД
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	// Создаем адаптер
 	adapter := &testAdapter{db: db}
@@ -482,7 +482,7 @@ func TestGetByIDHandler_EntityNotFound(t *testing.T) {
 func TestGetByIDHandler_DBError(t *testing.T) {
 	// Создаем тестовую БД
 	db, _ := sql.Open("sqlite", ":memory:")
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	// Создаем адаптер который возвращает ошибку
 	adapter := &errorAdapter{

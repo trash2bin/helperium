@@ -141,7 +141,7 @@ func (ts *TenantStore) AddTenant(ctx context.Context, id string, cfg *config.Con
 	if _, exists := ts.tenants[id]; exists {
 		ts.mu.Unlock()
 		// Clean up the connection we just opened
-		inst.Conn.Close()
+		_ = inst.Conn.Close()
 		return nil, fmt.Errorf("tenant %q already exists", id)
 	}
 	ts.tenants[id] = inst
@@ -433,7 +433,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	// Build router (no admin endpoints — those are on TenantStore)
 	router, err := NewRouterFromConfig(ts, cfg, adapterSub, adapterSub, adapter, configPath, nil)
 	if err != nil {
-		conn.Close() // clean up on failure
+		_ = conn.Close() // clean up on failure
 		return nil, fmt.Errorf("build router: %w", err)
 	}
 
@@ -695,7 +695,7 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 	}
 
 	// Archive old config
-	archiveCurrentConfig(inst.ConfigPath)
+	_ = archiveCurrentConfig(inst.ConfigPath)
 
 	// Save to disk
 	prettyJSON, err := json.MarshalIndent(newCfg, "", "  ")
@@ -808,7 +808,7 @@ func (ts *TenantStore) adminRewriteHandler(adapter datasource.Adapter, configPat
 			handlers.RespondError(w, http.StatusInternalServerError, "connect_error", err.Error())
 			return
 		}
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 
 		schema, err := adapter.Introspect(r.Context(), conn)
 		if err != nil {
@@ -866,7 +866,7 @@ func (ts *TenantStore) adminDiscoverHandler(adapter datasource.Adapter) http.Han
 			handlers.RespondError(w, http.StatusInternalServerError, "connect_error", err.Error())
 			return
 		}
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 
 		schema, err := adapter.Introspect(r.Context(), conn)
 		if err != nil {

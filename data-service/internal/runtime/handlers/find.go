@@ -37,7 +37,7 @@ func FindHandler(c *Context, entityName, searchField, queryParam string) http.Ha
 				RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
 				return
 			}
-			defer rows.Close()
+			defer rows.Close() //nolint:errcheck
 			results, err := c.Builder.MapRows(rows, func(rows *sql.Rows) (map[string]any, error) {
 				return c.Builder.MapRow(rows, entity)
 			}, 10000)
@@ -70,7 +70,7 @@ func FindHandler(c *Context, entityName, searchField, queryParam string) http.Ha
 			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
 			return
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		if !rows.Next() {
 			RespondJSON(w, http.StatusNotFound, map[string]string{

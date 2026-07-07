@@ -28,8 +28,7 @@ func (b *Builder) MapRow(rows *sql.Rows, entity Entity) (map[string]any, error) 
 
 	result := make(map[string]any, len(columns))
 	for i, col := range columns {
-		// Маппинг колонка → публичное имя
-		publicName := col
+		var publicName string
 		if name, ok := b.publicFor(entity, col); ok {
 			publicName = name
 		} else {

@@ -41,11 +41,6 @@ func isNameField(col datasource.Column) bool {
 			strings.HasPrefix(lower, "name"))
 }
 
-// canFindByID возвращает true, если у таблицы ровно одна PK-колонка.
-func canFindByID(pk []string) bool {
-	return len(pk) == 1
-}
-
 // findSearchField ищет колонку для поиска (первую подходящую).
 func findSearchField(cols []datasource.Column) (datasource.Column, bool) {
 	for _, c := range cols {

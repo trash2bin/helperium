@@ -152,7 +152,7 @@ func introspectSQLite(ctx context.Context, ddl string) (*datasource.Schema, erro
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 	if err := execDDL(ctx, conn, ddl); err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func introspectPostgres(ctx context.Context, dsn, ddl string) (*datasource.Schem
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	const schema = "test_equivalence"
 	setup := []string{
@@ -234,15 +234,9 @@ func injectSchema(ddlStmt, schema string) string {
 	}
 	out := ddlStmt
 	for _, r := range replacements {
-		// Только первое вхождение.
-		for i := 0; i < len(out); {
-			j := indexOf(out, r.from, i)
-			if j < 0 {
-				break
-			}
+		j := indexOf(out, r.from, 0)
+		if j >= 0 {
 			out = out[:j] + r.to + out[j+len(r.from):]
-			i = j + len(r.to)
-			break // только первое
 		}
 	}
 	return out

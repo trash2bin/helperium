@@ -8,7 +8,6 @@
 package openapigen
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
@@ -827,10 +826,6 @@ func extractPathParams(path string) []string {
 	return params
 }
 
-func hasQueryParam(ep config.Endpoint) bool {
-	return ep.QueryParam != "" || (ep.Op == config.OpFind && ep.SearchField != "")
-}
-
 func queryParam(ep config.Endpoint) string {
 	if ep.QueryParam != "" {
 		return ep.QueryParam
@@ -866,11 +861,4 @@ func errorResponse(desc string) map[string]any {
 			},
 		},
 	}
-}
-
-func entityDescription(entity config.Entity) string {
-	if entity.Description != "" {
-		return entity.Description
-	}
-	return fmt.Sprintf("Сущность %s", entity.Name)
 }
