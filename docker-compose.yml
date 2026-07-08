@@ -147,6 +147,29 @@ services:
       - agent-tutor-net
     <<: *restart
 
+  admin-dashboard:
+    image: agent-tutor-admin:latest
+    build:
+      context: ./admin-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8085:8085"
+    environment:
+      - DATA_SERVICE_URL=http://data-service:8084
+      - RAG_SERVICE_URL=http://rag:8082
+      - API_SERVICE_URL=http://api:8081
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+    depends_on:
+      data-service:
+        condition: service_healthy
+      rag:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - agent-tutor-net
+    <<: *restart
+
   web:
     image: agent-tutor-web:latest
     build:

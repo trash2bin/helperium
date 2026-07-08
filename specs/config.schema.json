@@ -44,6 +44,10 @@
           "type": "boolean",
           "default": true,
           "description": "Если true — data-service запрещает любые мутирующие операции (INSERT/UPDATE/DELETE/DDL)."
+        },
+        "readonly_dsn": {
+          "type": "string",
+          "description": "DSN с правами только на чтение для AI-агента (database-level). Для SQLite: тот же файл с ?mode=ro или 'file:path.db?mode=ro'. Для PostgreSQL: DSN от отдельного пользователя с правами SELECT. Если задан — data-service открывает его как второй коннект для всех запросов агента. Если не задан — агент работает через основную DSN (app-level read_only)."
         }
       }
     },

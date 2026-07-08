@@ -68,9 +68,10 @@ type adminConfigResponse struct {
 
 // adminDataSourceResponse — часть конфига без DSN.
 type adminDataSourceResponse struct {
-	Driver   config.Driver `json:"driver"`
-	PoolSize *int          `json:"pool_size,omitempty"`
-	ReadOnly *bool         `json:"read_only,omitempty"`
+	Driver        config.Driver `json:"driver"`
+	PoolSize      *int          `json:"pool_size,omitempty"`
+	ReadOnly      *bool         `json:"read_only,omitempty"`
+	HasReadonlyDSN bool         `json:"has_readonly_dsn"`
 }
 
 // ── Auth middleware ──
@@ -134,9 +135,10 @@ func adminConfigHandler(cfg *config.Config) http.HandlerFunc {
 
 func responseFromDataSource(ds config.DataSourceConfig) *adminDataSourceResponse {
 	return &adminDataSourceResponse{
-		Driver:   ds.Driver,
-		PoolSize: ds.PoolSize,
-		ReadOnly: ds.ReadOnly,
+		Driver:          ds.Driver,
+		PoolSize:        ds.PoolSize,
+		ReadOnly:        ds.ReadOnly,
+		HasReadonlyDSN:  ds.ReadonlyDSN != "",
 	}
 }
 

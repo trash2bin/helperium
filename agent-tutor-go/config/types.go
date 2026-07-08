@@ -204,6 +204,15 @@ type DataSourceConfig struct {
 
 	// ReadOnly — запрет на мутирующие операции. nil если не задан.
 	ReadOnly *bool `json:"read_only,omitempty"`
+
+	// ReadonlyDSN — строка подключения с правами только на чтение (database-level).
+	// Если задана, data-service использует её для всех запросов от AI-агента.
+	// Основная DSN остаётся для admin-операций (introspect, config rewrite).
+	//
+	// Для SQLite: та же dsn, но (при необходимости) с PRAGMA query_only = 1.
+	// Для PostgreSQL: DSN от пользователя с правами только на SELECT.
+	// Если не задана — агент работает через ту же DSN (app-level read_only).
+	ReadonlyDSN string `json:"readonly_dsn,omitempty"`
 }
 
 // IntrospectionConfig — настройки auto-discovery схемы БД при старте.

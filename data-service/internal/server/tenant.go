@@ -47,9 +47,10 @@ import (
 type TenantInstance struct {
 	ID         string                // tenant identifier (matches X-Tenant-ID header)
 	Config     *config.Config        // loaded and validated
-	Conn       datasource.Conn       // tenant's own DB connection pool
+	Conn       datasource.Conn       // tenant's main DB connection pool (readwrite DSN)
+	ReadonlyConn datasource.Conn     // tenant's read-only DB connection (when readonly_dsn is set; nil otherwise)
 	Adapter    datasource.Adapter    // full adapter for admin/introspection
-	AdapterSub runtime.AdapterSubset // Conn+Adapter wrapper for handlers
+	AdapterSub runtime.AdapterSubset // Conn+Adapter wrapper for handlers — wraps ReadonlyConn if set, else Conn
 	Router     http.Handler          // built chi router for this tenant
 	ConfigPath string                // path to the JSON config file (for hot reload)
 	CreatedAt  time.Time
@@ -171,6 +172,11 @@ func (ts *TenantStore) RemoveTenant(ctx context.Context, id string) error {
 	if inst.Conn != nil {
 		if err := inst.Conn.Close(); err != nil {
 			slog.Warn("tenant store: error closing connection", "id", id, "error", err)
+		}
+	}
+	if inst.ReadonlyConn != nil {
+		if err := inst.ReadonlyConn.Close(); err != nil {
+			slog.Warn("tenant store: error closing readonly connection", "id", id, "error", err)
 		}
 	}
 
@@ -412,41 +418,68 @@ func computeOverallStatus(health []TenantHealth) string {
 // buildTenantInstance validates config, connects to DB, and builds a router.
 // Used by both SetDefault and AddTenant.
 func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasource.Registry, id string, cfg *config.Config, configPath string) (*TenantInstance, error) {
-	// Open DB connection
 	adapter, ok := registry.Get(string(cfg.DataSource.Driver))
 	if !ok {
 		return nil, fmt.Errorf("unsupported driver: %s", cfg.DataSource.Driver)
 	}
 
-	dsn := cfg.DataSource.DSN
-	if dsn != "" && !filepath.IsAbs(dsn) && configPath != "" {
-		configDir := filepath.Dir(configPath)
-		dsn = filepath.Join(configDir, dsn)
+	resolvePath := func(dsn string) string {
+		if dsn != "" && !filepath.IsAbs(dsn) && configPath != "" {
+			return filepath.Join(filepath.Dir(configPath), dsn)
+		}
+		return dsn
 	}
+
+	// Main connection (readwrite DSN — для admin/introspection/health)
+	dsn := resolvePath(cfg.DataSource.DSN)
 	conn, err := adapter.Connect(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
 
-	adapterSub := &ConnAdapter{Conn: conn, Adp: adapter}
+	// Read-only connection (если задан readonly_dsn — database-level изоляция)
+	var readonlyConn datasource.Conn
+	readonlyDSN := cfg.DataSource.ReadonlyDSN
+	if readonlyDSN != "" {
+		readonlyDSN = resolvePath(readonlyDSN)
+		roConn, err := adapter.Connect(ctx, readonlyDSN)
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("connect to readonly database: %w", err)
+		}
+		readonlyConn = roConn
+		slog.Info("tenant: read-only connection established",
+			"id", id, "readonly_dsn", readonlyDSN)
+	}
+
+	// AdapterSub для хендлеров: если read-only коннект есть — используем его
+	adapterSubConn := conn
+	if readonlyConn != nil {
+		adapterSubConn = readonlyConn
+	}
+	adapterSub := &ConnAdapter{Conn: adapterSubConn, Adp: adapter}
 
 	// Build router (no admin endpoints — those are on TenantStore)
 	router, err := NewRouterFromConfig(ts, cfg, adapterSub, adapterSub, adapter, configPath, nil)
 	if err != nil {
-		_ = conn.Close() // clean up on failure
+		_ = conn.Close()
+		if readonlyConn != nil {
+			_ = readonlyConn.Close()
+		}
 		return nil, fmt.Errorf("build router: %w", err)
 	}
 
 	return &TenantInstance{
-		ID:         id,
-		Config:     cfg,
-		Conn:       conn,
-		Adapter:    adapter,
-		AdapterSub: adapterSub,
-		Router:     router,
-		ConfigPath: configPath,
-		CreatedAt:  time.Now(),
-		Healthy:    true,
+		ID:           id,
+		Config:       cfg,
+		Conn:         conn,
+		ReadonlyConn: readonlyConn,
+		Adapter:      adapter,
+		AdapterSub:   adapterSub,
+		Router:       router,
+		ConfigPath:   configPath,
+		CreatedAt:    time.Now(),
+		Healthy:      true,
 	}, nil
 }
 

@@ -4,7 +4,8 @@
     "driver": "postgres",
     "dsn": "${DATABASE_URL:-postgresql://tutor:tutor@127.0.0.1:5432/agent_tutor?sslmode=disable}",
     "pool_size": 10,
-    "read_only": true
+    "read_only": true,
+    "readonly_dsn": "postgres://readonly:readonly@127.0.0.1:5432/agent_tutor?sslmode=disable"
   },
   "introspection": {
     "enabled": false,
