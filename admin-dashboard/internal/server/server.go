@@ -24,6 +24,7 @@ type Options struct {
 	RagSvcURL  string
 	ApiSvcURL  string
 	AdminToken string
+	DataDir    string
 }
 
 // Server — admin dashboard HTTP сервер.
@@ -85,9 +86,9 @@ func (s *Server) Router() chi.Router {
 		r.Put("/tenants/{id}/config", s.tenantConfigPutHandler)
 		r.Post("/tenants/{id}/introspect", s.tenantIntrospectHandler)
 
-		// Write-tool approval
-		r.Get("/tools/pending", s.toolsPendingHandler)
-		r.Post("/tools/{toolName}/approve", s.toolsApproveHandler)
+		// Write-tool approval (per-tenant — uses X-Tenant-ID header set by caller)
+		r.Get("/tenants/{id}/tools/pending", s.toolsPendingHandler)
+		r.Post("/tenants/{id}/tools/{toolName}/approve", s.toolsApproveHandler)
 
 		// MCP manifest (all tools for a tenant)
 		r.Get("/tenants/{id}/manifest", s.tenantManifestHandler)
@@ -515,9 +516,9 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 	defer file.Close()
 
 	// Save DB file to a data directory
-	dataDir := os.Getenv("DATA_DIR")
+	dataDir := s.opts.DataDir
 	if dataDir == "" {
-		dataDir = "/data"
+		dataDir = ".data/uploads"
 	}
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		respondError(w, http.StatusInternalServerError, "mkdir_error", err.Error())
@@ -640,12 +641,25 @@ func (s *Server) tenantIntrospectHandler(w http.ResponseWriter, r *http.Request)
 // ── Tool approval ──
 
 func (s *Server) toolsPendingHandler(w http.ResponseWriter, r *http.Request) {
-	s.proxyToDataService(w, r, "/admin/tools/pending")
+	// Extract tenant ID from URL param (matches /tenants/{id}/tools/pending)
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing_tenant", "tenant id is required")
+		return
+	}
+	r.Header.Set("X-Tenant-ID", id)
+	s.proxyToDataService(w, r, "/admin/tenants/"+id+"/tools/pending")
 }
 
 func (s *Server) toolsApproveHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 	toolName := chi.URLParam(r, "toolName")
-	body, status, err := s.proxyPostToDataService("/admin/tools/"+toolName+"/approve", nil)
+	if id == "" || toolName == "" {
+		respondError(w, http.StatusBadRequest, "missing_params", "tenant id and tool name are required")
+		return
+	}
+	r.Header.Set("X-Tenant-ID", id)
+	body, status, err := s.proxyPostToDataService("/admin/tenants/"+id+"/tools/"+toolName+"/approve", nil)
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
 		return

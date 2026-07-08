@@ -99,7 +99,7 @@ func buildTestRouter(t testing.TB, cfg *config.Config, db *sql.DB) *httptest.Ser
 	t.Helper()
 	adapter := &testSQLite{db: db}
 	store := server.NewTenantStore(datasource.NewDefaultRegistry(), "")
-	router, err := server.NewRouterFromConfig(store, cfg, adapter, adapter, nil, "", nil)
+	router, err := server.NewRouterFromConfig(store, cfg, adapter, adapter, nil, "", nil, nil)
 	if err != nil {
 		t.Fatalf("NewRouterFromConfig: %v", err)
 	}

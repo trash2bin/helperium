@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/agent-tutor/data-service/internal/datasource"
 )
 
 // ── Config Persistence Unit Tests ──
@@ -349,4 +350,69 @@ func TestTenantPersistence_WriteAndReadBack(t *testing.T) {
 	if len(loaded.Entities[0].Fields) != 3 {
 		t.Errorf("fields: got %d, want 3", len(loaded.Entities[0].Fields))
 	}
+}
+
+// TestApprovedToolsInConfig проверяет, что approved_tools хранятся в tenant config'e
+// и переживают round-trip через SaveTenantConfig → config.Load
+func TestApprovedToolsInConfig(t *testing.T) {
+	tenantsDir := t.TempDir()
+	reg := datasource.NewDefaultRegistry()
+	ts := NewTenantStore(reg, tenantsDir)
+
+	cfg := newInMemoryConfig(t)
+	ro := readOnlyPtr()
+	cfg.DataSource.ReadOnly = ro
+	cfg.ApprovedTools = []string{"/orders", "/orders/{id}"}
+
+	// Add tenant
+	ctx := context.Background()
+	inst, err := ts.AddTenant(ctx, "test-shop", cfg, "")
+	if err != nil {
+		t.Fatalf("AddTenant: %v", err)
+	}
+
+	// Verify ApprovedTools are set on instance
+	if len(inst.ApprovedTools) != 2 {
+		t.Fatalf("expected 2 approved tools on instance, got %d", len(inst.ApprovedTools))
+	}
+	if !inst.ApprovedTools["/orders"] {
+		t.Error("expected /orders to be approved")
+	}
+	if !inst.ApprovedTools["/orders/{id}"] {
+		t.Error("expected /orders/{id} to be approved")
+	}
+
+	// Persist config
+	persistedPath := ts.SaveTenantConfig("test-shop", cfg)
+	if persistedPath == "" {
+		t.Fatal("SaveTenantConfig returned empty path")
+	}
+
+	// Load back from disk (use json.Unmarshal — config.Load requires schema)
+	data2, err := os.ReadFile(persistedPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var loadedCfg config.Config
+	if err := json.Unmarshal(data2, &loadedCfg); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(loadedCfg.ApprovedTools) != 2 {
+		t.Fatalf("expected 2 approved_tools in loaded config, got %d: %v", len(loadedCfg.ApprovedTools), loadedCfg.ApprovedTools)
+	}
+
+	found := false
+	for _, p := range loadedCfg.ApprovedTools {
+		if p == "/orders" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected /orders in loaded config approved_tools")
+	}
+}
+
+func readOnlyPtr() *bool {
+	v := true
+	return &v
 }

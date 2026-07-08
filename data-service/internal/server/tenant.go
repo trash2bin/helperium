@@ -55,8 +55,9 @@ type TenantInstance struct {
 	ConfigPath string                // path to the JSON config file (for hot reload)
 	CreatedAt  time.Time
 
-	Healthy   bool   // last health ping result
-	LastError string // last error message if unhealthy
+	Healthy       bool               // last health ping result
+	LastError     string             // last error message if unhealthy
+	ApprovedTools map[string]bool    // approved write endpoints (key = path, set on load from cfg.ApprovedTools)
 }
 
 // ConnAdapter wraps datasource.Conn + datasource.Adapter into runtime.AdapterSubset.
@@ -267,8 +268,12 @@ func (ts *TenantStore) ReloadTenant(ctx context.Context, tenantID string, config
 		return fmt.Errorf("reload tenant %q: not found", tenantID)
 	}
 
-	// Build new router using existing connection
-	newRouter, err := NewRouterFromConfig(ts, newCfg, inst.AdapterSub, inst.AdapterSub, inst.Adapter, configPath, nil)
+	// Build new router using existing connection, preserving approved tools
+	approvedTools := make(map[string]bool)
+	for _, p := range newCfg.ApprovedTools {
+		approvedTools[p] = true
+	}
+	newRouter, err := NewRouterFromConfig(ts, newCfg, inst.AdapterSub, inst.AdapterSub, inst.Adapter, configPath, nil, approvedTools)
 	if err != nil {
 		return fmt.Errorf("reload tenant %q: build router: %w", tenantID, err)
 	}
@@ -277,6 +282,7 @@ func (ts *TenantStore) ReloadTenant(ctx context.Context, tenantID string, config
 	inst.Config = newCfg
 	inst.Router = newRouter
 	inst.ConfigPath = configPath
+	inst.ApprovedTools = approvedTools
 	ts.mu.Unlock()
 
 	slog.Info("tenant store: config reloaded",
@@ -506,7 +512,12 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	adapterSub := &ConnAdapter{Conn: adapterSubConn, Adp: adapter}
 
 	// Build router (no admin endpoints — those are on TenantStore)
-	router, err := NewRouterFromConfig(ts, cfg, adapterSub, adapterSub, adapter, configPath, nil)
+	// Build approved tools map from config
+	approvedTools := make(map[string]bool)
+	for _, p := range cfg.ApprovedTools {
+		approvedTools[p] = true
+	}
+	router, err := NewRouterFromConfig(ts, cfg, adapterSub, adapterSub, adapter, configPath, nil, approvedTools)
 	if err != nil {
 		_ = conn.Close()
 		if readonlyConn != nil {
@@ -516,16 +527,17 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	}
 
 	return &TenantInstance{
-		ID:           id,
-		Config:       cfg,
-		Conn:         conn,
-		ReadonlyConn: readonlyConn,
-		Adapter:      adapter,
-		AdapterSub:   adapterSub,
-		Router:       router,
-		ConfigPath:   configPath,
-		CreatedAt:    time.Now(),
-		Healthy:      true,
+		ID:            id,
+		Config:        cfg,
+		Conn:          conn,
+		ReadonlyConn:  readonlyConn,
+		Adapter:       adapter,
+		AdapterSub:    adapterSub,
+		Router:        router,
+		ConfigPath:    configPath,
+		CreatedAt:     time.Now(),
+		Healthy:       true,
+		ApprovedTools: approvedTools,
 	}, nil
 }
 
@@ -557,11 +569,9 @@ func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath s
 		r.Get("/discover", ts.adminDiscoverHandler(adapter))
 	}
 
-	// Tool management: read-only approval flow
-	if adminCtx != nil && cfg != nil {
-		r.Get("/tools/pending", adminPendingToolsHandler(cfg, adminCtx))
-		r.Post("/tools/{toolName}/approve", adminApproveToolHandler(cfg, adminCtx))
-	}
+	// Per-tenant tool management: read-only approval flow
+	r.Get("/tenants/{id}/tools/pending", ts.adminTenantPendingToolsHandler)
+	r.Post("/tenants/{id}/tools/{toolName}/approve", ts.adminTenantApproveToolHandler)
 
 	ts.adminRouter = r
 	return r
@@ -743,7 +753,7 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 	if targetPath == "" {
 		targetPath = ts.TenantConfigPath(inst.ID)
 	}
-	_, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub, inst.AdapterSub, inst.Adapter, targetPath, nil)
+	_, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub, inst.AdapterSub, inst.Adapter, targetPath, nil, nil)
 	if err != nil {
 		handlers.RespondError(w, http.StatusBadRequest, "build_error",
 			fmt.Sprintf("router build failed: %v", err))
@@ -972,4 +982,70 @@ func (ts *TenantStore) SetHasAdmin(hasAdmin bool) {
 	ts.mu.Lock()
 	ts.hasAdmin = hasAdmin
 	ts.mu.Unlock()
+}
+
+// ── Per-Tenant Tool Approval Handlers ──
+
+// adminTenantPendingToolsHandler returns pending write tools for a specific tenant.
+// GET /admin/tenants/{id}/tools/pending
+func (ts *TenantStore) adminTenantPendingToolsHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	inst, ok := ts.GetTenant(id)
+	if !ok {
+		handlers.RespondError(w, http.StatusNotFound, "not_found",
+			fmt.Sprintf("tenant %q not found", id))
+		return
+	}
+
+	approvedTools := inst.ApprovedTools
+	if approvedTools == nil {
+		approvedTools = make(map[string]bool)
+	}
+
+	adminPendingToolsHandler(inst.Config, approvedTools).ServeHTTP(w, r)
+}
+
+// adminTenantApproveToolHandler approves a write tool for a specific tenant.
+// POST /admin/tenants/{id}/tools/{toolName}/approve
+func (ts *TenantStore) adminTenantApproveToolHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	inst, ok := ts.GetTenant(id)
+	if !ok {
+		handlers.RespondError(w, http.StatusNotFound, "not_found",
+			fmt.Sprintf("tenant %q not found", id))
+		return
+	}
+
+	// Create a persist function that saves the approved tools back to config
+	persistFn := func() error {
+		// Sync ApprovedTools map back to Config.ApprovedTools list
+		paths := make([]string, 0, len(inst.ApprovedTools))
+		for p := range inst.ApprovedTools {
+			paths = append(paths, p)
+		}
+		inst.Config.ApprovedTools = paths
+
+		// Persist to disk via SaveTenantConfig
+		savedPath := ts.SaveTenantConfig(id, inst.Config)
+		if savedPath == "" {
+			return fmt.Errorf("failed to save tenant config for %q", id)
+		}
+		inst.ConfigPath = savedPath
+
+		// Rebuild router with updated approved tools
+		approvedTools := make(map[string]bool)
+		for _, p := range inst.Config.ApprovedTools {
+			approvedTools[p] = true
+		}
+		newRouter, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub, inst.AdapterSub, inst.Adapter, inst.ConfigPath, nil, approvedTools)
+		if err != nil {
+			return fmt.Errorf("rebuild router after approval: %w", err)
+		}
+		inst.Router = newRouter
+		inst.ApprovedTools = approvedTools
+
+		return nil
+	}
+
+	adminApproveToolHandler(inst.Config, inst.ApprovedTools, persistFn).ServeHTTP(w, r)
 }

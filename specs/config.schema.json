@@ -123,6 +123,11 @@
       "description": "Описание MCP-инструментов для генерации mcp-gateway (Go, фаза 3.4). Каждый tool ссылается на endpoint.",
       "items": { "$ref": "#/$defs/mcp_tool" }
     },
+    "approved_tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Список путей write-эндпоинтов, утверждённых для использования в read-only режиме. Каждый элемент — path из endpoints[]. Если пустой — write-доступ запрещён для всех эндпоинтов."
+    },
     "auth": {
       "type": "object",
       "additionalProperties": false,

@@ -45,11 +45,6 @@ type AdminContext struct {
 	// Вызывается после записи нового конфига на диск, чтобы атомарно
 	// перестроить роутер.
 	ReloadFn func(configPath string) error
-
-	// ApprovedWriteEndpoints — множество утверждённых write-эндпоинтов
-	// (ключ = path эндпоинта). Используется в read-only режиме для
-	// выборочного разрешения мутирующих операций через admin API.
-	ApprovedWriteEndpoints map[string]bool
 }
 
 // adminConfigResponse — DTO для GET /admin/config (DSN скрыт).
@@ -289,7 +284,7 @@ func adminConfigVersionsHandler(ctx *AdminContext) http.HandlerFunc {
 
 // buildRouterFromConfig собирает роутер из конфига (dry-run).
 func buildRouterFromConfig(cfg *config.Config, ctx *AdminContext) (http.Handler, error) {
-	return NewRouterFromConfig(nil, cfg, ctx.DB, ctx.Router, ctx.Adapter, ctx.ConfigPath, nil)
+	return NewRouterFromConfig(nil, cfg, ctx.DB, ctx.Router, ctx.Adapter, ctx.ConfigPath, nil, nil)
 }
 
 // archiveCurrentConfig сохраняет текущий config.json как config.{ts}.json.
@@ -317,7 +312,8 @@ func archiveCurrentConfig(configPath string) error {
 // ── MCP Tool Management (read-only одобрение write-тулов) ──
 
 // adminPendingToolsHandler возвращает список write-эндпоинтов, ожидающих подтверждения.
-func adminPendingToolsHandler(cfg *config.Config, ctx *AdminContext) http.HandlerFunc {
+// approvedTools — map[endpointPath]bool для проверки утверждённых write-тулов.
+func adminPendingToolsHandler(cfg *config.Config, approvedTools map[string]bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		readOnly := cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly
 		if !readOnly {
@@ -336,6 +332,10 @@ func adminPendingToolsHandler(cfg *config.Config, ctx *AdminContext) http.Handle
 			Approved bool   `json:"approved"`
 		}
 
+		if approvedTools == nil {
+			approvedTools = make(map[string]bool)
+		}
+
 		pending := make([]pendingTool, 0)
 		toolNames := deriveToolNames(cfg.Endpoints)
 		for _, ep := range cfg.Endpoints {
@@ -345,7 +345,7 @@ func adminPendingToolsHandler(cfg *config.Config, ctx *AdminContext) http.Handle
 					Name:     name,
 					Method:   string(ep.Method),
 					Path:     ep.Path,
-					Approved: ctx.ApprovedWriteEndpoints[ep.Path],
+					Approved: approvedTools[ep.Path],
 				})
 			}
 		}
@@ -371,7 +371,9 @@ func adminPendingToolsHandler(cfg *config.Config, ctx *AdminContext) http.Handle
 }
 
 // adminApproveToolHandler подтверждает write-тул для использования в read-only режиме.
-func adminApproveToolHandler(cfg *config.Config, ctx *AdminContext) http.HandlerFunc {
+// approvedTools — map[endpointPath]bool, модифицируется на месте.
+// persistFn — опциональная функция для сохранения изменений (вызывается после добавления).
+func adminApproveToolHandler(cfg *config.Config, approvedTools map[string]bool, persistFn func() error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		toolName := chi.URLParam(r, "toolName")
 		if toolName == "" {
@@ -396,14 +398,16 @@ func adminApproveToolHandler(cfg *config.Config, ctx *AdminContext) http.Handler
 			return
 		}
 
-		if ctx.ApprovedWriteEndpoints == nil {
-			ctx.ApprovedWriteEndpoints = make(map[string]bool)
+		if approvedTools == nil {
+			approvedTools = make(map[string]bool)
 		}
-		ctx.ApprovedWriteEndpoints[epPath] = true
+		approvedTools[epPath] = true
 
-		// Сохраняем на диск для persistence между рестартами
-		if err := saveApprovedTools(ctx); err != nil {
-			slog.Warn("admin approve: failed to persist approvals", "error", err)
+		// Persist if callback provided
+		if persistFn != nil {
+			if err := persistFn(); err != nil {
+				slog.Warn("admin approve: failed to persist approvals", "error", err)
+			}
 		}
 
 		slog.Info("admin approve: write tool approved", "tool", toolName, "path", epPath)
@@ -445,35 +449,6 @@ func deriveToolName(ep config.Endpoint) string {
 	default:
 		return ""
 	}
-}
-
-func saveApprovedTools(ctx *AdminContext) error {
-	if ctx.ConfigPath == "" {
-		return nil
-	}
-	data, err := json.MarshalIndent(ctx.ApprovedWriteEndpoints, "", "  ")
-	if err != nil {
-		return err
-	}
-	approvalsPath := filepath.Join(filepath.Dir(ctx.ConfigPath), "approved_tools.json")
-	return os.WriteFile(approvalsPath, data, 0644)
-}
-
-// LoadApprovedTools загружает утверждённые write-эндпоинты из файла approved_tools.json.
-func LoadApprovedTools(ctx *AdminContext) error {
-	if ctx.ConfigPath == "" {
-		return nil
-	}
-	approvalsPath := filepath.Join(filepath.Dir(ctx.ConfigPath), "approved_tools.json")
-	data, err := os.ReadFile(approvalsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			ctx.ApprovedWriteEndpoints = make(map[string]bool)
-			return nil
-		}
-		return err
-	}
-	return json.Unmarshal(data, &ctx.ApprovedWriteEndpoints)
 }
 
 // ── Dev-only: config rewrite из БД (был до фазы 3.7) ──

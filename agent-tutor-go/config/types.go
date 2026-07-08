@@ -189,6 +189,11 @@ type Config struct {
 
 	// Server — настройки HTTP-сервера (таймауты, лимиты). Опционально.
 	Server *ServerConfig `json:"server,omitempty"`
+
+	// ApprovedTools — список путей write-эндпоинтов, утверждённых для использования
+	// в read-only режиме. Каждый элемент — path из endpoints[].
+	// Если пустой или nil — write-доступ запрещён для всех эндпоинтов.
+	ApprovedTools []string `json:"approved_tools,omitempty"`
 }
 
 // DataSourceConfig — подключение к клиентской БД.

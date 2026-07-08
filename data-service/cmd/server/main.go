@@ -161,12 +161,8 @@ func main() {
 	adapter, _ := registry.Get(string(cfg.DataSource.Driver))
 	var atomicRouter atomic.Value
 	adminCtx := &server.AdminContext{
-		ConfigPath:             absCfgPath,
-		AtomicRouter:           &atomicRouter,
-		ApprovedWriteEndpoints: make(map[string]bool),
-	}
-	if err := server.LoadApprovedTools(adminCtx); err != nil {
-		slog.Warn("load approved tools", "error", err)
+		ConfigPath:   absCfgPath,
+		AtomicRouter: &atomicRouter,
 	}
 	adminRouter := store.BuildAdminRouter(adapter, absCfgPath, adminCtx, cfg)
 

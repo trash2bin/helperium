@@ -25,7 +25,7 @@ import (
 //
 // Если cfg.DataSource.ReadOnly == true (по умолчанию), любые мутирующие HTTP-методы
 // (POST, PUT, PATCH, DELETE) не регистрируются — агент может только читать данные.
-func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.AdapterSubset, adapter runtime.AdapterSubset, introspectAdapter datasource.Adapter, configPath string, adminCtx *AdminContext) (http.Handler, error) {
+func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.AdapterSubset, adapter runtime.AdapterSubset, introspectAdapter datasource.Adapter, configPath string, adminCtx *AdminContext, approvedTools map[string]bool) (http.Handler, error) {
 	entities := runtime.ConfigToEntities(cfg.Entities)
 	customQueries := runtime.ConfigToCustomQueries(cfg.CustomQueries)
 
@@ -81,9 +81,10 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 			r.Get("/config/versions", adminConfigVersionsHandler(adminCtx))
 			r.Post("/config/rewrite", adminRewriteHandler(introspectAdapter, cfg.DataSource, configPath, adminCtx))
 			r.Get("/discover", discoverHandler(introspectAdapter, cfg.DataSource))
-			// Tool management: read-only approval flow
-			r.Get("/tools/pending", adminPendingToolsHandler(cfg, adminCtx))
-			r.Post("/tools/{toolName}/approve", adminApproveToolHandler(cfg, adminCtx))
+			// Tool management: read-only approval flow (legacy — for backward compat)
+			// Per-tenant approval is handled via /admin/tenants/{id}/tools/* in BuildAdminRouter
+			r.Get("/tools/pending", adminPendingToolsHandler(cfg, approvedTools))
+			r.Post("/tools/{toolName}/approve", adminApproveToolHandler(cfg, approvedTools, nil))
 		})
 	}
 
@@ -94,19 +95,18 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 	readOnly := false
 	if cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly {
 		readOnly = true
-		approvedCount := 0
-		if adminCtx != nil {
-			approvedCount = len(adminCtx.ApprovedWriteEndpoints)
+		if approvedTools == nil {
+			approvedTools = make(map[string]bool)
 		}
 		slog.Info("read-only mode enabled — write methods are blocked by default",
 			"endpoints", len(cfg.Endpoints),
-			"approved_tools", approvedCount)
+			"approved_tools", len(approvedTools))
 	}
 
 	for _, ep := range cfg.Endpoints {
 		// Read-only guard: пропускаем write-методы, если они не утверждены
 		if readOnly && isWriteMethod(ep.Method) {
-			if adminCtx != nil && adminCtx.ApprovedWriteEndpoints[ep.Path] {
+			if approvedTools[ep.Path] {
 				slog.Debug("approved write endpoint allowed in read-only mode",
 					"method", ep.Method, "path", ep.Path, "op", ep.Op)
 			} else {
