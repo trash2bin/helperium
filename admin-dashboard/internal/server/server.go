@@ -114,16 +114,17 @@ func (s *Server) Router() chi.Router {
 // ── Middleware ──
 
 // corsMiddleware разрешает CORS для dev-режима.
-// Origin читается из CORS_ALLOW_ORIGINS env var (по умолчанию "*" для обратной совместимости).
+// Origin читается из CORS_ALLOW_ORIGINS env var (по умолчанию "http://localhost:8080").
+// Для разрешения любых origin'ов (embed/production) установи CORS_ALLOW_ORIGINS=*.
 func corsMiddleware(next http.Handler) http.Handler {
 	origin := os.Getenv("CORS_ALLOW_ORIGINS")
 	if origin == "" {
-		origin = "*"
+		origin = "http://localhost:8080"
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Tenant-ID, X-Correlation-ID")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return

@@ -28,7 +28,7 @@ class TestDemoSettingsDefaults:
         assert s.api_port == 8081
         assert s.web_host == "127.0.0.1"
         assert s.web_port == 8080
-        assert s.web_origin == "*"
+        assert s.web_origin == "http://localhost:8080"
         assert s.api_bearer_token is None
 
     def test_tenant_defaults(self):

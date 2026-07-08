@@ -82,8 +82,8 @@ func TestCORSAllowOrigin_Default(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	got := w.Header().Get("Access-Control-Allow-Origin")
-	if got != "*" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "*")
+	if got != "http://localhost:8080" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "http://localhost:8080")
 	}
 }
 
@@ -112,8 +112,44 @@ func TestCORSAllowOrigin_Empty(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	got := w.Header().Get("Access-Control-Allow-Origin")
-	if got != "*" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "*")
+	if got != "http://localhost:8080" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "http://localhost:8080")
+	}
+}
+
+func TestCORSBlockEvilOrigin(t *testing.T) {
+	defer withCORS("http://localhost:8080")()
+	s := New(Options{Addr: ":0"})
+	router := s.Router()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Origin", "http://evil.com")
+	router.ServeHTTP(w, req)
+
+	got := w.Header().Get("Access-Control-Allow-Origin")
+	if got == "http://evil.com" || got == "*" {
+		t.Errorf("evil origin should be blocked, got %q", got)
+	}
+}
+
+func TestCORSAllowHeadersNotWildcard(t *testing.T) {
+	defer clearCORS()()
+	s := New(Options{Addr: ":0"})
+	router := s.Router()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodOptions, "/api/tenants", nil)
+	req.Header.Set("Origin", "http://localhost:8080")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	router.ServeHTTP(w, req)
+
+	got := w.Header().Get("Access-Control-Allow-Headers")
+	if got == "" {
+		t.Fatal("Access-Control-Allow-Headers is empty")
+	}
+	if got == "*" {
+		t.Errorf("Access-Control-Allow-Headers should not be wildcard, got %q", got)
 	}
 }
 

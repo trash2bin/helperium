@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, NotRequired
 
@@ -17,7 +18,7 @@ EventType = Literal[
 
 
 # Message types for LLM conversation
-class MessageRole(str):
+class MessageRole(str, enum.Enum):
     """Valid message roles in a conversation."""
 
     SYSTEM = "system"
@@ -40,26 +41,26 @@ class BaseMessage(TypedDict):
 class SystemMessage(BaseMessage):
     """System message."""
 
-    role: Literal["system"]  # type: ignore[reportIncompatibleVariableOverride]
+    role: Literal[MessageRole.SYSTEM]  # type: ignore[reportIncompatibleVariableOverride]
 
 
 class UserMessage(BaseMessage):
     """User message."""
 
-    role: Literal["user"]  # type: ignore[reportIncompatibleVariableOverride]
+    role: Literal[MessageRole.USER]  # type: ignore[reportIncompatibleVariableOverride]
 
 
 class AssistantMessage(BaseMessage):
     """Assistant message with optional tool calls."""
 
-    role: Literal["assistant"]  # type: ignore[reportIncompatibleVariableOverride]
+    role: Literal[MessageRole.ASSISTANT]  # type: ignore[reportIncompatibleVariableOverride]
     tool_calls: NotRequired[list[ToolCall]]
 
 
 class ToolMessage(BaseMessage):
     """Tool response message."""
 
-    role: Literal["tool"]  # type: ignore[reportIncompatibleVariableOverride]
+    role: Literal[MessageRole.TOOL]  # type: ignore[reportIncompatibleVariableOverride]
     tool_call_id: str
     name: str
 

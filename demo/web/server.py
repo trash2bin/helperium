@@ -185,14 +185,17 @@ app = FastAPI(
 )
 
 # CORS middleware
-# allow_origins from env: comma-separated, or "*" for all (dev only)
+# WEB_ORIGIN from env: comma-separated, or default to http://localhost:8080 for dev.
+# Set WEB_ORIGIN=* explicitly for embed/production to allow all origins.
 cors_origins_raw = settings.web_origin
-cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()] or ["*"]
+cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()] or [
+    "http://localhost:8080"
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Tenant-ID", "X-Correlation-ID"],
 )
 
 

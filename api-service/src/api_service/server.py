@@ -53,7 +53,7 @@ logger = logging.getLogger("api_service.server")
 if os.environ.get("DEMO_DEBUG", "").lower() in ("1", "true", "yes"):
     logging.getLogger("api_service.agent").setLevel(logging.DEBUG)
     logging.getLogger("mcp").setLevel(logging.DEBUG)
-    print("[DEMO] Debug logging enabled for agent and MCP")
+    logger.info("Debug logging enabled for agent and MCP")
 
 
 # === Lazy agent singleton (init на первом запросе, а не при импорте) ===
@@ -261,35 +261,34 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 app.add_middleware(SlowAPIMiddleware)
 
 # CORS middleware
-# allow_origins from env: comma-separated, or "*" for all (dev only)
-cors_origins_raw = os.environ.get("CORS_ALLOW_ORIGINS", "*")
-cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()] or ["*"]
+# allow_origins from env: comma-separated, or default to localhost:8080 for dev.
+# Set CORS_ALLOW_ORIGINS=* explicitly for embed/production to allow all origins.
+cors_origins_raw = os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:8080")
+cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()] or [
+    "http://localhost:8080"
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-Tenant-ID", "X-Correlation-ID"],
 )
 
 # Mount embed widget static files
-EMBED_DIR = Path(__file__).parent.parent.parent / "embed"
-if EMBED_DIR.is_dir():
-    app.mount("/embed", StaticFiles(directory=str(EMBED_DIR)), name="embed")
-    logger.info("Embed widget mounted at /embed from %s", EMBED_DIR)
-else:
-    logger.warning("Embed directory not found: %s", EMBED_DIR)
-
-# Mount embeddable widget static files
-EMBED_DIR = Path(__file__).resolve().parent.parent.parent / "embed"
+# Resolution order:
+#   1. EMBED_DIR env var (absolute override for production)
+#   2. <project_root>/embed/
 embed_override = os.environ.get("EMBED_DIR")
 if embed_override:
-    EMBED_DIR = Path(embed_override)
-if EMBED_DIR.is_dir():
-    app.mount("/embed", StaticFiles(directory=str(EMBED_DIR)), name="embed")
-    logger.info("Embed widget mounted at /embed from %s", EMBED_DIR)
+    embed_path = Path(embed_override)
+else:
+    embed_path = Path(__file__).resolve().parent.parent.parent / "embed"
+if embed_path.is_dir():
+    app.mount("/embed", StaticFiles(directory=str(embed_path)), name="embed")
+    logger.info("Embed widget mounted at /embed from %s", embed_path)
 else:
     logger.warning(
-        "Embed directory not found at %s, /embed will be unavailable", EMBED_DIR
+        "Embed directory not found at %s, /embed will be unavailable", embed_path
     )
 
 
