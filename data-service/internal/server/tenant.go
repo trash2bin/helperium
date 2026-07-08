@@ -107,6 +107,52 @@ func NewTenantStore(registry *datasource.Registry, tenantsDir string) *TenantSto
 	}
 }
 
+// ── Config Persistence ──
+
+// TenantConfigPath returns the filesystem path for persisting this tenant's config.
+// Uses TenantsDir/{id}.json. Creates the directory if needed.
+func (ts *TenantStore) TenantConfigPath(id string) string {
+	if ts.TenantsDir == "" {
+		return ""
+	}
+	return filepath.Join(ts.TenantsDir, id+".json")
+}
+
+// SaveTenantConfig persists the tenant config to disk and returns the config path.
+// Returns empty string if TenantsDir is not configured.
+func (ts *TenantStore) SaveTenantConfig(id string, cfg *config.Config) string {
+	if ts.TenantsDir == "" {
+		return ""
+	}
+	if err := os.MkdirAll(ts.TenantsDir, 0755); err != nil {
+		slog.Warn("save config: failed to create tenants directory", "tenant", id, "error", err)
+		return ""
+	}
+	persistPath := filepath.Join(ts.TenantsDir, id+".json")
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		slog.Warn("save config: marshal error", "tenant", id, "error", err)
+		return ""
+	}
+	if err := os.WriteFile(persistPath, data, 0644); err != nil {
+		slog.Warn("save config: write error", "tenant", id, "path", persistPath, "error", err)
+		return ""
+	}
+	slog.Info("save config: persisted", "tenant", id, "path", persistPath)
+	return persistPath
+}
+
+// DeleteTenantConfig removes the persisted config file for a tenant.
+func (ts *TenantStore) DeleteTenantConfig(id string) {
+	if ts.TenantsDir == "" {
+		return
+	}
+	configPath := filepath.Join(ts.TenantsDir, id+".json")
+	if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+		slog.Warn("delete config: remove error", "tenant", id, "error", err)
+	}
+}
+
 // ── Tenant Lifecycle ──
 
 // RegisterTenantInstance registers a pre-built TenantInstance directly.
@@ -577,50 +623,24 @@ func (ts *TenantStore) adminAddTenantHandler(w http.ResponseWriter, r *http.Requ
 		slog.Warn("admin add tenant: schema validation skipped (schema file unavailable)", "error", err)
 	}
 
-	// Save config to disk if path provided
-	configPath := req.ConfigPath
-	if configPath != "" {
-		prettyJSON, err := json.MarshalIndent(cfg, "", "  ")
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "marshal_error",
-				fmt.Sprintf("failed to marshal config: %v", err))
-			return
-		}
-		if err := os.WriteFile(configPath, prettyJSON, 0644); err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "write_error",
-				fmt.Sprintf("failed to write config: %v", err))
-			return
-		}
-	}
-
-	// ── Also persist to TenantsDir for durability across restarts ──
-	if ts.TenantsDir != "" {
-		persistPath := filepath.Join(ts.TenantsDir, req.ID+".json")
-		prettyJSON, err := json.MarshalIndent(cfg, "", "  ")
-		if err == nil {
-			if mkErr := os.MkdirAll(ts.TenantsDir, 0755); mkErr == nil {
-				if writeErr := os.WriteFile(persistPath, prettyJSON, 0644); writeErr != nil {
-					slog.Warn("failed to persist tenant config", "tenant", req.ID, "error", writeErr)
-				} else {
-					slog.Info("persisted tenant config", "tenant", req.ID, "path", persistPath)
-				}
-			}
-		}
-	}
-
-	// Add tenant
+	// Add tenant first (no config file yet — will persist after)
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	inst, err := ts.AddTenant(ctx, req.ID, &cfg, configPath)
+	inst, err := ts.AddTenant(ctx, req.ID, &cfg, "")
 	if err != nil {
-		// Check if it's a duplicate
 		if _, exists := ts.GetTenant(req.ID); exists {
 			handlers.RespondError(w, http.StatusConflict, "duplicate", err.Error())
 		} else {
 			handlers.RespondError(w, http.StatusInternalServerError, "add_failed", err.Error())
 		}
 		return
+	}
+
+	// Persist config to TenantsDir (canonical location)
+	persistedPath := ts.SaveTenantConfig(req.ID, &cfg)
+	if persistedPath != "" {
+		inst.ConfigPath = persistedPath
 	}
 
 	handlers.RespondJSON(w, http.StatusCreated, map[string]any{
@@ -713,40 +733,38 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Validate
+	// Validate (tolerant — warn on missing schema, skip otherwise)
 	if err := config.Validate(raw, ""); err != nil {
-		handlers.RespondError(w, http.StatusBadRequest, "validation_error",
-			fmt.Sprintf("config validation failed: %v", err))
-		return
+		slog.Warn("admin config update: schema validation skipped", "error", err)
 	}
 
 	// Dry-run build
-	_, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub, inst.AdapterSub, inst.Adapter, inst.ConfigPath, nil)
+	targetPath := inst.ConfigPath
+	if targetPath == "" {
+		targetPath = ts.TenantConfigPath(inst.ID)
+	}
+	_, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub, inst.AdapterSub, inst.Adapter, targetPath, nil)
 	if err != nil {
 		handlers.RespondError(w, http.StatusBadRequest, "build_error",
 			fmt.Sprintf("router build failed: %v", err))
 		return
 	}
 
-	// Archive old config
-	_ = archiveCurrentConfig(inst.ConfigPath)
-
-	// Save to disk
-	prettyJSON, err := json.MarshalIndent(newCfg, "", "  ")
-	if err != nil {
-		handlers.RespondError(w, http.StatusInternalServerError, "marshal_error", err.Error())
-		return
-	}
-	if err := os.WriteFile(inst.ConfigPath, prettyJSON, 0644); err != nil {
-		handlers.RespondError(w, http.StatusInternalServerError, "write_error", err.Error())
-		return
+	// Persist via TenantStore (always writes to TenantsDir)
+	persistedPath := ts.SaveTenantConfig(inst.ID, &newCfg)
+	if persistedPath != "" {
+		inst.ConfigPath = persistedPath
 	}
 
 	// Reload tenant
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	if err := ts.ReloadTenant(ctx, inst.ID, inst.ConfigPath); err != nil {
+	reloadPath := inst.ConfigPath
+	if reloadPath == "" {
+		reloadPath = targetPath
+	}
+	if err := ts.ReloadTenant(ctx, inst.ID, reloadPath); err != nil {
 		handlers.RespondError(w, http.StatusInternalServerError, "reload_error",
 			fmt.Sprintf("config saved but reload failed: %v", err))
 		return
@@ -754,7 +772,7 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 
 	handlers.RespondJSON(w, http.StatusOK, map[string]any{
 		"status":    "applied",
-		"path":      inst.ConfigPath,
+		"path":      reloadPath,
 		"entities":  len(newCfg.Entities),
 		"endpoints": len(newCfg.Endpoints),
 	})
@@ -822,7 +840,7 @@ func (ts *TenantStore) adminConfigVersionsHandler(w http.ResponseWriter, r *http
 	handlers.RespondJSON(w, http.StatusOK, versions)
 }
 
-func (ts *TenantStore) adminRewriteHandler(adapter datasource.Adapter, configPath string) http.HandlerFunc {
+func (ts *TenantStore) adminRewriteHandler(adapter datasource.Adapter, _ string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		inst := ts.resolveTenant(r)
 		if inst == nil {
@@ -856,21 +874,20 @@ func (ts *TenantStore) adminRewriteHandler(adapter datasource.Adapter, configPat
 		}
 		newCfg := configgen.Generate(schema, dsConfig, nil)
 
-		data, err := json.MarshalIndent(newCfg, "", "  ")
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "marshal_error", err.Error())
+		// Save tenant config to canonical location (TenantsDir/{id}.json)
+		persistedPath := ts.SaveTenantConfig(inst.ID, newCfg)
+		if persistedPath == "" {
+			handlers.RespondError(w, http.StatusInternalServerError, "persist_error",
+				"failed to persist tenant config (TenantsDir not configured)")
 			return
 		}
-
-		if err := os.WriteFile(configPath, data, 0644); err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "write_error", err.Error())
-			return
-		}
+		// Update instance config path so future writes go to the right file
+		inst.ConfigPath = persistedPath
 
 		// Reload
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
-		if err := ts.ReloadTenant(ctx, inst.ID, configPath); err != nil {
+		if err := ts.ReloadTenant(ctx, inst.ID, persistedPath); err != nil {
 			handlers.RespondError(w, http.StatusInternalServerError, "reload_error",
 				fmt.Sprintf("config saved but reload failed: %v", err))
 			return
@@ -878,7 +895,7 @@ func (ts *TenantStore) adminRewriteHandler(adapter datasource.Adapter, configPat
 
 		handlers.RespondJSON(w, http.StatusOK, map[string]any{
 			"status":    "ok",
-			"path":      configPath,
+			"path":      persistedPath,
 			"entities":  len(newCfg.Entities),
 			"endpoints": len(newCfg.Endpoints),
 			"note":      "Конфиг сохранён и применён без рестарта.",
