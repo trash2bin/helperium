@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/agent-tutor/agent-tutor-go/pkg/cors"
 	"github.com/agent-tutor/agent-tutor-go/pkg/swaggerui"
 	"github.com/agent-tutor/data-service/internal/openapigen"
 )
@@ -56,13 +57,13 @@ func NewOpenAPIHandler(ts *TenantStore, hasAdmin bool) http.HandlerFunc {
 		if inst == nil {
 			spec := openapigen.GenerateSystemSpec("http://127.0.0.1:8084", "Data Service", "0.2.0", hasAdmin)
 			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Origin", cors.AllowOrigin())
 			json.NewEncoder(w).Encode(spec)
 			return
 		}
 		spec := openapigen.Generate(inst.Config, "http://127.0.0.1:8084", "Data Service", "0.2.0", hasAdmin)
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", cors.AllowOrigin())
 		json.NewEncoder(w).Encode(spec)
 	}
 }

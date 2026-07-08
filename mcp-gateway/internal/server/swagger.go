@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/agent-tutor/agent-tutor-go/pkg/cors"
 	"github.com/agent-tutor/agent-tutor-go/pkg/swaggerui"
 )
 
@@ -83,7 +84,7 @@ func OpenAPIHandler() http.HandlerFunc {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", cors.AllowOrigin())
 		json.NewEncoder(w).Encode(spec)
 	}
 }

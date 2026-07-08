@@ -97,6 +97,73 @@ func BodyLimitMiddleware(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
+// ── Admin Rate Limit ──
+
+// adminRateLimiter — token bucket rate limiter для /admin/* endpoint'ов.
+// Использует time-based расчёт без фоновой горутины.
+// Параметры: ADMIN_RATE_LIMIT_RPS (default 5), ADMIN_RATE_LIMIT_BURST (default 10).
+type adminRateLimiter struct {
+	mu       sync.Mutex
+	rps      int
+	burst    int
+	tokens   float64
+	lastTime time.Time
+}
+
+func newAdminRateLimiter(rps, burst int) *adminRateLimiter {
+	return &adminRateLimiter{
+		rps:      rps,
+		burst:    burst,
+		tokens:   float64(burst),
+		lastTime: time.Now(),
+	}
+}
+
+func (rl *adminRateLimiter) Allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	elapsed := now.Sub(rl.lastTime).Seconds()
+	rl.lastTime = now
+
+	// Добавляем токены пропорционально прошедшему времени
+	rl.tokens += elapsed * float64(rl.rps)
+	if rl.tokens > float64(rl.burst) {
+		rl.tokens = float64(rl.burst)
+	}
+
+	if rl.tokens >= 1.0 {
+		rl.tokens--
+		return true
+	}
+	return false
+}
+
+// AdminRateLimitMiddleware возвращает middleware, ограничивающий частоту запросов
+// token bucket алгоритмом. Параметры читаются из env:
+//   ADMIN_RATE_LIMIT_RPS   — запросов в секунду (default 5)
+//   ADMIN_RATE_LIMIT_BURST — burst размер (default 10)
+// При превышении лимита возвращает 429 Too Many Requests с Retry-After.
+func AdminRateLimitMiddleware() func(http.Handler) http.Handler {
+	rps := resolveIntEnv("ADMIN_RATE_LIMIT_RPS", 0, 5)
+	burst := resolveIntEnv("ADMIN_RATE_LIMIT_BURST", 0, 10)
+	rl := newAdminRateLimiter(rps, burst)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !rl.Allow() {
+				w.Header().Set("Retry-After", "1")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				w.Write([]byte(`{"error":"rate_limit_exceeded","message":"Too many admin requests, try again later"}`))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // ThrottleMiddleware ограничивает количество одновременных запросов.
 // Если превышен лимит — возвращает 503 Service Unavailable.
 func ThrottleMiddleware(maxConcurrent int) func(http.Handler) http.Handler {

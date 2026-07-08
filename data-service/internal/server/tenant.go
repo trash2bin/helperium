@@ -491,6 +491,7 @@ func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath s
 
 	// All admin endpoints require ADMIN_TOKEN
 	r.Use(AdminAuthMiddleware)
+	r.Use(AdminRateLimitMiddleware())
 
 	// Tenant management
 	r.Post("/tenants", ts.adminAddTenantHandler)

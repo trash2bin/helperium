@@ -225,6 +225,119 @@ func TestArchiveCurrentConfig(t *testing.T) {
 	}
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// AdminRateLimitMiddleware
+// ═════════════════════════════════════════════════════════════════════
+
+func TestAdminRateLimit_AllowsUpToBurst(t *testing.T) {
+	os.Setenv("ADMIN_RATE_LIMIT_RPS", "100")
+	os.Setenv("ADMIN_RATE_LIMIT_BURST", "5")
+	defer func() {
+		os.Unsetenv("ADMIN_RATE_LIMIT_RPS")
+		os.Unsetenv("ADMIN_RATE_LIMIT_BURST")
+	}()
+
+	mw := AdminRateLimitMiddleware()
+	called := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Burst of 5 should all pass
+	for i := range 5 {
+		req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("request %d: expected 200, got %d", i+1, rec.Code)
+		}
+	}
+
+	if called != 5 {
+		t.Errorf("expected handler called 5 times, got %d", called)
+	}
+}
+
+func TestAdminRateLimit_BurstBlocksExcess(t *testing.T) {
+	os.Setenv("ADMIN_RATE_LIMIT_RPS", "100")
+	os.Setenv("ADMIN_RATE_LIMIT_BURST", "3")
+	defer func() {
+		os.Unsetenv("ADMIN_RATE_LIMIT_RPS")
+		os.Unsetenv("ADMIN_RATE_LIMIT_BURST")
+	}()
+
+	mw := AdminRateLimitMiddleware()
+	called := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Burst of 3 should all pass
+	for i := range 3 {
+		req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("request %d: expected 200, got %d", i+1, rec.Code)
+		}
+	}
+
+	// 4th request should be rate limited (burst exhausted, no time elapsed)
+	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Retry-After") != "1" {
+		t.Errorf("expected Retry-After: 1, got %q", rec.Header().Get("Retry-After"))
+	}
+
+	if called != 3 {
+		t.Errorf("expected handler called 3 times, got %d", called)
+	}
+}
+
+func TestAdminRateLimit_ReplenishesTokensOverTime(t *testing.T) {
+	os.Setenv("ADMIN_RATE_LIMIT_RPS", "1000")
+	os.Setenv("ADMIN_RATE_LIMIT_BURST", "2")
+	defer func() {
+		os.Unsetenv("ADMIN_RATE_LIMIT_RPS")
+		os.Unsetenv("ADMIN_RATE_LIMIT_BURST")
+	}()
+
+	mw := AdminRateLimitMiddleware()
+	called := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Consume burst
+	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	// 3rd should be blocked (burst=2 exhausted)
+	req3 := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429 on 3rd request, got %d", rec3.Code)
+	}
+
+	if called != 2 {
+		t.Errorf("expected 2 calls, got %d", called)
+	}
+}
+
 // newAdminDB creates a minimal in-memory SQLite DB for admin tests.
 func newAdminDB(t *testing.T) *sql.DB {
 	t.Helper()

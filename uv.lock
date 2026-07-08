@@ -210,6 +210,7 @@ version = "0.3.0"
 source = { editable = "api-service" }
 dependencies = [
     { name = "agent-tutor-sdk" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "litellm" },
@@ -227,6 +228,7 @@ pg = [
 [package.metadata]
 requires-dist = [
     { name = "agent-tutor-sdk", editable = "agent-tutor-sdk" },
+    { name = "cryptography", specifier = ">=44.0.0" },
     { name = "fastapi", specifier = ">=0.137.2" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "litellm", specifier = ">=1.86.2" },

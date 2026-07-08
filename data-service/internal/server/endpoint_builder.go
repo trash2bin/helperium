@@ -74,6 +74,7 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 	if introspectAdapter != nil && adminCtx != nil {
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(AdminAuthMiddleware)
+			r.Use(AdminRateLimitMiddleware())
 			r.Get("/config", adminConfigHandler(cfg))
 			r.Post("/config", adminConfigUpdateHandler(adminCtx))
 			r.Post("/config/reload", adminConfigReloadHandler(adminCtx))

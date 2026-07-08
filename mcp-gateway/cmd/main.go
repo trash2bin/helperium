@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/agent-tutor/agent-tutor-go/pkg/cors"
 	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
 	gwserver "github.com/agent-tutor/mcp-gateway/internal/server"
 	"github.com/agent-tutor/mcp-gateway/internal/tools"
@@ -327,7 +328,7 @@ func sseHandler(sessions *sync.Map) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", cors.AllowOrigin())
 
 		// Enforce session limit to prevent OOM
 		count := 0

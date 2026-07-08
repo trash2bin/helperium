@@ -13,10 +13,61 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from typing import Any
+
+from cryptography.fernet import Fernet
+
+logger = logging.getLogger(__name__)
+
+
+# ── Encryption helpers ──
+
+
+def _get_fernet() -> Fernet | None:
+    """Build a Fernet cipher from ENCRYPTION_KEY env var (base64, 32 bytes).
+    Returns None if the env var is not set (backward compat for dev).
+    """
+    key = os.environ.get("ENCRYPTION_KEY")
+    if not key:
+        logger.warning("ENCRYPTION_KEY not set — llm_config stored as plaintext")
+        return None
+    try:
+        return Fernet(key.encode("ascii"))
+    except Exception as exc:
+        logger.warning(
+            "Invalid ENCRYPTION_KEY — llm_config stored as plaintext: %s", exc
+        )
+        return None
+
+
+_FERNET = _get_fernet()
+
+
+def _encrypt_value(value: str | None) -> str | None:
+    """Encrypt a JSON string with Fernet, return base64 ciphertext (or None)."""
+    if value is None:
+        return None
+    if _FERNET is None:
+        return value  # plaintext fallback
+    return _FERNET.encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_value(encrypted: str | None) -> str | None:
+    """Decrypt a base64 ciphertext back to the original JSON string (or None)."""
+    if encrypted is None:
+        return None
+    if _FERNET is None:
+        return encrypted  # plaintext fallback
+    try:
+        return _FERNET.decrypt(encrypted.encode("ascii")).decode("utf-8")
+    except Exception as exc:
+        logger.warning("Failed to decrypt llm_config: %s", exc)
+        return None
 
 
 class AgentStore:
@@ -98,7 +149,7 @@ class AgentStore:
         now = datetime.now(timezone.utc).isoformat()
         tenant_ids_json = json.dumps(tenant_ids or [], ensure_ascii=False)
         widget_config_json = _json_or_none(widget_config)
-        llm_config_json = _json_or_none(llm_config)
+        llm_config_json = _encrypt_value(_json_or_none(llm_config))
         with self._lock:
             conn = self._conn()
             try:
@@ -164,12 +215,15 @@ class AgentStore:
                     if widget_config is not None
                     else existing["widget_config"]
                 )
+                existing_llm_decrypted = _decrypt_value(existing["llm_config"])
                 new_llm_config = (
-                    llm_config if llm_config is not None else existing["llm_config"]
+                    llm_config if llm_config is not None else existing_llm_decrypted
                 )
 
                 new_widget_config_json = _json_or_none(_unpack_json(new_widget_config))
-                new_llm_config_json = _json_or_none(_unpack_json(new_llm_config))
+                new_llm_config_json = _encrypt_value(
+                    _json_or_none(_unpack_json(new_llm_config))
+                )
 
                 conn.execute(
                     "UPDATE agents SET description = ?, tenant_ids = ?, widget_config = ?, llm_config = ?, updated_at = ? WHERE name = ?",
@@ -220,7 +274,7 @@ class AgentStore:
             "description": row["description"],
             "tenant_ids": json.loads(row["tenant_ids"]),
             "widget_config": _parse_config(row["widget_config"]),
-            "llm_config": _parse_config(row["llm_config"]),
+            "llm_config": _parse_config(_decrypt_value(row["llm_config"])),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

@@ -60,6 +60,9 @@ func (s *Server) Router() chi.Router {
 	// Static frontend
 	r.Handle("/*", s.staticHandler())
 
+	// Health check (no auth)
+	r.Get("/health", s.healthHandler)
+
 	// API
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", s.healthHandler)
@@ -140,7 +143,7 @@ func authMiddleware(token string) func(http.Handler) http.Handler {
 			}
 
 			// Health — без auth
-			if path == "/api/health" {
+			if path == "/api/health" || path == "/health" {
 				next.ServeHTTP(w, r)
 				return
 			}

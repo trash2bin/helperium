@@ -26,4 +26,9 @@ EXPOSE 8084
 
 USER nonroot:nonroot
 
+# distroless не содержит curl/wget — HEALTHCHECK невозможен без утилит.
+# Для запуска вне docker-compose используйте docker-compose healthcheck (через curl с host).
+# data-service имеет /health endpoint на порту 8084.
+HEALTHCHECK NONE
+
 ENTRYPOINT ["/data-service"]
