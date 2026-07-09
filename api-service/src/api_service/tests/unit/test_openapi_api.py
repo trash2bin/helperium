@@ -7,8 +7,17 @@ from pathlib import Path
 
 import yaml
 
-# Тесты запускаются через `uv run pytest` из корня репо — cwd == repo root.
-SPEC_PATH = Path("specs") / "api.openapi.yaml"
+
+def _find_project_root() -> Path:
+    p = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (p / "specs").is_dir():
+            return p
+        p = p.parent
+    raise RuntimeError(f"Cannot find specs/ from {__file__}")
+
+
+SPEC_PATH = _find_project_root() / "specs" / "api.openapi.yaml"
 
 
 def test_openapi_spec_matches_generated():

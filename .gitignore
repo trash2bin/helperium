@@ -56,3 +56,6 @@ specs/test_tenants/
 test-results/
 playwright-report/
 .playwright-mcp
+
+# Symlinks to specs/
+api-service/specs
