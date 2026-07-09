@@ -1,0 +1,54 @@
+db = "mewt.sqlite"
+
+[log]
+level = "info"
+
+[targets]
+include = ["cmd/**/*.go", "internal/**/*.go"]
+ignore = ["test", "vendor", "mock"]
+
+[run]
+
+# Per-target test commands: first match wins.
+# Order matters — most specific packages first, catch-all last.
+# Each glob matches mutated source files, then the cmd runs relevant tests.
+
+# 1. Runtime core — query builder, converter, entity resolver, response mapper, types
+[[test.per_target]]
+glob = "internal/runtime/*.go"
+cmd = "go test ./internal/runtime/... -count=1 -timeout 60s"
+
+# 2. HTTP handlers — 8 endpoint handlers + row_filter
+[[test.per_target]]
+glob = "internal/runtime/handlers/*.go"
+cmd = "go test ./internal/runtime/handlers/... -count=1 -timeout 60s"
+
+# 3. HTTP server — admin, server, swagger, tenant, endpoint_builder
+[[test.per_target]]
+glob = "internal/server/*.go"
+cmd = "go test ./internal/server/... -count=1 -timeout 120s"
+
+# 4. Datasource adapters — SQLite, PostgreSQL, registry
+[[test.per_target]]
+glob = "internal/datasource/*.go"
+cmd = "go test ./internal/datasource/... -count=1 -timeout 120s"
+
+# 5. Seed generator — config_schema, materialize, seedgen, testdata
+[[test.per_target]]
+glob = "internal/seedgen/*.go"
+cmd = "go test ./internal/seedgen/... -count=1 -timeout 60s"
+
+# 6. Config schema generator
+[[test.per_target]]
+glob = "internal/configgen/*.go"
+cmd = "go test ./internal/configgen/... -count=1 -timeout 60s"
+
+# 7. OpenAPI generator (no test files — included for completeness)
+[[test.per_target]]
+glob = "internal/openapigen/*.go"
+cmd = "go build ./internal/openapigen/..."
+
+# Catch-all: any file not matched by the specific rules above
+[[test.per_target]]
+glob = "**/*.go"
+cmd = "go test ./... -count=1 -timeout 180s"

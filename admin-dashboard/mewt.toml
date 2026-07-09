@@ -1,0 +1,30 @@
+db = "mewt.sqlite"
+
+[log]
+level = "info"
+
+[targets]
+include = ["cmd/**/*.go", "internal/**/*.go", "internal/**/*.js"]
+ignore = ["test", "vendor"]
+
+[run]
+
+[test]
+# Default: full suite (used for any file not matched by per_target)
+cmd = "go test ./... -count=1 -timeout 60s"
+
+# ── JS frontend (app.js — 514 строк, тестов нет) ──
+[[test.per_target]]
+glob = "internal/**/*.js"
+cmd = 'echo "WARN: No JS tests for app.js — 0% mutation coverage" && exit 0'
+timeout = 10
+
+# ── Go backend ──
+[[test.per_target]]
+glob = "internal/**/*.go"
+cmd = "go test ./... -count=1 -timeout 60s"
+
+# ── Go cmd ──
+[[test.per_target]]
+glob = "cmd/**/*.go"
+cmd = "go test ./... -count=1 -timeout 60s"
