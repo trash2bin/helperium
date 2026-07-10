@@ -31,11 +31,11 @@ func TestEdgeCases_MalformedIDs(t *testing.T) {
 	})
 
 	t.Run("very_long_id", func(t *testing.T) {
-		// ID длиной 8KB — должно прийти 404, не panic
+		// ID длиной 8KB — должно прийти 400 (валидация), не panic
 		longID := strings.Repeat("a", 8192)
 		status, _ := getJSON[map[string]any](t, ts.URL+"/students/"+longID)
-		if status != 404 {
-			t.Errorf("expected 404 for 8KB id, got %d", status)
+		if status != 400 {
+			t.Errorf("expected 400 for 8KB id (validation), got %d", status)
 		}
 	})
 

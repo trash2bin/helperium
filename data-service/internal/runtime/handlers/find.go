@@ -51,6 +51,12 @@ func FindHandler(c *Context, entityName, searchField, queryParam string) http.Ha
 			return
 		}
 
+		// Validate search value length before building query
+		if err := ValidateSearchValue(value); err != nil {
+			RespondError(w, http.StatusBadRequest, "validation_error", err.Error())
+			return
+		}
+
 		// BuildFind с row_filter: формируем where clause из find + tenant
 		query, err := c.Builder.BuildFind(entity, searchField, value)
 		if err != nil {

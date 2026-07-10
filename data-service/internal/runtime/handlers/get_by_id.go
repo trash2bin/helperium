@@ -14,8 +14,8 @@ func GetByIDHandler(c *Context, entityName string) http.HandlerFunc {
 		}
 
 		id := c.URLParam(r, "id")
-		if id == "" {
-			RespondError(w, http.StatusBadRequest, "bad_request", "missing id parameter")
+		if err := ValidateID(id); err != nil {
+			RespondError(w, http.StatusBadRequest, "validation_error", err.Error())
 			return
 		}
 
