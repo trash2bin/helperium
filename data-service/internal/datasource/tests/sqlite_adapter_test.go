@@ -235,6 +235,53 @@ func TestSqliteAdapter_Introspect_NullableDetection(t *testing.T) {
 	}
 }
 
+func TestSqliteAdapter_QueryRowContext(t *testing.T) {
+	ctx := context.Background()
+	conn, err := (datasource.SqliteAdapter{}).Connect(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)`)
+	if err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	_, err = conn.ExecContext(ctx, `INSERT INTO t (id, val) VALUES (1, 'hello')`)
+	if err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	row := conn.QueryRowContext(ctx, `SELECT val FROM t WHERE id = ?`, 1)
+	var val string
+	if err := row.Scan(&val); err != nil {
+		t.Fatalf("QueryRowContext.Scan: %v", err)
+	}
+	if val != "hello" {
+		t.Errorf("val = %q, want 'hello'", val)
+	}
+}
+
+func TestSqliteAdapter_QueryRowContext_NotFound(t *testing.T) {
+	ctx := context.Background()
+	conn, err := (datasource.SqliteAdapter{}).Connect(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)`)
+	if err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+
+	row := conn.QueryRowContext(ctx, `SELECT val FROM t WHERE id = ?`, 999)
+	var val string
+	if err := row.Scan(&val); err == nil {
+		t.Error("expected error for non-existent row, got nil")
+	}
+}
+
 // tableNames — утилита для диагностических сообщений.
 func tableNames(s *datasource.Schema) []string {
 	out := make([]string, 0, len(s.Tables))

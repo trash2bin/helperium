@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
@@ -101,3 +103,55 @@ func TestTenantFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestAsPlaceholderFunc_NilAdapter(t *testing.T) {
+	f := asPlaceholderFunc(nil)
+	got := f(1)
+	want := "$1"
+	if got != want {
+		t.Errorf("asPlaceholderFunc(nil)(1) = %q, want %q", got, want)
+	}
+	got = f(42)
+	want = "$42"
+	if got != want {
+		t.Errorf("asPlaceholderFunc(nil)(42) = %q, want %q", got, want)
+	}
+}
+
+func TestAsPlaceholderFunc_SQLite(t *testing.T) {
+	adapter := &mockPlaceholderAdapter{ph: "?"}
+	f := asPlaceholderFunc(adapter)
+	got := f(1)
+	want := "?"
+	if got != want {
+		t.Errorf("asPlaceholderFunc(SQLite)(1) = %q, want %q", got, want)
+	}
+	got = f(99)
+	if got != want {
+		t.Errorf("asPlaceholderFunc(SQLite)(99) = %q, want %q", got, want)
+	}
+}
+
+func TestAsPlaceholderFunc_Postgres(t *testing.T) {
+	adapter := &mockPlaceholderAdapter{ph: "$2"}
+	f := asPlaceholderFunc(adapter)
+	got := f(2)
+	want := "$2"
+	if got != want {
+		t.Errorf("asPlaceholderFunc(PG)(2) = %q, want %q", got, want)
+	}
+}
+
+// mockPlaceholderAdapter implements runtime.AdapterSubset for row_filter tests
+type mockPlaceholderAdapter struct {
+	ph string
+}
+
+func (m *mockPlaceholderAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return nil, nil
+}
+func (m *mockPlaceholderAdapter) QuoteIdentifier(name string) string {
+	return `"` + name + `"`
+}
+func (m *mockPlaceholderAdapter) TranslatePlaceholder(index int) string { return m.ph }
+func (m *mockPlaceholderAdapter) PingContext(ctx context.Context) error { return nil }

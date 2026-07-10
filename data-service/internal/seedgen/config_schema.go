@@ -34,7 +34,7 @@ func GenerateDDL(entities []config.Entity, driver string) (string, error) {
 		fkRefByColumn := make(map[string]string)
 		for _, r := range e.Relations {
 			if r.Kind != config.RelationManyToOne {
-				continue
+				break
 			}
 			ref := fmt.Sprintf("REFERENCES %s(%s)", quoteIdent(r.Table, driver), quoteIdent(r.TargetFK, driver))
 			if driver == "sqlite" {
