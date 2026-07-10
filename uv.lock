@@ -14,6 +14,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "agent-db",
     "agent-tutor-sdk",
     "agent-tutor-workspace",
     "api-service",
@@ -38,6 +39,40 @@ sdist = { url = "https://files.pythonhosted.org/packages/ca/14/787e5498cd062640f
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/46/02ac5e262d4af18054b3e922b2baedbb2a03289ee792162de60a865defc5/accelerate-1.13.0-py3-none-any.whl", hash = "sha256:cf1a3efb96c18f7b152eb0fa7490f3710b19c3f395699358f08decca2b8b62e0", size = 383744, upload-time = "2026-03-04T19:34:10.313Z" },
 ]
+
+[[package]]
+name = "agent-db"
+version = "0.3.0"
+source = { editable = "agent-db" }
+dependencies = [
+    { name = "click" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "rich" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "respx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pydantic", specifier = ">=2.8" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "requests", specifier = ">=2.31" },
+    { name = "respx", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "rich", specifier = ">=13.7" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "agent-tutor-sdk"

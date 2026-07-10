@@ -17,6 +17,7 @@ demo-web = { workspace = true }
 
 [tool.uv.workspace]
 members = [
+    "agent-db",
     "agent-tutor-sdk",
     "rag",
     "api-service",
