@@ -404,3 +404,94 @@ func TestCall_InvalidJSONInResponse(t *testing.T) {
 		t.Fatal("Call() expected error for invalid JSON response, got nil")
 	}
 }
+
+// ════════════════════════════════════════════════════════════════
+// SSRF Protection Tests
+// ════════════════════════════════════════════════════════════════
+
+func TestSSRF_ValidateURL_BlocksPrivateIPv4Ranges(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"127.0.0.1 loopback", "http://127.0.0.1:8084/api"},
+		{"127.0.0.2 loopback", "http://127.0.0.2:8084/api"},
+		{"10.0.0.1 /8", "http://10.0.0.1:8084/api"},
+		{"10.255.255.255 /8", "http://10.255.255.255:8084/api"},
+		{"192.168.1.1 /16", "http://192.168.1.1:8084/api"},
+		{"192.168.0.0 /16", "http://192.168.0.1:8084/api"},
+		{"172.16.0.1 /12", "http://172.16.0.1:8084/api"},
+		{"172.31.255.255 /12", "http://172.31.255.255:8084/api"},
+		{"169.254.169.254 metadata", "http://169.254.169.254:8084/api"},
+		{"169.254.1.1 link-local", "http://169.254.1.1:8084/api"},
+		{"100.64.0.1 CGNAT", "http://100.64.0.1:8084/api"},
+		{"0.0.0.0 current network", "http://0.0.0.0:8084/api"},
+		{"localhost hostname", "http://localhost:8084/api"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateURL(tt.url)
+			if err == nil {
+				t.Errorf("ValidateURL(%q) = nil, want error (private IP blocked)", tt.url)
+			}
+		})
+	}
+}
+
+func TestSSRF_ValidateURL_AllowsPublicIPs(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"Google DNS", "http://8.8.8.8:8084/api"},
+		{"Cloudflare DNS", "http://1.1.1.1:8084/api"},
+		{"Quad9", "http://9.9.9.9:8084/api"},
+		{"hostname with public DNS", "http://example.com:8084/api"},
+		{"HTTPS public hostname", "https://api.example.com/v1/data"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateURL(tt.url)
+			if err != nil {
+				t.Errorf("ValidateURL(%q) = %v, want nil (should allow public)", tt.url, err)
+			}
+		})
+	}
+}
+
+func TestSSRF_ValidateURL_InvalidURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"empty", ""},
+		{"no scheme", "127.0.0.1:8084/api"},
+		{"relative path", "/api/data"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateURL(tt.url)
+			if err == nil {
+				t.Errorf("ValidateURL(%q) = nil, want error for invalid URL", tt.url)
+			}
+		})
+	}
+}
+
+func TestSSRF_New_LogsWarningForPrivateIP(t *testing.T) {
+	// New() should not panic or error when DATA_SERVICE_URL points to private IP
+	// (dev default is 127.0.0.1). It should log a warning but still succeed.
+	os.Unsetenv("DATA_SERVICE_URL")
+	os.Unsetenv("DATA_SERVICE_TIMEOUT")
+
+	c := New()
+	if c == nil {
+		t.Fatal("New() returned nil for private IP URL")
+	}
+	if c.baseURL != "http://127.0.0.1:8084" {
+		t.Errorf("baseURL = %q, want http://127.0.0.1:8084", c.baseURL)
+	}
+}

@@ -3,8 +3,11 @@ package httpclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,6 +34,12 @@ func New() *Client {
 	}
 	base = strings.TrimRight(base, "/")
 
+	// Warn if DATA_SERVICE_URL points to a private IP range (SSRF risk)
+	if err := ValidateURL(base); err != nil {
+		slog.Warn("DATA_SERVICE_URL resolves to private IP — this is expected in dev but should be avoided in production",
+			"url", base, "error", err)
+	}
+
 	timeout := 30 * time.Second
 	if t := os.Getenv("DATA_SERVICE_TIMEOUT"); t != "" {
 		if sec, err := strconv.Atoi(t); err == nil && sec > 0 {
@@ -44,6 +53,102 @@ func New() *Client {
 			Timeout: timeout,
 		},
 	}
+}
+// ── SSRF Protection ──
+
+var (
+	// privateCIDRs contains IP ranges that should never be accessed by the client
+	// to prevent Server-Side Request Forgery (SSRF) attacks.
+	privateCIDRs []*net.IPNet
+
+	// errPrivateIP is returned when a target URL resolves to a private IP.
+	errPrivateIP = errors.New("target URL resolves to a private IP range (possible SSRF)")
+)
+
+func init() {
+	ranges := []string{
+		"127.0.0.0/8",    // loopback
+		"10.0.0.0/8",     // private (RFC 1918)
+		"172.16.0.0/12",  // private (RFC 1918)
+		"192.168.0.0/16", // private (RFC 1918)
+		"169.254.0.0/16", // link-local (RFC 3927) — includes 169.254.169.254 cloud metadata
+		"100.64.0.0/10",  // CGNAT (RFC 6598)
+		"0.0.0.0/8",      // current network (RFC 1122)
+		"::1/128",        // IPv6 loopback
+		"fc00::/7",       // IPv6 unique local (RFC 4193)
+	}
+
+	for _, r := range ranges {
+		_, cidr, err := net.ParseCIDR(r)
+		if err == nil {
+			privateCIDRs = append(privateCIDRs, cidr)
+		}
+	}
+}
+
+// isPrivateIP checks if an IP address falls into a known private/reserved range.
+func isPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	for _, cidr := range privateCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateURL checks that a URL does not point to a private or restricted IP range.
+// It resolves hostnames to IPs and rejects any URL that resolves to a private range.
+// This is a basic SSRF prevention mechanism.
+func ValidateURL(targetURL string) error {
+	if targetURL == "" {
+		return errors.New("URL is empty")
+	}
+
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	if parsed.Scheme == "" {
+		return errors.New("URL missing scheme")
+	}
+
+	if parsed.Host == "" {
+		return errors.New("URL missing host")
+	}
+
+	host := parsed.Hostname()
+
+	// Strip port and parse as IP directly
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if isPrivateIP(ip) {
+			return errPrivateIP
+		}
+		return nil
+	}
+
+	// Hostname: resolve to IPs and check each one
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		// If DNS resolution fails, we allow the request through (fail open).
+		// Fail-closed would break legitimate requests when DNS is temporarily
+		// unavailable. The SSRF risk window is limited: an attacker would need
+		// to control DNS at the exact moment of resolution.
+		return nil
+	}
+
+	for _, ipStr := range ips {
+		ip = net.ParseIP(ipStr)
+		if ip != nil && isPrivateIP(ip) {
+			return fmt.Errorf("hostname %q resolves to private IP %s: %w", host, ipStr, errPrivateIP)
+		}
+	}
+
+	return nil
 }
 
 func (c *Client) BaseURL() string {

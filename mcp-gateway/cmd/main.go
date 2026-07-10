@@ -275,6 +275,39 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 	return composite, nil
 }
 
+// authMiddleware проверяет Authorization: Bearer <token> на всех маршрутах,
+// кроме /health. Если переменная окружения MCP_API_KEY не установлена,
+// middleware пропускает все запросы (backward compat).
+func authMiddleware(next http.Handler) http.Handler {
+	apiKey := os.Getenv("MCP_API_KEY")
+	if apiKey == "" {
+		// No auth configured — skip entirely
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Health endpoint is excluded from auth
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized", "message": "Missing or invalid Authorization header"})
+			return
+		}
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if token != apiKey {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized", "message": "Invalid API key"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func buildRouter() *chi.Mux {
 	sessions := &sync.Map{}
 	r := chi.NewRouter()
@@ -283,6 +316,10 @@ func buildRouter() *chi.Mux {
 	// bad request can't take down the process, and so we get a proper
 	// stack trace in the logs instead of a silently dropped connection.
 	r.Use(chimiddleware.Recoverer)
+
+	// Auth middleware — check Authorization: Bearer <token> on all routes
+	// except /health. If MCP_API_KEY env is empty, auth is skipped.
+	r.Use(authMiddleware)
 
 	// Global request logger to debug routing issues
 	r.Use(func(next http.Handler) http.Handler {
@@ -303,10 +340,16 @@ func buildRouter() *chi.Mux {
 	r.Get("/sse", sseHandler(sessions))
 	r.Get("/", sseHandler(sessions))
 	mcpPost := mcpPostHandler(sessions)
-	r.Post("/mcp/message", mcpPost)
-	r.Post("/mcp", mcpPost)
-	r.Post("/message", mcpPost)
-	r.Post("/", mcpPost)
+
+	// POST (MCP JSON-RPC message) endpoints have rate limiting applied
+	r.Group(func(r chi.Router) {
+		r.Use(mcpRateLimitMiddleware())
+		r.Post("/mcp/message", mcpPost)
+		r.Post("/mcp", mcpPost)
+		r.Post("/message", mcpPost)
+		r.Post("/", mcpPost)
+	})
+
 	r.Get("/mcp/manifest", manifestProxyHandler)
 	return r
 }

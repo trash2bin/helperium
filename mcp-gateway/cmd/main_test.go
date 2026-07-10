@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -447,6 +448,85 @@ func TestMCPMessageEndpoint_WithSessionID(t *testing.T) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// Auth middleware tests
+// ═══════════════════════════════════════════════���════════════════
+
+func TestAuthMiddleware_HealthEndpointExcluded(t *testing.T) {
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+	defer os.Unsetenv("MCP_API_KEY")
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /health without token = %d, want 200", rec.Code)
+	}
+}
+
+func TestAuthMiddleware_CorrectToken_Returns200(t *testing.T) {
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+	defer os.Unsetenv("MCP_API_KEY")
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	req.Header.Set("Authorization", "Bearer test-secret-123")
+	req.Header.Set("X-Tenant-ID", "tenant-a")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code == http.StatusUnauthorized {
+		t.Fatal("correct token got 401, want non-401")
+	}
+}
+
+func TestAuthMiddleware_WrongToken_Returns401(t *testing.T) {
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+	defer os.Unsetenv("MCP_API_KEY")
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("wrong token = %d, want 401", rec.Code)
+	}
+}
+
+func TestAuthMiddleware_NoKeyEnv_SkipsAuth(t *testing.T) {
+	os.Unsetenv("MCP_API_KEY")
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-a")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	// Without MCP_API_KEY, auth is skipped — should get 200 (config generates response)
+	if rec.Code == http.StatusUnauthorized {
+		t.Fatal("auth bypass with empty MCP_API_KEY got 401, want non-401")
+	}
+}
+
+func TestAuthMiddleware_InvalidAuthScheme_Returns401(t *testing.T) {
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+	defer os.Unsetenv("MCP_API_KEY")
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	req.Header.Set("Authorization", "Basic dGVzdDp0ZXN0")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("Basic auth = %d, want 401", rec.Code)
+	}
+}
+
+// ════════════════════════════════════════════════════════════════
 // Helper function tests
 // ════════════════════════════════════════════════════════════════
 
@@ -506,6 +586,151 @@ func TestConcurrentRequests(t *testing.T) {
 	}
 	for i := 0; i < 20; i++ {
 		<-done
+	}
+}
+
+// ════════════════════════════════════════════════════════════════
+// Rate limiting tests (TDD: failing tests first)
+// ════════════════════════════════════════════════════════════════
+
+func TestRateLimit_AllowsUpToBurst(t *testing.T) {
+	// Use a high RPS but small burst so tests are fast
+	rl := newRateLimiter(1000, 10) // 1000 rps, burst 10
+
+	// First 10 requests should succeed (burst capacity)
+	for i := 0; i < 10; i++ {
+		if !rl.Allow("192.168.1.1") {
+			t.Fatalf("request %d should be allowed (within burst)", i+1)
+		}
+	}
+}
+
+func TestRateLimit_BurstBlocksExcess(t *testing.T) {
+	rps := 1000
+	burst := 5
+	rl := newRateLimiter(rps, burst)
+
+	// Use burst requests
+	for i := 0; i < burst; i++ {
+		if !rl.Allow("192.168.1.1") {
+			t.Fatalf("request %d should be allowed", i+1)
+		}
+	}
+
+	// Next request should be blocked (no time elapsed)
+	if rl.Allow("192.168.1.1") {
+		t.Error("request should be blocked after burst exhausted")
+	}
+}
+
+func TestRateLimit_PerIPIsolation(t *testing.T) {
+	rl := newRateLimiter(1000, 5)
+
+	// Exhaust burst for IP A
+	for i := 0; i < 5; i++ {
+		rl.Allow("10.0.0.1")
+	}
+
+	// IP B should still have its own burst
+	for i := 0; i < 5; i++ {
+		if !rl.Allow("10.0.0.2") {
+			t.Fatalf("IP B request %d should be allowed (separate bucket)", i+1)
+		}
+	}
+
+	// IP A should be blocked
+	if rl.Allow("10.0.0.1") {
+		t.Error("IP A should still be blocked")
+	}
+}
+
+func TestRateLimit_ReplenishesTokensOverTime(t *testing.T) {
+	// Set RPS to 10, burst 2 — tokens replenish at ~1 per 100ms
+	rl := newRateLimiter(10, 2)
+
+	// Use burst
+	for i := 0; i < 2; i++ {
+		rl.Allow("10.0.0.1")
+	}
+
+	// Should be blocked
+	if rl.Allow("10.0.0.1") {
+		t.Fatal("should be blocked right after burst")
+	}
+
+	// Advance time by 200ms — should have ~2 new tokens
+	rl.advanceTime("10.0.0.1", 200*time.Millisecond)
+
+	if !rl.Allow("10.0.0.1") {
+		t.Error("should have replenished after 200ms")
+	}
+}
+
+func TestRateLimitMiddleware_EnforcesOnPOST(t *testing.T) {
+	// Override rate limit to very low for test
+	t.Setenv("MCP_RATE_LIMIT_RPS", "100")
+	t.Setenv("MCP_RATE_LIMIT_BURST", "3")
+
+	prevClient := globalClient
+	defer func() { globalClient = prevClient }()
+
+	ds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(defaultTestConfig()))
+	}))
+	defer ds.Close()
+	t.Setenv("DATA_SERVICE_URL", ds.URL)
+	globalClient = httpclient.New()
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	msg := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "1",
+		"method":  "tools/list",
+		"params":  map[string]any{},
+	}
+	bodyBytes, _ := json.Marshal(msg)
+
+	sendPost := func() int {
+		body := bytes.NewReader(bodyBytes)
+		req := httptest.NewRequest("POST", "/mcp/message", body)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Tenant-ID", "default")
+		req.RemoteAddr = "10.0.0.99:54321"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// First 3 should succeed (burst)
+	for i := 0; i < 3; i++ {
+		if code := sendPost(); code == http.StatusTooManyRequests {
+			t.Fatalf("POST %d should be allowed, got 429", i+1)
+		}
+	}
+
+	// 4th should be rate limited
+	code := sendPost()
+	if code != http.StatusTooManyRequests {
+		t.Errorf("expected 429 after burst, got %d", code)
+	}
+}
+
+func TestRateLimitMiddleware_DoesNotBlockHealth(t *testing.T) {
+	t.Setenv("MCP_RATE_LIMIT_RPS", "1")
+	t.Setenv("MCP_RATE_LIMIT_BURST", "1")
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	// Health should always work regardless of rate limit
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest("GET", "/health", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /health iteration %d = %d, want 200 (health should not be rate limited)", i+1, rec.Code)
+		}
 	}
 }
 
