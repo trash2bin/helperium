@@ -1,11 +1,15 @@
 package tools
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // ════════════════════════════════════════════════════════════════
@@ -531,6 +535,132 @@ func TestValidateArgs_AcceptsZeroLimit(t *testing.T) {
 // ════════════════════════════════════════════════════════════════
 // truncateResult tests
 // ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════��═══════
+// Tool Call Audit Logging Tests
+// ══════════════════════════════════════���═════════════════════��═══
+
+func makeCallToolRequest(name string, args map[string]any) mcp.CallToolRequest {
+	return mcp.CallToolRequest{
+		Params: struct {
+			Name      string                 `json:"name"`
+			Arguments map[string]interface{} `json:"arguments,omitempty"`
+			Meta      *struct {
+				ProgressToken mcp.ProgressToken `json:"progressToken,omitempty"`
+			} `json:"_meta,omitempty"`
+		}{
+			Name:      name,
+			Arguments: args,
+		},
+	}
+}
+
+func TestToolCallAuditLogsToolName(t *testing.T) {
+	var buf bytes.Buffer
+	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(h))
+
+	handler := MakeAuditHandler("test_tool", "tenant-a", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	result, err := handler(context.Background(), makeCallToolRequest("test_tool", map[string]any{"id": "123"}))
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "test_tool") {
+		t.Errorf("log output should contain tool name, got: %s", output)
+	}
+	if !strings.Contains(output, "tenant-a") {
+		t.Errorf("log output should contain tenant ID, got: %s", output)
+	}
+}
+
+func TestToolCallAuditLogsDuration(t *testing.T) {
+	var buf bytes.Buffer
+	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(h))
+
+	handler := MakeAuditHandler("slow_tool", "t1", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("done"), nil
+	})
+
+	_, err := handler(context.Background(), makeCallToolRequest("slow_tool", nil))
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "duration_ms") && !strings.Contains(output, "duration") {
+		t.Errorf("log output should contain duration, got: %s", output)
+	}
+}
+
+func TestToolCallAuditLogsError(t *testing.T) {
+	var buf bytes.Buffer
+	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(h))
+
+	handler := MakeAuditHandler("fail_tool", "t1", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return nil, fmt.Errorf("something broke")
+	})
+
+	_, err := handler(context.Background(), makeCallToolRequest("fail_tool", nil))
+	if err == nil {
+		t.Fatal("expected error but got nil")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "something broke") {
+		t.Errorf("log output should contain error message, got: %s", output)
+	}
+}
+
+func TestToolCallAuditLogsArgsTruncated(t *testing.T) {
+	var buf bytes.Buffer
+	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(h))
+
+	longValue := strings.Repeat("A", 500)
+	handler := MakeAuditHandler("long_tool", "t1", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	_, err := handler(context.Background(), makeCallToolRequest("long_tool", map[string]any{"query": longValue}))
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "AAA") {
+		t.Errorf("log output should contain args, got: %s", output)
+	}
+}
+
+func TestToolCallAuditLogsResultSize(t *testing.T) {
+	var buf bytes.Buffer
+	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(h))
+
+	handler := MakeAuditHandler("big_tool", "t1", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(strings.Repeat("X", 1000)), nil
+	})
+
+	_, err := handler(context.Background(), makeCallToolRequest("big_tool", nil))
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "result_size") && !strings.Contains(output, "size") {
+		t.Errorf("log output should mention result size, got: %s", output)
+	}
+}
 
 func TestTruncateResult_ShortString(t *testing.T) {
 	result := "short"

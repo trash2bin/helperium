@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
 	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
@@ -159,7 +160,7 @@ func (r *Registry) registerRagTools(mcpServer *server.MCPServer) {
 		mcp.WithString("discipline_id", mcp.Description("ID дисциплины для фильтрации (опционально)")),
 		mcp.WithNumber("limit", mcp.Description("Максимум результатов (1-20, по умолчанию 5)")),
 	)
-	mcpServer.AddTool(searchTool, r.makeRagHandler("search"))
+	mcpServer.AddTool(searchTool, MakeAuditHandler("search_documents", r.tenantID, r.makeRagHandler("search")))
 
 	// list_documents — список документов в RAG
 	listTool := mcp.NewTool(
@@ -167,7 +168,7 @@ func (r *Registry) registerRagTools(mcpServer *server.MCPServer) {
 		mcp.WithDescription("Список документов, загруженных в базу знаний (лекции, методички, учебные материалы). Можно фильтровать по дисциплине."),
 		mcp.WithString("discipline_id", mcp.Description("ID дисциплины для фильтрации (опционально)")),
 	)
-	mcpServer.AddTool(listTool, r.makeRagHandler("list"))
+	mcpServer.AddTool(listTool, MakeAuditHandler("list_documents", r.tenantID, r.makeRagHandler("list")))
 
 	// get_rag_context — готовый контекст для LLM
 	contextTool := mcp.NewTool(
@@ -177,7 +178,7 @@ func (r *Registry) registerRagTools(mcpServer *server.MCPServer) {
 		mcp.WithString("discipline_id", mcp.Description("ID дисциплины для фильтрации (опционально)")),
 		mcp.WithNumber("limit", mcp.Description("Максимум фрагментов (1-20, по умолчанию 5)")),
 	)
-	mcpServer.AddTool(contextTool, r.makeRagHandler("context"))
+	mcpServer.AddTool(contextTool, MakeAuditHandler("get_rag_context", r.tenantID, r.makeRagHandler("context")))
 }
 
 // makeRagHandler creates a handler that delegates to RAG service via HTTP.
@@ -285,7 +286,9 @@ func registerOne(mcpServer *server.MCPServer, td toolDef, client *httpclient.Cli
 	}
 
 	tool := mcp.NewTool(name, opts...)
-	mcpServer.AddTool(tool, makeHandler(td, client, tenantID))
+	handler := makeHandler(td, client, tenantID)
+	// Wrap with audit logging for every tool call
+	mcpServer.AddTool(tool, MakeAuditHandler(name, tenantID, handler))
 }
 
 // makeHandler creates a handler that delegates to data-service via HTTP.
@@ -656,6 +659,74 @@ func truncateResult(s string, maxLen int) string {
 	truncated := s[:maxLen]
 	truncated += fmt.Sprintf("\n\n[Truncated: result was too large; showing first %d of %d characters]", maxLen, len(s))
 	return truncated
+}
+
+// ── Audit Logging ──
+
+// MakeAuditHandler wraps a ToolHandlerFunc with structured audit logging.
+// Every tool call is logged with: tool name, tenant ID, truncated args,
+// duration (ms), result size, and error (if any).
+// Args are truncated to prevent PII leaks in logs:
+// - each value is truncated to 200 chars
+// - total serialised args string is truncated to 500 chars
+func MakeAuditHandler(toolName, tenantID string, inner server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		start := time.Now()
+
+		result, err := inner(ctx, request)
+
+		elapsed := time.Since(start)
+		argsStr := truncateArgs(request.Params.Arguments)
+		resultSize := 0
+		if result != nil {
+			for _, c := range result.Content {
+				switch v := c.(type) {
+				case mcp.TextContent:
+					resultSize += len(v.Text)
+				}
+			}
+		}
+
+		attrs := []slog.Attr{
+			slog.String("tool", toolName),
+			slog.String("tenant", tenantID),
+			slog.String("args", argsStr),
+			slog.Int64("duration_ms", elapsed.Milliseconds()),
+			slog.Int("result_size", resultSize),
+		}
+
+		if err != nil {
+			attrs = append(attrs, slog.String("error", err.Error()))
+			slog.LogAttrs(ctx, slog.LevelWarn, "tool_call", attrs...)
+		} else {
+			slog.LogAttrs(ctx, slog.LevelInfo, "tool_call", attrs...)
+		}
+
+		return result, err
+	}
+}
+
+// truncateArgs serialises args to a short string for audit logging.
+// Truncation strategy:
+//   - each value is truncated to 200 chars
+//   - total string is truncated to 500 chars
+func truncateArgs(args map[string]any) string {
+	if len(args) == 0 {
+		return "{}"
+	}
+	var parts []string
+	for k, v := range args {
+		s := fmt.Sprintf("%v", v)
+		if len(s) > 200 {
+			s = s[:200] + "..."
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", k, s))
+	}
+	result := strings.Join(parts, ", ")
+	if len(result) > 500 {
+		result = result[:500] + "..."
+	}
+	return result
 }
 
 // extractPathParams extracts {param_name} from URL path patterns.

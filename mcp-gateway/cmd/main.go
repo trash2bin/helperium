@@ -424,12 +424,27 @@ func sseHandler(sessions *sync.Map) http.HandlerFunc {
 	}
 }
 
+// jsonRPCMessage is a minimal parse target for logging the method name.
+type jsonRPCMessage struct {
+	Method string `json:"method"`
+}
+
 func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
 		var rawMessage json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&rawMessage); err != nil {
 			writeJSONRPCError(w, nil, 400, "Parse error")
 			return
+		}
+
+		// Extract method name for audit logging (best-effort, ignore parse errors)
+		var msgMeta jsonRPCMessage
+		_ = json.Unmarshal(rawMessage, &msgMeta)
+		rpcMethod := msgMeta.Method
+		if rpcMethod == "" {
+			rpcMethod = "unknown"
 		}
 
 		sessionID := r.URL.Query().Get("sessionId")
@@ -492,16 +507,33 @@ func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
 				eventData, _ := json.Marshal(response)
 				session.writeMessage(eventData)
 				w.WriteHeader(http.StatusAccepted)
+				slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
+					slog.String("method", rpcMethod),
+					slog.String("session_id", sessionID),
+					slog.Any("tenant_ids", tenantIDs),
+					slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+				)
 				return
 			}
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(response)
+			slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
+				slog.String("method", rpcMethod),
+				slog.Any("tenant_ids", tenantIDs),
+				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+			)
 			return
 		}
 
 		w.WriteHeader(http.StatusAccepted)
+		slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
+			slog.String("method", rpcMethod),
+			slog.String("session_id", sessionID),
+			slog.Any("tenant_ids", tenantIDs),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)
 	}
 }
 
