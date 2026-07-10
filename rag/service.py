@@ -76,7 +76,7 @@ state = ServiceState()
 app = FastAPI(
     title="RAG Service",
     description="HTTP API for RAG pipeline (indexing and semantic search)",
-    version="0.1.0",
+    version="1.1.0",
     swagger_ui_parameters={"tryItOutEnabled": True},
 )
 

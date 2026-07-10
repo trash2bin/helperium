@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard — Agent Tutor</title>
+  <script src="/i18n.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <link rel="stylesheet" href="/styles.css">
   <style>
@@ -231,10 +232,10 @@
       </div>
       <form @submit.prevent="login()">
         <div class="form-group">
-          <label>ADMIN_TOKEN</label>
-          <input type="password" x-model="tokenInput" placeholder="Введите токен доступа" autofocus>
+          <label x-text="__('login.tokenLabel')"></label>
+          <input type="password" x-model="tokenInput" :placeholder="__('login.tokenPlaceholder')" autofocus>
         </div>
-        <button type="submit" class="btn-primary">Войти</button>
+        <button type="submit" class="btn-primary" x-text="__('btn.login')"></button>
         <div x-show="error" class="login-error" x-text="error"></div>
       </form>
     </div>
@@ -245,35 +246,43 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <h1>⚙️ Admin</h1>
+        <h1 x-text="__('nav.admin')"></h1>
       </div>
       <nav class="sidebar-nav">
         <a href="#" @click.prevent="page='dashboard'; refreshDashboard(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='dashboard'}">
-          📊 Дашборд
+          <span x-text="__('nav.dashboard')"></span>
         </a>
         <a href="#" @click.prevent="page='tenants'; loadTenants(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tenants'}">
-          🏪 Тенанты
+          <span x-text="__('nav.tenants')"></span>
         </a>
         <a href="#" @click.prevent="page='config'; refreshConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='config'}" x-show="selectedTenant">
-          ⚙️ Конфиг
+          <span x-text="__('nav.config')"></span>
         </a>
         <a href="#" @click.prevent="page='tools'; refreshPendingTools(); loadManifest(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tools'}" x-show="selectedTenant">
-          🛠️ Тулы
+          <span x-text="__('nav.tools')"></span>
         </a>
         <a href="#" @click.prevent="page='rag'; refreshRag(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='rag'}">
-          📄 RAG
+          <span x-text="__('nav.rag')"></span>
         </a>
         <a href="#" @click.prevent="page='agents'; loadAgents(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='agents'}">
-          🤖 Агенты
+          <span x-text="__('nav.agents')"></span>
         </a>
         <a href="#" @click.prevent="page='abuse'; loadAbuseSettings(); loadAgents(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='abuse'}">
-          🛡️ Anti-Abuse
+          <span x-text="__('nav.abuse')"></span>
         </a>
       </nav>
       <div class="sidebar-footer">
-        <span class="version">v0.1.0</span>
-        <small x-text="`DS: ${dataService}`"></small>
-        <a href="#" @click.prevent="logout()" style="font-size:11px;color:#8b949e;text-decoration:none;">🚪 Выйти</a>
+        <span class="version" x-text="__('sidebar.version')">v0.1.0</span>
+        <small x-text="`${__('sidebar.ds')} ${dataService}`"></small>
+        <div class="lang-switcher" style="margin-top:6px;display:flex;gap:4px;">
+          <button @click="$store.i18n.setLocale('ru'); window.location.reload()"
+                  :class="{active: $store.i18n.locale === 'ru'}"
+                  style="padding:2px 8px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-size:11px;">🇷🇺 RU</button>
+          <button @click="$store.i18n.setLocale('en'); window.location.reload()"
+                  :class="{active: $store.i18n.locale === 'en'}"
+                  style="padding:2px 8px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-size:11px;">🇬🇧 EN</button>
+        </div>
+        <a href="#" @click.prevent="logout()" style="font-size:11px;color:#8b949e;text-decoration:none;" x-text="__('nav.logout')"></a>
       </div>
     </aside>
 
@@ -282,7 +291,7 @@
       <!-- Loading -->
       <div x-show="loading" class="loading">
         <div class="spinner"></div>
-        <span>Загрузка...</span>
+        <span x-text="__('text.loading')"></span>
       </div>
 
       <!-- Error -->
@@ -292,20 +301,20 @@
       <div x-show="page === 'dashboard'" x-cloak>
         <div class="page-header">
           <div class="page-header-left">
-            <h2>📊 Дашборд</h2>
+            <h2 x-text="__('page.dashboard.title')"></h2>
           </div>
           <div class="page-header-right">
-            <button @click="refreshDashboard()" class="btn btn-sm">🔄</button>
+            <button @click="refreshDashboard()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
           </div>
         </div>
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-value" x-text="dashboard.tenant_count ?? '—'"></div>
-            <div class="stat-label">Тенанты</div>
+            <div class="stat-label" x-text="__('stat.tenants')"></div>
           </div>
           <div class="stat-card">
             <div class="stat-value" style="font-size:16px;word-break:break-all;" x-text="dashboard.data_service ?? '—'"></div>
-            <div class="stat-label">Data Service</div>
+            <div class="stat-label" x-text="__('stat.dataService')"></div>
           </div>
           <div class="stat-card">
             <div class="stat-value">
@@ -313,17 +322,17 @@
               <span x-show="dashboard.status !== 'ok' && dashboard.status" style="color:#f85149;">✗</span>
               <span x-show="!dashboard.status" style="color:#8b949e;">—</span>
             </div>
-            <div class="stat-label">Статус</div>
+            <div class="stat-label" x-text="__('stat.status')"></div>
           </div>
         </div>
         <div class="card" x-show="dashboard.tenants && dashboard.tenants.length">
-          <h3>Тенанты</h3>
+          <h3 x-text="__('label.tenants')"></h3>
           <table class="table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Статус</th>
-                <th>Действия</th>
+                <th x-text="__('label.id')"></th>
+                <th x-text="__('label.status')"></th>
+                <th x-text="__('label.actions')"></th>
               </tr>
             </thead>
             <tbody>
@@ -332,7 +341,7 @@
                   <td x-text="t.id"></td>
                   <td><span class="badge badge-green" x-text="t.status || 'active'"></span></td>
                   <td>
-                    <button @click="selectTenant(t.id)" class="btn btn-sm">Открыть</button>
+                    <button @click="selectTenant(t.id)" class="btn btn-sm" x-text="__('btn.open')"></button>
                   </td>
                 </tr>
               </template>
@@ -345,39 +354,38 @@
       <div x-show="page === 'tenants'" x-cloak>
         <div class="page-header">
           <div class="page-header-left">
-            <h2>🏪 Тенанты</h2>
+            <h2 x-text="__('page.tenants.title')"></h2>
           </div>
           <div class="page-header-right">
-            <button @click="showNewTenantForm = !showNewTenantForm" class="btn">+ Новый тенант</button>
+            <button @click="showNewTenantForm = !showNewTenantForm" class="btn" x-text="__('tenant.btnNew')"></button>
           </div>
         </div>
 
         <!-- New Tenant Form -->
         <div x-show="showNewTenantForm" class="card" x-cloak>
-          <h3>Подключить базу данных</h3>
+          <h3 x-text="__('tenant.formTitle')"></h3>
           <form @submit.prevent="createTenantWithUpload()" class="form">
             <div class="form-group">
-              <label>Название тенанта</label>
-              <input type="text" x-model="newTenant.tenant_id" placeholder="my-client" required>
+              <label x-text="__('tenant.labelId')"></label>
+              <input type="text" x-model="newTenant.tenant_id" :placeholder="__('tenant.placeholderId')" required>
             </div>
             <div class="form-group">
-              <label>Тип БД</label>
+              <label x-text="__('tenant.labelDriver')"></label>
               <select x-model="newTenant.driver" @change="newTenantUploadFile = null; newTenant.dsn = ''">
-                <option value="sqlite3">SQLite — загрузить файл</option>
-                <option value="postgres">PostgreSQL — подключение по URL</option>
+                <option value="sqlite3" x-text="__('tenant.driverSqlite')"></option>
+                <option value="postgres" x-text="__('tenant.driverPostgres')"></option>
               </select>
             </div>
 
             <!-- SQLite: загрузка файла -->
             <div x-show="newTenant.driver === 'sqlite3'" x-cloak>
-              <!-- Label wrapping the upload zone — natively triggers file input on click (no JS needed) -->
               <label class="upload-zone" for="tenantFileInput"
                 @dragover.prevent="$el.classList.add('dragover')"
                 @dragleave.prevent="$el.classList.remove('dragover')">
                 <div x-show="!newTenantUploadFile">
                   <div style="font-size:32px;margin-bottom:8px;">🗄️</div>
-                  <div style="font-weight:600;">Перетащите SQLite файл (.db) или кликните для выбора</div>
-                  <div style="font-size:11px;color:#8b949e;margin-top:4px;">Файл будет загружен и подключён как база данных тенанта</div>
+                  <div style="font-weight:600;" x-text="__('tenant.uploadZone')"></div>
+                  <div style="font-size:11px;color:#8b949e;margin-top:4px;" x-text="__('tenant.uploadDesc')"></div>
                 </div>
                 <div x-show="newTenantUploadFile" style="display:flex;align-items:center;gap:10px;">
                   <div style="font-size:24px;">📄</div>
@@ -396,11 +404,11 @@
             <!-- PostgreSQL: DSN -->
             <div x-show="newTenant.driver === 'postgres'" x-cloak>
               <div class="form-group">
-                <label>DSN (URL подключения)</label>
+                <label x-text="__('tenant.labelDsn')"></label>
                 <input type="text" x-model="newTenant.dsn"
-                  placeholder="postgres://user:pass@host:5432/dbname?sslmode=disable">
-                <small class="text-muted" style="font-size:11px;margin-top:2px;">
-                  Формат: <code>postgres://user:password@host:port/dbname?sslmode=disable</code>
+                  :placeholder="__('tenant.placeholderDsn')">
+                <small class="text-muted" style="font-size:11px;margin-top:2px;" x-text="__('tenant.dsnFormat') + ': '">
+                  <code>postgres://user:password@host:port/dbname?sslmode=disable</code>
                 </small>
               </div>
             </div>
@@ -408,9 +416,9 @@
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" :disabled="creating || (newTenant.driver === 'sqlite3' && !newTenantUploadFile)">
                 <span x-show="creating">⏳</span>
-                <span x-show="!creating">Создать</span>
+                <span x-show="!creating" x-text="__('btn.create')"></span>
               </button>
-              <button type="button" @click="showNewTenantForm = false" class="btn">Отмена</button>
+              <button type="button" @click="showNewTenantForm = false" class="btn" x-text="__('btn.cancel')"></button>
             </div>
           </form>
           <div x-show="createResult" class="mt-1">
@@ -423,9 +431,9 @@
           <table class="table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Статус</th>
-                <th>Действия</th>
+                <th x-text="__('label.id')"></th>
+                <th x-text="__('label.status')"></th>
+                <th x-text="__('label.actions')"></th>
               </tr>
             </thead>
             <tbody>
@@ -434,7 +442,7 @@
                   <td x-text="t.id"></td>
                   <td><span class="badge badge-green" x-text="t.status || 'active'"></span></td>
                   <td class="actions">
-                    <button @click="selectTenant(t.id)" class="btn btn-sm">⚙️ Конфиг</button>
+                    <button @click="selectTenant(t.id)" class="btn btn-sm" x-text="__('btn.config')"></button>
                     <button @click="deleteTenant(t.id)" class="btn btn-sm btn-danger">🗑️</button>
                   </td>
                 </tr>
@@ -448,23 +456,21 @@
       <div x-show="page === 'config'" x-cloak>
         <div class="page-header">
           <div class="page-header-left">
-            <h2>⚙️ Конфиг: <span class="highlight" x-text="selectedTenant"></span></h2>
+            <h2><span x-text="__('page.config.title')"></span>: <span class="highlight" x-text="selectedTenant"></span></h2>
           </div>
           <div class="page-header-right">
-            <button @click="refreshConfig()" class="btn btn-sm">🔄</button>
+            <button @click="refreshConfig()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
             <button @click="saveConfig()" class="btn btn-primary btn-sm" :disabled="saving">
               <span x-show="saving">⏳</span>
-              <span x-show="!saving">💾 Сохранить</span>
+              <span x-show="!saving" x-text="__('btn.save')"></span>
             </button>
-            <button @click="introspectTenant()" class="btn btn-sm" :disabled="introspecting">
-              🔍 Пересканировать
-            </button>
+            <button @click="introspectTenant()" class="btn btn-sm" :disabled="introspecting" x-text="__('btn.introspect')"></button>
           </div>
         </div>
 
         <!-- Read Only Toggle with save indicator -->
         <div class="card">
-          <h3>Режим доступа</h3>
+          <h3 x-text="__('config.accessMode')"></h3>
           <div class="toggle-with-label">
             <label class="toggle">
               <input type="checkbox"
@@ -473,9 +479,9 @@
               <span></span>
             </label>
             <div>
-              <span class="text" x-text="config.data_source?.read_only !== false ? '🔒 Read-only' : '✏️ Read-write'"></span>
-              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only !== false">Write-тулы заблокированы — нужны подтверждение или отключение read-only</span>
-              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only === false">Все тулы активны, включая write-операции</span>
+              <span class="text" x-text="config.data_source?.read_only !== false ? __('config.readOnly') : __('config.readWrite')"></span>
+              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only !== false" x-text="__('config.readOnlyDesc')"></span>
+              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only === false" x-text="__('config.readWriteDesc')"></span>
             </div>
             <span class="save-indicator" x-show="saveIndicator === 'readonly'" x-text="saveIndicatorText" x-transition.opacity.duration.200ms></span>
           </div>
@@ -483,7 +489,7 @@
 
         <!-- Entities -->
         <div class="card" x-show="config.entities && config.entities.length">
-          <h3>Сущности (Entities)</h3>
+          <h3 x-text="__('config.entities')"></h3>
           <template x-for="(entity, i) in config.entities" :key="entity.name">
             <div class="entity-block">
               <div class="entity-header">
@@ -511,15 +517,15 @@
 
         <!-- Endpoints / Tools -->
         <div class="card" x-show="config.endpoints && config.endpoints.length">
-          <h3>Эндпоинты (Tools)</h3>
+          <h3 x-text="__('config.endpoints')"></h3>
           <table class="table">
             <thead>
               <tr>
-                <th>Метод</th>
-                <th>Путь</th>
-                <th>Операция</th>
-                <th>Описание</th>
-                <th>Вкл/Выкл</th>
+                <th x-text="__('label.method')"></th>
+                <th x-text="__('label.path')"></th>
+                <th x-text="__('label.operation')"></th>
+                <th x-text="__('label.description')"></th>
+                <th x-text="__('label.enabled')"></th>
               </tr>
             </thead>
             <tbody>
@@ -529,7 +535,7 @@
                   <td x-text="ep.path"></td>
                   <td x-text="ep.op || ''"></td>
                   <td>
-                    <input type="text" x-model="ep.description" class="input-sm" placeholder="Описание..." @input="configDirty = true">
+                    <input type="text" x-model="ep.description" class="input-sm" :placeholder="__('placeholder.description')" @input="configDirty = true">
                   </td>
                   <td>
                     <label class="toggle toggle-sm">
@@ -550,28 +556,28 @@
       <div x-show="page === 'tools'" x-cloak>
         <div class="page-header">
           <div class="page-header-left">
-            <h2>🛠️ Тулы: <span class="highlight" x-text="selectedTenant"></span></h2>
+            <h2><span x-text="__('page.tools.title')"></span>: <span class="highlight" x-text="selectedTenant"></span></h2>
           </div>
           <div class="page-header-right">
-            <button @click="loadManifest(); refreshPendingTools()" class="btn btn-sm">🔄</button>
+            <button @click="loadManifest(); refreshPendingTools()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
           </div>
         </div>
 
         <div x-show="!manifest && !pendingTools" class="card">
-          <p>Выберите тенант, чтобы увидеть его тулы.</p>
+          <p x-text="__('tool.noTenantSelected')"></p>
         </div>
 
         <!-- All tools from manifest -->
         <div x-show="manifest && manifest.mcp_tools && manifest.mcp_tools.length" class="card" x-cloak>
-          <h3>📋 MCP-инструменты (<span x-text="manifest.mcp_tools.length"></span>)</h3>
+          <h3><span x-text="__('tool.mcpTools')"></span> (<span x-text="manifest.mcp_tools.length"></span>)</h3>
           <table class="table">
             <thead>
               <tr>
-                <th>Название</th>
-                <th>Метод</th>
-                <th>Эндпоинт</th>
-                <th>Описание</th>
-                <th>Параметры</th>
+                <th x-text="__('label.name')"></th>
+                <th x-text="__('label.method')"></th>
+                <th x-text="__('label.path')"></th>
+                <th x-text="__('label.description')"></th>
+                <th x-text="__('label.params')"></th>
               </tr>
             </thead>
             <tbody>
@@ -591,7 +597,7 @@
                         <span class="text-muted" x-text="':' + (p.type || 'string')"></span>
                       </span>
                     </template>
-                    <span x-show="!tool.params?.length" class="text-muted">нет</span>
+                    <span x-show="!tool.params?.length" class="text-muted" x-text="__('tool.noParams')"></span>
                   </td>
                 </tr>
               </template>
@@ -601,27 +607,27 @@
 
         <!-- Read-only status + pending tools -->
         <div x-show="manifest" class="card" x-cloak>
-          <h3>🔒 Режим доступа</h3>
+          <h3 x-text="__('tool.accessMode')"></h3>
           <p>
-            <span x-show="manifest.data_source?.read_only !== false" style="color:#d29922;">🔒 Read-only</span>
-            <span x-show="manifest.data_source?.read_only === false" style="color:#3fb950;">✏️ Read-write</span>
+            <span x-show="manifest.data_source?.read_only !== false" style="color:#d29922;" x-text="__('config.readOnly')"></span>
+            <span x-show="manifest.data_source?.read_only === false" style="color:#3fb950;" x-text="__('config.readWrite')"></span>
             —
-            <span x-show="pendingTools && pendingTools.mode === 'read_write'">все write-операции разрешены</span>
-            <span x-show="pendingTools && pendingTools.mode !== 'read_write'">write-тулы заблокированы, требуется подтверждение</span>
+            <span x-show="pendingTools && pendingTools.mode === 'read_write'" x-text="__('tool.allWritesAllowed')"></span>
+            <span x-show="pendingTools && pendingTools.mode !== 'read_write'" x-text="__('tool.writesBlocked')"></span>
           </p>
         </div>
 
         <!-- Pending tools (read-only mode) -->
         <div x-show="pendingTools && pendingTools.mode !== 'read_write' && pendingTools.tools && pendingTools.tools.length" class="card" x-cloak>
-          <h3>⏳ Write-тулы (ожидают подтверждения)</h3>
+          <h3 x-text="__('tool.pendingTitle')"></h3>
           <table class="table">
             <thead>
               <tr>
-                <th>Тул</th>
-                <th>Метод</th>
-                <th>Путь</th>
-                <th>Статус</th>
-                <th>Действие</th>
+                <th x-text="__('label.tool')"></th>
+                <th x-text="__('label.method')"></th>
+                <th x-text="__('label.path')"></th>
+                <th x-text="__('label.status')"></th>
+                <th x-text="__('label.action')"></th>
               </tr>
             </thead>
             <tbody>
@@ -631,14 +637,13 @@
                   <td><span class="method-badge" :class="'method-' + (tool.method || '').toLowerCase()" x-text="tool.method"></span></td>
                   <td x-text="tool.path"></td>
                   <td>
-                    <span x-show="tool.approved" class="badge badge-green">✅ Approved</span>
-                    <span x-show="!tool.approved" class="badge badge-yellow">⏳ Pending</span>
+                    <span x-show="tool.approved" class="badge badge-green" x-text="__('tool.approved')"></span>
+                    <span x-show="!tool.approved" class="badge badge-yellow" x-text="__('tool.pending')"></span>
                   </td>
                   <td>
                     <button x-show="!tool.approved"
                       @click="approveTool(tool.name)"
-                      class="btn btn-sm btn-primary">
-                      ✅ Подтвердить
+                      class="btn btn-sm btn-primary" x-text="__('btn.approve')">
                     </button>
                     <span x-show="tool.approved" style="color:#8b949e;font-size:12px;">—</span>
                   </td>
@@ -650,7 +655,7 @@
 
         <!-- No pending tools -->
         <div x-show="pendingTools && pendingTools.mode !== 'read_write' && (!pendingTools.tools || pendingTools.tools.length === 0)" class="card" x-cloak>
-          <p>Нет write-тулов, ожидающих подтверждения.</p>
+          <p x-text="__('tool.noPending')"></p>
         </div>
       </div>
 
@@ -658,10 +663,10 @@
       <div x-show="page === 'rag'" x-cloak>
         <div class="page-header">
           <div class="page-header-left">
-            <h2>📄 RAG — Управление документами</h2>
+            <h2 x-text="__('page.rag.title')"></h2>
           </div>
           <div class="page-header-right">
-            <button @click="refreshRag()" class="btn btn-sm">🔄</button>
+            <button @click="refreshRag()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
           </div>
         </div>
 
@@ -669,21 +674,21 @@
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-value" x-text="ragHealth.status || '...'"></div>
-            <div class="stat-label">Статус RAG</div>
+            <div class="stat-label" x-text="__('rag.status')"></div>
           </div>
           <div class="stat-card">
             <div class="stat-value" style="font-size:18px" x-text="ragHealth.embedding?.model || '—'"></div>
-            <div class="stat-label">Embedding модель</div>
+            <div class="stat-label" x-text="__('rag.embeddingModel')"></div>
           </div>
           <div class="stat-card">
             <div class="stat-value" x-text="ragDocsCount"></div>
-            <div class="stat-label">Документов</div>
+            <div class="stat-label" x-text="__('rag.documents')"></div>
           </div>
         </div>
 
         <!-- Import Form -->
         <div class="card">
-          <h3>📥 Импорт документа</h3>
+          <h3 x-text="__('rag.importTitle')"></h3>
           <form @submit.prevent="uploadRagDoc()" class="form">
             <div class="upload-zone"
               @dragover.prevent="$el.classList.add('dragover')"
@@ -692,8 +697,8 @@
               @click="$refs.fileInput.click()">
               <div x-show="!ragUploadFile">
                 <div style="font-size:32px;margin-bottom:8px;">📁</div>
-                <div style="font-weight:600;">Перетащите файл сюда или кликните для выбора</div>
-                <div style="font-size:11px;color:#8b949e;margin-top:4px;">PDF, DOCX, TXT, MD, HTML</div>
+                <div style="font-weight:600;" x-text="__('rag.uploadZone')"></div>
+                <div style="font-size:11px;color:#8b949e;margin-top:4px;" x-text="__('rag.fileTypes')"></div>
               </div>
               <div x-show="ragUploadFile" style="display:flex;align-items:center;gap:10px;">
                 <div style="font-size:24px;">📄</div>
@@ -707,17 +712,17 @@
                 @change="ragUploadFile = $event.target.files[0]" style="display:none">
             </div>
             <div class="form-group" style="margin-top:12px;">
-              <label>Название (опционально)</label>
-              <input type="text" x-model="ragImport.title" placeholder="Лекция 1: Введение">
+              <label x-text="__('rag.labelTitle')"></label>
+              <input type="text" x-model="ragImport.title" :placeholder="__('rag.placeholderTitle')">
             </div>
             <div class="form-group">
-              <label>Discipline ID (опционально)</label>
-              <input type="text" x-model="ragImport.discipline_id" placeholder="discipline-1">
+              <label x-text="__('rag.labelDiscipline')"></label>
+              <input type="text" x-model="ragImport.discipline_id" :placeholder="__('rag.placeholderDiscipline')">
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" :disabled="ragImporting || !ragUploadFile">
                 <span x-show="ragImporting">⏳</span>
-                <span x-show="!ragImporting">📥 Импортировать</span>
+                <span x-show="!ragImporting" x-text="__('btn.import')"></span>
               </button>
             </div>
           </form>
@@ -728,15 +733,15 @@
 
         <!-- Documents List -->
         <div class="card">
-          <h3>📋 Документы</h3>
-          <div x-show="!ragDocs.length" class="text-muted" style="padding:12px 0;">Нет документов. Импортируйте первый.</div>
+          <h3 x-text="__('rag.documentsTitle')"></h3>
+          <div x-show="!ragDocs.length" class="text-muted" style="padding:12px 0;" x-text="__('rag.noDocuments')"></div>
           <table class="table" x-show="ragDocs.length > 0">
             <thead>
               <tr>
-                <th>Название</th>
-                <th>ID</th>
-                <th>Путь</th>
-                <th>Чанков</th>
+                <th x-text="__('label.name')"></th>
+                <th x-text="__('label.id')"></th>
+                <th x-text="__('label.path')"></th>
+                <th x-text="__('rag.chunks')"></th>
                 <th></th>
               </tr>
             </thead>
@@ -761,11 +766,11 @@
       <div x-show="page === 'agents'" x-cloak>
         <div class="page-header">
           <div class="page-header-left">
-            <h2>🤖 Агенты</h2>
+            <h2 x-text="__('page.agents.title')"></h2>
           </div>
           <div class="page-header-right">
-            <button @click="openNewAgentModal()" class="btn">+ Создать агента</button>
-            <button @click="loadAgents()" class="btn btn-sm">🔄</button>
+            <button @click="openNewAgentModal()" class="btn" x-text="__('agent.btnCreate')"></button>
+            <button @click="loadAgents()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
           </div>
         </div>
 
@@ -774,10 +779,10 @@
           <table class="table">
             <thead>
               <tr>
-                <th>Имя</th>
-                <th>Описание</th>
-                <th>Tenant-ы</th>
-                <th>Действия</th>
+                <th x-text="__('label.name')"></th>
+                <th x-text="__('label.description')"></th>
+                <th x-text="__('label.tenants')"></th>
+                <th x-text="__('label.actions')"></th>
               </tr>
             </thead>
             <tbody>
@@ -794,15 +799,15 @@
                     </div>
                   </td>
                   <td class="actions">
-                    <button @click="editAgent(agent)" class="btn btn-sm" title="Редактировать">✏️</button>
-                    <button @click="deleteAgent(agent.name)" class="btn btn-sm btn-danger" title="Удалить">🗑️</button>
+                    <button @click="editAgent(agent)" class="btn btn-sm" :title="__('tooltip.edit')">✏️</button>
+                    <button @click="deleteAgent(agent.name)" class="btn btn-sm btn-danger" :title="__('tooltip.delete')">🗑️</button>
                   </td>
                 </tr>
               </template>
               <tr x-show="agents.length === 0">
                 <td colspan="4" style="text-align:center;padding:40px 20px;color:var(--text-muted);">
                   <div style="font-size:48px;margin-bottom:12px;">🤖</div>
-                  <p>Нет агентов. Создайте первого агента.</p>
+                  <p x-text="__('agent.noAgents')"></p>
                 </td>
               </tr>
             </tbody>
@@ -814,10 +819,10 @@
       <div x-show="page === 'abuse'" x-cloak>
         <div class="page-header">
           <div class="page-header-left">
-            <h2>🛡️ Anti-Abuse & Emergency</h2>
+            <h2 x-text="__('page.abuse.title')"></h2>
           </div>
           <div class="page-header-right">
-            <button @click="loadAbuseSettings(); loadAgents()" class="btn btn-sm">🔄</button>
+            <button @click="loadAbuseSettings(); loadAgents()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
           </div>
         </div>
 
@@ -825,8 +830,8 @@
         <div class="card emergency-panel" :class="emergencyPresetClass">
           <div class="emergency-header">
             <div>
-              <h3>🚨 Emergency Mode</h3>
-              <p class="text-muted">One-click presets for DDoS protection and token cost reduction</p>
+              <h3 x-text="__('emergency.title')"></h3>
+              <p class="text-muted" x-text="__('emergency.desc')"></p>
             </div>
             <div class="emergency-indicator" x-text="emergencyPresetLabel"></div>
           </div>
@@ -834,144 +839,140 @@
           <p class="emergency-desc" x-text="emergencyPresetDescription"></p>
 
           <div class="emergency-controls">
-            <!-- Big Red Button -->
             <button @click="toggleEmergencyMode()"
                     :disabled="emergencyApplying"
                     :class="emergencyCurrentPreset === 'lockdown' ? 'btn-emergency-off' : 'btn-emergency-on'">
-              <span x-show="!emergencyApplying && emergencyCurrentPreset !== 'lockdown'">🔴 ACTIVATE LOCKDOWN</span>
-              <span x-show="!emergencyApplying && emergencyCurrentPreset === 'lockdown'">✅ DEACTIVATE LOCKDOWN</span>
-              <span x-show="emergencyApplying">⏳ Applying...</span>
+              <span x-show="!emergencyApplying && emergencyCurrentPreset !== 'lockdown'" x-text="__('btn.activateLockdown')"></span>
+              <span x-show="!emergencyApplying && emergencyCurrentPreset === 'lockdown'" x-text="__('btn.deactivateLockdown')"></span>
+              <span x-show="emergencyApplying"><span x-text="__('text.applying')"></span></span>
             </button>
 
-            <!-- Preset selector -->
             <div class="emergency-presets">
               <button @click="applyEmergencyPreset('normal')"
                       :disabled="emergencyApplying || emergencyCurrentPreset === 'normal'"
                       class="btn-preset btn-preset-normal"
                       :class="{ active: emergencyCurrentPreset === 'normal' }">
-                🟢 Normal
+                🟢 <span x-text="__('emergency.presetNormal')"></span>
               </button>
               <button @click="applyEmergencyPreset('cautious')"
                       :disabled="emergencyApplying || emergencyCurrentPreset === 'cautious'"
                       class="btn-preset btn-preset-cautious"
                       :class="{ active: emergencyCurrentPreset === 'cautious' }">
-                🟡 Cautious
+                🟡 <span x-text="__('emergency.presetCautious')"></span>
               </button>
               <button @click="applyEmergencyPreset('lockdown')"
                       :disabled="emergencyApplying || emergencyCurrentPreset === 'lockdown'"
                       class="btn-preset btn-preset-lockdown"
                       :class="{ active: emergencyCurrentPreset === 'lockdown' }">
-                🔴 Lockdown
+                🔴 <span x-text="__('emergency.presetLockdown')"></span>
               </button>
             </div>
           </div>
 
-          <!-- Metrics -->
           <div class="emergency-metrics" x-show="emergencyStatus">
             <div class="metric">
-              <span class="metric-label">RPS</span>
+              <span class="metric-label" x-text="__('abuse.rpsLabel')"></span>
               <span class="metric-value" x-text="emergencyStatus.rps"></span>
             </div>
             <div class="metric">
-              <span class="metric-label">Burst</span>
+              <span class="metric-label" x-text="__('abuse.burstLabel')"></span>
               <span class="metric-value" x-text="emergencyStatus.burst"></span>
             </div>
             <div class="metric">
-              <span class="metric-label">Token Budget</span>
+              <span class="metric-label" x-text="__('abuse.tokenBudgetLabel')"></span>
               <span class="metric-value" x-text="emergencyStatus.token_budget || '∞'"></span>
             </div>
             <div class="metric">
-              <span class="metric-label">Cheap Model</span>
+              <span class="metric-label" x-text="__('abuse.cheapModelLabel')"></span>
               <span class="metric-value" x-text="emergencyStatus.cheap_model || '—'"></span>
             </div>
             <div class="metric">
-              <span class="metric-label">Max Msg</span>
+              <span class="metric-label" x-text="__('abuse.maxMsgLabel')"></span>
               <span class="metric-value" x-text="emergencyStatus.max_messages"></span>
             </div>
             <div class="metric">
-              <span class="metric-label">Min Interval</span>
+              <span class="metric-label" x-text="__('abuse.minIntervalLabel')"></span>
               <span class="metric-value" x-text="emergencyStatus.min_interval_ms + 'ms'"></span>
             </div>
           </div>
         </div>
 
         <!-- ═══ EXISTING ABUSE SETTINGS ═══ -->
-        <!-- Tab switcher -->
         <div class="tabs" style="display:flex;gap:8px;margin-bottom:16px;margin-top:16px;">
-          <button @click="abuseTab='global'" class="btn" :class="{'btn-primary': abuseTab==='global'}" :style="abuseTab==='global'?'':'background:var(--bg-secondary)'">🌐 Global defaults</button>
-          <button @click="abuseTab='agent'" class="btn" :class="{'btn-primary': abuseTab==='agent'}" :style="abuseTab==='agent'?'':'background:var(--bg-secondary)'">🤖 Per-agent overrides</button>
+          <button @click="abuseTab='global'" class="btn" :class="{'btn-primary': abuseTab==='global'}" :style="abuseTab==='global'?'':'background:var(--bg-secondary)'"><span x-text="__('tab.globalDefaults')"></span></button>
+          <button @click="abuseTab='agent'" class="btn" :class="{'btn-primary': abuseTab==='agent'}" :style="abuseTab==='agent'?'':'background:var(--bg-secondary)'"><span x-text="__('tab.perAgent')"></span></button>
         </div>
 
         <!-- ── Global Settings ── -->
         <div x-show="abuseTab === 'global'" x-cloak>
           <div class="card" x-show="!abuseGlobal">
-            <p>Загрузка...</p>
+            <p x-text="__('text.loading')"></p>
           </div>
           <div class="card" x-show="abuseGlobal" x-cloak>
-            <h3>🌐 Global rate / abuse defaults</h3>
+            <h3 x-text="__('abuse.globalDefaultsTitle')"></h3>
             <form @submit.prevent="saveAbuseGlobal()" class="form">
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label>RPS (sustained rate)</label>
-                  <input type="number" x-model.number="abuseGlobal.rps" step="0.1" min="0.1" placeholder="1.0">
-                  <small class="text-muted">Requests per second per IP</small>
+                  <label x-text="__('abuse.rpsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.rps" step="0.1" min="0.1" :placeholder="__('abuse.rpsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.rpsDesc')"></small>
                 </div>
                 <div class="form-group">
-                  <label>Burst</label>
-                  <input type="number" x-model.number="abuseGlobal.burst" min="1" placeholder="5">
-                  <small class="text-muted">Max burst requests before rate limit kicks in</small>
+                  <label x-text="__('abuse.burstLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.burst" min="1" :placeholder="__('abuse.burstPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.burstDesc')"></small>
                 </div>
               </div>
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label>Max message length</label>
-                  <input type="number" x-model.number="abuseGlobal.max_message_length" min="1" placeholder="2000">
+                  <label x-text="__('abuse.maxMsgLengthLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_message_length" min="1" :placeholder="__('abuse.maxMsgLengthPlaceholder')">
                 </div>
                 <div class="form-group">
-                  <label>Min interval (ms)</label>
-                  <input type="number" x-model.number="abuseGlobal.min_interval_ms" min="0" placeholder="1000">
-                  <small class="text-muted">Min ms between messages in one session</small>
+                  <label x-text="__('abuse.minIntervalLabel')"></label>
+                  <                  <input type="number" x-model.number="abuseGlobal.min_interval_ms" min="0" :placeholder="__('abuse.minIntervalPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.minIntervalDesc')"></small>
                 </div>
                 <div class="form-group">
-                  <label>Max messages/session</label>
-                  <input type="number" x-model.number="abuseGlobal.max_messages_per_session" min="1" placeholder="50">
+                  <label x-text="__('abuse.maxMsgsPerSessionLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_messages_per_session" min="1" :placeholder="__('abuse.maxMsgsPerSessionPlaceholder')">
                 </div>
               </div>
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label>Token budget (0=unlimited)</label>
-                  <input type="number" x-model.number="abuseGlobal.token_budget" min="0" placeholder="0">
-                  <small class="text-muted">Max tokens per session. 0 = unlimited.</small>
+                  <label x-text="__('abuse.tokenBudgetLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.token_budget" min="0" :placeholder="__('abuse.tokenBudgetPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.tokenBudgetDesc')"></small>
                 </div>
                 <div class="form-group">
-                  <label>Fallback cheap model</label>
-                  <input type="text" x-model="abuseGlobal.cheap_model" placeholder="gpt-4o-mini">
-                  <small class="text-muted">Model switch during budget/rate limit</small>
+                  <label x-text="__('abuse.cheapModelLabel')"></label>
+                  <input type="text" x-model="abuseGlobal.cheap_model" :placeholder="__('abuse.cheapModelPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.cheapModelDesc')"></small>
                 </div>
               </div>
               <div class="form-group">
                 <label class="checkbox-row">
                   <input type="checkbox" x-model="abuseGlobal.block_empty_user_agent">
-                  <span>Block empty User-Agent</span>
+                  <span x-text="__('abuse.blockEmptyUALabel')"></span>
                 </label>
               </div>
               <div class="form-group">
-                <label>Blocked User-Agent patterns (one per line)</label>
-                <textarea x-model="abuseGlobal._ua_text" style="width:100%;min-height:80px;font-family:monospace;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--ink);" placeholder="curl/*&#10;python-requests/*&#10;Go-http-client/*"
+                <label x-text="__('abuse.blockedUALabel')"></label>
+                <textarea x-model="abuseGlobal._ua_text" style="width:100%;min-height:80px;font-family:monospace;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--ink);" :placeholder="__('abuse.blockedUAPlaceholder')"
                   @input="abuseGlobal.blocked_user_agents = $event.target.value.split('\n').filter(s => s.trim())"></textarea>
-                <small class="text-muted">Glob-style patterns, one per line. Requests with matching User-Agent will be blocked.</small>
+                <small class="text-muted" x-text="__('abuse.blockedUADesc')"></small>
               </div>
               <div class="form-actions">
                 <button type="submit" class="btn btn-primary" :disabled="abuseSaving">
                   <span x-show="abuseSaving">⏳</span>
-                  <span x-show="!abuseSaving">💾 Save global settings</span>
+                  <span x-show="!abuseSaving" x-text="__('btn.saveGlobal')"></span>
                 </button>
                 <span x-show="abuseSaveMsg" style="color:var(--accent);font-size:13px;" x-text="abuseSaveMsg"></span>
               </div>
             </form>
           </div>
           <div class="card" x-show="abuseGlobal" x-cloak>
-            <h3>📋 Current effective config</h3>
+            <h3 x-text="__('abuse.currentConfigTitle')"></h3>
             <pre x-text="JSON.stringify(abuseGlobal, null, 2)" class="code-block" style="max-height:300px;overflow-y:auto;"></pre>
           </div>
         </div>
@@ -979,10 +980,10 @@
         <!-- ── Per-Agent Overrides ── -->
         <div x-show="abuseTab === 'agent'" x-cloak>
           <div class="card">
-            <h3>🤖 Select agent</h3>
+            <h3 x-text="__('abuse.selectAgentTitle')"></h3>
             <div class="form-group">
               <select x-model="abuseAgentName" @change="selectAbuseAgent(abuseAgentName)" style="width:100%;">
-                <option value="">— Select agent —</option>
+                <option value="" x-text="__('select.agent')"></option>
                 <template x-for="a in agents" :key="a.name">
                   <option :value="a.name" x-text="a.name + (a.description ? ' (' + a.description + ')' : '')"></option>
                 </template>
@@ -991,49 +992,47 @@
           </div>
 
           <div x-show="abuseAgentName" class="card" x-cloak>
-            <h3>✏️ Override settings for: <span class="highlight" x-text="abuseAgentName"></span></h3>
-            <p class="text-muted" style="font-size:12px;margin-bottom:12px;">
-              Only filled fields will override the global defaults. Leave empty for "use global default".
-            </p>
+            <h3><span x-text="__('abuse.overrideTitle')"></span>: <span class="highlight" x-text="abuseAgentName"></span></h3>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px;" x-text="__('abuse.overrideDesc')"></p>
             <form @submit.prevent="saveAbuseAgent()" class="form">
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label>RPS (override)</label>
-                  <input type="number" x-model.number="abuseAgentOverrides.rps" step="0.1" min="0.1" placeholder="(global default)">
+                  <label x-text="__('abuse.rpsOverrideLabel')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.rps" step="0.1" min="0.1" :placeholder="__('abuse.overridePlaceholder')">
                 </div>
                 <div class="form-group">
-                  <label>Burst (override)</label>
-                  <input type="number" x-model.number="abuseAgentOverrides.burst" min="1" placeholder="(global default)">
+                  <label x-text="__('abuse.burstOverrideLabel')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.burst" min="1" :placeholder="__('abuse.overridePlaceholder')">
                 </div>
               </div>
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label>Token budget (override)</label>
-                  <input type="number" x-model.number="abuseAgentOverrides.token_budget" min="0" placeholder="(global default)">
+                  <label x-text="__('abuse.tokenBudgetOverrideLabel')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.token_budget" min="0" :placeholder="__('abuse.overridePlaceholder')">
                 </div>
                 <div class="form-group">
-                  <label>Cheap model (override)</label>
-                  <input type="text" x-model="abuseAgentOverrides.cheap_model" placeholder="(global default)">
+                  <label x-text="__('abuse.cheapModelOverrideLabel')"></label>
+                  <input type="text" x-model="abuseAgentOverrides.cheap_model" :placeholder="__('abuse.overridePlaceholder')">
                 </div>
               </div>
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label>Max message length (override)</label>
-                  <input type="number" x-model.number="abuseAgentOverrides.max_message_length" min="1" placeholder="(global default)">
+                  <label x-text="__('abuse.maxMsgLengthOverrideLabel')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.max_message_length" min="1" :placeholder="__('abuse.overridePlaceholder')">
                 </div>
                 <div class="form-group">
-                  <label>Min interval ms (override)</label>
-                  <input type="number" x-model.number="abuseAgentOverrides.min_interval_ms" min="0" placeholder="(global default)">
+                  <label x-text="__('abuse.minIntervalOverrideLabel')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.min_interval_ms" min="0" :placeholder="__('abuse.overridePlaceholder')">
                 </div>
                 <div class="form-group">
-                  <label>Max messages/session (override)</label>
-                  <input type="number" x-model.number="abuseAgentOverrides.max_messages_per_session" min="1" placeholder="(global default)">
+                  <label x-text="__('abuse.maxMsgsOverrideLabel')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.max_messages_per_session" min="1" :placeholder="__('abuse.overridePlaceholder')">
                 </div>
               </div>
               <div class="form-actions">
                 <button type="submit" class="btn btn-primary" :disabled="abuseSaving || !abuseAgentName">
                   <span x-show="abuseSaving">⏳</span>
-                  <span x-show="!abuseSaving">💾 Save agent overrides</span>
+                  <span x-show="!abuseSaving" x-text="__('btn.saveAgent')"></span>
                 </button>
                 <span x-show="abuseSaveMsg" style="color:var(--accent);font-size:13px;" x-text="abuseSaveMsg"></span>
               </div>
@@ -1047,22 +1046,22 @@
     <div x-show="showNewAgentForm" class="modal-overlay" x-cloak>
       <div class="modal-card">
         <div class="modal-header">
-          <h3>🤖 Создать агента</h3>
+          <h3 x-text="__('modal.createAgentTitle')"></h3>
           <button @click="showNewAgentForm = false" class="modal-close">✕</button>
         </div>
         <form @submit.prevent="createAgent()" class="form">
           <div class="form-group">
-            <label>Имя агента</label>
-            <input type="text" x-model="newAgent.name" placeholder="my-chat-agent" pattern="^[a-z][a-z0-9_-]*$" required autofocus>
-            <small class="text-muted" style="font-size:11px;">Только латиница, цифры, дефис и подчёркивание</small>
+            <label x-text="__('agent.labelName')"></label>
+            <input type="text" x-model="newAgent.name" :placeholder="__('agent.placeholderName')" pattern="^[a-z][a-z0-9_-]*$" required autofocus>
+            <small class="text-muted" style="font-size:11px;" x-text="__('agent.namePatternHint')"></small>
           </div>
           <div class="form-group">
-            <label>Описание</label>
-            <input type="text" x-model="newAgent.description" placeholder="Чат-агент для отдела продаж">
+            <label x-text="__('agent.labelDescription')"></label>
+            <input type="text" x-model="newAgent.description" :placeholder="__('agent.placeholderDescription')">
           </div>
           <div class="form-group">
-            <label>Tenant-ы — выберите базы данных для агента</label>
-            <div x-show="availableTenants.length === 0" class="text-muted" style="font-size:12px;">Нет доступных tenant'ов. Сначала создайте тенант.</div>
+            <label x-text="__('agent.labelTenants')"></label>
+            <div x-show="availableTenants.length === 0" class="text-muted" style="font-size:12px;" x-text="__('agent.noTenantsHint')"></div>
             <div class="tenant-checkbox-list">
               <template x-for="t in availableTenants" :key="t.id">
                 <label class="checkbox-row">
@@ -1075,9 +1074,9 @@
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary" :disabled="creatingAgent">
               <span x-show="creatingAgent">⏳</span>
-              <span x-show="!creatingAgent">🤖 Создать</span>
+              <span x-show="!creatingAgent" x-text="__('btn.createAgent')"></span>
             </button>
-            <button type="button" @click="showNewAgentForm = false" class="btn">Отмена</button>
+            <button type="button" @click="showNewAgentForm = false" class="btn" x-text="__('btn.cancel')"></button>
           </div>
         </form>
         <div x-show="agentCreateResult" class="mt-1">
@@ -1090,16 +1089,16 @@
     <div x-show="editingAgent" class="modal-overlay" x-cloak>
       <div class="modal-card">
         <div class="modal-header">
-          <h3>✏️ Редактировать: <span class="highlight" x-text="editAgentData.name"></span></h3>
+          <h3><span x-text="__('modal.editAgentTitle')"></span>: <span class="highlight" x-text="editAgentData.name"></span></h3>
           <button @click="editingAgent = false" class="modal-close">✕</button>
         </div>
         <form @submit.prevent="updateAgent()" class="form">
           <div class="form-group">
-            <label>Описание</label>
-            <input type="text" x-model="editAgentData.description" placeholder="Описание агента">
+            <label x-text="__('agent.labelDescription')"></label>
+            <input type="text" x-model="editAgentData.description" :placeholder="__('agent.placeholderDescription')">
           </div>
           <div class="form-group">
-            <label>Tenant-ы</label>
+            <label x-text="__('agent.labelTenants')"></label>
             <div class="tenant-checkbox-list">
               <template x-for="t in availableTenants" :key="t.id">
                 <label class="checkbox-row">
@@ -1112,9 +1111,9 @@
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary" :disabled="savingAgent">
               <span x-show="savingAgent">⏳</span>
-              <span x-show="!savingAgent">💾 Сохранить</span>
+              <span x-show="!savingAgent" x-text="__('btn.save')"></span>
             </button>
-            <button type="button" @click="editingAgent = false" class="btn">Отмена</button>
+            <button type="button" @click="editingAgent = false" class="btn" x-text="__('btn.cancel')"></button>
           </div>
         </form>
       </div>

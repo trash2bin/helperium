@@ -20,7 +20,7 @@ func OpenAPIHandler() http.HandlerFunc {
 			"openapi": "3.1.0",
 			"info": map[string]any{
 				"title":       "MCP Gateway",
-				"version":     "0.1.0",
+				"version":     "1.1.0",
 				"description": "MCP Gateway - Proxy for MCP tools and SSE streaming",
 			},
 			"servers": []map[string]any{

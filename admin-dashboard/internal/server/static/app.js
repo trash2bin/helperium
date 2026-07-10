@@ -59,7 +59,7 @@ function dashboard() {
 
     // ── Anti-Abuse ──
     abuseTab: 'global', // 'global' | 'agent'
-    abuseGlobal: null,
+    abuseGlobal: { rps: null, burst: null, max_message_length: null, min_interval_ms: null, max_messages_per_session: null, token_budget: null, cheap_model: null, block_empty_user_agent: null, blocked_user_agents: [], _ua_text: '' },
     abuseAgent: null,
     abuseAgentName: '',
     abuseAgentOverrides: {},
@@ -68,12 +68,22 @@ function dashboard() {
     abuseAgentList: [],
 
     // ── Emergency Panel ──
-    emergencyStatus: null,
+    emergencyStatus: { rps: null, burst: null, token_budget: null, cheap_model: null, max_messages: null, min_interval_ms: null },
     emergencyActive: false,
     emergencyCurrentPreset: 'normal',
     emergencyApplying: false,
     emergencyTimer: null,
     emergencyConflicting: false,
+
+    // ═══════════════════════════════════════════
+    //  I18N
+    // ═══════════════════════════════════════════
+    __(key) {
+      if (typeof window.__ === 'function') {
+        return window.__(key);
+      }
+      return key;
+    },
 
     // ═══════════════════════════════════════════
     //  ANTI-ABUSE METHODS
@@ -100,7 +110,7 @@ function dashboard() {
           method: 'PUT',
           body: JSON.stringify(this.abuseGlobal),
         });
-        this.abuseSaveMsg = '✅ Global settings saved';
+        this.abuseSaveMsg = this.__('abuse.saveMsgGlobal');
         setTimeout(() => { this.abuseSaveMsg = ''; }, 3000);
       } catch (e) {
         // error already set
@@ -133,7 +143,7 @@ function dashboard() {
           method: 'PUT',
           body: JSON.stringify(this.abuseAgentOverrides),
         });
-        this.abuseSaveMsg = '✅ Agent settings saved';
+        this.abuseSaveMsg = this.__('abuse.saveMsgAgent');
         setTimeout(() => { this.abuseSaveMsg = ''; }, 3000);
       } catch (e) {
         // error already set
@@ -184,15 +194,15 @@ function dashboard() {
     },
 
     get emergencyPresetLabel() {
-      if (this.emergencyCurrentPreset === 'lockdown') return '🔴 Lockdown';
-      if (this.emergencyCurrentPreset === 'cautious') return '🟡 Cautious';
-      return '🟢 Normal';
+      if (this.emergencyCurrentPreset === 'lockdown') return this.__('emergency.labelLockdown');
+      if (this.emergencyCurrentPreset === 'cautious') return this.__('emergency.labelCautious');
+      return this.__('emergency.labelNormal');
     },
 
     get emergencyPresetDescription() {
-      if (this.emergencyCurrentPreset === 'lockdown') return 'Everything locked down: burst=1, 10 msg/session, 500 char limit, token budget 2000';
-      if (this.emergencyCurrentPreset === 'cautious') return 'Limited: burst=3, 30 msg/session, 1000 char limit, token budget 10000';
-      return 'Standard limits: burst=5, 50 msg/session, 2000 char limit, no token budget';
+      if (this.emergencyCurrentPreset === 'lockdown') return this.__('emergency.descLockdown');
+      if (this.emergencyCurrentPreset === 'cautious') return this.__('emergency.descCautious');
+      return this.__('emergency.descNormal');
     },
 
     async toggleEmergencyMode() {
@@ -220,7 +230,7 @@ function dashboard() {
     login() {
       const token = this.tokenInput.trim();
       if (!token) {
-        this.error = 'Введите токен доступа';
+        this.error = this.__('error.enterToken');
         return;
       }
       localStorage.setItem('admin_token', token);
@@ -248,8 +258,8 @@ function dashboard() {
         const res = await fetch(url, { ...options, headers });
 
         if (res.status === 401) {
-          this.error = 'Ошибка авторизации. Проверьте ADMIN_TOKEN.';
-          throw new Error('Unauthorized');
+          this.error = this.__('error.unauthorizedCheck');
+          throw new Error(this.__('error.unauthorized'));
         }
 
         // Try to parse JSON body; fall back to text for empty/error responses
@@ -272,7 +282,7 @@ function dashboard() {
       } catch (e) {
         if (e.message !== 'Unauthorized' && e.message !== 'AbortError') {
           // Don't double-set error if already set by 401/!ok handling
-          if (!this.error) this.error = e.message || 'Network error';
+          if (!this.error) this.error = e.message || this.__('error.network');
         }
         throw e;
       }
@@ -360,7 +370,7 @@ function dashboard() {
     },
 
     async deleteTenant(id) {
-      if (!confirm(`Удалить тенант "${id}"?`)) return;
+      if (!confirm(this.__('confirm.deleteTenant') + ' "' + id + '"?')) return;
       this.error = '';
       try {
         await this.api(`/api/tenants/${id}`, { method: 'DELETE' });
@@ -401,13 +411,13 @@ function dashboard() {
 
     autoSaveConfig(label) {
       this.saveIndicator = label;
-      this.saveIndicatorText = '⏳ Saving...';
+      this.saveIndicatorText = this.__('msg.saving');
       this.saveConfig().then(() => {
-        this.saveIndicatorText = '✅ Saved';
+        this.saveIndicatorText = this.__('msg.saved');
         this.configDirty = false;
         setTimeout(() => { this.saveIndicator = ''; }, 2000);
       }).catch(() => {
-        this.saveIndicatorText = '❌ Failed';
+        this.saveIndicatorText = this.__('msg.failed');
         setTimeout(() => { this.saveIndicator = ''; }, 3000);
       });
     },
@@ -436,7 +446,7 @@ function dashboard() {
         this.config = await this.api('/api/tenants/' + this.selectedTenant + '/introspect', {
           method: 'POST',
         });
-        alert('Схема пересканирована!');
+        alert(this.__('msg.introspected'));
       } catch (e) {
         // error already set
       } finally {
@@ -552,7 +562,7 @@ function dashboard() {
     async deleteRagDoc(doc) {
       const docId = doc.id || doc.document_id;
       const docPath = doc.source_path || doc.path;
-      if (!confirm(`Удалить документ "${doc.title || docId}"?`)) return;
+      if (!confirm(this.__('confirm.deleteDocument') + ' "' + (doc.title || docId) + '"?')) return;
       this.error = '';
       try {
         const body = docId ? { document_id: docId } : { path: docPath };
@@ -648,7 +658,7 @@ function dashboard() {
     },
 
     async deleteAgent(name) {
-      if (!confirm(`Удалить агента "${name}"?`)) return;
+      if (!confirm(this.__('confirm.deleteAgent') + ' "' + name + '"?')) return;
       this.error = '';
       try {
         await this.api('/api/agents/' + name, { method: 'DELETE' });

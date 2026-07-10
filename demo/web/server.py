@@ -180,7 +180,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Agent-Tutor Web Frontend",
     description="Web server that serves the static frontend and acts as a reverse proxy to the Core API.",
-    version="0.1.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 

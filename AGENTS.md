@@ -291,7 +291,7 @@ act --pull=false           # весь пайплайн
 ### 📦 Версионирование
 
 Все 6 Python-пакетов (`agent-db`, `agent-tutor-sdk`, `api-service`, `demo-web`, `rag`, `pyproject.toml`) и 2 Go-модуля (`data-service`, `mcp-gateway`) синхронизированы на одной версии:
-- Текущая: **`0.3.0`**
+- Текущая: **`1.1.0`**
 - Go: `go 1.26.4`
 
 ### 🧪 Критерий готовности перед коммитом

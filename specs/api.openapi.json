@@ -3,7 +3,7 @@
   "info": {
     "title": "Agent-Tutor Core API",
     "description": "Backend API for the Agent-Tutor system. Handles orchestration, session history, and tool integration.",
-    "version": "0.1.0"
+    "version": "1.1.0"
   },
   "paths": {
     "/health": {

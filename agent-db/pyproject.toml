@@ -1,6 +1,6 @@
 [project]
 name = "agent-db"
-version = "0.3.0"
+version = "1.1.0"
 description = "Unified DB/Scenario/Tenant/Seed/Test management for agent-tutor"
 readme = "README.md"
 requires-python = ">=3.12"

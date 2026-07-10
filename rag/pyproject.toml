@@ -1,6 +1,6 @@
 [project]
 name = "rag"
-version = "0.3.0"
+version = "1.1.0"
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "agent-tutor-sdk",

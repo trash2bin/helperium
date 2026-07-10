@@ -66,6 +66,9 @@ func (s *Server) Router() chi.Router {
 	// Health check (no auth)
 	r.Get("/health", s.healthHandler)
 
+	// i18n translations (no auth — loaded before login)
+	r.Get("/i18n.json", s.i18nHandler)
+
 	// API
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", s.healthHandler)
@@ -149,8 +152,8 @@ func authMiddleware(token string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 
-			// Static files — без auth (все пути под .css, .js, index.html)
-			if path == "/" || path == "/index.html" || path == "/styles.css" || path == "/app.js" {
+			// Static files — без auth (все пути под .css, .js, i18n.json, i18n.js, index.html)
+			if path == "/" || path == "/index.html" || path == "/styles.css" || path == "/app.js" || path == "/i18n.js" || path == "/i18n.json" {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -349,6 +352,17 @@ func (s *Server) proxyPostToDataService(path string, payload any, tenantID ...st
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) i18nHandler(w http.ResponseWriter, r *http.Request) {
+	data, err := staticFS.ReadFile("static/i18n.json")
+	if err != nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(data)
 }
 
 func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
