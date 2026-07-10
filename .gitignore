@@ -59,4 +59,4 @@ playwright-report/
 
 # Symlinks to specs/
 api-service/specs
-cmd
+/cmd
