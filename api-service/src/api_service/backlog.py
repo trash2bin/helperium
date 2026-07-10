@@ -18,6 +18,10 @@ from demo.settings import settings
 
 logger = logging.getLogger("api_service.backlog")
 
+# Record type constants
+RECORD_LLM_CALL = "llm_call"
+RECORD_ERROR = "error"
+
 
 class ModelBacklog:
     """Append-only trace of every model interaction, stored as pretty-printed JSON per session."""
@@ -292,10 +296,91 @@ class ModelBacklog:
                 "turn_id": turn_id,
                 "iteration": iteration,
                 "event": "error",
+                "type": RECORD_ERROR,
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "data": {"error": error, "context": context or {}},
             },
         )
+
+    def record_llm_call(
+        self,
+        session_id: str,
+        *,
+        model: str,
+        provider: str,
+        duration_ms: float = 0.0,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        cost: float = 0.0,
+        status: str = "ok",
+        error_message: str | None = None,
+        **extra: Any,
+    ) -> None:
+        """Record an LLM call with token usage and cost."""
+        record: dict[str, Any] = {
+            "type": RECORD_LLM_CALL,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model": model,
+            "provider": provider,
+            "duration_ms": round(duration_ms, 2),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "cost": round(cost, 6),
+            "status": status,
+        }
+        if error_message:
+            record["error_message"] = error_message
+        record.update(extra)
+        self._write(session_id, record)
+
+    def get_session_stats(self, session_id: str) -> dict[str, Any]:
+        """Get aggregated stats for a session: total tokens, cost, call count."""
+        records = self._read_records(session_id)
+        llm_calls = [r for r in records if r.get("type") == RECORD_LLM_CALL]
+        errors = [
+            r
+            for r in records
+            if r.get("type") == RECORD_ERROR
+            or (r.get("status") and r["status"] != "ok")
+        ]
+
+        return {
+            "session_id": session_id,
+            "total_llm_calls": len(llm_calls),
+            "total_errors": len(errors),
+            "total_prompt_tokens": sum(r.get("prompt_tokens", 0) for r in llm_calls),
+            "total_completion_tokens": sum(
+                r.get("completion_tokens", 0) for r in llm_calls
+            ),
+            "total_tokens": sum(r.get("total_tokens", 0) for r in llm_calls),
+            "total_cost": round(sum(r.get("cost", 0.0) for r in llm_calls), 6),
+        }
+
+    def get_recent_errors(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Get most recent error records across all sessions."""
+        errors: list[dict[str, Any]] = []
+        for path in sorted(
+            self._dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True
+        ):
+            session_id = path.stem
+            records = self._read_records(session_id)
+            for r in records:
+                if r.get("type") == RECORD_ERROR or (
+                    r.get("status") and r["status"] != "ok"
+                ):
+                    errors.append(
+                        {
+                            "session_id": session_id,
+                            "timestamp": r.get("timestamp"),
+                            "error": r.get("error_message", str(r.get("error", ""))),
+                            "model": r.get("model", ""),
+                        }
+                    )
+            if len(errors) >= limit:
+                break
+        return errors[:limit]
 
     #  Reading
 

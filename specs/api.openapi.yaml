@@ -81,6 +81,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/backlog/stats/{session_id}:
+    get:
+      summary: Статистика LLM-вызовов сессии
+      description: Возвращает агрегированную статистику по токенам, стоимости и количеству
+        вызовов для сессии.
+      operationId: backlog_stats_endpoint_api_backlog_stats__session_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/backlog/errors:
+    get:
+      summary: Последние ошибки бэклога
+      description: Возвращает последние ошибки по всем сессиям.
+      operationId: backlog_errors_endpoint_api_backlog_errors_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/session/history:
     get:
       summary: История сессии

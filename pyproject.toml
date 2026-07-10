@@ -5,7 +5,10 @@ readme = "README.md"
 description = "AI assistant for the university help site - workspace root"
 requires-python = ">=3.12, <3.14"
 dependencies = [
+    "prometheus-client>=0.25.0",
+    "prometheus-fastapi-instrumentator>=8.0.2",
     "slowapi>=0.1.10",
+    "structlog>=26.1.0",
 ]
 
 # ── Workspace ─────────────────────────────────────────────────────────

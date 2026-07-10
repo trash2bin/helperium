@@ -22,6 +22,9 @@
 | `/api/sessions/{id}` | GET | История конкретной сессии |
 | `/api/backlog` | GET | Список бэклогов |
 | `/api/backlog/{id}` | GET | Детали бэклога |
+| `/api/backlog/stats/{session_id}` | GET | Статистика сессии (токены, cost, ошибки) |
+| `/api/backlog/errors` | GET | Последние ошибки чата |
+| `/metrics` | GET | Prometheus метрики (мониторинг) |
 | `/api/agents` | POST | Создать агента (Agent Store) |
 | `/api/agents` | GET | Список агентов |
 | `/api/agents/{name}` | GET | Получить агента |
@@ -199,6 +202,14 @@ curl -X POST http://localhost:8081/api/agents \
 | `AGENT_MAX_TOKENS_THINKING` | `4096` | Макс. токенов thinking |
 | `AGENT_MAX_EMPTY_ROUNDS` | `3` | Макс. пустых раундов thinking |
 | `AGENT_MAX_TURN_TOKENS` | `8000` | Макс. токенов за ход (контекст) |
+| `LOG_FORMAT` | `text` | Формат логов: `text` или `json` (structlog) |
+| `LOG_LEVEL` | `info` | Уровень логирования: debug, info, warn, error |
+| `ABUSE_RPS` | `1.0` | Token bucket refill rate (requests/second) |
+| `ABUSE_BURST` | `5` | Token bucket burst capacity |
+| `ABUSE_MESSAGE_MAX_LENGTH` | `2000` | Макс. длина сообщения (символов) |
+| `ABUSE_MIN_INTERVAL` | `1.0` | Мин. интервал между сообщениями (сек) |
+| `ABUSE_SESSION_BUDGET` | `50` | Макс. сообщений за сессию |
+| `ABUSE_REPEATED_THRESHOLD` | `3` | Порог повторяющегося текста (раз) |
 
 ## Запуск
 
@@ -250,3 +261,36 @@ curl -N -X POST http://127.0.0.1:8081/api/chat \
 - Ручное запуск: stdout/stderr терминала
 - Через `dev.sh`: `.data/logs/api.log`
 - Debug режим: `DEMO_DEBUG=1 uv run python -m demo.api.server`
+
+---
+
+## Monitoring & Observability
+
+Сервис отдаёт Prometheus-метрики на `/metrics`:
+
+| Метрика | Тип | Описание |
+|---|---|---|
+| `chat_sessions_total` | Counter | Всего создано сессий чата |
+| `chat_messages_total` | Counter | Всего сообщений (labels: status) |
+| `llm_calls_total` | Counter | Вызовов LLM (labels: provider, model, status) |
+| `llm_duration_ms` | Histogram | Длительность LLM-вызова |
+| `llm_token_usage` | Counter | Использовано токенов (labels: type=prompt/completion) |
+| `llm_cost_total` | Counter | Общая стоимость LLM вызовов ($) |
+| `abuse_blocked_total` | Counter | Заблокировано запросов по anti-abuse (labels: reason) |
+
+### Logging
+- Используется structlog (JSON-формат при `LOG_FORMAT=json`)
+- `LOG_LEVEL` поддерживает: debug, info, warn, error
+- Подробнее: `log_config.py`
+
+### Anti-Abuse Engine
+Встроенный механизм защиты от злоупотреблений для embed-виджета:
+- **TokenBucket**: per-сессия, конфигурируемый (`ABUSE_RPS`, `ABUSE_BURST`)
+- **User-Agent проверка**: блокирует curl, wget, python-requests, Go-http-client, Java, libwww, scrapy, PostmanRuntime
+- **Message length**: кап 2000 символов
+- **Min interval**: не быстрее 1 сообщения в секунду
+- **Session budget**: не более 50 сообщений за сессию
+- **Repeated text**: 3+ одинаковых сообщений подряд блокируются
+- **Настройка**: через admin dashboard (глобально + per-agent через `abuse_config`)
+- **Emergency presets**: Normal / Cautious / Lockdown — одним кликом
+- Подробнее: `anti_abuse.py`

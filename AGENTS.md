@@ -30,6 +30,9 @@
 | **Web** (Python) | `:8080` | UI-интерфейс + reverse-proxy. Проксирует `X-Tenant-ID` и поддерживает tenant routing. | [README](demo/web/README.md) |
 | **SDK** (Python) | — | Общие Pydantic-модели и клиенты для сервисов. | [pyproject.toml](agent-tutor-sdk/pyproject.toml) |
 
+> **Мониторинг (v1.1.0):** Все сервисы отдают Prometheus-метрики на `/metrics`.
+> См. [секцию 10](#-10-monitoring--observability): Prometheus (:9090) + Grafana (:3000) с предустановленным дашбордом (12 панелей).
+
 ### 🚩 Глобальные документы
 
 - **Стратегия**: [doc/FINAL_TASK.md](doc/FINAL_TASK.md) — план к pre-final версии и критерий готовности.
@@ -178,7 +181,7 @@ specs/
 ├── config.schema.json        # JSON Schema — runtime-валидация конфига data-service
 ├── config.example.json       # Пример конфига (SQLite, тесты/dev)
 ├── config.postgres.json      # Пример конфига (PostgreSQL, production)
-├── api.openapi.yaml — автогенерация из FastAPI
+├��─ api.openapi.yaml — автогенерация из FastAPI
 ├── rag.openapi.yaml          # OpenAPI rag — автогенерация из FastAPI
 └── ...
 ```
@@ -274,6 +277,7 @@ make ci-lint-py # только Python линт + typecheck
 make ci-test-py # только Python тесты
 make ci-lint-go # только Go линтинг (data-service + mcp-gateway)
 make ci-test-go # только Go тесты
+make ci-audit   # полный security audit (uv audit + govulncheck)
 ```
 
 **Перед каждым пушем:** `make ci` — занимает ~30–60 сек, ловит ~95% проблем, которые упадут в CI.
@@ -300,3 +304,48 @@ act --pull=false           # весь пайплайн
 2. [ ] Pre-commit hooks — все Passed
 3. [ ] `uv run agent-db e2e-full` — зелёный (если менялась логика data-service / mcp-gateway / orchestrator)
 4. [ ] `make ci` — зелёный целиком (не обязательно перед каждым коммитом, но перед пушем — обязательно)
+
+---
+
+## 📊 10. Monitoring & Observability
+
+Каждый сервис отдаёт Prometheus-метрики на `/metrics`:
+
+| Сервис | Порт | Ключевые метрики |
+|---|---|---|
+| **data-service** | :8084 | `data_requests_total`, `data_request_duration_ms` |
+| **mcp-gateway** | :8083 | `mcp_tool_calls_total`, `mcp_sessions_active`, `mcp_rate_limit_hits_total` |
+| **admin-dashboard** | :8085 | `admin_requests_total` |
+| **api-service** | :8081 | `chat_sessions_total`, `chat_messages_total`, `llm_calls_total`, `llm_duration_ms`, `llm_token_usage`, `llm_cost_total`, `abuse_blocked_total`, `backlog_*` |
+
+### Docker monitoring profile
+
+```bash
+docker compose --profile monitoring up -d
+# Prometheus: http://localhost:9090
+# Grafana:    http://localhost:3000 (admin/admin)
+```
+
+Grafana дашборд предустановлен (12 панелей) — `docker/grafana/dashboards/agent-tutor-overview.json`.
+
+### Logging
+
+- **api-service**: structlog, JSON-логи (`LOG_FORMAT=json`). `LOG_LEVEL` поддерживается.
+- **data-service / mcp-gateway / admin-dashboard**: slog, structured JSON. `LOG_LEVEL` поддерживается.
+
+### Anti-Abuse
+
+api-service имеет встроенный anti-abuse engine:
+
+- **TokenBucket**: per-сессия, конфигурируемый RPS/burst (`ABUSE_RPS`, `ABUSE_BURST`).
+- **UA block**: curl, wget, python-requests, Go-http-client и др. User-Agent'ы.
+- **Message limits**: max length 2000 chars, min interval 1s, session budget 50 messages.
+- **Repeated text**: >3 повторов блокируется.
+- **Emergency presets**: Normal / Cautious / Lockdown (через admin-dashboard).
+
+### Admin dashboard (v1.1.0 additions)
+
+- **Anti-Abuse tab**: настройки abuse engine для глобал и per-agent.
+- **Emergency Big Red Button**: Normal → Cautious → Lockdown одним кликом.
+- **i18n**: bilingual RU/EN (309 ключей). Language switcher в хедере.
+- `LOG_LEVEL=debug` для детальной трассировки запросов.

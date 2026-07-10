@@ -32,6 +32,8 @@ Admin Dashboard (:8085)
 | **🛠️ Тулы** | Tools sidebar | MCP-манифест тенанта, подтверждение write-тулов в read-only режиме |
 | **📄 RAG** | RAG sidebar | Загрузка документов (drag-and-drop), список, удаление, статус RAG сервиса |
 | **🤖 Агенты** | Agents sidebar | CRUD AI-агентов, привязка tenant'ов, чат с агентом |
+| **🛡️ Anti-Abuse** | Anti-Abuse sidebar | Настройка anti-abuse engine (глобально + per-agent), Emergency Presets (Normal/Cautious/Lockdown) |
+| **🌐 Language** | В хедере | Переключатель языка RU/EN (i18n, 309 ключей) |
 
 ---
 
@@ -122,6 +124,23 @@ DELETE /api/agents/{name}                # удалить агента
 }
 ```
 
+### Anti-Abuse & Emergency
+
+```http
+GET  /api/abuse-settings                     # глобальные настройки abuse
+PUT  /api/abuse-settings                     # обновить глобальные
+GET  /api/agents/{name}/abuse                # per-agent abuse настройки
+PUT  /api/agents/{name}/abuse                # обновить per-agent
+POST /api/abuse-preset/{preset}              # emergency preset: normal / cautious / lockdown
+GET  /api/emergency-status                   # текущий статус emergency
+```
+
+### Metrics
+
+```http
+GET /metrics          # Prometheus метрики (admin_requests_total по path, status)
+```
+
 ---
 
 ## Архитектура
@@ -177,6 +196,8 @@ curl -s -H "Authorization: Bearer secret" http://localhost:8085/api/health
 | `API_SERVICE_URL` | `http://localhost:8081` | API service URL |
 | `ADMIN_TOKEN` | — | Bearer-токен для API (обязателен, без него API возвращает 500) |
 | `DATA_DIR` | `/data` | Директория для загруженных SQLite-файлов тенантов |
+| `LOG_LEVEL` | `info` | Уровень логирования: debug, info, warn, error |
+| `LOG_FORMAT` | `json` | Формат: json (slog) или text |
 
 ---
 
@@ -187,6 +208,30 @@ curl -s -H "Authorization: Bearer secret" http://localhost:8085/api/health
 - Без токена сервис возвращает `500 ADMIN_TOKEN not configured`
 - UI имеет форму логина — токен сохраняется в `localStorage` браузера
 - CORS разрешён для всех origin (dev-mode)
+
+---
+
+## i18n (v1.1.0)
+
+- Bilingual: русский / английский (309 ключей)
+- Файл: `static/i18n.json`
+- Лоадер: `static/i18n.js` (синхронный XHR, загружается до Alpine.js)
+- Использование: `__('key')` в HTML, `$store.i18n.t('key')` в Alpine.js
+- Переключатель: в хедере UI, сохраняется в localStorage
+
+---
+
+## Emergency Presets (v1.1.0)
+
+Три профиля безопасности для быстрого реагирования на DDoS / аномальную нагрузку:
+
+| Preset | RPS | Burst | Session Budget | Интервал | Длина сообщения |
+|---|---|---|---|---|---|
+| **Normal** | 1.0 | 5 | 50 | 1s | 2000 chars |
+| **Cautious** | 0.5 | 3 | 25 | 2s | 1000 chars |
+| **Lockdown** | 0.1 | 1 | 10 | 5s | 500 chars |
+
+Big Red Button на странице Anti-Abuse: Normal → Cautious → Lockdown.
 
 ---
 
@@ -206,6 +251,8 @@ admin-dashboard:
     - RAG_SERVICE_URL=http://rag:8082
     - API_SERVICE_URL=http://api:8081
     - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+    - LOG_LEVEL=${LOG_LEVEL:-info}
+    - LOG_FORMAT=${LOG_FORMAT:-json}
   volumes:
     - tenant_uploads:/data/tenant-dbs
 ```

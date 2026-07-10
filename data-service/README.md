@@ -136,7 +136,18 @@ curl -s -H "X-Tenant-ID: default" http://127.0.0.1:8084/students
 curl -s -H "Authorization: Bearer secret" http://127.0.0.1:8084/admin/tenants
 ```
 
-**Env vars:** `DS_CONFIG`, `PORT` (8084), `LOG_LEVEL`, `ADMIN_TOKEN` (обязателен для admin), `CONFIG_SCHEMA`.
+**Env vars:** `DS_CONFIG`, `PORT` (8084), `LOG_LEVEL` (info/debug/warn/error), `ADMIN_TOKEN` (обязателен для admin), `CONFIG_SCHEMA`.
+
+### Metrics (v1.1.0)
+
+Сервис отдаёт Prometheus-метрики на `/metrics` (требует `?tenant=...` для tenant-контекста):
+
+- `data_requests_total` — счётчик запросов (labels: entity, operation, status)
+- `data_request_duration_ms` — гистограмма длительности запросов
+
+```bash
+curl "http://127.0.0.1:8084/metrics?tenant=default" | grep data_
+```
 
 ---
 
@@ -221,6 +232,7 @@ uv run agent-db e2e         # materialize → register → web proxy
 | `ADMIN_TOKEN not configured` / 401 | Токен mismatch | `export ADMIN_TOKEN=secret` (совпадает с `agent-db`) |
 | `seed-cli failed` | Остались `tenant_a_e2e.db` | `rm -f tenant_a_e2e.db tenant_b_e2e.db *.db-wal *.db-shm` |
 | PG `connection refused` | Colima PG упал | `docker ps \| grep postgres`, `pg_isready -h localhost -p 5432` |
+| `LOG_LEVEL=debug` не даёт трассировки | LOG_LEVEL не включена | Добавить `LOG_LEVEL=debug` в env до запуска |
 
 ---
 

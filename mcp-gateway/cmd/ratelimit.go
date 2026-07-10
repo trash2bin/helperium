@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 )
 
 // ── Per-IP Token Bucket Rate Limiter ──
@@ -110,6 +111,7 @@ func mcpRateLimitMiddleware() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := extractIP(r.RemoteAddr)
 			if !rl.Allow(ip) {
+				mcpRateLimitHits.WithLabelValues(strings.Join(resolveTenantIDs(r), ",")).Inc()
 				slog.Warn("rate limit exceeded", "ip", ip, "path", r.URL.Path)
 				w.Header().Set("Retry-After", "1")
 				w.Header().Set("Content-Type", "application/json")

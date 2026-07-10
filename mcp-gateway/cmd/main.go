@@ -19,6 +19,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/agent-tutor/agent-tutor-go/pkg/cors"
 	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
 	gwserver "github.com/agent-tutor/mcp-gateway/internal/server"
@@ -164,6 +166,8 @@ func main() {
 	logHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
 	slog.SetDefault(slog.New(logHandler))
 
+	slog.Info("prometheus metrics initialized")
+
 	globalClient = httpclient.New()
 	r := buildRouter()
 	port := os.Getenv("MCP_PORT")
@@ -286,7 +290,7 @@ func authMiddleware(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Health endpoint is excluded from auth
-		if r.URL.Path == "/health" {
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -330,6 +334,7 @@ func buildRouter() *chi.Mux {
 	})
 
 	r.Get("/health", healthHandler())
+	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/docs", gwserver.SwaggerHandler())
 	r.Get("/openapi.json", gwserver.OpenAPIHandler())
 	r.Get("/debug", debugPlaygroundHandler())
@@ -395,8 +400,10 @@ func sseHandler(sessions *sync.Map) http.HandlerFunc {
 			lastActivity: now,
 		}
 		sessions.Store(sessionID, session)
+		mcpSessionsActive.WithLabelValues(strings.Join(session.tenantIDs, ",")).Inc()
 		defer func() {
 			sessions.Delete(sessionID)
+			mcpSessionsActive.WithLabelValues(strings.Join(session.tenantIDs, ",")).Dec()
 			slog.Info("MCP session closed", "sessionID", sessionID)
 		}()
 
@@ -507,6 +514,7 @@ func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
 				eventData, _ := json.Marshal(response)
 				session.writeMessage(eventData)
 				w.WriteHeader(http.StatusAccepted)
+				mcpToolCallsTotal.WithLabelValues(rpcMethod, strings.Join(tenantIDs, ","), "ok").Inc()
 				slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
 					slog.String("method", rpcMethod),
 					slog.String("session_id", sessionID),
@@ -519,6 +527,7 @@ func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(response)
+			mcpToolCallsTotal.WithLabelValues(rpcMethod, strings.Join(tenantIDs, ","), "ok").Inc()
 			slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
 				slog.String("method", rpcMethod),
 				slog.Any("tenant_ids", tenantIDs),
@@ -528,6 +537,7 @@ func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusAccepted)
+		mcpToolCallsTotal.WithLabelValues(rpcMethod, strings.Join(tenantIDs, ","), "ok").Inc()
 		slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
 			slog.String("method", rpcMethod),
 			slog.String("session_id", sessionID),

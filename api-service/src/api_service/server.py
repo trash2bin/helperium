@@ -14,7 +14,8 @@ import uvicorn
 
 from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -41,12 +42,10 @@ from api_service.http_models import (
     AgentListResponse,
 )
 from api_service.agent_store import AgentStore
+from api_service.log_config import configure_logging
+from api_service.prometheus_metrics import init_metrics
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 logger = logging.getLogger("api_service.server")
 
 # Enable debug logging for agent if DEMO_DEBUG is set
@@ -252,6 +251,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Prometheus metrics (must be before middleware, at module level)
+init_metrics(app)
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics_endpoint():
+    """Prometheus metrics endpoint — returns all registered metrics."""
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
+
+
 # Rate limiter
 # Default: 30 requests per minute per IP (configurable via CHAT_RATE_LIMIT env)
 rate_limit = os.environ.get("CHAT_RATE_LIMIT", "30/minute")
@@ -378,6 +390,32 @@ async def backlog_detail_endpoint(
     session_id: str, limit: int = Query(500, ge=1), offset: int = Query(0, ge=0)
 ):
     return await get_backlog_detail(session_id, limit, offset)
+
+
+@app.get(
+    "/api/backlog/stats/{session_id}",
+    summary="Статистика LLM-вызовов сессии",
+    description="Возвращает агрегированную статистику по токенам, стоимости и количеству вызовов для сессии.",
+)
+async def backlog_stats_endpoint(session_id: str):
+    """Get aggregated LLM stats for a session."""
+    from api_service.backlog import backlog
+
+    stats = backlog.get_session_stats(session_id)
+    return stats
+
+
+@app.get(
+    "/api/backlog/errors",
+    summary="Последние ошибки бэклога",
+    description="Возвращает последние ошибки по всем сессиям.",
+)
+async def backlog_errors_endpoint(limit: int = Query(50, ge=1, le=200)):
+    """Get recent errors across all sessions."""
+    from api_service.backlog import backlog
+
+    errors = backlog.get_recent_errors(limit=limit)
+    return {"errors": errors, "total": len(errors)}
 
 
 @app.get(

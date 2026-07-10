@@ -14,6 +14,7 @@ import (
 	"github.com/agent-tutor/data-service/internal/runtime/handlers"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // NewRouterFromConfig создаёт chi-роутер на основе конфигурации.
@@ -68,6 +69,9 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 
 	// MCP-манифест — единственный source of truth для mcp-gateway
 	r.Get("/mcp/manifest", handlers.MCPManifestHandler(cfg))
+
+	// Prometheus metrics — доступно всегда, без аутентификации
+	r.Handle("/metrics", promhttp.Handler())
 
 	// /admin/* — admin endpoints (protect ADMIN_TOKEN, фаза 3.7)
 	if introspectAdapter != nil && adminCtx != nil {

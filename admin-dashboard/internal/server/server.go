@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/agent-tutor/agent-tutor-go/pkg/metrics"
 )
 
 // Options для создания сервера.
@@ -25,6 +28,17 @@ type Options struct {
 	ApiSvcURL  string
 	AdminToken string
 	DataDir    string
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code.
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
 
 // Server — admin dashboard HTTP сервер.
@@ -54,11 +68,29 @@ func (s *Server) Router() chi.Router {
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(middleware.Logger)
+	// Structured logging + Prometheus metrics
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			wr := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			next.ServeHTTP(wr, r)
+			duration := time.Since(start).Milliseconds()
+			slog.Info("request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", wr.statusCode,
+				"duration_ms", duration,
+			)
+			metrics.AdminRequestsTotal.WithLabelValues(r.URL.Path, strconv.Itoa(wr.statusCode)).Inc()
+		})
+	})
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(corsMiddleware)
 	r.Use(authMiddleware(s.opts.AdminToken))
+
+	// Prometheus metrics (no auth needed)
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Static frontend
 	r.Handle("/*", s.staticHandler())
@@ -153,7 +185,7 @@ func authMiddleware(token string) func(http.Handler) http.Handler {
 			path := r.URL.Path
 
 			// Static files — без auth (все пути под .css, .js, i18n.json, i18n.js, index.html)
-			if path == "/" || path == "/index.html" || path == "/styles.css" || path == "/app.js" || path == "/i18n.js" || path == "/i18n.json" {
+			if path == "/" || path == "/index.html" || path == "/styles.css" || path == "/app.js" || path == "/i18n.js" || path == "/i18n.json" || path == "/metrics" {
 				next.ServeHTTP(w, r)
 				return
 			}

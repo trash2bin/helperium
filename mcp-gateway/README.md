@@ -313,6 +313,29 @@ MCP_DEV=true DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 - `/debug/sessions` — активные SSE-сессии
 - `/debug/config` — текущий конфиг тенанта (фетчится из `/mcp/manifest`)
 
+### Metrics (v1.1.0)
+
+Сервис отдаёт Prometheus-метрики на `/metrics` (без авторизации):
+
+- `mcp_tool_calls_total` — счётчик вызовов MCP-тулов (labels: tool, tenant, status)
+- `mcp_sessions_active` — количество активных SSE-сессий (label: tenant)
+- `mcp_rate_limit_hits_total` — счётчик rate-limited запросов (label: tenant)
+
+```bash
+curl http://127.0.0.1:8083/metrics | grep mcp_
+```
+
+### Logging (v1.1.0)
+
+- Используется `slog` (structured JSON-логи)
+- `LOG_LEVEL` из окружения: debug, info, warn, error
+- Формат: JSON (машиночитаемый, по умолчанию) или text
+
+Пример лога:
+```json
+{"time":"...","level":"INFO","msg":"jsonrpc_call","method":"tools/list","session_id":"...","tenant_ids":["default"],"duration_ms":42}
+```
+
 ## Эндпоинты
 
 | Путь | Метод | Описание | Заголовок |
@@ -339,6 +362,7 @@ MCP_DEV=true DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 | `MCP_POST_HANDLER_TIMEOUT` | 25 | Таймаут для одного JSON-RPC запроса/ответа в POST /mcp/message (секунды) |
 | `MCP_READ_HEADER_TIMEOUT` | 10 | Read header timeout для HTTP сервера (секунды) — защита от slowloris |
 | `MCP_IDLE_TIMEOUT` | 120 | Idle timeout для HTTP сервера (секунды) — макс. время keep-alive соединений |
+| `LOG_LEVEL` | `info` | Уровень логирования: debug, info, warn, error |
 
 ## RAG-инструменты (статическая регистрация)
 

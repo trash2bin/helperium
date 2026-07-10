@@ -1,0 +1,129 @@
+{
+  "title": "🔍 Agent Tutor — Monitoring Overview",
+  "version": 1,
+  "schemaVersion": 39,
+  "tags": ["agent-tutor", "monitoring"],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "title": "Data Service — Request Rate",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "targets": [{
+        "expr": "rate(data_requests_total[1m])",
+        "legendFormat": "{{operation}} {{status}}",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Data Service — Request Duration (p95)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 0 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(data_request_duration_ms_bucket[5m])) by (le))",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Data Service — Avg DB Query Duration",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 0 },
+      "targets": [{
+        "expr": "rate(data_db_query_duration_ms_sum[1m]) / rate(data_db_query_duration_ms_count[1m])",
+        "legendFormat": "avg ms",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "MCP Gateway — Tool Calls",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "targets": [{
+        "expr": "rate(mcp_tool_calls_total[1m])",
+        "legendFormat": "{{tool}} ({{tenant}})",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "MCP Gateway — Active SSE Sessions",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 8 },
+      "targets": [{
+        "expr": "sum(mcp_sessions_active)",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "MCP Gateway — Rate Limit Hits",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 8 },
+      "targets": [{
+        "expr": "rate(mcp_rate_limit_hits_total[1m])",
+        "legendFormat": "{{tenant}}",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "API — LLM Calls",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "targets": [{
+        "expr": "rate(llm_calls_total[1m])",
+        "legendFormat": "{{model}}",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "API — LLM Duration (avg)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 16 },
+      "targets": [{
+        "expr": "rate(llm_duration_ms_sum[1m]) / rate(llm_duration_ms_count[1m])",
+        "legendFormat": "avg ms",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "API — Token Usage Rate",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 16 },
+      "targets": [{
+        "expr": "rate(llm_token_usage_total[1m])",
+        "legendFormat": "{{type}}",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "API — Abuse Blocks by Reason",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "targets": [{
+        "expr": "rate(abuse_blocked_total[1m])",
+        "legendFormat": "{{reason}}",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "API — LLM Cost",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 24 },
+      "targets": [{
+        "expr": "rate(llm_cost_total[1m])",
+        "legendFormat": "USD/min",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Admin Dashboard — Requests",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 24 },
+      "targets": [{
+        "expr": "rate(admin_requests_total[1m])",
+        "legendFormat": "{{path}} {{status}}",
+        "refId": "A"
+      }]
+    }
+  ]
+}

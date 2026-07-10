@@ -61,6 +61,21 @@ DEMO_TENANTS=client-name    # comma-separated, если несколько
 # ── Domain (только для prod) ────────────────────────────────────
 DOMAIN=chat.client.com
 # После: Caddy автоматом получит Let's Encrypt сертификат
+
+# ── Anti-Abuse (дефолты безопасны, но можно зажать) ────────────
+ABUSE_RPS=1.0              # Token bucket refill rate (requests/second)
+ABUSE_BURST=5              # Token bucket burst capacity
+ABUSE_MESSAGE_MAX_LENGTH=2000  # Макс. длина сообщения (символов)
+ABUSE_MIN_INTERVAL=1.0     # Мин. интервал между сообщениями (сек)
+ABUSE_SESSION_BUDGET=50    # Макс. сообщений за сессию
+ABUSE_REPEATED_THRESHOLD=3 # Порог повторяющегося текста (раз)
+
+# ── Logging ─────────────────────────────────────────────────────
+LOG_FORMAT=text            # Формат логов: json или text
+LOG_LEVEL=info             # Уровень: debug, info, warn, error
+
+# ── Monitoring ──────────────────────────────────────────────────
+# Метрики включены по умолчанию на всех сервисах — /metrics
 ```
 
 Остальные ~170 переменных — дефолты работают. Править только под клиента.
@@ -84,7 +99,43 @@ curl http://localhost:8080/                               # → 200, web
 curl http://localhost:8084/health                          # → {"status":"ok"}
 curl http://localhost:8082/health                          # → {"status":"ok"}
 curl http://localhost:8081/health                          # → {"status":"ok"}
+
+### Проверка метрик (v1.1.0)
+```bash
+curl http://localhost:8084/metrics?tenant=default | head -20   # data-service
+curl http://localhost:8083/metrics | grep mcp_                  # mcp-gateway
+curl http://localhost:8081/metrics | grep llm_                  # api-service
+curl http://localhost:8085/metrics | head -5                    # admin-dashboard
 ```
+
+## 3.5. Monitoring Stack (Prometheus + Grafana)
+
+Стек мониторинга запускается поверх работающих сервисов через Docker profile:
+
+```bash
+docker compose --profile monitoring up -d
+# Prometheus: http://localhost:9090
+# Grafana:    http://localhost:3000 (admin / admin)
+```
+
+**Что мониторится:**
+
+| Сервис | Порт | Метрики |
+|---|---|---|
+| **data-service** | :8084 | `data_requests_total`, `data_request_duration_ms` |
+| **mcp-gateway** | :8083 | `mcp_tool_calls_total`, `mcp_sessions_active`, `mcp_rate_limit_hits_total` |
+| **admin-dashboard** | :8085 | `admin_requests_total` |
+| **api-service** | :8081 | `chat_sessions_total`, `chat_messages_total`, `llm_calls_total`, `llm_duration_ms`, `llm_token_usage`, `llm_cost_total`, `abuse_blocked_total`, `backlog_*` |
+
+**Grafana дашборд** (12 панелей): `docker/grafana/dashboards/agent-tutor-overview.json`
+- Общая сводка (chat sessions, active sessions)
+- LLM метрики (calls, tokens, cost, duration)
+- Data-service метрики (requests, latency)
+- MCP метрики (tool calls, active sessions)
+- Admin dashboard метрики
+- Anti-abuse блокировки
+
+**Нативный запуск (без Docker):** каждый сервис отдаёт `/metrics` независимо — можно скрапить любым Prometheus-экспортером.
 
 ## 4. Тенант + данные
 
@@ -103,6 +154,8 @@ curl http://localhost:8084/admin/introspect?tenant=client-name
 uv run agent-rag-ingest import /path/to/client/doc.pdf -d client-name -t "Договор"
 ```
 
+> Анти-спам включён по умолчанию — админ может отключить/настроить через **Anti-Abuse** вкладку в admin-dashboard.
+
 ## 5. Агент — настройка
 
 Admin-dashboard: `http://localhost:8085`
@@ -112,6 +165,10 @@ Admin-dashboard: `http://localhost:8085`
 3. **Tools** — утвердить write-тулы (по умолчанию выключены)
 4. **Agents** — создать агента, system prompt
 5. **RAG** — загрузить документы, проверить поиск
+6. **Monitoring** (новое, v1.1.0):
+   - **Anti-Abuse** — настройки abuse engine: RPS, burst, session budget, интервал, детекция повторов
+   - **Emergency Presets** — Big Red Button: Normal → Cautious → Lockdown одним кликом
+   - Логи в JSON (`LOG_FORMAT=json`) для интеграции с системами сбора логов
 
 ## 6. Виджет — встройка на сайт клиента
 
@@ -189,4 +246,26 @@ docker compose logs caddy -f
 5. Admin-dashboard: загрузить RAG, создать агента, утвердить тулы
 6. Виджет: <script src="/embed/embed.js" data-agent="assistant">
 7. uv run agent-db e2e-full
+8. Monitoring: docker compose --profile monitoring up -d (Grafana :3000)
+```
+
+---
+
+## 10. Переменные окружения — новые (v1.1.0)
+
+```bash
+# ── Anti-Abuse ──────────────────────────────────────────────────
+ABUSE_RPS=1.0           # Token bucket refill rate (requests/second)
+ABUSE_BURST=5           # Token bucket burst capacity
+ABUSE_MESSAGE_MAX_LENGTH=2000  # Max message length (chars)
+ABUSE_MIN_INTERVAL=1.0  # Min interval between messages (seconds)
+ABUSE_SESSION_BUDGET=50 # Max messages per session
+ABUSE_REPEATED_THRESHOLD=3  # Repeated text detection (times)
+
+# ── Logging ──────────────────────────────────────────────────────
+LOG_FORMAT=json         # Log format: json or text (api-service structlog)
+LOG_LEVEL=info          # Log level: debug, info, warn, error
+
+# ── Monitoring ───────────────────────────────────────────────────
+ENABLE_METRICS=true     # Enable /metrics endpoint on all services (always on)
 ```

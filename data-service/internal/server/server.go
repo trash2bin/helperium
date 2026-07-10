@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/agent-tutor/agent-tutor-go/pkg/metrics"
 )
 
 // ── Middleware ──
@@ -46,6 +47,10 @@ func StructuredLoggingMiddleware(next http.Handler) http.Handler {
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
 		next.ServeHTTP(wrapped, r)
+
+		// Prometheus metrics — entity="all" для корневого уровня
+		metrics.DataRequestsTotal.WithLabelValues("all", r.Method, strconv.Itoa(wrapped.statusCode)).Inc()
+		metrics.DataRequestDuration.WithLabelValues("all", r.Method).Observe(float64(time.Since(start).Milliseconds()))
 
 		slog.Info("request",
 			"method", r.Method,
@@ -276,6 +281,7 @@ func TenantIDMiddleware(tenantHeader string) func(http.Handler) http.Handler {
 	systemPaths := map[string]struct{}{
 		"/docs":         {},
 		"/openapi.json": {},
+		"/metrics":      {},
 	}
 
 	return func(next http.Handler) http.Handler {

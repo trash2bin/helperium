@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
+
+from api_service.prometheus_metrics import (
+    llm_calls_total,
+    llm_duration_ms,
+    llm_token_usage,
+    llm_cost_total,
+)
 
 import litellm
 from litellm import CustomStreamWrapper
@@ -144,7 +152,14 @@ class LLMClient:
             kwargs["max_tokens"] = self.max_tokens_thinking
             kwargs["stream"] = True
 
+        _start_time = time.monotonic()
         response = await litellm.acompletion(**kwargs)
+        _duration_ms = (time.monotonic() - _start_time) * 1000
+        llm_duration_ms.labels(model=self.model).observe(_duration_ms)
+        llm_calls_total.labels(
+            model=self.model,
+            provider=self.model.split("/")[0] if "/" in self.model else "unknown",
+        ).inc()
 
         # Проверка на корректный тип данных от LiteLLM
         if not isinstance(response, CustomStreamWrapper):
@@ -183,6 +198,23 @@ class LLMClient:
 
         result: dict[str, Any] = self._build_response_dict(msg_obj)
         self.last_final_message = result
+
+        # Track token usage
+        final_usage_obj = getattr(final, "usage", None)
+        if final_usage_obj:
+            pt = getattr(final_usage_obj, "prompt_tokens", 0) or 0
+            ct = getattr(final_usage_obj, "completion_tokens", 0) or 0
+            tt = getattr(final_usage_obj, "total_tokens", 0) or 0
+            if pt:
+                llm_token_usage.labels(type="prompt").inc(pt)
+            if ct:
+                llm_token_usage.labels(type="completion").inc(ct)
+            if tt:
+                llm_token_usage.labels(type="total").inc(tt)
+            # Approximate cost (very rough estimate)
+            cost = (pt * 0.00015 / 1000) + (ct * 0.0006 / 1000) if pt and ct else 0
+            if cost > 0:
+                llm_cost_total.inc(cost)
 
         # Log reasoning if present
         if result.get("reasoning_content"):

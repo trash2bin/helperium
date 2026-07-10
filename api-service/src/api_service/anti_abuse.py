@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 import re
+
+from api_service.prometheus_metrics import abuse_blocked_total
 import threading
 import time
 from dataclasses import dataclass, field
@@ -245,11 +247,13 @@ class AntiAbuseChecker:
         # 1. User-Agent check
         ua_reason = self._check_user_agent(user_agent)
         if ua_reason:
+            abuse_blocked_total.labels(reason="user_agent").inc()
             return CheckResult(allowed=False, reason=ua_reason)
 
         # 2. Message length
         len_reason = self._check_message_length(message)
         if len_reason:
+            abuse_blocked_total.labels(reason="message_length").inc()
             return CheckResult(allowed=False, reason=len_reason)
 
         # 3. Min interval between messages
@@ -257,6 +261,7 @@ class AntiAbuseChecker:
             self.config.min_interval_ms / 1000
         ):
             remaining = (self.config.min_interval_ms / 1000) - last_msg_time_since
+            abuse_blocked_total.labels(reason="interval").inc()
             return CheckResult(
                 allowed=False,
                 reason=f"Min interval not met ({last_msg_time_since:.1f}s < {self.config.min_interval_ms / 1000:.1f}s)",
@@ -265,6 +270,7 @@ class AntiAbuseChecker:
 
         # 4. Session message budget
         if n_msg >= self.config.max_messages_per_session:
+            abuse_blocked_total.labels(reason="session_budget").inc()
             return CheckResult(
                 allowed=False,
                 reason=f"Session message budget exceeded ({n_msg} >= {self.config.max_messages_per_session})",
@@ -273,6 +279,7 @@ class AntiAbuseChecker:
         # 5. Repeated text detection
         repeat_reason = self._check_repeated_message(session_id, message)
         if repeat_reason:
+            abuse_blocked_total.labels(reason="repeated_text").inc()
             return CheckResult(allowed=False, reason=repeat_reason)
 
         return CheckResult(allowed=True)

@@ -44,6 +44,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/agent-tutor/agent-tutor-go/pkg/metrics"
 	"github.com/agent-tutor/data-service/internal/configgen"
 	"github.com/agent-tutor/data-service/internal/datasource"
 	"github.com/agent-tutor/data-service/internal/seedgen"
@@ -61,6 +62,7 @@ func main() {
 	flag.Parse()
 
 	server.InitLogger()
+	metrics.RegisterMetrics()
 
 	// ── Materialize-режим: создать БД из сценария и выйти ──
 	if *materializeDir != "" {
