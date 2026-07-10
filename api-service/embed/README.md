@@ -11,7 +11,11 @@
         data-title="Помощник по товарам"
         data-greeting="Спрашивайте о товарах!"
         data-accent="#0f766e"
-        data-position="right">
+        data-position="right"
+        data-placeholder="Наберите вопрос..."
+        data-width="min(420px, calc(100vw - 28px))"
+        data-header-color="#0f766e"
+        data-show-header="true">
 </script>
 ```
 
@@ -29,6 +33,14 @@
 | `data-greeting` | `"Чем могу помочь?"` | Приветственное сообщение при пустой истории |
 | `data-accent` | `"#0f766e"` | Акцентный цвет (CSS hex, поддерживает transparent) |
 | `data-position` | `"right"` | Положение: `"right"` или `"left"` |
+| `data-placeholder` | `"��апишите вопрос..."` | Текст-плейсхолдер в поле ввода |
+| `data-width` | `"min(380px, calc(100vw - 28px))"` | Ширина панели (любое CSS-значение) |
+| `data-height` | `"min(620px, calc(100vh - 44px))"` | Высота панели (любое CSS-значение) |
+| `data-trigger-offset-bottom` | `"16px"` | Отступ от нижнего края для кнопки и панели |
+| `data-header-color` | (равно accent) | Цвет фона шапки (если нужен отличный от accent) |
+| `data-show-header` | `"true"` | Показывать шапку: `"true"` или `"false"` |
+| `data-bot-bubble-color` | `"#eef3f4"` | Цвет фона пузырька ассистента |
+| `data-bot-bubble-text` | `"var(--ink)"` | Цвет текста пузырька ассистента |
 
 ## Как это работает
 
@@ -143,3 +155,23 @@ api-service/embed/
 - В консоли: `window.__agentTutorSetAgent — глобальный bridge`
 - `sessionStorage` ключи: `at_messages_{agent}`, `at_session_{agent}`
 - `localStorage` ключ: `agentTutorAgentId` (используется dashboard'ом)
+
+## CSP для сайта, куда встраивается виджет
+
+Если сайт использует Content-Security-Policy, ему нужно разрешить:
+
+```
+script-src https://ваш-сервер.com;
+connect-src https://ваш-сервер.com;
+```
+
+**Пояснение:**
+- `script-src` — виджет загружается через `<script src="https://ваш-сервер.com/embed/embed.js">`. Если ваш CSP запрещает external scripts, виджет не запустится.
+- `connect-src` — виджет делает `fetch` к `POST https://ваш-сервер.com/api/chat/{agent}` для SSE стриминга.
+
+Виджет **не** использует inline-скрипты, `style-src` не нужен благодаря Shadow DOM.
+
+**Безопасность:** сервер устанавливает на `/embed/*` заголовки:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Cache-Control: public, max-age=31536000, immutable` (для .js/.css)

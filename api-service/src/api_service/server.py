@@ -292,6 +292,24 @@ else:
     )
 
 
+# --- Embed security headers middleware ---
+@app.middleware("http")
+async def add_embed_security_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Any]]
+) -> Any:
+    response = await call_next(request)
+    if request.url.path.startswith("/embed/"):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        # Cache static assets for 1 year (they are versioned by deploy)
+        if request.url.path.endswith((".js", ".css")):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            # Non-asset embed files: short cache to avoid stale 404s
+            response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
 # --- Correlation ID middleware ---
 @app.middleware("http")
 async def add_correlation_id(

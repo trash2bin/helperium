@@ -33,7 +33,15 @@
     title: script.getAttribute('data-title') || 'Ассистент',
     greeting: script.getAttribute('data-greeting') || 'Чем могу помочь?',
     accent: script.getAttribute('data-accent') || '#0f766e',
-    position: script.getAttribute('data-position') === 'left' ? 'left' : 'right'
+    position: script.getAttribute('data-position') === 'left' ? 'left' : 'right',
+    placeholder: script.getAttribute('data-placeholder') || 'Напишите вопрос...',
+    width: script.getAttribute('data-width') || 'min(380px, calc(100vw - 28px))',
+    height: script.getAttribute('data-height') || 'min(620px, calc(100vh - 44px))',
+    triggerOffsetBottom: script.getAttribute('data-trigger-offset-bottom') || '16px',
+    headerColor: script.getAttribute('data-header-color') || '',
+    showHeader: script.getAttribute('data-show-header') !== 'false',
+    botBubbleColor: script.getAttribute('data-bot-bubble-color') || '#eef3f4',
+    botBubbleText: script.getAttribute('data-bot-bubble-text') || 'var(--ink)'
   };
 
   if (!CONFIG.agent) {
@@ -53,12 +61,14 @@
   var SESSION_KEY = 'at_session_' + CONFIG.agent;
 
   /* ─── CSS (embedded for Shadow DOM) ─── */
-  function getWidgetCSS(accent) {
+  function getWidgetCSS(cfg) {
+    var headerBg = cfg.headerColor || cfg.accent;
+    var headDisplay = cfg.showHeader ? '' : 'display: none;';
     return [
     ':host {',
     '  all: initial;',
-    '  --accent: ' + accent + ';',
-    '  --accent-strong: ' + accent + ';',
+    '  --accent: ' + cfg.accent + ';',
+    '  --accent-strong: ' + cfg.accent + ';',
     '  --ink: #1e293b;',
     '  --muted: #64748b;',
     '  --line: #e2e8f0;',
@@ -67,6 +77,12 @@
     '  --blue: #2563eb;',
     '  --shadow: 0 18px 50px rgba(23, 32, 38, 0.14);',
     '  --radius: 8px;',
+    '  --trigger-offset-bottom: ' + cfg.triggerOffsetBottom + ';',
+    '  --panel-width: ' + cfg.width + ';',
+    '  --panel-height: ' + cfg.height + ';',
+    '  --header-bg: ' + headerBg + ';',
+    '  --bot-bubble-bg: ' + cfg.botBubbleColor + ';',
+    '  --bot-bubble-text: ' + cfg.botBubbleText + ';',
     '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;',
     '}',
     '',
@@ -81,7 +97,7 @@
     '',
     '.at-trigger {',
     '  position: fixed;',
-    '  bottom: 16px;',
+    '  bottom: var(--trigger-offset-bottom);',
     '  width: 56px;',
     '  height: 56px;',
     '  border: 0;',
@@ -99,15 +115,15 @@
     '  padding: 0;',
     '}',
     '.at-trigger:hover { opacity: 0.9; transform: scale(1.05); }',
-    '.at-trigger.at-right { right: 16px; }',
-    '.at-trigger.at-left { left: 16px; }',
+    '.at-trigger.at-right { right: var(--trigger-offset-bottom); }',
+    '.at-trigger.at-left { left: var(--trigger-offset-bottom); }',
     '.at-trigger svg { width: 28px; height: 28px; fill: currentColor; }',
     '',
     '.at-panel {',
     '  position: fixed;',
-    '  bottom: 16px;',
-    '  width: min(380px, calc(100vw - 28px));',
-    '  height: min(620px, calc(100vh - 44px));',
+    '  bottom: var(--trigger-offset-bottom);',
+    '  width: var(--panel-width);',
+    '  height: var(--panel-height);',
     '  display: grid;',
     '  grid-template-rows: auto 1fr auto;',
     '  overflow: hidden;',
@@ -118,8 +134,8 @@
     '  z-index: 2147483646;',
     '  transition: opacity 0.2s, transform 0.2s;',
     '}',
-    '.at-panel.at-right { right: 16px; }',
-    '.at-panel.at-left { left: 16px; }',
+    '.at-panel.at-right { right: var(--trigger-offset-bottom); }',
+    '.at-panel.at-left { left: var(--trigger-offset-bottom); }',
     '.at-panel.at-hidden {',
     '  opacity: 0;',
     '  transform: translateY(10px) scale(0.96);',
@@ -133,6 +149,8 @@
     '  align-items: center;',
     '  padding: 14px 14px 12px;',
     '  border-bottom: 1px solid var(--line);',
+    '  background: var(--header-bg);',
+    '  ' + headDisplay,
     '}',
     '.at-head-info strong { display: block; font-size: 15px; font-weight: 600; }',
     '.at-head-info span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }',
@@ -173,8 +191,8 @@
     '}',
     '.at-msg.at-assistant {',
     '  align-self: flex-start;',
-    '  background: #eef3f4;',
-    '  color: var(--ink);',
+    '  background: var(--bot-bubble-bg);',
+    '  color: var(--bot-bubble-text);',
     '  white-space: normal;',
     '  margin-top: -3px;',
     '}',
@@ -284,7 +302,7 @@
     '}'
   ].join('\n');
   }
-  var WIDGET_CSS = getWidgetCSS(CONFIG.accent);
+  var WIDGET_CSS = getWidgetCSS(CONFIG);
 
   /* ─── Utilities ─── */
 
@@ -467,7 +485,7 @@
     form.className = 'at-form';
     var textarea = document.createElement('textarea');
     textarea.rows = 2;
-    textarea.placeholder = 'Напишите вопрос...';
+    textarea.placeholder = CONFIG.placeholder;
     form.appendChild(textarea);
     var sendBtn = document.createElement('button');
     sendBtn.type = 'submit';
