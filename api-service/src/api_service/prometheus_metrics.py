@@ -47,6 +47,7 @@ llm_token_usage = Counter(
 llm_cost_total = Counter(
     "llm_cost_total",
     "Total LLM cost in USD",
+    ["model", "provider", "tenant_id"],
 )
 
 abuse_blocked_total = Counter(

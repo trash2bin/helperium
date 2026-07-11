@@ -62,8 +62,12 @@ def mock_llm():
     mock.api_base = "http://test"
     mock.enable_thinking = False
     mock.last_final_message = None
+    mock.last_usage = None
+    mock.last_cost = 0.0
     # Default: empty stream
-    mock.stream_completion = lambda messages, tools=None: _make_stream()
+    mock.stream_completion = lambda messages, tools=None, tenant_ids=None: (
+        _make_stream()
+    )
     return mock
 
 
@@ -82,7 +86,9 @@ def _install_stream(mock_llm, *tuples):
     Creates a *fresh* generator on every call so multiple invocations
     work correctly.
     """
-    mock_llm.stream_completion = lambda messages, tools=None: _make_stream(*tuples)
+    mock_llm.stream_completion = lambda messages, tools=None, tenant_ids=None: (
+        _make_stream(*tuples)
+    )
 
 
 # ── Test scenarios ───────────────────────────────────────────────────────────
@@ -226,7 +232,7 @@ class TestLLMHandler:
         """stream_completion receives ctx.messages and ctx.tools."""
         captured_args = {}
 
-        def capture(messages, tools=None):
+        def capture(messages, tools=None, tenant_ids=None):
             captured_args["messages"] = messages
             captured_args["tools"] = tools
             return _make_stream((None, {"role": "assistant", "content": "ok"}))
@@ -245,7 +251,7 @@ class TestLLMHandler:
         """When tools list is empty, pass None as tools."""
         captured_args = {}
 
-        def capture(messages, tools=None):
+        def capture(messages, tools=None, tenant_ids=None):
             captured_args["messages"] = messages
             captured_args["tools"] = tools
             return _make_stream((None, {"role": "assistant", "content": "ok"}))

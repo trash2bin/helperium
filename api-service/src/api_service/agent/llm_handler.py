@@ -72,6 +72,7 @@ class LLMHandler:
         async for token, final in self._llm.stream_completion(
             ctx.messages,
             tools=ctx.tools if ctx.tools else None,
+            tenant_ids=ctx.tenant_ids,
         ):
             if token:
                 yield AgentEvent("token", TokenEventData(data=token))

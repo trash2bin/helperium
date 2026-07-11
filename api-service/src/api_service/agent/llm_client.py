@@ -15,6 +15,7 @@ from api_service.prometheus_metrics import (
     llm_token_usage,
     llm_cost_total,
 )
+from api_service.pricing import get_model_cost
 
 import litellm
 from litellm import CustomStreamWrapper
@@ -42,12 +43,15 @@ class LLMClientProtocol(Protocol):
     model: str
     api_base: str | None
     enable_thinking: bool
+    last_usage: dict[str, int] | None
+    last_cost: float
 
     def stream_completion(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         stream: bool = True,
+        tenant_ids: list[str] | None = None,
     ) -> AsyncIterator[tuple[str | None, dict[str, Any] | None]]:
         """Stream an LLM completion.
 
@@ -108,6 +112,8 @@ class LLMClient:
         self.max_tokens_thinking: int = max_tokens_thinking
         self.enable_thinking: bool = enable_thinking
         self.last_final_message: dict[str, Any] | None = None
+        self.last_usage: dict[str, int] | None = None
+        self.last_cost: float = 0.0
 
     def _get_extra_params(self) -> dict[str, Any]:
         """Get extra parameters for LiteLLM completion calls."""
@@ -123,6 +129,7 @@ class LLMClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         stream: bool = True,
+        tenant_ids: list[str] | None = None,
     ) -> AsyncIterator[tuple[str | None, dict[str, Any] | None]]:
         """
         Stream LLM completion and yield (token, final_message) tuples.
@@ -135,6 +142,7 @@ class LLMClient:
             messages: List of message dicts
             tools: Optional list of tool definitions
             stream: Whether to stream tokens
+            tenant_ids: Optional tenant IDs for cost attribution
         """
         extra_params = self._get_extra_params()
 
@@ -211,10 +219,22 @@ class LLMClient:
                 llm_token_usage.labels(type="completion").inc(ct)
             if tt:
                 llm_token_usage.labels(type="total").inc(tt)
-            # Approximate cost (very rough estimate)
-            cost = (pt * 0.00015 / 1000) + (ct * 0.0006 / 1000) if pt and ct else 0
-            if cost > 0:
-                llm_cost_total.inc(cost)
+            # Realistic cost from pricing table
+            cost = get_model_cost(self.model, pt, ct)
+            self.last_cost = cost if cost is not None else 0.0
+            self.last_usage = {
+                "prompt_tokens": pt,
+                "completion_tokens": ct,
+                "total_tokens": tt,
+            }
+            if cost is not None and cost > 0:
+                tid = tenant_ids[0] if tenant_ids else "unknown"
+                prov = self.model.split("/")[0] if "/" in self.model else "unknown"
+                llm_cost_total.labels(
+                    model=self.model,
+                    provider=prov,
+                    tenant_id=tid,
+                ).inc(cost)
 
         # Log reasoning if present
         if result.get("reasoning_content"):

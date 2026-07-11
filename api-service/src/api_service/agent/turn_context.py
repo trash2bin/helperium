@@ -46,9 +46,10 @@ class TurnContext:
     # Messages produced THIS turn only (saved to conversation store at end).
     turn_messages: list[dict[str, Any]] = field(default_factory=list)
 
-    # ── Identifiers ──────────��──────────────────────────────────────────────
+    # ── Identifiers ───────────────────────────────────────────────────────────
     session_id: SessionId = ""
     turn_id: str = ""
+    tenant_ids: list[str] | None = None
 
     # ── MCP tool definitions for the current tenant(s) ──────────────────────
     tools: list[dict[str, Any]] = field(default_factory=list)
@@ -74,6 +75,7 @@ class TurnContext:
         session_id: SessionId,
         system_prompt: str,
         conversation_manager: ConversationManager,
+        tenant_ids: list[str] | None = None,
     ) -> TurnContext:
         """Build a context from scratch: load history, prepend system prompt.
 
@@ -82,6 +84,7 @@ class TurnContext:
             session_id:    Current conversation session.
             system_prompt: Agent system prompt (may be per-agent override).
             conversation_manager: Loads persisted history.
+            tenant_ids:    Optional tenant IDs for cost attribution.
 
         Returns:
             A fully initialised TurnContext ready for the agent loop.
@@ -104,4 +107,5 @@ class TurnContext:
             messages=messages,
             turn_messages=turn_messages,
             session_id=session_id,
+            tenant_ids=tenant_ids,
         )

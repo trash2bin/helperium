@@ -88,9 +88,10 @@ func (b *Builder) BuildFind(entity Entity, searchField, value string) (Query, er
 	ph := b.adapter.TranslatePlaceholder(1)
 
 	// LIKE-поиск: совместимость со старыми хендлерами (поиск по подстроке).
-	// Безопасность: value в prepared statement, wildcards %/_ интерпретируются LIKE —
-	// это желаемое поведение для поиска.
-	searchVal := "%" + value + "%"
+	// Безопасность: value в prepared statement, wildcards % и _ экранируются
+	// перед LIKE, чтобы предотвратить DoS через wildcard-атаки (full scan).
+	escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(value)
+	searchVal := "%" + escaped + "%"
 
 	q := Query{
 		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` LIKE ` + ph,
@@ -294,9 +295,14 @@ func isValidSelect(sql string) bool {
 	}
 
 	// 5. Проверка опасных ключевых слов (standalone-токены)
+	// SELECT ... INTO в PostgreSQL — DDL (создаёт таблицу), не read-only.
+	// REPLACE — MySQL-специфичная альтернатива INSERT.
+	// LOAD DATA / LOAD FILE — file I/O на сервере БД.
+	// ATTACH / DETACH — SQLite: присоединение/отсоединение баз данных.
 	dangerousKeywords := []string{
 		"INSERT", "UPDATE", "DELETE", "DROP",
 		"ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE",
+		"INTO", "REPLACE", "LOAD", "ATTACH", "DETACH",
 	}
 	upper := strings.ToUpper(s)
 	for _, kw := range dangerousKeywords {

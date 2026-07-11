@@ -35,7 +35,10 @@ class FakeLLMClient:
         self.call_count = 0
         self.call_history: list[list[dict[str, Any]]] = []
 
-    async def stream_completion(self, messages, tools):
+    last_usage: dict[str, int] | None = None
+    last_cost: float = 0.0
+
+    async def stream_completion(self, messages, tools, tenant_ids=None):
         self.call_count += 1
         self.call_history.append(messages)
         if self.call_count == 1:
