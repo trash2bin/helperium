@@ -4,20 +4,23 @@ global:
 
 scrape_configs:
   - job_name: 'data-service'
+    metrics_path: '/metrics'
+    params:
+      tenant: ['default']
     static_configs:
-      - targets: ['data-service:8084']
+      - targets: ['host.docker.internal:8084']
 
   - job_name: 'mcp-gateway'
     static_configs:
-      - targets: ['mcp-gateway:8083']
+      - targets: ['host.docker.internal:8083']
 
   - job_name: 'api-service'
     static_configs:
-      - targets: ['api:8081']
+      - targets: ['host.docker.internal:8081']
 
   - job_name: 'admin-dashboard'
     static_configs:
-      - targets: ['admin-dashboard:8085']
+      - targets: ['host.docker.internal:8085']
 
   - job_name: 'prometheus'
     static_configs:
