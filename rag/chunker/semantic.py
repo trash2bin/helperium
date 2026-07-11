@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from rag.config import RagConfig
-from rag.chunker.base import ChunkerStrategy
 
 
 class SemanticChunkerStrategy:

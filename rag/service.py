@@ -49,8 +49,7 @@ from rag.prometheus_metrics import (
     rag_search_duration,
     rag_import_duration,
     rag_cache_entries,
-    rag_cache_hits,
-    rag_cache_misses,
+
 )
 
 logger = logging.getLogger("rag.service")
@@ -390,6 +389,12 @@ async def delete_document(req: DeleteDocumentRequest) -> DeleteDocumentResponse:
 )
 async def search(req: SearchRequest) -> SearchResponse:
     try:
+        # Whitespace-only queries are not valid
+        if not req.query.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Query must not be empty or whitespace-only",
+            )
         rag_searches.labels(status="ok").inc()
         with rag_search_duration.time():
             results = await run_in_threadpool(
@@ -402,6 +407,8 @@ async def search(req: SearchRequest) -> SearchResponse:
             results=list(results),
             count=len(results),
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         rag_searches.labels(status="error").inc()
         logger.exception("search failed")
@@ -457,9 +464,16 @@ async def metrics():
 
 
 def _check_admin_token(request: Request) -> None:
-    """Проверить X-Admin-Token, если ADMIN_API_TOKEN настроен."""
+    """Проверить X-Admin-Token.
+
+    Admin API всегда требует токен. Если ADMIN_API_TOKEN не задан в .env —
+    эндпоинты недоступны (fail-closed).
+    """
     if not ADMIN_API_TOKEN:
-        return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ADMIN_API_TOKEN is not configured — admin endpoints are disabled",
+        )
     token = request.headers.get("X-Admin-Token", "")
     if token != ADMIN_API_TOKEN:
         raise HTTPException(

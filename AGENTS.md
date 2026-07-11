@@ -25,7 +25,7 @@
 | **Data-service** (Go) | `:8084` | Generic CRUD/Query прокси. Интроспекция БД, генерация API, config hot-reload, write-tool approval flow. | [README](data-service/README.md) |
 | **MCP-gateway** (Go) | `:8083` | MCP сервер (SSE/JSON-RPC). Динамическая генерация инструментов из data-service. | [README](mcp-gateway/README.md) |
 | **Admin Dashboard** (Go) | `:8085` | Веб-интерфейс для администрирования: tenant CRUD, конфиги, тулы, RAG, агенты. Alpine.js UI. | [README](admin-dashboard/README.md) |
-| **RAG** (Python) | `:8082` | Поиск по документам (ChromaDB), чанкинг, эмбеддинги, multipart document upload. | [README](rag/README.md) |
+| **RAG** (Python) | `:8082` | Поиск по документам (ChromaDB), чанкинг, эмбеддинги (local/LiteLLM), кэш (Local/Redis), admin config API, Prometheus метрики, re-embedding pipeline. | [README](rag/README.md) |
 | **API** (Python) | `:8081` | Оркестратор агента, LiteLLM, Agent Store (CRUD), rate limiter, управление сессиями и бэклогом. Встраиваемый чат-виджет: [embed/README.md](api-service/embed/README.md). | [AGENT_WORKFLOW](api-service/README.md) |
 | **Web** (Python) | `:8080` | UI-интерфейс + reverse-proxy. Проксирует `X-Tenant-ID` и поддерживает tenant routing. | [README](demo/web/README.md) |
 | **SDK** (Python) | — | Общие Pydantic-модели и клиенты для сервисов. | [pyproject.toml](agent-tutor-sdk/pyproject.toml) |

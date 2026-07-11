@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from rag.config import RagConfig
 from rag.embedding.litellm_provider import LiteLLMEmbedding

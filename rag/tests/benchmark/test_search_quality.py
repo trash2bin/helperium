@@ -33,8 +33,6 @@ from rag.pipeline import RAGPipeline
 from rag.documents_schema import create_rag_schema
 
 from rag.tests.benchmark.golden_qa import (
-    GOLDEN_DOCUMENTS,
-    GOLDEN_QUERIES,
     evaluate_retrieval,
     print_report,
     load_baseline,

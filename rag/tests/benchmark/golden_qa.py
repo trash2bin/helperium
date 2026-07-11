@@ -11,11 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
-import tempfile
 import time
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -398,8 +395,6 @@ def print_report(
     print(file=file)
     print("  ── Детали по запросам ──", file=file)
     for r in metrics["per_query"]:
-        expected_str = ", ".join(r["expected"])
-        found_str = ", ".join(r["found_titles"][:3]) if r["found_titles"] else "(пусто)"
         err_mark = " ⚠️" if r.get("error") else ""
         print(
             f"  • {r['query'][:60]:<60}"

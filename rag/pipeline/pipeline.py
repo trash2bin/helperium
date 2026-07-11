@@ -9,6 +9,7 @@ from typing import Callable
 from rag.config import RagConfig
 from rag.embedding.protocol import EmbeddingProtocol
 from rag.vector_store.protocol import VectorStoreProtocol
+from rag.prometheus_metrics import rag_cache_hits, rag_cache_misses
 from agent_tutor_sdk.rag.models import (
     Document,
     DocumentImportResult,
@@ -116,7 +117,9 @@ class RAGPipeline:
         if hasattr(self, '_cache') and self._cache is not None:
             cached = self._cache.get_cached_search(normalized_query, discipline_id, limit)
             if cached is not None:
+                rag_cache_hits.inc()
                 return cached
+            rag_cache_misses.inc()
 
         limit = max(1, min(limit, self.config.search_limit_max))
 
