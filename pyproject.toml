@@ -8,6 +8,7 @@ requires-python = ">=3.12, <3.14"
 dependencies = [
     "prometheus-client>=0.25.0",
     "prometheus-fastapi-instrumentator>=8.0.2",
+    "pyyaml>=6.0.3",
     "slowapi>=0.1.10",
     "structlog>=26.1.0",
 ]

@@ -26,11 +26,6 @@ class DemoSettings:
         self.ollama_url: str = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
         self.ollama_model: str = os.environ.get("OLLAMA_MODEL", "qwen2.5:0.5b")
 
-        self.mistral_api_key: str | None = os.environ.get("MISTRAL_API_KEY")
-        self.mistral_model: str = os.environ.get(
-            "MISTRAL_MODEL", "mistral/mistral-small"
-        )
-
         self.request_timeout: float = float(
             os.environ.get("DEMO_REQUEST_TIMEOUT", 120 * 5)
         )

@@ -175,7 +175,7 @@ CONFIG_SCHEMA=../specs/config.schema.json go run ./cmd/server/ --config testdata
 ## Тестирование
 
 ```bash
-# Все go-тесты (326 шт, 12 пакетов)
+# Все go-тесты (470 шт, 14 пакетов)
 go test ./internal/... -count=1
 
 # White-box тесты (рядом с кодом)

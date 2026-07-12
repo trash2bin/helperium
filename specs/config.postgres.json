@@ -2,121 +2,19 @@
   "version": 1,
   "data_source": {
     "driver": "postgres",
-    "dsn": "${DATABASE_URL:-postgresql://tutor:tutor@127.0.0.1:5432/helperium?sslmode=disable}",
-    "pool_size": 10,
-    "read_only": true,
-    "readonly_dsn": "postgres://readonly:readonly@127.0.0.1:5432/helperium?sslmode=disable"
-  },
-  "introspection": {
-    "enabled": false,
-    "exclude_tables": []
+    "dsn": "postgres://autoparts:autoparts_secret_2024@127.0.0.1:5434/autoparts?sslmode=disable",
+    "read_only": true
   },
   "entities": [
     {
-      "name": "group",
-      "table": "groups",
+      "name": "catalog_brand",
+      "table": "public.catalog_brand",
       "id_column": "id",
-      "description": "Учебная группа",
       "fields": [
         {
           "name": "id",
           "column": "id",
-          "type": "string",
-          "nullable": false,
-          "primary_key": true
-        },
-        {
-          "name": "name",
-          "column": "name",
-          "type": "string",
-          "nullable": false,
-          "description": "Название группы. Пример: ИВТ-21"
-        },
-        {
-          "name": "speciality",
-          "column": "speciality",
-          "type": "string",
-          "nullable": false,
-          "description": "Специальность группы"
-        }
-      ]
-    },
-    {
-      "name": "student",
-      "table": "students",
-      "id_column": "id",
-      "description": "Карточка студента",
-      "fields": [
-        {
-          "name": "id",
-          "column": "id",
-          "type": "string",
-          "nullable": false,
-          "primary_key": true
-        },
-        {
-          "name": "full_name",
-          "column": "name",
-          "type": "string",
-          "nullable": false,
-          "description": "Полное ФИО студента"
-        },
-        {
-          "name": "course",
-          "column": "course",
           "type": "int",
-          "nullable": true,
-          "description": "Курс обучения (1-6)"
-        }
-      ],
-      "relations": [
-        {
-          "field": "group",
-          "kind": "many_to_one",
-          "table": "groups",
-          "local_fk": "group_id"
-        }
-      ]
-    },
-    {
-      "name": "teacher",
-      "table": "teachers",
-      "id_column": "id",
-      "description": "Преподаватель",
-      "fields": [
-        {
-          "name": "id",
-          "column": "id",
-          "type": "string",
-          "nullable": false,
-          "primary_key": true
-        },
-        {
-          "name": "full_name",
-          "column": "name",
-          "type": "string",
-          "nullable": false,
-          "description": "Полное ФИО преподавателя"
-        },
-        {
-          "name": "disciplines",
-          "column": "disciplines_json",
-          "type": "json",
-          "nullable": false,
-          "description": "Список названий дисциплин"
-        }
-      ]
-    },
-    {
-      "name": "discipline",
-      "table": "disciplines",
-      "id_column": "id",
-      "description": "Учебная дисциплина",
-      "fields": [
-        {
-          "name": "id",
-          "column": "id",
-          "type": "string",
           "nullable": false,
           "primary_key": true
         },
@@ -125,112 +23,707 @@
           "column": "name",
           "type": "string",
           "nullable": false,
-          "description": "Название дисциплины"
+          "primary_key": false
+        },
+        {
+          "name": "slug",
+          "column": "slug",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "country",
+          "column": "country",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "logo",
+          "column": "logo",
+          "type": "string",
+          "nullable": true,
+          "primary_key": false
         },
         {
           "name": "description",
           "column": "description",
           "type": "string",
           "nullable": false,
-          "description": "Краткое описание"
+          "primary_key": false
+        },
+        {
+          "name": "founded_year",
+          "column": "founded_year",
+          "type": "int",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "website",
+          "column": "website",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_oem",
+          "column": "is_oem",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "ordering",
+          "column": "ordering",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "column": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "updated_at",
+          "column": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
         }
       ]
     },
     {
-      "name": "grade",
-      "table": "grades",
+      "name": "catalog_cart",
+      "table": "public.catalog_cart",
       "id_column": "id",
-      "description": "Оценка студента",
       "fields": [
         {
           "name": "id",
           "column": "id",
-          "type": "string",
+          "type": "int",
           "nullable": false,
           "primary_key": true
         },
         {
-          "name": "student_id",
-          "column": "student_id",
-          "type": "string",
-          "nullable": false
-        },
-        {
-          "name": "student_name",
-          "column": "_computed",
-          "type": "string",
-          "nullable": true,
-          "description": "Имя студента (подтягивается через JOIN)"
-        },
-        {
-          "name": "discipline_id",
-          "column": "discipline_id",
-          "type": "string",
-          "nullable": false
-        },
-        {
-          "name": "discipline_name",
-          "column": "_computed",
-          "type": "string",
-          "nullable": true,
-          "description": "Название дисциплины (JOIN)"
-        },
-        {
-          "name": "grade",
-          "column": "grade",
+          "name": "session_key",
+          "column": "session_key",
           "type": "string",
           "nullable": false,
-          "description": "Значение оценки: 5, 4, 3, 2, зачёт, незачёт"
+          "primary_key": false
         },
         {
-          "name": "date",
-          "column": "date",
-          "type": "date",
+          "name": "created_at",
+          "column": "created_at",
+          "type": "datetime",
           "nullable": false,
-          "description": "Дата в формате YYYY-MM-DD"
+          "primary_key": false
         }
       ]
     },
     {
-      "name": "schedule",
-      "table": "schedule",
+      "name": "catalog_cartitem",
+      "table": "public.catalog_cartitem",
       "id_column": "id",
-      "description": "Запись расписания на один день",
       "fields": [
         {
           "name": "id",
           "column": "id",
-          "type": "string",
+          "type": "int",
           "nullable": false,
           "primary_key": true
         },
         {
-          "name": "day",
-          "column": "day",
+          "name": "quantity",
+          "column": "quantity",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "price",
+          "column": "price",
+          "type": "float",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "column": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "cart_id",
+          "column": "cart_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "product_id",
+          "column": "product_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        }
+      ]
+    },
+    {
+      "name": "catalog_category",
+      "table": "public.catalog_category",
+      "id_column": "id",
+      "fields": [
+        {
+          "name": "id",
+          "column": "id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "name",
+          "column": "name",
           "type": "string",
           "nullable": false,
-          "description": "День недели"
+          "primary_key": false
         },
         {
-          "name": "group_id",
-          "column": "group_id",
+          "name": "slug",
+          "column": "slug",
           "type": "string",
-          "nullable": false
+          "nullable": false,
+          "primary_key": false
         },
         {
-          "name": "lessons",
-          "column": "lessons_json",
+          "name": "description",
+          "column": "description",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "image",
+          "column": "image",
+          "type": "string",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "icon",
+          "column": "icon",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "ordering",
+          "column": "ordering",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_active",
+          "column": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "column": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "updated_at",
+          "column": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "parent_id",
+          "column": "parent_id",
+          "type": "int",
+          "nullable": true,
+          "primary_key": false
+        }
+      ]
+    },
+    {
+      "name": "catalog_order",
+      "table": "public.catalog_order",
+      "id_column": "id",
+      "fields": [
+        {
+          "name": "id",
+          "column": "id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "order_number",
+          "column": "order_number",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "first_name",
+          "column": "first_name",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "last_name",
+          "column": "last_name",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "patronymic",
+          "column": "patronymic",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "phone",
+          "column": "phone",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "email",
+          "column": "email",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "city",
+          "column": "city",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "address",
+          "column": "address",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "comment",
+          "column": "comment",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "delivery_method",
+          "column": "delivery_method",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "payment_method",
+          "column": "payment_method",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "status",
+          "column": "status",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "items",
+          "column": "items",
           "type": "json",
           "nullable": false,
-          "description": "Список занятий (teacher, discipline, room)"
-        }
-      ],
-      "relations": [
+          "primary_key": false
+        },
         {
-          "field": "group",
-          "kind": "many_to_one",
-          "table": "groups",
-          "local_fk": "group_id"
+          "name": "subtotal",
+          "column": "subtotal",
+          "type": "float",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "delivery_cost",
+          "column": "delivery_cost",
+          "type": "float",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "total",
+          "column": "total",
+          "type": "float",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "column": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "updated_at",
+          "column": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        }
+      ]
+    },
+    {
+      "name": "catalog_product",
+      "table": "public.catalog_product",
+      "id_column": "id",
+      "fields": [
+        {
+          "name": "id",
+          "column": "id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "article",
+          "column": "article",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "name",
+          "column": "name",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "slug",
+          "column": "slug",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "oem_number",
+          "column": "oem_number",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "price",
+          "column": "price",
+          "type": "float",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "old_price",
+          "column": "old_price",
+          "type": "float",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "quantity",
+          "column": "quantity",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_available",
+          "column": "is_available",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "description",
+          "column": "description",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "short_description",
+          "column": "short_description",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "characteristics",
+          "column": "characteristics",
+          "type": "json",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "car_applicability",
+          "column": "car_applicability",
+          "type": "json",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "weight_kg",
+          "column": "weight_kg",
+          "type": "float",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "dimensions",
+          "column": "dimensions",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "image",
+          "column": "image",
+          "type": "string",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "image_extra",
+          "column": "image_extra",
+          "type": "json",
+          "nullable": true,
+          "primary_key": false
+        },
+        {
+          "name": "is_popular",
+          "column": "is_popular",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_new",
+          "column": "is_new",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_bestseller",
+          "column": "is_bestseller",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_promo",
+          "column": "is_promo",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "label",
+          "column": "label",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "warranty_months",
+          "column": "warranty_months",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "supplier",
+          "column": "supplier",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "country_of_origin",
+          "column": "country_of_origin",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "seo_title",
+          "column": "seo_title",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "seo_description",
+          "column": "seo_description",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "views_count",
+          "column": "views_count",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "ordering",
+          "column": "ordering",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_active",
+          "column": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "column": "created_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "updated_at",
+          "column": "updated_at",
+          "type": "datetime",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "brand_id",
+          "column": "brand_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "category_id",
+          "column": "category_id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false
+        }
+      ]
+    },
+    {
+      "name": "catalog_sitesettings",
+      "table": "public.catalog_sitesettings",
+      "id_column": "id",
+      "fields": [
+        {
+          "name": "id",
+          "column": "id",
+          "type": "int",
+          "nullable": false,
+          "primary_key": true
+        },
+        {
+          "name": "site_name",
+          "column": "site_name",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "phone",
+          "column": "phone",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "email",
+          "column": "email",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "address",
+          "column": "address",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "work_hours",
+          "column": "work_hours",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "delivery_info",
+          "column": "delivery_info",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "about_text",
+          "column": "about_text",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "telegram",
+          "column": "telegram",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "whatsapp",
+          "column": "whatsapp",
+          "type": "string",
+          "nullable": false,
+          "primary_key": false
+        },
+        {
+          "name": "is_active",
+          "column": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false
         }
       ]
     }
@@ -238,425 +731,304 @@
   "endpoints": [
     {
       "method": "GET",
+      "path": "/catalog_brand/{id}",
+      "op": "get_by_id",
+      "entity": "catalog_brand",
+      "description": "Returns catalog_brand by identifier"
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_brand",
+      "op": "find",
+      "entity": "catalog_brand",
+      "search_field": "name",
+      "query_param": "name",
+      "description": "Searches catalog_brand by name. Returns all records when no query given."
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_cart/{id}",
+      "op": "get_by_id",
+      "entity": "catalog_cart",
+      "description": "Returns catalog_cart by identifier"
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_cartitem/{id}",
+      "op": "get_by_id",
+      "entity": "catalog_cartitem",
+      "description": "Returns catalog_cartitem by identifier"
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_category/{id}",
+      "op": "get_by_id",
+      "entity": "catalog_category",
+      "description": "Returns catalog_category by identifier"
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_category",
+      "op": "find",
+      "entity": "catalog_category",
+      "search_field": "name",
+      "query_param": "name",
+      "description": "Searches catalog_category by name. Returns all records when no query given."
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_order/{id}",
+      "op": "get_by_id",
+      "entity": "catalog_order",
+      "description": "Returns catalog_order by identifier"
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_order",
+      "op": "find",
+      "entity": "catalog_order",
+      "search_field": "first_name",
+      "query_param": "first_name",
+      "description": "Searches catalog_order by name. Returns all records when no query given."
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_product/{id}",
+      "op": "get_by_id",
+      "entity": "catalog_product",
+      "description": "Returns catalog_product by identifier"
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_product",
+      "op": "find",
+      "entity": "catalog_product",
+      "search_field": "name",
+      "query_param": "name",
+      "description": "Searches catalog_product by name. Returns all records when no query given."
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_sitesettings/{id}",
+      "op": "get_by_id",
+      "entity": "catalog_sitesettings",
+      "description": "Returns catalog_sitesettings by identifier"
+    },
+    {
+      "method": "GET",
+      "path": "/catalog_sitesettings",
+      "op": "find",
+      "entity": "catalog_sitesettings",
+      "search_field": "site_name",
+      "query_param": "site_name",
+      "description": "Searches catalog_sitesettings by name. Returns all records when no query given."
+    },
+    {
+      "method": "GET",
       "path": "/health",
-      "op": "builtin_health",
-      "description": "Проверка состояния сервиса и БД"
+      "op": "builtin_health"
     },
     {
       "method": "GET",
       "path": "/stats",
-      "op": "builtin_stats",
-      "description": "Счётчики записей по сущностям"
-    },
-    {
-      "method": "GET",
-      "path": "/students/{id}",
-      "op": "get_by_id",
-      "entity": "student",
-      "description": "Карточка студента по ID"
-    },
-    {
-      "method": "GET",
-      "path": "/students",
-      "op": "find",
-      "entity": "student",
-      "search_field": "full_name",
-      "query_param": "name",
-      "description": "Поиск студента по ФИО (без name — список всех)"
-    },
-    {
-      "method": "GET",
-      "path": "/students/{id}/disciplines",
-      "op": "custom_query",
-      "query_id": "student_disciplines",
-      "description": "Список дисциплин студента (через группу → расписание)",
-      "params": [
-        {
-          "name": "id",
-          "in": "path",
-          "type": "string",
-          "required": true,
-          "description": "ID студента"
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/students/{id}/grades",
-      "op": "custom_query",
-      "query_id": "student_grades",
-      "description": "Оценки студента, опционально по дисциплине",
-      "params": [
-        {
-          "name": "id",
-          "in": "path",
-          "type": "string",
-          "required": true,
-          "description": "ID студента"
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/teachers",
-      "op": "find",
-      "entity": "teacher",
-      "search_field": "full_name",
-      "query_param": "name",
-      "description": "Поиск преподавателя по ФИО"
-    },
-    {
-      "method": "GET",
-      "path": "/teachers/{name}/schedule",
-      "op": "custom_query",
-      "query_id": "teacher_schedule",
-      "description": "Расписание преподавателя, опционально по дню"
-    },
-    {
-      "method": "GET",
-      "path": "/groups/{id}/schedule",
-      "op": "custom_query",
-      "query_id": "group_schedule",
-      "description": "Расписание группы, опционально по дню",
-      "params": [
-        {
-          "name": "id",
-          "in": "path",
-          "type": "string",
-          "required": true,
-          "description": "ID группы"
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/schedule",
-      "op": "custom_query",
-      "query_id": "all_schedule",
-      "description": "Всё расписание (для demo overview)"
-    },
-    {
-      "method": "GET",
-      "path": "/grades",
-      "op": "custom_query",
-      "query_id": "all_grades",
-      "description": "Все оценки с именами студентов (для demo overview)"
-    },
-    {
-      "method": "GET",
-      "path": "/disciplines",
-      "op": "list",
-      "entity": "discipline",
-      "description": "Все дисциплины"
+      "op": "builtin_stats"
     }
   ],
-  "custom_queries": {
-    "student_disciplines": {
-      "sql": "SELECT d.id, d.name, d.description FROM disciplines d WHERE d.id IN (SELECT DISTINCT elem->>'discipline_id' FROM schedule s, jsonb_array_elements(s.lessons_json::jsonb) elem WHERE s.group_id = (SELECT group_id FROM students WHERE id = ?) AND elem->>'discipline_id' IS NOT NULL)",
-      "params": [
-        "id"
-      ],
-      "result_mapping": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        }
-      },
-      "max_rows": 100,
-      "description": "Дисциплины студента через его группу"
-    },
-    "student_grades": {
-      "sql": "SELECT g.id, g.student_id, g.discipline_id, COALESCE(d.name, 'Неизвестная дисциплина') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN disciplines d ON d.id = g.discipline_id WHERE g.student_id = ? ORDER BY g.date DESC, d.name ASC",
-      "params": [
-        "id"
-      ],
-      "result_mapping": {
-        "id": {
-          "type": "string"
-        },
-        "student_id": {
-          "type": "string"
-        },
-        "discipline_id": {
-          "type": "string"
-        },
-        "discipline_name": {
-          "type": "string",
-          "nullable": true
-        },
-        "grade": {
-          "type": "string"
-        },
-        "date": {
-          "type": "date"
-        }
-      },
-      "max_rows": 500,
-      "description": "Оценки студента"
-    },
-    "teacher_schedule": {
-      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id",
-      "params": [],
-      "result_mapping": {
-        "id": {
-          "type": "string"
-        },
-        "day": {
-          "type": "string"
-        },
-        "group_id": {
-          "type": "string",
-          "nullable": true
-        },
-        "group_name": {
-          "type": "string",
-          "nullable": true
-        },
-        "speciality": {
-          "type": "string",
-          "nullable": true
-        },
-        "lessons": {
-          "type": "json",
-          "description": "JSON-массив занятий"
-        }
-      },
-      "max_rows": 1000,
-      "description": "Расписание преподавателя (фильтрация по teacher_name и day — на уровне Go)"
-    },
-    "group_schedule": {
-      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id WHERE s.group_id = ?",
-      "params": [
-        "id"
-      ],
-      "result_mapping": {
-        "id": {
-          "type": "string"
-        },
-        "day": {
-          "type": "string"
-        },
-        "group_id": {
-          "type": "string"
-        },
-        "group_name": {
-          "type": "string",
-          "nullable": true
-        },
-        "speciality": {
-          "type": "string",
-          "nullable": true
-        },
-        "lessons": {
-          "type": "json"
-        }
-      },
-      "max_rows": 1000,
-      "description": "Расписание группы"
-    },
-    "all_schedule": {
-      "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id ORDER BY g.name, s.day",
-      "params": [],
-      "result_mapping": {
-        "id": {
-          "type": "string"
-        },
-        "day": {
-          "type": "string"
-        },
-        "group_id": {
-          "type": "string",
-          "nullable": true
-        },
-        "group_name": {
-          "type": "string",
-          "nullable": true
-        },
-        "speciality": {
-          "type": "string",
-          "nullable": true
-        },
-        "lessons": {
-          "type": "json"
-        }
-      },
-      "max_rows": 5000,
-      "description": "Всё расписание"
-    },
-    "all_grades": {
-      "sql": "SELECT g.id, g.student_id, COALESCE(s.name, 'Неизвестный студент') AS student_name, g.discipline_id, COALESCE(d.name, 'Неизвестная дисциплина') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN students s ON s.id = g.student_id LEFT JOIN disciplines d ON d.id = g.discipline_id ORDER BY g.date DESC LIMIT 80",
-      "params": [],
-      "result_mapping": {
-        "id": {
-          "type": "string"
-        },
-        "student_id": {
-          "type": "string"
-        },
-        "student_name": {
-          "type": "string",
-          "nullable": true
-        },
-        "discipline_id": {
-          "type": "string"
-        },
-        "discipline_name": {
-          "type": "string",
-          "nullable": true
-        },
-        "grade": {
-          "type": "string"
-        },
-        "date": {
-          "type": "date"
-        }
-      },
-      "max_rows": 80,
-      "description": "Последние 80 оценок"
-    }
-  },
   "stats": {
     "counters": [
       {
-        "name": "students",
-        "entity": "student"
+        "name": "catalog_brand",
+        "entity": "catalog_brand"
       },
       {
-        "name": "teachers",
-        "entity": "teacher"
+        "name": "catalog_cart",
+        "entity": "catalog_cart"
       },
       {
-        "name": "disciplines",
-        "entity": "discipline"
+        "name": "catalog_cartitem",
+        "entity": "catalog_cartitem"
       },
       {
-        "name": "grades",
-        "entity": "grade"
+        "name": "catalog_category",
+        "entity": "catalog_category"
       },
       {
-        "name": "schedule",
-        "entity": "schedule"
+        "name": "catalog_order",
+        "entity": "catalog_order"
+      },
+      {
+        "name": "catalog_product",
+        "entity": "catalog_product"
+      },
+      {
+        "name": "catalog_sitesettings",
+        "entity": "catalog_sitesettings"
       }
     ]
   },
   "mcp_tools": [
     {
-      "name": "find_student_by_name",
-      "endpoint": "/students",
-      "description": "Найти студента по полному ФИО. Пример: 'Иван Петров Иванович'.",
+      "name": "get_catalog_brand",
+      "endpoint": "/catalog_brand/{id}",
+      "description": "Returns data about catalog_brand by its unique identifier. Use when you already know the record ID (e.g. from find_catalog_brand).",
+      "params": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "Unique identifier for catalog_brand"
+        }
+      ]
+    },
+    {
+      "name": "find_catalog_brand",
+      "endpoint": "/catalog_brand",
+      "description": "Searches for catalog_brand by text query (name, title). If no search parameter provided, returns full list of all records.",
       "params": [
         {
           "name": "name",
           "type": "string",
-          "required": true,
-          "description": "Полное ФИО студента"
-        }
-      ]
-    },
-    {
-      "name": "get_student",
-      "endpoint": "/students/{id}",
-      "description": "Получить карточку студента по ID. Получи ID через find_student_by_name.",
-      "params": [
-        {
-          "name": "id",
-          "type": "string",
-          "required": true,
-          "description": "ID студента"
-        }
-      ]
-    },
-    {
-      "name": "get_schedule",
-      "endpoint": "/groups/{id}/schedule",
-      "description": "Расписание группы студента на неделю или на конкретный день.",
-      "params": [
-        {
-          "name": "id",
-          "type": "string",
-          "required": true,
-          "description": "ID группы (из поля group.id студента)"
-        },
-        {
-          "name": "day",
-          "type": "string",
           "required": false,
-          "description": "День недели по-русски. Без параметра — всё расписание"
+          "description": "Text query to search catalog_brand by field 'name'. If omitted, returns all records."
         }
       ]
     },
     {
-      "name": "get_disciplines",
-      "endpoint": "/students/{id}/disciplines",
-      "description": "Список дисциплин студента.",
+      "name": "get_catalog_cart",
+      "endpoint": "/catalog_cart/{id}",
+      "description": "Returns data about catalog_cart by its unique identifier. Use when you already know the record ID (e.g. from find_catalog_cart).",
       "params": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "ID студента"
+          "description": "Unique identifier for catalog_cart"
         }
       ]
     },
     {
-      "name": "get_student_grades",
-      "endpoint": "/students/{id}/grades",
-      "description": "Оценки студента, опционально отфильтрованные по дисциплине.",
+      "name": "get_catalog_cartitem",
+      "endpoint": "/catalog_cartitem/{id}",
+      "description": "Returns data about catalog_cartitem by its unique identifier. Use when you already know the record ID (e.g. from find_catalog_cartitem).",
       "params": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "ID студента"
-        },
-        {
-          "name": "discipline_id",
-          "type": "string",
-          "required": false,
-          "description": "ID дисциплины для фильтрации"
+          "description": "Unique identifier for catalog_cartitem"
         }
       ]
     },
     {
-      "name": "get_teacher_by_name",
-      "endpoint": "/teachers",
-      "description": "Найти преподавателя по полному ФИО.",
+      "name": "get_catalog_category",
+      "endpoint": "/catalog_category/{id}",
+      "description": "Returns data about catalog_category by its unique identifier. Use when you already know the record ID (e.g. from find_catalog_category).",
+      "params": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "Unique identifier for catalog_category"
+        }
+      ]
+    },
+    {
+      "name": "find_catalog_category",
+      "endpoint": "/catalog_category",
+      "description": "Searches for catalog_category by text query (name, title). If no search parameter provided, returns full list of all records.",
       "params": [
         {
           "name": "name",
           "type": "string",
-          "required": true,
-          "description": "Полное ФИО преподавателя"
+          "required": false,
+          "description": "Text query to search catalog_category by field 'name'. If omitted, returns all records."
         }
       ]
     },
     {
-      "name": "get_teacher_schedule",
-      "endpoint": "/teachers/{name}/schedule",
-      "description": "Расписание преподавателя, опционально по дню недели.",
+      "name": "get_catalog_order",
+      "endpoint": "/catalog_order/{id}",
+      "description": "Returns data about catalog_order by its unique identifier. Use when you already know the record ID (e.g. from find_catalog_order).",
+      "params": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "Unique identifier for catalog_order"
+        }
+      ]
+    },
+    {
+      "name": "find_catalog_order",
+      "endpoint": "/catalog_order",
+      "description": "Searches for catalog_order by text query (name, title). If no search parameter provided, returns full list of all records.",
+      "params": [
+        {
+          "name": "first_name",
+          "type": "string",
+          "required": false,
+          "description": "Text query to search catalog_order by field 'first_name'. If omitted, returns all records."
+        }
+      ]
+    },
+    {
+      "name": "get_catalog_product",
+      "endpoint": "/catalog_product/{id}",
+      "description": "Returns data about catalog_product by its unique identifier. Use when you already know the record ID (e.g. from find_catalog_product).",
+      "params": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "Unique identifier for catalog_product"
+        }
+      ]
+    },
+    {
+      "name": "find_catalog_product",
+      "endpoint": "/catalog_product",
+      "description": "Searches for catalog_product by text query (name, title). If no search parameter provided, returns full list of all records.",
       "params": [
         {
           "name": "name",
           "type": "string",
-          "required": true,
-          "description": "Полное ФИО преподавателя"
-        },
+          "required": false,
+          "description": "Text query to search catalog_product by field 'name'. If omitted, returns all records."
+        }
+      ]
+    },
+    {
+      "name": "get_catalog_sitesettings",
+      "endpoint": "/catalog_sitesettings/{id}",
+      "description": "Returns data about catalog_sitesettings by its unique identifier. Use when you already know the record ID (e.g. from find_catalog_sitesettings).",
+      "params": [
         {
-          "name": "day",
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "Unique identifier for catalog_sitesettings"
+        }
+      ]
+    },
+    {
+      "name": "find_catalog_sitesettings",
+      "endpoint": "/catalog_sitesettings",
+      "description": "Searches for catalog_sitesettings by text query (name, title). If no search parameter provided, returns full list of all records.",
+      "params": [
+        {
+          "name": "site_name",
           "type": "string",
           "required": false,
-          "description": "День недели"
+          "description": "Text query to search catalog_sitesettings by field 'site_name'. If omitted, returns all records."
         }
       ]
     }
   ],
-  "auth": {
-    "strategy": "none",
-    "row_filters": []
+  "introspection": {
+    "enabled": true,
+    "exclude_tables": [
+      "^auth_",
+      "^django_"
+    ]
   }
 }

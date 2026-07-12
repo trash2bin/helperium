@@ -50,9 +50,10 @@ function dashboard() {
     agents: [],
     availableTenants: [],
     showNewAgentForm: false,
-    newAgent: { name: '', description: '', tenant_ids_selected: [] },
+    newAgent: { name: '', description: '', tenant_ids_selected: [], provider_priority: [] },
     editingAgent: false,
-    editAgentData: { name: '', description: '', tenant_ids: [] },
+    editAgentData: { name: '', description: '', tenant_ids: [], provider_priority: [] },
+    llmProviderStoreList: [],
     creatingAgent: false,
     savingAgent: false,
     agentCreateResult: null,
@@ -75,7 +76,11 @@ function dashboard() {
     emergencyTimer: null,
     emergencyConflicting: false,
 
-    // ═══════════════════════════════════════════
+    // ── LLM Provider Fallback ──
+    llmConfig: null,
+    llmError: '',
+
+    // ═══════════════════════════════════���═══════
     //  I18N
     // ═══════════════════════════════════════════
     __(key) {
@@ -83,6 +88,133 @@ function dashboard() {
         return window.__(key);
       }
       return key;
+    },
+
+    // ═══════════════════════════════════════════
+    //  LLM FALLBACK METHODS
+    // ════════════════════════��══════════════════
+    async loadLlmConfig() {
+      this.llmError = '';
+      try {
+        this.llmConfig = await this.api('/api/llm-config');
+        await this.loadLlmProviderList();
+      } catch (e) {
+        this.llmError = e.message || this.__('llm.loadError');
+        this.llmConfig = null;
+      }
+    },
+
+    get hasFallbackProvider() {
+      return this.llmConfig && this.llmConfig.num_models > 0;
+    },
+
+    // ── Provider CRUD ──
+    llmTab: 'list',
+    llmNew: { name: '', model: '', api_key: '', api_base: '', enabled: true, provider: '' },
+    llmEdit: null,
+    llmEditName: '',
+    llmProviderList: null,
+    llmSaving: false,
+    llmSaveMsg: '',
+    llmDeleteConfirm: '',
+
+    async loadLlmProviderList() {
+      try {
+        const res = await this.api('/api/llm-provider-list');
+        this.llmProviderList = res.providers || [];
+      } catch {
+        this.llmProviderList = [];
+      }
+    },
+
+    async loadLlmProviders() {
+      await this.loadLlmConfig();
+    },
+
+    async addLlmProvider() {
+      this.llmSaving = true;
+      this.llmSaveMsg = '';
+      try {
+        const body = {
+          name: this.llmNew.name,
+          model: this.llmNew.model,
+          provider: this.llmNew.provider || undefined,
+          api_key: this.llmNew.api_key || undefined,
+          api_base: this.llmNew.api_base || undefined,
+          enabled: this.llmNew.enabled,
+        };
+        await this.api('/api/llm-providers', { method: 'POST', body: JSON.stringify(body) });
+        this.llmNew = { name: '', model: '', api_key: '', api_base: '', enabled: true, provider: '' };
+        this.llmSaveMsg = this.__('msg.saved');
+        setTimeout(() => { this.llmSaveMsg = ''; }, 3000);
+        await this.loadLlmConfig();
+      } catch (e) {
+        this.llmSaveMsg = this.__('msg.failed') + ': ' + e.message;
+      } finally {
+        this.llmSaving = false;
+      }
+    },
+
+    startEditLlmProvider(name) {
+      const p = this.llmConfig?.providers?.find(x => x.name === name);
+      if (!p) return;
+      this.llmEditName = name;
+      this.llmEdit = {
+        model: p.model,
+        api_key: '',
+        api_base: p.api_base || '',
+        enabled: p.enabled,
+        has_api_key: p.has_api_key,
+        api_key_masked: p.api_key_masked,
+      };
+      this.llmTab = 'edit';
+    },
+
+    async saveLlmProvider() {
+      if (!this.llmEditName) return;
+      this.llmSaving = true;
+      this.llmSaveMsg = '';
+      try {
+        const body = { model: this.llmEdit.model, api_base: this.llmEdit.api_base || undefined, enabled: this.llmEdit.enabled };
+        if (this.llmEdit.api_key && this.llmEdit.api_key.trim()) {
+          body.api_key = this.llmEdit.api_key.trim();
+        } else if (this.llmEdit.api_key === '') {
+          body.api_key = '';
+        }
+        await this.api('/api/llm-providers/' + this.llmEditName, { method: 'PUT', body: JSON.stringify(body) });
+        this.llmSaveMsg = this.__('msg.saved');
+        setTimeout(() => { this.llmSaveMsg = ''; }, 3000);
+        await this.loadLlmConfig();
+      } catch (e) {
+        this.llmSaveMsg = this.__('msg.failed') + ': ' + e.message;
+      } finally {
+        this.llmSaving = false;
+      }
+    },
+
+    async deleteLlmProvider(name) {
+      if (!confirm(this.__('llm.deleteConfirmMsg') + ' "' + name + '"?')) return;
+      try {
+        await this.api('/api/llm-providers/' + name, { method: 'DELETE' });
+        await this.loadLlmConfig();
+      } catch (e) {
+        this.llmError = e.message;
+      }
+    },
+
+    async toggleLlmProvider(name) {
+      try {
+        await this.api('/api/llm-providers/' + name + '/toggle', { method: 'POST' });
+        await this.loadLlmConfig();
+      } catch (e) {
+        this.llmError = e.message;
+      }
+    },
+
+    cancelLlmEdit() {
+      this.llmTab = 'list';
+      this.llmEdit = null;
+      this.llmEditName = '';
     },
 
     // ═══════════════════════════════════════════
@@ -630,9 +762,51 @@ function dashboard() {
     openNewAgentModal() {
       this.showNewAgentForm = true;
       this.editingAgent = false;
-      this.newAgent = { name: '', description: '', tenant_ids_selected: [] };
+      this.newAgent = { name: '', description: '', tenant_ids_selected: [], provider_priority: [] };
       this.agentCreateResult = null;
+      this.loadLlmProviderStoreList();
       this.loadAgents();
+    },
+
+    async loadLlmProviderStoreList() {
+      try {
+        const resp = await this.api('/api/llm-providers');
+        this.llmProviderStoreList = (resp.providers || []).filter(p => p.has_api_key);
+      } catch (e) {
+        this.llmProviderStoreList = [];
+      }
+    },
+
+    // ── Provider priority reorder ──
+    moveProviderPriority(idx, dir) {
+      const arr = [...this.newAgent.provider_priority];
+      const target = idx + dir;
+      if (target < 0 || target >= arr.length) return;
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      this.newAgent.provider_priority = arr;
+    },
+    moveEditProviderPriority(idx, dir) {
+      const arr = [...this.editAgentData.provider_priority];
+      const target = idx + dir;
+      if (target < 0 || target >= arr.length) return;
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      this.editAgentData.provider_priority = arr;
+    },
+    toggleProviderPriority(name) {
+      const idx = this.newAgent.provider_priority.indexOf(name);
+      if (idx >= 0) {
+        this.newAgent.provider_priority = this.newAgent.provider_priority.filter(n => n !== name);
+      } else {
+        this.newAgent.provider_priority = [...this.newAgent.provider_priority, name];
+      }
+    },
+    toggleEditProviderPriority(name) {
+      const idx = this.editAgentData.provider_priority.indexOf(name);
+      if (idx >= 0) {
+        this.editAgentData.provider_priority = this.editAgentData.provider_priority.filter(n => n !== name);
+      } else {
+        this.editAgentData.provider_priority = [...this.editAgentData.provider_priority, name];
+      }
     },
 
     async loadAgents() {
@@ -661,6 +835,7 @@ function dashboard() {
           name: this.newAgent.name,
           description: this.newAgent.description,
           tenant_ids: this.newAgent.tenant_ids_selected || [],
+          provider_priority: this.newAgent.provider_priority || [],
         };
         this.agentCreateResult = await this.api('/api/agents', {
           method: 'POST',
@@ -681,7 +856,9 @@ function dashboard() {
         name: agent.name,
         description: agent.description || '',
         tenant_ids: [...(agent.tenant_ids || [])],
+        provider_priority: [...(agent.provider_priority || [])],
       };
+      this.loadLlmProviderStoreList();
       this.editingAgent = true;
     },
 
@@ -694,6 +871,7 @@ function dashboard() {
           body: JSON.stringify({
             description: this.editAgentData.description,
             tenant_ids: this.editAgentData.tenant_ids,
+            provider_priority: this.editAgentData.provider_priority || [],
           }),
         });
         this.editingAgent = false;

@@ -122,6 +122,7 @@ class LLMAgent:
         session_id: SessionId = "default",
         tenant_ids: list[str] | None = None,
         llm_config: dict | None = None,
+        llm_client: LLMClient | None = None,
         system_prompt: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Stream agent events: tokens, tool calls, tool results, final.
@@ -133,6 +134,7 @@ class LLMAgent:
             session_id:     Conversation session identifier.
             tenant_ids:     Scopes the MCP session to one or more tenants.
             llm_config:     Overrides the global LLM config for this request.
+            llm_client:     Overrides the LLM client for this request (e.g. prioritized).
             system_prompt:  Overrides the global system prompt.
         """
         session_id = self.conversation_manager.normalize_session_id(session_id)
@@ -143,10 +145,13 @@ class LLMAgent:
             user_message[:100],
         )
 
-        # Use per-request LLM client if per-agent config provided.
-        request_llm = (
-            self.create_per_request_llm(llm_config) if llm_config else self.llm_client
-        )
+        # Use per-request LLM client if explicitly provided, or build from config.
+        if llm_client:
+            request_llm = llm_client
+        elif llm_config:
+            request_llm = self.create_per_request_llm(llm_config)
+        else:
+            request_llm = self.llm_client
 
         lock = await self.conversation_manager.get_session_lock(session_id)
         async with lock:

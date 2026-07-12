@@ -2,31 +2,40 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://helperium.local/specs/config.schema.json",
   "title": "data-service config",
-  "description": "Конфиг data-service для generic B2B SaaS режима. Определяет: какой driver, какие сущности извлекаем из БД клиента, какие endpoint'ы публикуем, какие MCP-инструменты генерируем.",
+  "description": "\u041a\u043e\u043d\u0444\u0438\u0433 data-service \u0434\u043b\u044f generic B2B SaaS \u0440\u0435\u0436\u0438\u043c\u0430. \u041e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442: \u043a\u0430\u043a\u043e\u0439 driver, \u043a\u0430\u043a\u0438\u0435 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438 \u0438\u0437\u0432\u043b\u0435\u043a\u0430\u0435\u043c \u0438\u0437 \u0411\u0414 \u043a\u043b\u0438\u0435\u043d\u0442\u0430, \u043a\u0430\u043a\u0438\u0435 endpoint'\u044b \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0435\u043c, \u043a\u0430\u043a\u0438\u0435 MCP-\u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u044b \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u043c.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "data_source"],
+  "required": [
+    "version",
+    "data_source"
+  ],
   "properties": {
     "version": {
       "type": "integer",
       "const": 1,
-      "description": "Версия схемы конфига. На данный момент — только 1."
+      "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u0441\u0445\u0435\u043c\u044b \u043a\u043e\u043d\u0444\u0438\u0433\u0430. \u041d\u0430 \u0434\u0430\u043d\u043d\u044b\u0439 \u043c\u043e\u043c\u0435\u043d\u0442 \u2014 \u0442\u043e\u043b\u044c\u043a\u043e 1."
     },
     "data_source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["driver", "dsn"],
-      "description": "Подключение к клиентской БД. data-service работает в read-only режиме: не модифицирует DDL.",
+      "required": [
+        "driver",
+        "dsn"
+      ],
+      "description": "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u043a \u043a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u043e\u0439 \u0411\u0414. data-service \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442 \u0432 read-only \u0440\u0435\u0436\u0438\u043c\u0435: \u043d\u0435 \u043c\u043e\u0434\u0438\u0444\u0438\u0446\u0438\u0440\u0443\u0435\u0442 DDL.",
       "properties": {
         "driver": {
           "type": "string",
-          "enum": ["sqlite", "postgres"],
-          "description": "Драйвер СУБД. Адаптеры под другие СУБД — следующие фазы."
+          "enum": [
+            "sqlite",
+            "postgres"
+          ],
+          "description": "\u0414\u0440\u0430\u0439\u0432\u0435\u0440 \u0421\u0423\u0411\u0414. \u0410\u0434\u0430\u043f\u0442\u0435\u0440\u044b \u043f\u043e\u0434 \u0434\u0440\u0443\u0433\u0438\u0435 \u0421\u0423\u0411\u0414 \u2014 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0435 \u0444\u0430\u0437\u044b."
         },
         "dsn": {
           "type": "string",
           "minLength": 1,
-          "description": "DSN (строка подключения). Поддерживает шаблоны ${ENV_VAR}, которые подставляются из окружения при загрузке.",
+          "description": "DSN (\u0441\u0442\u0440\u043e\u043a\u0430 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f). \u041f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442 \u0448\u0430\u0431\u043b\u043e\u043d\u044b ${ENV_VAR}, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u043f\u043e\u0434\u0441\u0442\u0430\u0432\u043b\u044f\u044e\u0442\u0441\u044f \u0438\u0437 \u043e\u043a\u0440\u0443\u0436\u0435\u043d\u0438\u044f \u043f\u0440\u0438 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0435.",
           "examples": [
             "university.db",
             "file:./data/university.db",
@@ -38,80 +47,93 @@
           "minimum": 1,
           "maximum": 100,
           "default": 10,
-          "description": "Максимум одновременных соединений к БД."
+          "description": "\u041c\u0430\u043a\u0441\u0438\u043c\u0443\u043c \u043e\u0434\u043d\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445 \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0439 \u043a \u0411\u0414."
         },
         "read_only": {
           "type": "boolean",
           "default": true,
-          "description": "Если true — data-service запрещает любые мутирующие операции (INSERT/UPDATE/DELETE/DDL)."
+          "description": "\u0415\u0441\u043b\u0438 true \u2014 data-service \u0437\u0430\u043f\u0440\u0435\u0449\u0430\u0435\u0442 \u043b\u044e\u0431\u044b\u0435 \u043c\u0443\u0442\u0438\u0440\u0443\u044e\u0449\u0438\u0435 \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 (INSERT/UPDATE/DELETE/DDL)."
         },
         "readonly_dsn": {
           "type": "string",
-          "description": "DSN с правами только на чтение для AI-агента (database-level). Для SQLite: тот же файл с ?mode=ro или 'file:path.db?mode=ro'. Для PostgreSQL: DSN от отдельного пользователя с правами SELECT. Если задан — data-service открывает его как второй коннект для всех запросов агента. Если не задан — агент работает через основную DSN (app-level read_only)."
+          "description": "DSN \u0441 \u043f\u0440\u0430\u0432\u0430\u043c\u0438 \u0442\u043e\u043b\u044c\u043a\u043e \u043d\u0430 \u0447\u0442\u0435\u043d\u0438\u0435 \u0434\u043b\u044f AI-\u0430\u0433\u0435\u043d\u0442\u0430 (database-level). \u0414\u043b\u044f SQLite: \u0442\u043e\u0442 \u0436\u0435 \u0444\u0430\u0439\u043b \u0441 ?mode=ro \u0438\u043b\u0438 'file:path.db?mode=ro'. \u0414\u043b\u044f PostgreSQL: DSN \u043e\u0442 \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u043e\u0433\u043e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f \u0441 \u043f\u0440\u0430\u0432\u0430\u043c\u0438 SELECT. \u0415\u0441\u043b\u0438 \u0437\u0430\u0434\u0430\u043d \u2014 data-service \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u0435\u0433\u043e \u043a\u0430\u043a \u0432\u0442\u043e\u0440\u043e\u0439 \u043a\u043e\u043d\u043d\u0435\u043a\u0442 \u0434\u043b\u044f \u0432\u0441\u0435\u0445 \u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u0430\u0433\u0435\u043d\u0442\u0430. \u0415\u0441\u043b\u0438 \u043d\u0435 \u0437\u0430\u0434\u0430\u043d \u2014 \u0430\u0433\u0435\u043d\u0442 \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442 \u0447\u0435\u0440\u0435\u0437 \u043e\u0441\u043d\u043e\u0432\u043d\u0443\u044e DSN (app-level read_only)."
         }
       }
     },
     "introspection": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Настройки auto-discovery схемы БД при старте (фаза 3.2+).",
+      "description": "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 auto-discovery \u0441\u0445\u0435\u043c\u044b \u0411\u0414 \u043f\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435 (\u0444\u0430\u0437\u0430 3.2+).",
       "properties": {
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Включить интроспекцию схемы БД при старте."
+          "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043d\u0442\u0440\u043e\u0441\u043f\u0435\u043a\u0446\u0438\u044e \u0441\u0445\u0435\u043c\u044b \u0411\u0414 \u043f\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u0435."
         },
         "include_schemas": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "Schemas/базы для интроспекции (Postgres only). По умолчанию — ['public']."
+          "items": {
+            "type": "string"
+          },
+          "description": "Schemas/\u0431\u0430\u0437\u044b \u0434\u043b\u044f \u0438\u043d\u0442\u0440\u043e\u0441\u043f\u0435\u043a\u0446\u0438\u0438 (Postgres only). \u041f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u2014 ['public']."
         },
         "exclude_tables": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "Регулярные выражения для имён таблиц, которые нужно исключить. Например ['^pg_', '^_'] — системные таблицы Postgres."
+          "items": {
+            "type": "string"
+          },
+          "description": "\u0420\u0435\u0433\u0443\u043b\u044f\u0440\u043d\u044b\u0435 \u0432\u044b\u0440\u0430\u0436\u0435\u043d\u0438\u044f \u0434\u043b\u044f \u0438\u043c\u0451\u043d \u0442\u0430\u0431\u043b\u0438\u0446, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u043d\u0443\u0436\u043d\u043e \u0438\u0441\u043a\u043b\u044e\u0447\u0438\u0442\u044c. \u041d\u0430\u043f\u0440\u0438\u043c\u0435\u0440 ['^pg_', '^_'] \u2014 \u0441\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b Postgres."
         }
       }
     },
     "entities": {
       "type": "array",
-      "description": "Описание доменных сущностей клиента. Каждая сущность = таблица (или представление) + маппинг полей.",
-      "items": { "$ref": "#/$defs/entity" }
+      "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0434\u043e\u043c\u0435\u043d\u043d\u044b\u0445 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0435\u0439 \u043a\u043b\u0438\u0435\u043d\u0442\u0430. \u041a\u0430\u0436\u0434\u0430\u044f \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u044c = \u0442\u0430\u0431\u043b\u0438\u0446\u0430 (\u0438\u043b\u0438 \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435) + \u043c\u0430\u043f\u043f\u0438\u043d\u0433 \u043f\u043e\u043b\u0435\u0439.",
+      "items": {
+        "$ref": "#/$defs/entity"
+      }
     },
     "endpoints": {
       "type": "array",
-      "description": "REST endpoints, которые data-service публикует. Каждый endpoint ссылается на entity, операцию или custom query.",
-      "items": { "$ref": "#/$defs/endpoint" }
+      "description": "REST endpoints, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 data-service \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0435\u0442. \u041a\u0430\u0436\u0434\u044b\u0439 endpoint \u0441\u0441\u044b\u043b\u0430\u0435\u0442\u0441\u044f \u043d\u0430 entity, \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u044e \u0438\u043b\u0438 custom query.",
+      "items": {
+        "$ref": "#/$defs/endpoint"
+      }
     },
     "custom_queries": {
       "type": "object",
-      "description": "Whitelist SQL-запросов для endpoint'ов с op=custom_query. Только SELECT, обязателен max_rows.",
-      "additionalProperties": { "$ref": "#/$defs/custom_query" }
+      "description": "Whitelist SQL-\u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u0434\u043b\u044f endpoint'\u043e\u0432 \u0441 op=custom_query. \u0422\u043e\u043b\u044c\u043a\u043e SELECT, \u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u0435\u043d max_rows.",
+      "additionalProperties": {
+        "$ref": "#/$defs/custom_query"
+      }
     },
     "stats": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Конфигурация endpoint'а /stats.",
+      "description": "\u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044f endpoint'\u0430 /stats.",
       "properties": {
         "counters": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "entity"],
+            "required": [
+              "name",
+              "entity"
+            ],
             "properties": {
               "name": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]*$",
-                "description": "Имя счётчика в ответе /stats."
+                "description": "\u0418\u043c\u044f \u0441\u0447\u0451\u0442\u0447\u0438\u043a\u0430 \u0432 \u043e\u0442\u0432\u0435\u0442\u0435 /stats."
               },
               "entity": {
                 "type": "string",
-                "description": "Имя entity из entities[]."
+                "description": "\u0418\u043c\u044f entity \u0438\u0437 entities[]."
               },
               "filter": {
                 "type": "string",
-                "description": "Опциональный WHERE для подсчёта (например: \"status = 'active'\")."
+                "description": "\u041e\u043f\u0446\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0439 WHERE \u0434\u043b\u044f \u043f\u043e\u0434\u0441\u0447\u0451\u0442\u0430 (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440: \"status = 'active'\")."
               }
             }
           }
@@ -120,34 +142,43 @@
     },
     "mcp_tools": {
       "type": "array",
-      "description": "Описание MCP-инструментов для генерации mcp-gateway (Go, фаза 3.4). Каждый tool ссылается на endpoint.",
-      "items": { "$ref": "#/$defs/mcp_tool" }
+      "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 MCP-\u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u043e\u0432 \u0434\u043b\u044f \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 mcp-gateway (Go, \u0444\u0430\u0437\u0430 3.4). \u041a\u0430\u0436\u0434\u044b\u0439 tool \u0441\u0441\u044b\u043b\u0430\u0435\u0442\u0441\u044f \u043d\u0430 endpoint.",
+      "items": {
+        "$ref": "#/$defs/mcp_tool"
+      }
     },
     "approved_tools": {
       "type": "array",
-      "items": { "type": "string" },
-      "description": "Список путей write-эндпоинтов, утверждённых для использования в read-only режиме. Каждый элемент — path из endpoints[]. Если пустой — write-доступ запрещён для всех эндпоинтов."
+      "items": {
+        "type": "string"
+      },
+      "description": "\u0421\u043f\u0438\u0441\u043e\u043a \u043f\u0443\u0442\u0435\u0439 write-\u044d\u043d\u0434\u043f\u043e\u0438\u043d\u0442\u043e\u0432, \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d\u043d\u044b\u0445 \u0434\u043b\u044f \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u044f \u0432 read-only \u0440\u0435\u0436\u0438\u043c\u0435. \u041a\u0430\u0436\u0434\u044b\u0439 \u044d\u043b\u0435\u043c\u0435\u043d\u0442 \u2014 path \u0438\u0437 endpoints[]. \u0415\u0441\u043b\u0438 \u043f\u0443\u0441\u0442\u043e\u0439 \u2014 write-\u0434\u043e\u0441\u0442\u0443\u043f \u0437\u0430\u043f\u0440\u0435\u0449\u0451\u043d \u0434\u043b\u044f \u0432\u0441\u0435\u0445 \u044d\u043d\u0434\u043f\u043e\u0438\u043d\u0442\u043e\u0432."
     },
     "auth": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Multi-tenancy и row-level isolation (фаза 3.7).",
+      "description": "Multi-tenancy \u0438 row-level isolation (\u0444\u0430\u0437\u0430 3.7).",
       "properties": {
         "strategy": {
           "type": "string",
-          "enum": ["none", "header"],
+          "enum": [
+            "none",
+            "header"
+          ],
           "default": "none",
-          "description": "Стратегия изоляции тенантов. 'none' — один тенант, 'header' — X-Tenant-ID."
+          "description": "\u0421\u0442\u0440\u0430\u0442\u0435\u0433\u0438\u044f \u0438\u0437\u043e\u043b\u044f\u0446\u0438\u0438 \u0442\u0435\u043d\u0430\u043d\u0442\u043e\u0432. 'none' \u2014 \u043e\u0434\u0438\u043d \u0442\u0435\u043d\u0430\u043d\u0442, 'header' \u2014 X-Tenant-ID."
         },
         "tenant_header": {
           "type": "string",
           "default": "X-Tenant-ID",
-          "description": "Имя заголовка для передачи tenant_id."
+          "description": "\u0418\u043c\u044f \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0430 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0434\u0430\u0447\u0438 tenant_id."
         },
         "row_filters": {
           "type": "array",
-          "description": "Дополнительные WHERE-условия, применяемые к запросам (multi-tenant isolation).",
-          "items": { "$ref": "#/$defs/row_filter" }
+          "description": "\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435 WHERE-\u0443\u0441\u043b\u043e\u0432\u0438\u044f, \u043f\u0440\u0438\u043c\u0435\u043d\u044f\u0435\u043c\u044b\u0435 \u043a \u0437\u0430\u043f\u0440\u043e\u0441\u0430\u043c (multi-tenant isolation).",
+          "items": {
+            "$ref": "#/$defs/row_filter"
+          }
         }
       }
     }
@@ -156,123 +187,166 @@
     "entity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "table", "id_column", "fields"],
-      "description": "Доменная сущность = одна таблица в клиентской БД.",
+      "required": [
+        "name",
+        "table",
+        "id_column",
+        "fields"
+      ],
+      "description": "\u0414\u043e\u043c\u0435\u043d\u043d\u0430\u044f \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u044c = \u043e\u0434\u043d\u0430 \u0442\u0430\u0431\u043b\u0438\u0446\u0430 \u0432 \u043a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u043e\u0439 \u0411\u0414.",
       "properties": {
         "name": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Публичное имя сущности в API (lowercase snake_case)."
+          "description": "\u041f\u0443\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u0438\u043c\u044f \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438 \u0432 API (lowercase snake_case)."
         },
         "table": {
           "type": "string",
           "minLength": 1,
-          "description": "Имя таблицы в БД. Может совпадать с name, но не обязательно."
+          "description": "\u0418\u043c\u044f \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 \u0411\u0414. \u041c\u043e\u0436\u0435\u0442 \u0441\u043e\u0432\u043f\u0430\u0434\u0430\u0442\u044c \u0441 name, \u043d\u043e \u043d\u0435 \u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e."
         },
         "id_column": {
           "type": "string",
           "minLength": 1,
-          "description": "Имя колонки с первичным ключом."
+          "description": "\u0418\u043c\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0441 \u043f\u0435\u0440\u0432\u0438\u0447\u043d\u044b\u043c \u043a\u043b\u044e\u0447\u043e\u043c."
         },
         "description": {
           "type": "string",
-          "description": "Человекочитаемое описание сущности (для OpenAPI и UI)."
+          "description": "\u0427\u0435\u043b\u043e\u0432\u0435\u043a\u043e\u0447\u0438\u0442\u0430\u0435\u043c\u043e\u0435 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438 (\u0434\u043b\u044f OpenAPI \u0438 UI)."
         },
         "fields": {
           "type": "array",
           "minItems": 1,
-          "description": "Маппинг публичных полей на колонки БД.",
-          "items": { "$ref": "#/$defs/entity_field" }
+          "description": "\u041c\u0430\u043f\u043f\u0438\u043d\u0433 \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u044b\u0445 \u043f\u043e\u043b\u0435\u0439 \u043d\u0430 \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0411\u0414.",
+          "items": {
+            "$ref": "#/$defs/entity_field"
+          }
         },
         "relations": {
           "type": "array",
-          "description": "Связи с другими сущностями (для документации и валидации; JOIN автоматически НЕ строится).",
-          "items": { "$ref": "#/$defs/relation" }
+          "description": "\u0421\u0432\u044f\u0437\u0438 \u0441 \u0434\u0440\u0443\u0433\u0438\u043c\u0438 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u044f\u043c\u0438 (\u0434\u043b\u044f \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u0438 \u0438 \u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u0438; JOIN \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u041d\u0415 \u0441\u0442\u0440\u043e\u0438\u0442\u0441\u044f).",
+          "items": {
+            "$ref": "#/$defs/relation"
+          }
         }
       }
     },
     "entity_field": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "column", "type"],
-      "description": "Поле сущности. name — публичное имя (API), column — имя колонки в БД.",
+      "required": [
+        "name",
+        "column",
+        "type"
+      ],
+      "description": "\u041f\u043e\u043b\u0435 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438. name \u2014 \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u0438\u043c\u044f (API), column \u2014 \u0438\u043c\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0432 \u0411\u0414.",
       "properties": {
         "name": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Публичное имя поля в API."
+          "description": "\u041f\u0443\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u0438\u043c\u044f \u043f\u043e\u043b\u044f \u0432 API."
         },
         "column": {
           "type": "string",
           "minLength": 1,
-          "description": "Имя колонки в таблице БД."
+          "description": "\u0418\u043c\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0432 \u0442\u0430\u0431\u043b\u0438\u0446\u0435 \u0411\u0414."
         },
         "type": {
           "type": "string",
-          "enum": ["string", "int", "float", "bool", "json", "datetime", "date"],
-          "description": "Generic-тип поля. Адаптер приводит нативный тип БД к этому."
+          "enum": [
+            "string",
+            "int",
+            "float",
+            "bool",
+            "json",
+            "datetime",
+            "date"
+          ],
+          "description": "Generic-\u0442\u0438\u043f \u043f\u043e\u043b\u044f. \u0410\u0434\u0430\u043f\u0442\u0435\u0440 \u043f\u0440\u0438\u0432\u043e\u0434\u0438\u0442 \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0442\u0438\u043f \u0411\u0414 \u043a \u044d\u0442\u043e\u043c\u0443."
         },
         "nullable": {
           "type": "boolean",
           "default": false,
-          "description": "Может ли поле быть NULL."
+          "description": "\u041c\u043e\u0436\u0435\u0442 \u043b\u0438 \u043f\u043e\u043b\u0435 \u0431\u044b\u0442\u044c NULL."
         },
         "primary_key": {
           "type": "boolean",
           "default": false,
-          "description": "Является ли колонка первичным ключом (обычно определяется через id_column)."
+          "description": "\u042f\u0432\u043b\u044f\u0435\u0442\u0441\u044f \u043b\u0438 \u043a\u043e\u043b\u043e\u043d\u043a\u0430 \u043f\u0435\u0440\u0432\u0438\u0447\u043d\u044b\u043c \u043a\u043b\u044e\u0447\u043e\u043c (\u043e\u0431\u044b\u0447\u043d\u043e \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442\u0441\u044f \u0447\u0435\u0440\u0435\u0437 id_column)."
         },
         "description": {
           "type": "string",
-          "description": "Описание поля для OpenAPI/UI."
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043f\u043e\u043b\u044f \u0434\u043b\u044f OpenAPI/UI."
         }
       }
     },
     "relation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["field", "kind", "table", "local_fk"],
-      "description": "Связь между сущностями. JOIN не строится автоматически — для JOIN используйте custom_queries.",
+      "required": [
+        "field",
+        "kind",
+        "table",
+        "local_fk"
+      ],
+      "description": "\u0421\u0432\u044f\u0437\u044c \u043c\u0435\u0436\u0434\u0443 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u044f\u043c\u0438. JOIN \u043d\u0435 \u0441\u0442\u0440\u043e\u0438\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u2014 \u0434\u043b\u044f JOIN \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0439\u0442\u0435 custom_queries.",
       "properties": {
         "field": {
           "type": "string",
-          "description": "Имя поля в публичной схеме (например, 'group')."
+          "description": "\u0418\u043c\u044f \u043f\u043e\u043b\u044f \u0432 \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u043e\u0439 \u0441\u0445\u0435\u043c\u0435 (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440, 'group')."
         },
         "kind": {
           "type": "string",
-          "enum": ["many_to_one", "one_to_many", "many_to_many"],
-          "description": "Тип связи."
+          "enum": [
+            "many_to_one",
+            "one_to_many",
+            "many_to_many"
+          ],
+          "description": "\u0422\u0438\u043f \u0441\u0432\u044f\u0437\u0438."
         },
         "table": {
           "type": "string",
-          "description": "Имя связанной таблицы в БД."
+          "description": "\u0418\u043c\u044f \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432 \u0411\u0414."
         },
         "local_fk": {
           "type": "string",
-          "description": "Имя FK-колонки в текущей таблице."
+          "description": "\u0418\u043c\u044f FK-\u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0432 \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u0435."
         },
         "target_fk": {
           "type": "string",
-          "description": "Имя FK-колонки в связанной таблице (для many_to_many)."
+          "description": "\u0418\u043c\u044f FK-\u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0432 \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u043e\u0439 \u0442\u0430\u0431\u043b\u0438\u0446\u0435 (\u0434\u043b\u044f many_to_many)."
         }
       }
     },
     "endpoint": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["method", "path", "op"],
-      "description": "REST endpoint. method+path — публичный контракт, op — реализация.",
+      "required": [
+        "method",
+        "path",
+        "op"
+      ],
+      "description": "REST endpoint. method+path \u2014 \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u044b\u0439 \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442, op \u2014 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f.",
       "properties": {
         "method": {
           "type": "string",
-          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
-          "description": "HTTP метод. На данный момент поддерживается только GET (read-only)."
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ],
+          "description": "HTTP \u043c\u0435\u0442\u043e\u0434. \u041d\u0430 \u0434\u0430\u043d\u043d\u044b\u0439 \u043c\u043e\u043c\u0435\u043d\u0442 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0442\u043e\u043b\u044c\u043a\u043e GET (read-only)."
         },
         "path": {
           "type": "string",
           "pattern": "^/[a-zA-Z0-9_{}/-]*$",
-          "description": "URL-путь. Поддерживает {param} для path-параметров.",
-          "examples": ["/students/{id}", "/students"]
+          "description": "URL-\u043f\u0443\u0442\u044c. \u041f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442 {param} \u0434\u043b\u044f path-\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u043e\u0432.",
+          "examples": [
+            "/students/{id}",
+            "/students"
+          ]
         },
         "op": {
           "type": "string",
@@ -284,112 +358,180 @@
             "list",
             "custom_query"
           ],
-          "description": "Реализация: builtin (без entity) или ссылка на entity/query."
+          "description": "\u0420\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f: builtin (\u0431\u0435\u0437 entity) \u0438\u043b\u0438 \u0441\u0441\u044b\u043b\u043a\u0430 \u043d\u0430 entity/query."
         },
         "entity": {
           "type": "string",
-          "description": "Имя entity из entities[]. Обязательно для op=get_by_id, find, list."
+          "description": "\u0418\u043c\u044f entity \u0438\u0437 entities[]. \u041e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e \u0434\u043b\u044f op=get_by_id, find, list."
         },
         "search_field": {
           "type": "string",
-          "description": "Имя поля (из entity.fields[].name) для поиска. Используется op=find."
+          "description": "\u0418\u043c\u044f \u043f\u043e\u043b\u044f (\u0438\u0437 entity.fields[].name) \u0434\u043b\u044f \u043f\u043e\u0438\u0441\u043a\u0430. \u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f op=find."
         },
         "query_param": {
           "type": "string",
-          "description": "Имя query-параметра для передачи значения поиска. По умолчанию совпадает с search_field."
+          "description": "\u0418\u043c\u044f query-\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0430 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0434\u0430\u0447\u0438 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u044f \u043f\u043e\u0438\u0441\u043a\u0430. \u041f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u0441\u043e\u0432\u043f\u0430\u0434\u0430\u0435\u0442 \u0441 search_field."
         },
         "query_id": {
           "type": "string",
-          "description": "Ключ из custom_queries. Обязательно для op=custom_query."
+          "description": "\u041a\u043b\u044e\u0447 \u0438\u0437 custom_queries. \u041e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e \u0434\u043b\u044f op=custom_query."
         },
         "params": {
           "type": "array",
-          "description": "Описание параметров endpoint'а (path/query/body). Для GET — query.",
-          "items": { "$ref": "#/$defs/endpoint_param" }
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u043e\u0432 endpoint'\u0430 (path/query/body). \u0414\u043b\u044f GET \u2014 query.",
+          "items": {
+            "$ref": "#/$defs/endpoint_param"
+          }
         },
         "description": {
           "type": "string",
-          "description": "Описание endpoint'а для OpenAPI."
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 endpoint'\u0430 \u0434\u043b\u044f OpenAPI."
         }
       },
       "allOf": [
         {
-          "if": { "properties": { "op": { "const": "get_by_id" } } },
-          "then": { "required": ["entity"] }
+          "if": {
+            "properties": {
+              "op": {
+                "const": "get_by_id"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "entity"
+            ]
+          }
         },
         {
-          "if": { "properties": { "op": { "const": "find" } } },
-          "then": { "required": ["entity", "search_field"] }
+          "if": {
+            "properties": {
+              "op": {
+                "const": "find"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "entity",
+              "search_field"
+            ]
+          }
         },
         {
-          "if": { "properties": { "op": { "const": "list" } } },
-          "then": { "required": ["entity"] }
+          "if": {
+            "properties": {
+              "op": {
+                "const": "list"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "entity"
+            ]
+          }
         },
         {
-          "if": { "properties": { "op": { "const": "custom_query" } } },
-          "then": { "required": ["query_id"] }
+          "if": {
+            "properties": {
+              "op": {
+                "const": "custom_query"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "query_id"
+            ]
+          }
         }
       ]
     },
     "endpoint_param": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "in"],
-      "description": "Параметр endpoint'а.",
+      "required": [
+        "name",
+        "in"
+      ],
+      "description": "\u041f\u0430\u0440\u0430\u043c\u0435\u0442\u0440 endpoint'\u0430.",
       "properties": {
         "name": {
           "type": "string",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-          "description": "Имя параметра."
+          "description": "\u0418\u043c\u044f \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0430."
         },
         "in": {
           "type": "string",
-          "enum": ["path", "query", "body"],
-          "description": "Расположение параметра."
+          "enum": [
+            "path",
+            "query",
+            "body"
+          ],
+          "description": "\u0420\u0430\u0441\u043f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0430."
         },
         "type": {
           "type": "string",
-          "enum": ["string", "int", "float", "bool"],
+          "enum": [
+            "string",
+            "int",
+            "float",
+            "bool"
+          ],
           "default": "string",
-          "description": "Тип параметра."
+          "description": "\u0422\u0438\u043f \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0430."
         },
         "required": {
           "type": "boolean",
           "default": false,
-          "description": "Обязательный ли параметр."
+          "description": "\u041e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043b\u0438 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440."
         },
         "description": {
           "type": "string",
-          "description": "Описание для OpenAPI."
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0434\u043b\u044f OpenAPI."
         }
       }
     },
     "custom_query": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sql", "result_mapping", "max_rows"],
-      "description": "Whitelist SQL-запрос. Только SELECT, обязателен max_rows, все user-input через '?' placeholder'ы.",
+      "required": [
+        "sql",
+        "result_mapping",
+        "max_rows"
+      ],
+      "description": "Whitelist SQL-\u0437\u0430\u043f\u0440\u043e\u0441. \u0422\u043e\u043b\u044c\u043a\u043e SELECT, \u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u0435\u043d max_rows, \u0432\u0441\u0435 user-input \u0447\u0435\u0440\u0435\u0437 '?' placeholder'\u044b.",
       "properties": {
         "sql": {
           "type": "string",
           "minLength": 1,
           "pattern": "^\\s*SELECT\\b",
-          "description": "SQL-запрос. Должен начинаться с SELECT. Запрещены ';', DDL, мульти-statement."
+          "description": "SQL-\u0437\u0430\u043f\u0440\u043e\u0441. \u0414\u043e\u043b\u0436\u0435\u043d \u043d\u0430\u0447\u0438\u043d\u0430\u0442\u044c\u0441\u044f \u0441 SELECT. \u0417\u0430\u043f\u0440\u0435\u0449\u0435\u043d\u044b ';', DDL, \u043c\u0443\u043b\u044c\u0442\u0438-statement."
         },
         "params": {
           "type": "array",
-          "description": "Имена параметров в порядке placeholder'ов '?' в SQL.",
-          "items": { "type": "string" }
+          "description": "\u0418\u043c\u0435\u043d\u0430 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u043e\u0432 \u0432 \u043f\u043e\u0440\u044f\u0434\u043a\u0435 placeholder'\u043e\u0432 '?' \u0432 SQL.",
+          "items": {
+            "type": "string"
+          }
         },
         "result_mapping": {
           "type": "object",
-          "description": "Маппинг колонок результата на типы для JSON Schema.",
+          "description": "\u041c\u0430\u043f\u043f\u0438\u043d\u0433 \u043a\u043e\u043b\u043e\u043d\u043e\u043a \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0430 \u043d\u0430 \u0442\u0438\u043f\u044b \u0434\u043b\u044f JSON Schema.",
           "additionalProperties": {
             "type": "object",
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
-              "type": { "$ref": "#/$defs/entity_field/properties/type" },
-              "nullable": { "type": "boolean", "default": false }
+              "type": {
+                "$ref": "#/$defs/entity_field/properties/type"
+              },
+              "nullable": {
+                "type": "boolean",
+                "default": false
+              }
             }
           }
         },
@@ -397,83 +539,99 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10000,
-          "description": "Максимум строк в результате. Hard limit, защита от over-fetch."
+          "description": "\u041c\u0430\u043a\u0441\u0438\u043c\u0443\u043c \u0441\u0442\u0440\u043e\u043a \u0432 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0435. Hard limit, \u0437\u0430\u0449\u0438\u0442\u0430 \u043e\u0442 over-fetch."
         },
         "description": {
           "type": "string",
-          "description": "Описание запроса для OpenAPI."
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0437\u0430\u043f\u0440\u043e\u0441\u0430 \u0434\u043b\u044f OpenAPI."
         }
       }
     },
     "mcp_tool": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "endpoint", "description"],
-      "description": "MCP-инструмент, генерируемый mcp-gateway. Делегирует вызов к endpoint'у data-service.",
+      "required": [
+        "name",
+        "endpoint",
+        "description"
+      ],
+      "description": "MCP-\u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442, \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u043c\u044b\u0439 mcp-gateway. \u0414\u0435\u043b\u0435\u0433\u0438\u0440\u0443\u0435\u0442 \u0432\u044b\u0437\u043e\u0432 \u043a endpoint'\u0443 data-service.",
       "properties": {
         "name": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Имя инструмента (вызывается агентом)."
+          "description": "\u0418\u043c\u044f \u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u0430 (\u0432\u044b\u0437\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u0430\u0433\u0435\u043d\u0442\u043e\u043c)."
         },
         "endpoint": {
           "type": "string",
-          "description": "Путь endpoint'а из endpoints[] (например, '/students/{id}'). Path-параметры в {id}."
+          "description": "\u041f\u0443\u0442\u044c endpoint'\u0430 \u0438\u0437 endpoints[] (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440, '/students/{id}'). Path-\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0432 {id}."
         },
         "description": {
           "type": "string",
           "minLength": 1,
-          "description": "Описание для агента (model-facing). На русском или английском — на усмотрение клиента."
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0434\u043b\u044f \u0430\u0433\u0435\u043d\u0442\u0430 (model-facing). \u041d\u0430 \u0440\u0443\u0441\u0441\u043a\u043e\u043c \u0438\u043b\u0438 \u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u043e\u043c \u2014 \u043d\u0430 \u0443\u0441\u043c\u043e\u0442\u0440\u0435\u043d\u0438\u0435 \u043a\u043b\u0438\u0435\u043d\u0442\u0430."
         },
         "params": {
           "type": "array",
-          "description": "Описание параметров инструмента (model-facing).",
-          "items": { "$ref": "#/$defs/mcp_param" }
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u043e\u0432 \u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u0430 (model-facing).",
+          "items": {
+            "$ref": "#/$defs/mcp_param"
+          }
         }
       }
     },
     "mcp_param": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name"],
-      "description": "Параметр MCP-инструмента (model-facing, без привязки к HTTP).",
+      "required": [
+        "name"
+      ],
+      "description": "\u041f\u0430\u0440\u0430\u043c\u0435\u0442\u0440 MCP-\u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u0430 (model-facing, \u0431\u0435\u0437 \u043f\u0440\u0438\u0432\u044f\u0437\u043a\u0438 \u043a HTTP).",
       "properties": {
         "name": {
           "type": "string",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-          "description": "Имя параметра."
+          "description": "\u0418\u043c\u044f \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0430."
         },
         "type": {
           "type": "string",
-          "enum": ["string", "int", "float", "bool"],
+          "enum": [
+            "string",
+            "int",
+            "float",
+            "bool"
+          ],
           "default": "string",
-          "description": "Тип параметра."
+          "description": "\u0422\u0438\u043f \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0430."
         },
         "required": {
           "type": "boolean",
           "default": false,
-          "description": "Обязательный ли параметр."
+          "description": "\u041e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043b\u0438 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440."
         },
         "description": {
           "type": "string",
-          "description": "Описание для агента."
+          "description": "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0434\u043b\u044f \u0430\u0433\u0435\u043d\u0442\u0430."
         }
       }
     },
     "row_filter": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["entity", "where"],
-      "description": "Дополнительный WHERE для multi-tenant isolation.",
+      "required": [
+        "entity",
+        "where"
+      ],
+      "description": "\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0439 WHERE \u0434\u043b\u044f multi-tenant isolation.",
       "properties": {
         "entity": {
           "type": "string",
-          "description": "Имя entity."
+          "description": "\u0418\u043c\u044f entity."
         },
         "where": {
           "type": "string",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_\\s=<>!\\.\\:\\(\\)\\'\\,]*$",
-          "description": "WHERE-выражение. Поддерживает placeholder :tenant_id (подставляется из заголовка)."
+          "description": "WHERE-\u0432\u044b\u0440\u0430\u0436\u0435\u043d\u0438\u0435. \u041f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442 placeholder :tenant_id (\u043f\u043e\u0434\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442\u0441\u044f \u0438\u0437 \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0430)."
         }
       }
     }

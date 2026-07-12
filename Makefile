@@ -15,7 +15,7 @@ ci-audit:
 	cd mcp-gateway && $$(go env GOPATH)/bin/govulncheck ./... 2>&1 | grep -E '(No vulnerabilities|Your code is affected|error)' || true
 
 ci-test-py:
-	PYTHONPATH=$(PWD) uv run pytest api-service/src/api_service/tests/ -v --tb=short
+	PYTHONPATH=$(PWD) uv run -- python -m pytest api-service/src/api_service/tests/ -v --tb=short
 
 ci-lint-go:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest

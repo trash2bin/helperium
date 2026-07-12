@@ -157,6 +157,10 @@ class AgentCreateRequest(BaseModel):
     llm_config: LLMConfig | None = Field(
         default=None, description="Per-agent LLM overrides"
     )
+    provider_priority: list[str] = Field(
+        default_factory=list,
+        description="Provider names in priority order (from ProviderStore)",
+    )
 
 
 class AgentUpdateRequest(BaseModel):
@@ -174,6 +178,10 @@ class AgentUpdateRequest(BaseModel):
     llm_config: LLMConfig | None = Field(
         default=None, description="Per-agent LLM overrides"
     )
+    provider_priority: list[str] | None = Field(
+        default=None,
+        description="Provider names in priority order (from ProviderStore)",
+    )
 
 
 class AgentResponse(BaseModel):
@@ -187,6 +195,10 @@ class AgentResponse(BaseModel):
     )
     llm_config: LLMConfig | None = Field(
         default=None, description="Per-agent LLM overrides"
+    )
+    provider_priority: list[str] = Field(
+        default_factory=list,
+        description="Provider names in priority order (from ProviderStore)",
     )
     created_at: str = Field(..., description="ISO timestamp")
     updated_at: str = Field(..., description="ISO timestamp")

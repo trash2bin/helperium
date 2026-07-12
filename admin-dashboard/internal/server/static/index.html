@@ -6,7 +6,7 @@
   <title>Admin Dashboard — Helperium</title>
   <script src="/i18n.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=1">
   <style>
     /* Inline login overlay styles so they load instantly before Alpine boots */
     .login-overlay {
@@ -269,6 +269,9 @@
         </a>
         <a href="#" @click.prevent="page='abuse'; loadAbuseSettings(); loadAgents(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='abuse'}">
           <span x-text="__('nav.abuse')"></span>
+        </a>
+        <a href="#" @click.prevent="page='llm'; loadLlmConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='llm'}">
+          <span x-text="__('nav.llm')"></span>
         </a>
       </nav>
       <div class="sidebar-footer">
@@ -1167,6 +1170,194 @@
           </div>
         </div>
       </div>
+
+      <!-- ── LLM Provider Fallback Page ── -->
+      <div x-show="page === 'llm'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 x-text="__('page.llm.title')"></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="loadLlmConfig()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+          </div>
+        </div>
+
+        <p class="text-muted" style="margin-bottom:16px;" x-text="__('page.llm.subtitle')"></p>
+
+        <!-- Stats cards -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">
+              <span x-show="llmConfig?.fallback_enabled === true" style="color:#3fb950;" x-text="__('llm.fallbackOn')"></span>
+              <span x-show="llmConfig?.fallback_enabled === false" style="color:#8b949e;" x-text="__('llm.fallbackOff')"></span>
+              <span x-show="llmConfig === null || llmConfig.fallback_enabled === undefined" style="color:#8b949e;">—</span>
+            </div>
+            <div class="stat-label" x-text="__('llm.fallbackEnabled')"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" x-text="llmConfig?.num_models ?? '—'"></div>
+            <div class="stat-label" x-text="__('llm.numModels')"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="font-size:14px;word-break:break-all;" x-text="llmConfig?.providers?.[0]?.model ?? '—'"></div>
+            <div class="stat-label" x-text="__('llm.activeModel')"></div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div x-show="llmError" class="alert alert-error" x-text="llmError" x-cloak></div>
+
+        <!-- Description -->
+        <div class="card" x-show="llmConfig" x-cloak>
+          <p style="color:var(--text-muted);font-size:13px;line-height:1.6;" x-text="__('llm.description')"></p>
+        </div>
+
+        <!-- Tabs -->
+        <div style="display:flex;gap:8px;margin:16px 0;">
+          <button @click="llmTab='list'" :class="{'btn-primary': llmTab==='list'}" class="btn btn-sm" x-text="__('llm.tabList')"></button>
+          <button @click="llmTab='add'" :class="{'btn-primary': llmTab==='add'}" class="btn btn-sm" x-text="__('llm.tabAdd')"></button>
+        </div>
+
+        <!-- ═══ LIST TAB ═══ -->
+        <div x-show="llmTab === 'list'" x-cloak>
+          <!-- Provider Table -->
+          <div class="card" x-show="llmConfig?.providers?.length" x-cloak>
+            <h3 x-text="__('llm.providers')"></h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th x-text="__('llm.name')"></th>
+                  <th x-text="__('llm.source')"></th>
+                  <th x-text="__('llm.model')"></th>
+                  <th x-text="__('llm.apiBase')"></th>
+                  <th x-text="__('llm.apiKey')"></th>
+                  <th x-text="__('llm.enabled')"></th>
+                  <th x-text="__('label.actions')"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="prov in llmConfig.providers" :key="prov.name">
+                  <tr>
+                    <td><strong x-text="prov.name"></strong></td>
+                    <td>
+                      <span x-show="prov.source === 'env'" style="font-size:11px;color:#8b949e;" x-text="__('llm.sourceEnv')"></span>
+                      <span x-show="prov.source !== 'env'" style="font-size:11px;color:#58a6ff;" x-text="__('llm.sourceStore')"></span>
+                    </td>
+                    <td style="font-family:monospace;font-size:12px;" x-text="prov.model"></td>
+                    <td style="font-size:11px;word-break:break-all;" x-text="prov.api_base || '—'"></td>
+                    <td>
+                      <span x-show="prov.has_api_key" style="color:#3fb950;font-size:11px;" x-text="prov.api_key_masked || __('llm.apiKeyExists')"></span>
+                      <span x-show="!prov.has_api_key" style="color:#f85149;font-size:11px;" x-text="__('llm.apiKeyDoesNotExist')"></span>
+                    </td>
+                    <td>
+                      <button @click="toggleLlmProvider(prov.name)" class="btn btn-sm" x-text="prov.enabled ? __('llm.enabledYes') : __('llm.enabledNo')" style="font-size:16px;"></button>
+                    </td>
+                    <td class="actions">
+                      <button @click="startEditLlmProvider(prov.name)" class="btn btn-sm" x-text="__('btn.edit')"></button>
+                      <button @click="deleteLlmProvider(prov.name)" class="btn btn-sm btn-danger" x-text="__('btn.delete')"></button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card" x-show="llmConfig?.providers?.length === 0" x-cloak>
+            <p x-text="__('llm.noProviders')"></p>
+          </div>
+        </div>
+
+        <!-- ═══ ADD TAB ═══ -->
+        <div x-show="llmTab === 'add'" x-cloak>
+          <div class="card">
+            <h3 x-text="__('llm.addTitle')"></h3>
+            <form @submit.prevent="addLlmProvider()" class="form">
+              <div class="form-group">
+                <label x-text="__('llm.name')"></label>
+                <input type="text" x-model="llmNew.name" :placeholder="__('llm.namePlaceholder')" required>
+                <small class="text-muted" x-text="__('llm.nameHint')"></small>
+              </div>
+              <div class="form-group">
+                <label x-text="__('llm.providerLabel')"></label>
+                <input type="text" list="llm-provider-options" x-model="llmNew.provider" :placeholder="__('llm.providerSearch')" style="font-size:12px;padding:4px 8px;width:100%;">
+                <datalist id="llm-provider-options">
+                  <template x-for="p in llmProviderList" :key="p">
+                    <option :value="p" x-text="p"></option>
+                  </template>
+                </datalist>
+                <small class="text-muted" x-text="__('llm.providerHint')"></small>
+              </div>
+              <div class="form-group">
+                <label x-text="__('llm.model')"></label>
+                <input type="text" x-model="llmNew.model" :placeholder="__('llm.modelPlaceholder')" required>
+                <small class="text-muted" x-text="__('llm.modelHint')"></small>
+              </div>
+              <div class="form-group">
+                <label x-text="__('llm.apiKey')"></label>
+                <input type="password" x-model="llmNew.api_key" :placeholder="__('llm.apiKeyPlaceholder')">
+                <small class="text-muted" x-text="__('llm.apiKeyHint')"></small>
+              </div>
+              <div class="form-group">
+                <label x-text="__('llm.apiBase')"></label>
+                <input type="text" x-model="llmNew.api_base" placeholder="https://api.openai.com/v1">
+                <small class="text-muted" x-text="__('llm.apiBaseHint')"></small>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" :disabled="llmSaving || !llmNew.name || !llmNew.model">
+                  <span x-show="llmSaving">⏳</span>
+                  <span x-show="!llmSaving" x-text="__('llm.addBtn')"></span>
+                </button>
+                <button type="button" @click="llmTab='list'" class="btn" x-text="__('llm.cancelBtn')"></button>
+              </div>
+              <div x-show="llmSaveMsg" style="margin-top:8px;" x-text="llmSaveMsg"></div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ═══ EDIT TAB ═══ -->
+        <div x-show="llmTab === 'edit'" x-cloak>
+          <div class="card" x-show="llmEdit">
+            <h3 x-text="__('llm.editTitle') + ' ' + llmEditName"></h3>
+            <form @submit.prevent="saveLlmProvider()" class="form">
+              <div class="form-group">
+                <label x-text="__('llm.providerLabel')"></label>
+                <input type="text" :value="llmEdit.model?.split('/')?.[0] || '—'" disabled style="opacity:0.7;">
+              </div>
+              <div class="form-group">
+                <label x-text="__('llm.model')"></label>
+                <input type="text" x-model="llmEdit.model" :placeholder="__('llm.modelPlaceholder')" required>
+              </div>
+              <div class="form-group">
+                <label x-text="__('llm.apiKey')"></label>
+                <input type="password" x-model="llmEdit.api_key" :placeholder="__('llm.apiKeyPlaceholder')">
+                <small class="text-muted">
+                  <span x-show="llmEdit.has_api_key" style="color:#3fb950;" x-text="llmEdit.api_key_masked || __('llm.apiKeyExists')"></span>
+                  <span x-show="!llmEdit.has_api_key" style="color:#f85149;" x-text="__('llm.apiKeyDoesNotExist')"></span>
+                  <br><span x-text="__('llm.apiKeyHint')"></span>
+                </small>
+              </div>
+              <div class="form-group">
+                <label x-text="__('llm.apiBase')"></label>
+                <input type="text" x-model="llmEdit.api_base" placeholder="https://api.openai.com/v1">
+              </div>
+              <div class="form-group">
+                <label class="checkbox-row">
+                  <input type="checkbox" x-model="llmEdit.enabled">
+                  <span x-text="__('llm.enabled')"></span>
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" :disabled="llmSaving || !llmEdit.model">
+                  <span x-show="llmSaving">⏳</span>
+                  <span x-show="!llmSaving" x-text="__('llm.saveBtn')"></span>
+                </button>
+                <button type="button" @click="cancelLlmEdit()" class="btn" x-text="__('llm.cancelBtn')"></button>
+              </div>
+              <div x-show="llmSaveMsg" style="margin-top:8px;" x-text="llmSaveMsg"></div>
+            </form>
+          </div>
+        </div>
+      </div>
     </main>
 
     <!-- ── Create Agent Modal ── -->
@@ -1196,6 +1387,36 @@
                   <span x-text="t.id" style="font-family:monospace;"></span>
                 </label>
               </template>
+            </div>
+          </div>
+          <!-- ── Provider priority (Create) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelProviderPriority')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:6px;font-size:11px;" x-text="__('agent.providerPriorityHint')"></small>
+            <div x-show="llmProviderStoreList.length === 0" class="text-muted" style="font-size:12px;" x-text="__('agent.noProvidersHint')"></div>
+            <div class="priority-list">
+              <template x-for="(name, idx) in newAgent.provider_priority" :key="name">
+                <div class="priority-item">
+                  <span x-text="name"></span>
+                  <button type="button" @click="moveProviderPriority(idx, -1)" :disabled="idx===0" x-text="'\u25B2'"></button>
+                  <button type="button" @click="moveProviderPriority(idx, 1)" :disabled="idx===newAgent.provider_priority.length-1" x-text="'\u25BC'"></button>
+                  <button type="button" @click="toggleProviderPriority(name)" class="btn-remove" x-text="'\u2716'"></button>
+                </div>
+              </template>
+            </div>
+            <div x-show="llmProviderStoreList.length">
+              <details style="margin-top:6px;">
+                <summary style="cursor:pointer;font-size:12px;color:var(--text-muted);" x-text="__('agent.addProvider')"></summary>
+                <div class="provider-picklist">
+                  <template x-for="p in llmProviderStoreList" :key="p.name">
+                    <label class="checkbox-row" x-show="!newAgent.provider_priority.includes(p.name)">
+                      <input type="checkbox" :checked="false" @change="toggleProviderPriority(p.name)">
+                      <span x-text="p.name" style="font-family:monospace;"></span>
+                      <small style="color:var(--text-muted);font-size:10px;" x-text="'('+p.model+')'"></small>
+                    </label>
+                  </template>
+                </div>
+              </details>
             </div>
           </div>
           <div class="modal-actions">
@@ -1233,6 +1454,36 @@
                   <span x-text="t.id" style="font-family:monospace;"></span>
                 </label>
               </template>
+            </div>
+          </div>
+          <!-- ── Provider priority (Edit) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelProviderPriority')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:6px;font-size:11px;" x-text="__('agent.providerPriorityHint')"></small>
+            <div x-show="llmProviderStoreList.length === 0" class="text-muted" style="font-size:12px;" x-text="__('agent.noProvidersHint')"></div>
+            <div class="priority-list">
+              <template x-for="(name, idx) in editAgentData.provider_priority" :key="name">
+                <div class="priority-item">
+                  <span x-text="name"></span>
+                  <button type="button" @click="moveEditProviderPriority(idx, -1)" :disabled="idx===0" x-text="'\u25B2'"></button>
+                  <button type="button" @click="moveEditProviderPriority(idx, 1)" :disabled="idx===editAgentData.provider_priority.length-1" x-text="'\u25BC'"></button>
+                  <button type="button" @click="toggleEditProviderPriority(name)" class="btn-remove" x-text="'\u2716'"></button>
+                </div>
+              </template>
+            </div>
+            <div x-show="llmProviderStoreList.length">
+              <details style="margin-top:6px;">
+                <summary style="cursor:pointer;font-size:12px;color:var(--text-muted);" x-text="__('agent.addProvider')"></summary>
+                <div class="provider-picklist">
+                  <template x-for="p in llmProviderStoreList" :key="p.name">
+                    <label class="checkbox-row" x-show="!editAgentData.provider_priority.includes(p.name)">
+                      <input type="checkbox" :checked="false" @change="toggleEditProviderPriority(p.name)">
+                      <span x-text="p.name" style="font-family:monospace;"></span>
+                      <small style="color:var(--text-muted);font-size:10px;" x-text="'('+p.model+')'"></small>
+                    </label>
+                  </template>
+                </div>
+              </details>
             </div>
           </div>
           <div class="modal-actions">

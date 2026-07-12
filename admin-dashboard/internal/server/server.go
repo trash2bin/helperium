@@ -147,6 +147,16 @@ func (s *Server) Router() chi.Router {
 		r.Put("/agents/{name}", s.agentUpdateHandler)
 		r.Delete("/agents/{name}", s.agentDeleteHandler)
 
+		// LLM Provider Fallback (proxy to api-service)
+		r.Get("/llm-config", s.llmConfigGetHandler)
+		r.Get("/llm-providers", s.llmProvidersListHandler)
+		r.Post("/llm-providers", s.llmProvidersAddHandler)
+		r.Get("/llm-providers/{name}", s.llmProvidersGetHandler)
+		r.Put("/llm-providers/{name}", s.llmProvidersUpdateHandler)
+		r.Delete("/llm-providers/{name}", s.llmProvidersDeleteHandler)
+		r.Post("/llm-providers/{name}/toggle", s.llmProvidersToggleHandler)
+		r.Get("/llm-provider-list", s.llmProviderListHandler)
+
 		// Anti-abuse / rate limit settings
 		r.Get("/abuse-settings", s.abuseSettingsGetHandler)
 		r.Put("/abuse-settings", s.abuseSettingsPutHandler)
@@ -943,4 +953,40 @@ func (s *Server) agentUpdateHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) agentDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	s.proxyToApiService(w, r, "/api/agents/"+name)
+}
+
+func (s *Server) llmConfigGetHandler(w http.ResponseWriter, r *http.Request) {
+	s.proxyToApiService(w, r, "/admin/llm-config")
+}
+
+func (s *Server) llmProvidersListHandler(w http.ResponseWriter, r *http.Request) {
+	s.proxyToApiService(w, r, "/admin/llm-providers")
+}
+
+func (s *Server) llmProvidersAddHandler(w http.ResponseWriter, r *http.Request) {
+	s.proxyToApiService(w, r, "/admin/llm-providers")
+}
+
+func (s *Server) llmProvidersGetHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	s.proxyToApiService(w, r, "/admin/llm-providers/"+name)
+}
+
+func (s *Server) llmProvidersUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	s.proxyToApiService(w, r, "/admin/llm-providers/"+name)
+}
+
+func (s *Server) llmProvidersDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	s.proxyToApiService(w, r, "/admin/llm-providers/"+name)
+}
+
+func (s *Server) llmProvidersToggleHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	s.proxyToApiService(w, r, "/admin/llm-providers/"+name+"/toggle")
+}
+
+func (s *Server) llmProviderListHandler(w http.ResponseWriter, r *http.Request) {
+	s.proxyToApiService(w, r, "/admin/llm-provider-list")
 }

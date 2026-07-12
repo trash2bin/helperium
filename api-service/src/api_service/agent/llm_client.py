@@ -19,6 +19,7 @@ from api_service.pricing import get_model_cost
 
 import litellm
 from litellm import CustomStreamWrapper
+from litellm.router import Router
 from litellm.types.utils import ModelResponse
 
 from demo.settings import settings
@@ -83,7 +84,11 @@ class LLMResponse:
 
 
 class LLMClient:
-    """Handles all interactions with the LLM via LiteLLM."""
+    """Handles all interactions with the LLM via LiteLLM.
+
+    Supports both direct ``litellm.acompletion()`` and
+    ``litellm.Router.acompletion()`` when a router is provided.
+    """
 
     def __init__(
         self,
@@ -93,6 +98,7 @@ class LLMClient:
         temperature: float = 0.5,
         max_tokens_thinking: int = 4096,
         enable_thinking: bool = False,
+        router: Router | None = None,
     ) -> None:
         """
         Initialize LLM client.
@@ -104,6 +110,7 @@ class LLMClient:
             temperature: Model temperature (0-1)
             max_tokens_thinking: Maximum tokens for thinking
             enable_thinking: Whether to enable thinking mode
+            router: Optional Router for provider failover
         """
         self.model: str = model
         self.api_base: str | None = api_base
@@ -111,6 +118,7 @@ class LLMClient:
         self.temperature: float = temperature
         self.max_tokens_thinking: int = max_tokens_thinking
         self.enable_thinking: bool = enable_thinking
+        self.router: Router | None = router
         self.last_final_message: dict[str, Any] | None = None
         self.last_usage: dict[str, int] | None = None
         self.last_cost: float = 0.0
@@ -161,7 +169,12 @@ class LLMClient:
             kwargs["stream"] = True
 
         _start_time = time.monotonic()
-        response = await litellm.acompletion(**kwargs)
+        if self.router is not None:
+            response = await self.router.acompletion(  # type: ignore[arg-type, call-overload]
+                **kwargs
+            )
+        else:
+            response = await litellm.acompletion(**kwargs)
         _duration_ms = (time.monotonic() - _start_time) * 1000
         llm_duration_ms.labels(model=self.model).observe(_duration_ms)
         llm_calls_total.labels(
@@ -250,13 +263,22 @@ class LLMClient:
         """Get final message tokens without streaming intermediate tokens."""
         extra_params = self._get_extra_params()
 
-        response = await litellm.acompletion(
-            model=self.model,
-            messages=messages,
-            stream=True,
-            timeout=self.timeout,
-            **extra_params,
-        )
+        if self.router is not None:
+            response = await self.router.acompletion(  # type: ignore[call-overload, reportArgumentType]
+                model=self.model,
+                messages=messages,  # type: ignore[reportArgumentType]
+                stream=True,
+                timeout=self.timeout,
+                **extra_params,
+            )
+        else:
+            response = await litellm.acompletion(  # type: ignore[reportArgumentType]
+                model=self.model,
+                messages=messages,  # type: ignore[reportArgumentType]
+                stream=True,
+                timeout=self.timeout,
+                **extra_params,
+            )
 
         # Проверка на корректный тип данных от LiteLLM
         if not isinstance(response, CustomStreamWrapper):
@@ -318,11 +340,11 @@ def create_client(llm_config: dict | None = None) -> LLMClient:
 
     Priority order:
     1. Per-agent llm_config (if provided)
-    2. Mistral API (if MISTRAL_API_KEY is set globally)
-    3. Ollama (default fallback)
+    2. Env vars: first *{PREFIX}_API_KEY* + *{PREFIX}_MODEL* found
+    3. Ollama (default fallback via OLLAMA_URL / OLLAMA_MODEL)
 
     Per-agent config keys:
-      provider  — ollama, mistral, openai, anthropic
+      provider  — ollama, mistral, openai, anthropic, groq, ... (любой LiteLLM)
       api_key   — API key for the provider (set as env var for LiteLLM)
       model     — model name (e.g. qwen2.5:0.5b, mistral/mistral-small)
       api_base  — custom API base URL
@@ -331,85 +353,268 @@ def create_client(llm_config: dict | None = None) -> LLMClient:
       system_prompt — system prompt override (NOT used here, handled by orchestrator)
     """
     if llm_config:
-        model_name = llm_config.get("model") or settings.ollama_model
-        api_base = llm_config.get("api_base") or settings.ollama_url
-        temperature = llm_config.get("temperature") or settings.agent_temperature
-        provider = llm_config.get("provider")
-        api_key = llm_config.get("api_key")
+        return _create_from_llm_config(llm_config)
 
-        # Set API key as env var for LiteLLM
-        if api_key and provider:
-            env_key_map = {
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY",
-                "mistral": "MISTRAL_API_KEY",
-            }
-            if provider in env_key_map:
-                os.environ[env_key_map[provider]] = api_key
+    # ── Global defaults (no per-agent config) ──────────────────────────
+    # 1. Scan env for *{PREFIX}_API_KEY* + *{PREFIX}_MODEL*
+    client = _create_from_env_fallback()
+    if client is not None:
+        return client
 
-        # Determine model prefix based on provider
-        if provider == "ollama" and api_base:
-            known_prefixes = (
-                "ollama/",
-                "ollama_chat/",
-                "openai/",
-                "anthropic/",
-                "deepseek/",
-            )
-            if not model_name.startswith(known_prefixes):
-                model_name = f"ollama_chat/{model_name}"
-        elif provider == "mistral":
-            if not model_name.startswith("mistral/"):
-                model_name = f"mistral/{model_name}"
-            api_base = None  # LiteLLM handles default
-        elif provider == "openai":
-            if not model_name.startswith("openai/"):
-                model_name = f"openai/{model_name}"
+    # 2. Ollama (default)
+    return _create_ollama_client()
 
-        api_base_url = api_base.rstrip("/") if api_base else None
+
+# ── Helper factories for create_client ─────────────────────────────────
+
+
+def _create_from_llm_config(llm_config: dict) -> LLMClient:
+    """Создаёт LLMClient из per-agent конфига."""
+    model_name = llm_config.get("model") or settings.ollama_model
+    api_base = llm_config.get("api_base") or settings.ollama_url
+    temperature = llm_config.get("temperature") or settings.agent_temperature
+    provider = llm_config.get("provider")
+    api_key = llm_config.get("api_key")
+
+    if api_key and provider:
+        _set_provider_env_key(provider, api_key)
+
+    model_name = _prefix_model(provider, model_name, api_base)
+
+    # Provider-specific overrides
+    if provider == "mistral":
+        api_base = None  # LiteLLM handles Mistral's default
+
+    api_base_url = api_base.rstrip("/") if api_base else None
+
+    return LLMClient(
+        model=model_name,
+        api_base=api_base_url,
+        timeout=settings.request_timeout,
+        temperature=temperature,
+        max_tokens_thinking=llm_config.get("max_tokens")
+        or settings.agent_max_tokens_thinking,
+        enable_thinking=settings.think_mode,
+    )
+
+
+def _create_from_env_fallback() -> LLMClient | None:
+    """Сканирует os.environ на *{PREFIX}_API_KEY* + *{PREFIX}_MODEL*.
+
+    Возвращает LLMClient для первого найденного совпадения или None.
+    """
+    for key, val in os.environ.items():
+        if not key.endswith("_API_KEY") or not val:
+            continue
+        prefix = key.removesuffix("_API_KEY")
+        if not prefix:
+            continue
+        model = os.environ.get(f"{prefix}_MODEL", "")
+        if not model:
+            continue
+        # LiteLLM expects prefix/model format
+        provider_slug = prefix.lower()
+        if provider_slug == "mistral" and not model.startswith("mistral/"):
+            model = f"mistral/{model}"
+        elif provider_slug == "openai" and not model.startswith("openai/"):
+            model = f"openai/{model}"
+        elif provider_slug == "anthropic" and not model.startswith("anthropic/"):
+            model = f"anthropic/{model}"
+        api_base = os.environ.get(f"{prefix}_API_BASE", "") or None
 
         return LLMClient(
-            model=model_name,
-            api_base=api_base_url,
+            model=model,
+            api_base=api_base,
             timeout=settings.request_timeout,
-            temperature=temperature,
-            max_tokens_thinking=llm_config.get("max_tokens")
-            or settings.agent_max_tokens_thinking,
+            temperature=settings.agent_temperature,
+            max_tokens_thinking=settings.agent_max_tokens_thinking,
             enable_thinking=settings.think_mode,
         )
+    return None
 
-    # ── Global defaults (no per-agent config) ──
-    # Mistral takes priority if API key exists
-    if settings.mistral_api_key:
-        model = settings.mistral_model
-        if not model.startswith("mistral/"):
-            model = f"mistral/{model}"
-        api_base = None  # LiteLLM handles Mistral's default API base
+
+def _create_ollama_client() -> LLMClient:
+    """Создаёт LLMClient для Ollama (локальная модель)."""
+    model_name = settings.ollama_model
+    known_prefixes = (
+        "ollama/",
+        "ollama_chat/",
+        "openai/",
+        "anthropic/",
+        "deepseek/",
+        "huggingface/",
+        "mistral/",
+        "groq/",
+        "together_ai/",
+    )
+    if settings.ollama_url and not model_name.startswith(known_prefixes):
+        model = f"ollama_chat/{model_name}"
     else:
-        # Ollama configuration
-        model_name = settings.ollama_model
-        known_providers = (
+        model = model_name
+    api_base = settings.ollama_url.rstrip("/") if settings.ollama_url else None
+
+    return LLMClient(
+        model=model,
+        api_base=api_base,
+        timeout=settings.request_timeout,
+        temperature=settings.agent_temperature,
+        max_tokens_thinking=settings.agent_max_tokens_thinking,
+        enable_thinking=settings.think_mode,
+    )
+
+
+def _set_provider_env_key(provider: str, api_key: str) -> None:
+    """Устанавливает env var для провайдера (LiteLLM смотрит в os.environ)."""
+    key_map = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+    }
+    if provider in key_map:
+        os.environ[key_map[provider]] = api_key
+
+
+def _prefix_model(provider: str | None, model_name: str, api_base: str | None) -> str:
+    """Добавляет префикс провайдера к модели, если нужно."""
+    if provider == "ollama" and api_base:
+        known_prefixes = (
             "ollama/",
             "ollama_chat/",
             "openai/",
             "anthropic/",
             "deepseek/",
-            "huggingface/",
-            "mistral/",
-            "groq/",
-            "together_ai/",
         )
+        if not model_name.startswith(known_prefixes):
+            return f"ollama_chat/{model_name}"
+    elif provider == "mistral":
+        if not model_name.startswith("mistral/"):
+            return f"mistral/{model_name}"
+    elif provider == "openai":
+        if not model_name.startswith("openai/"):
+            return f"openai/{model_name}"
+    return model_name
 
-        if settings.ollama_url and not model_name.startswith(known_providers):
-            model = f"ollama_chat/{model_name}"
-        else:
-            model = model_name
 
-        api_base = settings.ollama_url.rstrip("/") if settings.ollama_url else None
+def create_prioritized_client(provider_names: list[str]) -> LLMClient:
+    """
+    Create an LLM client with LiteLLM Router for per-agent prioritized providers.
+
+    Looks up each provider name from the global ProviderStore.
+    Only enabled providers with non-empty model and api_key are included,
+    in the order specified by ``provider_names``.
+
+    When none of the named providers are valid, falls back to ``create_client()``.
+    """
+    from api_service.provider_store import get_provider_store
+
+    store = get_provider_store()
+    model_list: list[dict[str, Any]] = []
+
+    for name in provider_names:
+        provider_data = store.get_provider(name)
+        if not provider_data:
+            logger.warning(
+                "[PRIORITY] Provider '%s' not found in store — skipping", name
+            )
+            continue
+        if not provider_data.get("enabled", True):
+            logger.info("[PRIORITY] Provider '%s' is disabled — skipping", name)
+            continue
+        model = provider_data.get("model", "")
+        if not model:
+            logger.warning("[PRIORITY] Provider '%s' has no model — skipping", name)
+            continue
+
+        # Get full provider data (not masked) from internal dict
+        raw = store.all_providers_raw.get(name, {})
+        api_key = raw.get("api_key", "")
+        if not api_key:
+            logger.warning("[PRIORITY] Provider '%s' has no api_key — skipping", name)
+            continue
+
+        entry: dict[str, Any] = {
+            "model_name": name,
+            "litellm_params": {
+                "model": model,
+                "api_key": api_key,
+                "timeout": 600,
+                "temperature": 0.5,
+            },
+        }
+        api_base = raw.get("api_base", "") or provider_data.get("api_base", "")
+        if api_base:
+            entry["litellm_params"]["api_base"] = api_base
+        model_list.append(entry)
+
+    if not model_list:
+        logger.info(
+            "[PRIORITY] No valid providers in priority list — using default client"
+        )
+        return create_client()
+
+    router = Router(
+        model_list=model_list,
+        num_retries=1,
+        set_verbose=False,
+    )
+
+    logger.info(
+        "[PRIORITY] Created Router with %d providers (in priority order): %s",
+        len(model_list),
+        [m["litellm_params"]["model"] for m in model_list],
+    )
+
+    primary_model = model_list[0]["litellm_params"]["model"]
+    primary_api_base = model_list[0]["litellm_params"].get("api_base")
 
     return LLMClient(
-        model=model,
-        api_base=api_base,
+        model=primary_model,
+        api_base=primary_api_base,
+        router=router,
+        timeout=settings.request_timeout,
+        temperature=settings.agent_temperature,
+        max_tokens_thinking=settings.agent_max_tokens_thinking,
+        enable_thinking=settings.think_mode,
+    )
+
+
+def create_fallback_client() -> LLMClient:
+    """
+    Create an LLM client with LiteLLM Router for provider failover.
+
+    Builds a ``litellm.Router`` from the ProviderStore (``.data/providers.json``).
+    All enabled providers with non-empty model and api_key are added to the router.
+
+    When the store has no active providers, falls back to ``create_client()``.
+    """
+    from api_service.provider_store import get_provider_store
+
+    store = get_provider_store()
+    model_list = store.get_active_router_config()
+
+    if not model_list:
+        logger.info("[FALLBACK] No active providers in store — using default client")
+        return create_client()
+
+    router = Router(
+        model_list=model_list,
+        num_retries=1,
+        set_verbose=False,
+    )
+
+    logger.info(
+        "[FALLBACK] Created Router with %d providers: %s",
+        len(model_list),
+        [m["litellm_params"]["model"] for m in model_list],
+    )
+
+    primary_model = model_list[0]["litellm_params"]["model"]
+    primary_api_base = model_list[0]["litellm_params"].get("api_base")
+
+    return LLMClient(
+        model=primary_model,
+        api_base=primary_api_base,
+        router=router,
         timeout=settings.request_timeout,
         temperature=settings.agent_temperature,
         max_tokens_thinking=settings.agent_max_tokens_thinking,

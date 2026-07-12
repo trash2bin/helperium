@@ -32,6 +32,7 @@ backlog/
 .ruff_cache/
 .pytest_cache/
 .env
+.env.*
 *.egg-info
 dist/
 context.md
@@ -47,6 +48,16 @@ specs/test_tenants/
 # Backup files
 *.bak
 *.bak2
+
+# Docker compose overrides
+docker-compose.core.yml
+docker-compose.override.yml
+
+# Python version (local dev)
+.python-version
+
+# Auto-generated tenant configs with secrets
+specs/config.autoparts*.json
 
 # Trail of Bits skills — локально установленные, не в git
 .pi/skills/*

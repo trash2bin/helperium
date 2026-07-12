@@ -9,8 +9,11 @@ from api_service.agent.llm_client import LLMClient, create_client
 
 @pytest.fixture
 def mock_settings():
-    """Mock global settings to avoid env dependencies."""
-    with patch("api_service.agent.llm_client.settings") as ms:
+    """Mock global settings + clean os.environ to avoid real .env interference."""
+    with (
+        patch("api_service.agent.llm_client.settings") as ms,
+        patch.dict(os.environ, {}, clear=True),
+    ):
         ms.mistral_api_key = None
         ms.mistral_model = "mistral/mistral-small"
         ms.ollama_model = "qwen2.5:0.5b"
@@ -96,11 +99,17 @@ def test_create_client_no_config(mock_settings):
 
 
 def test_create_client_no_config_fallback_mistral(mock_settings):
-    """create_client without llm_config should use Mistral when API key is set."""
-    mock_settings.mistral_api_key = "sk-mistral-global"
-    client = create_client()
-    assert client.model == "mistral/mistral-small"
-    assert client.api_base is None
+    """create_client without llm_config should use Mistral when MISTRAL_API_KEY is set."""
+    with patch.dict(
+        os.environ,
+        {
+            "MISTRAL_API_KEY": "sk-mistral-global",
+            "MISTRAL_MODEL": "mistral/mistral-small",
+        },
+    ):
+        client = create_client()
+        assert client.model == "mistral/mistral-small"
+        assert client.api_base is None
 
 
 def test_create_client_with_anthropic_config(mock_settings):

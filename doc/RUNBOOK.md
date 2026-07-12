@@ -74,7 +74,7 @@ curl http://localhost:8081/health    # → {"status":"ok"}
 
 ```bash
 docker compose --profile monitoring up -d
-# Grafana: http://localhost:3000 (admin / admin) — 12-panel dashboard
+# Grafana: http://localhost:3000 (admin / admin) — 18-panel dashboard
 # Prometheus: http://localhost:9090
 ```
 
@@ -279,7 +279,7 @@ curl http://localhost:8081/health    # → {"status":"ok"}
 
 ```bash
 docker compose --profile monitoring up -d
-# Grafana: http://localhost:3000 (admin / admin) — 12 панелей
+# Grafana: http://localhost:3000 (admin / admin) — 18 панелей
 # Prometheus: http://localhost:9090
 ```
 

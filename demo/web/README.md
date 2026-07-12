@@ -176,7 +176,7 @@ docker compose up -d web
 
 ### Unit-тесты
 ```bash
-uv run pytest demo/web/tests/unit/test_proxy.py -v   # 26 тестов (включая TestTenantRoutingProxy)
+uv run pytest demo/web/tests/unit/ -v   # 50 тестов (22 proxy + 4 urls + 24 CORS)
 ```
 
 ### E2E-тесты
@@ -196,7 +196,7 @@ uv run agent-db e2e-full
 
 ### Интеграционные тесты
 ```bash
-# Все 274 Go-теста (data-service + mcp-gateway)
+# Все 591 Go-тест (data-service: 470 в 14 пакетах, mcp-gateway: 121 в 5)
 go test ./data-service/... ./mcp-gateway/... -count=1
 ```
 

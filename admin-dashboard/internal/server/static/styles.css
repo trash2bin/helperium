@@ -805,6 +805,57 @@ code, pre, .mono {
   accent-color: var(--accent);
 }
 
+/* Provider priority list (agent edit/create modals) */
+.priority-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.priority-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.priority-item span {
+  flex: 1;
+  color: #e6edf3;
+}
+.priority-item button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #8b949e;
+  transition: color 0.15s;
+}
+.priority-item button:hover:not(:disabled) {
+  color: #58a6ff;
+}
+.priority-item button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.priority-item .btn-remove {
+  color: #f85149 !important;
+}
+.priority-item .btn-remove:hover {
+  color: #ff6b6b !important;
+}
+.provider-picklist {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-top: 4px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background: #161b22;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-2px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1634,66 +1685,8 @@ code:not(.code-block code) {
 }
 
 /* =============================================================
-   Light Mode Override (prefers-color-scheme: light)
+   Admin dashboard is dark-mode only — no light mode override
    ============================================================= */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #ffffff;
-    --bg-card: #f6f8fa;
-    --bg-hover: #eaeef2;
-    --bg-inset: #f0f2f5;
-    --border: #d0d7de;
-    --border-subtle: #d8dee4;
-    --text: #1f2328;
-    --text-muted: #656d76;
-    --text-disabled: #8c959f;
-
-    --accent: #0969da;
-    --accent-hover: #0550ae;
-    --accent-muted: rgba(9, 105, 218, 0.1);
-
-    --green: #1a7f37;
-    --green-bg: rgba(26, 127, 55, 0.1);
-    --green-text: #1a7f37;
-    --red: #cf222e;
-    --red-bg: rgba(207, 34, 46, 0.1);
-    --red-text: #cf222e;
-    --yellow: #9a6700;
-    --yellow-bg: rgba(154, 103, 0, 0.1);
-    --yellow-text: #9a6700;
-  }
-
-  .login-overlay {
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(4px);
-  }
-
-  .login-card {
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-  }
-
-  .select-arrow {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23656d76' d='M6 8.825L1.175 4 2.238 2.938 6 6.7 9.763 2.937 10.825 4z'/%3E%3C/svg%3E");
-  }
-
-  .upload-zone {
-    border-color: var(--border);
-    background: var(--bg-card);
-  }
-
-  .upload-zone.dragover {
-    border-color: var(--accent);
-    background: rgba(88, 166, 255, 0.08);
-  }
-
-  .code-block {
-    background: var(--bg-inset);
-  }
-
-  table thead {
-    background: var(--bg-card);
-  }
-}
 
 /* ============================================================
    End of stylesheet

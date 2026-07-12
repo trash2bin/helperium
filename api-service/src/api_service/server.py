@@ -51,6 +51,7 @@ from api_service.prometheus_metrics import (
 )
 from api_service.guardrails import get_guard_checker
 from api_service.spending import get_spending_checker
+from api_service.provider_store import get_provider_store
 
 configure_logging()
 logger = logging.getLogger("api_service.server")
@@ -509,6 +510,142 @@ async def set_tenant_budget(tenant_id: str, config: dict):
     return checker.get_spending(tenant_id)
 
 
+# ── LLM Providers Admin API ──
+
+
+@app.get("/admin/llm-providers")
+async def list_llm_providers():
+    """List all LLM providers with masked API keys."""
+    store = get_provider_store()
+    return {
+        "providers": store.list_providers(),
+        "fallback_enabled": store.get_fallback_enabled(),
+    }
+
+
+@app.get("/admin/llm-provider-list")
+async def list_litellm_providers():
+    """List all available providers from LiteLLM (live, no hardcode)."""
+    from api_service.provider_store import get_litellm_provider_list
+
+    providers = get_litellm_provider_list()
+    return {
+        "providers": providers,
+        "count": len(providers),
+    }
+
+
+@app.get("/admin/llm-providers/{name}")
+async def get_llm_provider(name: str):
+    """Get a single LLM provider with masked API key."""
+    from fastapi import HTTPException
+
+    store = get_provider_store()
+    provider = store.get_provider(name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
+    return provider
+
+
+@app.post("/admin/llm-providers", status_code=201)
+async def add_llm_provider(body: dict):
+    """Add a new LLM provider.
+
+    Body:
+        name (required): unique provider name
+        model (required): model identifier (e.g. openai/gpt-4o, anthropic/claude-3-sonnet)
+        provider: provider type — auto-detected from model prefix if omitted
+        api_key: API key (will not be returned in full)
+        api_base: custom API base URL
+        enabled: whether the provider is active (default: true)
+    """
+    from fastapi import HTTPException
+
+    store = get_provider_store()
+    try:
+        result = store.add_provider(
+            name=body["name"],
+            model=body["model"],
+            provider=body.get("provider", ""),
+            api_key=body.get("api_key"),
+            api_base=body.get("api_base"),
+            enabled=body.get("enabled", True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=f"Missing required field: {exc}")
+    return result
+
+
+@app.put("/admin/llm-providers/{name}")
+async def update_llm_provider(name: str, body: dict):
+    """Update an existing LLM provider.
+
+    Omitted fields keep their current value.
+    Set api_key="" to keep existing key (not change it).
+    Set api_key="__clear__" to clear the key.
+    """
+    from fastapi import HTTPException
+
+    store = get_provider_store()
+    result = store.update_provider(
+        name=name,
+        model=body.get("model"),
+        provider=body.get("provider"),
+        api_key=body.get("api_key"),
+        api_base=body.get("api_base"),
+        enabled=body.get("enabled"),
+        label=body.get("label"),
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
+    return result
+
+
+@app.delete("/admin/llm-providers/{name}")
+async def delete_llm_provider(name: str):
+    """Delete an LLM provider."""
+    from fastapi import HTTPException
+
+    store = get_provider_store()
+    if not store.delete_provider(name):
+        raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
+    return {"deleted": True}
+
+
+@app.post("/admin/llm-providers/{name}/toggle")
+async def toggle_llm_provider(name: str):
+    """Toggle a provider on/off."""
+    from fastapi import HTTPException
+
+    store = get_provider_store()
+    provider_data = store.get_provider(name)
+    if not provider_data:
+        raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
+    new_enabled = not provider_data["enabled"]
+    result = store.set_enabled(name, new_enabled)
+    return result
+
+
+# ── LLM Config Admin API (legacy, from env vars) ──
+
+
+@app.get("/admin/llm-config")
+async def get_llm_config():
+    """Get current LLM provider fallback configuration."""
+    from api_service.provider_store import get_provider_store
+
+    store = get_provider_store()
+    providers = store.list_providers()
+
+    return {
+        "fallback_enabled": store.get_fallback_enabled(),
+        "providers": providers,
+        "num_models": len(providers),
+    }
+
+
 # ── Agent CRUD ──
 
 
@@ -528,6 +665,7 @@ async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
             tenant_ids=req.tenant_ids,
             widget_config=req.widget_config.model_dump() if req.widget_config else None,
             llm_config=req.llm_config.model_dump() if req.llm_config else None,
+            provider_priority=req.provider_priority or None,
         )
         return AgentResponse(**result)
     except ValueError as exc:
@@ -578,6 +716,7 @@ async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResp
         tenant_ids=req.tenant_ids,
         widget_config=req.widget_config.model_dump() if req.widget_config else None,
         llm_config=req.llm_config.model_dump() if req.llm_config else None,
+        provider_priority=req.provider_priority,
     )
     if not result:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
@@ -652,6 +791,19 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     llm_config = agent.get("llm_config")
     system_prompt = llm_config.get("system_prompt") if llm_config else None
 
+    # Resolve provider priority -> prioritized LLM client
+    provider_priority = agent.get("provider_priority", [])
+    if provider_priority:
+        from api_service.agent.llm_client import create_prioritized_client
+
+        request_llm = create_prioritized_client(provider_priority)
+    elif llm_config:
+        from api_service.agent.llm_client import create_client
+
+        request_llm = create_client(llm_config)
+    else:
+        request_llm = None
+
     if not message:
         return StreamingResponse(
             _single_error("Введите вопрос."), media_type="text/event-stream"
@@ -667,13 +819,17 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
 
     async def events():
         try:
-            async for event in get_agent().stream_events(
-                message,
+            kwargs: dict = dict(
+                user_message=message,
                 session_id=effective_session_id,
                 tenant_ids=tenant_ids,
-                llm_config=llm_config,
                 system_prompt=system_prompt,
-            ):
+            )
+            if request_llm:
+                kwargs["llm_client"] = request_llm
+            elif llm_config:
+                kwargs["llm_config"] = llm_config
+            async for event in get_agent().stream_events(**kwargs):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
                     yield _sse(payload)
