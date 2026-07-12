@@ -100,3 +100,84 @@ async def test_admin_config_accepts_valid_token(mock_state):
     assert response.status_code == 200
     data = response.json()
     assert "embedding_provider" in data
+
+
+@pytest.mark.asyncio
+async def test_admin_put_config_new_api_key(mock_state):
+    """PUT с новым API-ключом → ключ сохраняется, в ответе маскируется."""
+    with patch("rag.service.ADMIN_API_TOKEN", "super-secret"):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            response = await ac.put(
+                "/admin/config",
+                json={"embedding_api_key": "sk-real-key"},
+                headers={"X-Admin-Token": "super-secret"},
+            )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["embedding_api_key"] == "***"
+    # Проверяем что ключ реально сохранён (прокси к config)
+    from rag.service import state
+    assert state.config.embedding_api_key == "sk-real-key"
+
+
+@pytest.mark.asyncio
+async def test_admin_put_config_keep_masked_key(mock_state):
+    """PUT с *** → ключ не меняется."""
+    from rag.service import state
+    state.config.embedding_api_key = "existing-key"
+    with patch("rag.service.ADMIN_API_TOKEN", "super-secret"):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            response = await ac.put(
+                "/admin/config",
+                json={"embedding_api_key": "***"},
+                headers={"X-Admin-Token": "super-secret"},
+            )
+    assert response.status_code == 200
+    assert state.config.embedding_api_key == "existing-key"
+    # Откатываем
+    state.config.embedding_api_key = None
+
+
+@pytest.mark.asyncio
+async def test_admin_put_config_clear_api_key(mock_state):
+    """PUT с пустой строкой → ключ очищается."""
+    from rag.service import state
+    state.config.embedding_api_key = "to-be-cleared"
+    with patch("rag.service.ADMIN_API_TOKEN", "super-secret"):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            response = await ac.put(
+                "/admin/config",
+                json={"embedding_api_key": ""},
+                headers={"X-Admin-Token": "super-secret"},
+            )
+    assert response.status_code == 200
+    assert state.config.embedding_api_key is None
+
+
+@pytest.mark.asyncio
+async def test_admin_put_config_api_key_with_other_fields(mock_state):
+    """PUT с ключом и другими полями — всё применяется."""
+    with patch("rag.service.ADMIN_API_TOKEN", "super-secret"):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            response = await ac.put(
+                "/admin/config",
+                json={
+                    "embedding_api_key": "new-key",
+                    "embedding_provider": "litellm",
+                    "chunk_size": 512,
+                },
+                headers={"X-Admin-Token": "super-secret"},
+            )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["embedding_api_key"] == "***"
+    assert data["embedding_provider"] == "litellm"
+    assert data["chunk_size"] == 512

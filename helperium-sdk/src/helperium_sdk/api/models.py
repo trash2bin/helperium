@@ -161,6 +161,10 @@ class AgentCreateRequest(BaseModel):
         default_factory=list,
         description="Provider names in priority order (from ProviderStore)",
     )
+    abuse_config: dict | None = Field(
+        default=None,
+        description="Per-agent abuse settings overrides (keys match AbuseConfig fields)",
+    )
 
 
 class AgentUpdateRequest(BaseModel):
@@ -182,6 +186,10 @@ class AgentUpdateRequest(BaseModel):
         default=None,
         description="Provider names in priority order (from ProviderStore)",
     )
+    abuse_config: dict | None = Field(
+        default=None,
+        description="Per-agent abuse settings overrides",
+    )
 
 
 class AgentResponse(BaseModel):
@@ -199,6 +207,10 @@ class AgentResponse(BaseModel):
     provider_priority: list[str] = Field(
         default_factory=list,
         description="Provider names in priority order (from ProviderStore)",
+    )
+    abuse_config: dict | None = Field(
+        default=None,
+        description="Per-agent abuse settings overrides",
     )
     created_at: str = Field(..., description="ISO timestamp")
     updated_at: str = Field(..., description="ISO timestamp")

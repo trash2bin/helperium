@@ -42,6 +42,8 @@ from api_service.http_models import (
     AgentListResponse,
 )
 from api_service.agent_store import AgentStore
+from api_service.anti_abuse import AntiAbuseChecker, TokenBucket
+from api_service.abuse_live import get_live_abuse_provider
 from api_service.log_config import configure_logging
 from api_service.prometheus_metrics import (
     init_metrics,
@@ -139,6 +141,72 @@ async def get_session_history(session_id: str = "default") -> SessionHistoryResp
     return SessionHistoryResponse(messages=[ChatMessage(**m) for m in history])
 
 
+async def _check_abuse(
+    request: Request,
+    session_id: str | None,
+    message: str,
+    agent_abuse_config: dict | None = None,
+) -> StreamingResponse | None:
+    """Check if this request passes anti-abuse checks.
+
+    Returns a StreamingResponse with error if blocked, None if allowed.
+    """
+    live = get_live_abuse_provider()
+    effective_cfg = live.get_effective_config(agent_abuse_config)
+    checker = AntiAbuseChecker(effective_cfg.to_anti_abuse_config())
+    token_bucket = TokenBucket(effective_cfg.to_anti_abuse_config())
+
+    user_agent = request.headers.get("User-Agent", "") or ""
+    ip = request.client.host if request.client else "127.0.0.1"
+    safe_id = session_id or "unknown"
+
+    # Token bucket check (rate limit per session+IP+UA)
+    allowed, ctx = token_bucket.allow(safe_id, ip, user_agent)
+    if not allowed:
+        retry_after = ctx.get("retry_after", 1.0)
+        return StreamingResponse(
+            _single_error(f"Too many requests. Retry after {retry_after:.0f}s."),
+            media_type="text/event-stream",
+            headers={"Retry-After": str(int(retry_after))},
+        )
+
+    safe_id = session_id or "unknown"
+
+    # Get session history to check message count & interval
+    history = await asyncio.to_thread(session_store.history_messages, safe_id)
+    n_msg = len(history)
+    last_msg_time = None
+    if history:
+        import time
+
+        last_msg = history[-1]
+        ts = last_msg.get("timestamp") or last_msg.get("created_at")
+        if ts:
+            try:
+                last_msg_time = (
+                    time.time() - float(ts) if isinstance(ts, (int, float)) else None
+                )
+            except (ValueError, TypeError):
+                pass
+
+    # Full anti-abuse check
+    check_result = checker.check(
+        session_id=safe_id,
+        ip=ip,
+        user_agent=user_agent,
+        message=message,
+        n_msg=n_msg,
+        last_msg_time_since=last_msg_time,
+    )
+    if not check_result.allowed:
+        return StreamingResponse(
+            _single_error(f"Request blocked: {check_result.reason}"),
+            media_type="text/event-stream",
+        )
+
+    return None
+
+
 async def chat_handler(request: Request) -> StreamingResponse:
     """Streaming chat endpoint that handles user messages."""
     try:
@@ -168,6 +236,11 @@ async def chat_handler(request: Request) -> StreamingResponse:
         return StreamingResponse(
             _single_error("Введите session_id."), media_type="text/event-stream"
         )
+
+    # Anti-abuse check
+    abuse_result = await _check_abuse(request, session_id, message)
+    if abuse_result is not None:
+        return abuse_result
 
     # Prefix: direct sessions are isolated from agent sessions
     effective_session_id = f"direct:{session_id}"
@@ -510,6 +583,45 @@ async def set_tenant_budget(tenant_id: str, config: dict):
     return checker.get_spending(tenant_id)
 
 
+# ── Live Abuse Config Admin API ──
+
+
+@app.get("/admin/abuse-config")
+async def get_abuse_config():
+    """Get the current effective abuse configuration (from file + env)."""
+    provider = get_live_abuse_provider()
+    cfg = provider.get_config()
+    from api_service.abuse_live import _serialize_config
+
+    return _serialize_config(cfg)
+
+
+@app.post("/admin/abuse-config/reload")
+async def reload_abuse_config():
+    """Reload abuse config from disk and apply runtime settings.
+
+    Called by admin-dashboard after saving new config.
+    Applies runtime settings (history, loops) to the live settings object.
+    """
+    provider = get_live_abuse_provider()
+    cfg = provider.reload()
+    provider.apply_runtime_settings()
+    from api_service.abuse_live import _serialize_config
+
+    return {"status": "ok", "config": _serialize_config(cfg)}
+
+
+@app.post("/admin/abuse-config")
+async def save_abuse_config(data: dict):
+    """Save new abuse config directly (admin dashboard alternative endpoint)."""
+    provider = get_live_abuse_provider()
+    cfg = provider.save_config(data)
+    provider.apply_runtime_settings()
+    from api_service.abuse_live import _serialize_config
+
+    return {"status": "ok", "config": _serialize_config(cfg)}
+
+
 # ── LLM Providers Admin API ──
 
 
@@ -666,6 +778,7 @@ async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
             widget_config=req.widget_config.model_dump() if req.widget_config else None,
             llm_config=req.llm_config.model_dump() if req.llm_config else None,
             provider_priority=req.provider_priority or None,
+            abuse_config=req.abuse_config,
         )
         return AgentResponse(**result)
     except ValueError as exc:
@@ -717,6 +830,7 @@ async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResp
         widget_config=req.widget_config.model_dump() if req.widget_config else None,
         llm_config=req.llm_config.model_dump() if req.llm_config else None,
         provider_priority=req.provider_priority,
+        abuse_config=req.abuse_config,
     )
     if not result:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
@@ -791,6 +905,12 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     llm_config = agent.get("llm_config")
     system_prompt = llm_config.get("system_prompt") if llm_config else None
 
+    # Anti-abuse with per-agent config merge
+    agent_abuse_config = agent.get("abuse_config")
+    abuse_result = await _check_abuse(request, session_id, message, agent_abuse_config)
+    if abuse_result is not None:
+        return abuse_result
+
     # Resolve provider priority -> prioritized LLM client
     provider_priority = agent.get("provider_priority", [])
     if provider_priority:
@@ -858,6 +978,13 @@ def main() -> None:
         logger.info("Backlog cleanup completed")
     except Exception as exc:
         logger.warning("Backlog cleanup failed: %s", exc)
+
+    # Apply runtime settings from live abuse config
+    try:
+        get_live_abuse_provider().apply_runtime_settings()
+        logger.info("Runtime settings applied from abuse config")
+    except Exception as exc:
+        logger.warning("Failed to apply runtime settings: %s", exc)
 
     uvicorn.run(
         "api_service.server:app",

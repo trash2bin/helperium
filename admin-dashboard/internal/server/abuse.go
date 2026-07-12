@@ -37,8 +37,15 @@ type AbuseConfig struct {
 	// Emergency / token saving
 	EmergencyMode   bool   `json:"emergency_mode"`   // global emergency toggle
 	TokenBudget     int    `json:"token_budget"`     // max tokens per session (0 = unlimited)
-	CheapModel      string `json:"cheap_model"`      // fallback LLM model name for cost saving
 	EmergencyPreset string `json:"emergency_preset"` // "normal", "cautious", "lockdown"
+
+	// Runtime settings (agent loop behaviour)
+	HistoryTurns         int `json:"history_turns"`          // max conversation turns in history (env: DEMO_HISTORY_TURNS)
+	HistoryContentChars  int `json:"history_content_chars"`  // max chars per history message (env: DEMO_HISTORY_CONTENT_CHARS)
+	MaxIterations        int `json:"max_iterations"`         // max agent loop iterations (env: AGENT_MAX_ITERATIONS)
+	MaxEmptyRounds       int `json:"max_empty_rounds"`       // max empty LLM rounds (env: AGENT_MAX_EMPTY_ROUNDS)
+	MaxTurnTokens        int `json:"max_turn_tokens"`        // max tokens per turn (env: AGENT_MAX_TURN_TOKENS)
+	SessionTTLHours      int `json:"session_ttl_hours"`      // session TTL in hours (0 = forever)
 }
 
 // DefaultAbuseConfig returns sensible defaults (matching api-service env defaults).
@@ -62,8 +69,15 @@ func DefaultAbuseConfig() AbuseConfig {
 		// Emergency defaults
 		EmergencyMode:   false,
 		TokenBudget:     0,  // 0 = unlimited
-		CheapModel:      "", // empty = no fallback
 		EmergencyPreset: "normal",
+
+		// Runtime defaults (matching DemoSettings env defaults)
+		HistoryTurns:        8,
+		HistoryContentChars: 6000,
+		MaxIterations:       5,
+		MaxEmptyRounds:      3,
+		MaxTurnTokens:       8000,
+		SessionTTLHours:     0,
 	}
 }
 
@@ -195,6 +209,12 @@ func (s *Server) abuseSettingsPutHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	slog.Info("abuse settings updated", "rps", cfg.RPS, "burst", cfg.Burst)
+
+	// Notify api-service to reload its config
+	if s.opts.ApiSvcURL != "" {
+		s.notifyApiServiceReload()
+	}
+
 	respondJSON(w, http.StatusOK, cfg)
 }
 
@@ -290,6 +310,33 @@ func (s *Server) agentAbusePutHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(updateStatus)
 	w.Write(updateBody)
 }
+// notifyApiServiceReload sends a POST request to api-service to reload abuse config.
+func (s *Server) notifyApiServiceReload() {
+	apiURL := s.opts.ApiSvcURL + "/admin/abuse-config/reload"
+	go func() {
+		req, err := http.NewRequest(http.MethodPost, apiURL, nil)
+		if err != nil {
+			slog.Warn("failed to create reload request", "error", err)
+			return
+		}
+		if s.opts.AdminToken != "" {
+			req.Header.Set("Authorization", "Bearer "+s.opts.AdminToken)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			slog.Warn("failed to notify api-service", "error", err)
+			return
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			slog.Info("api-service abuse config reloaded")
+		} else {
+			slog.Warn("api-service reload returned non-ok status", "status", resp.StatusCode)
+		}
+	}()
+}
 
 // ── API helpers for api-service ──
 
@@ -350,7 +397,6 @@ func EmergencyPresets() map[string]AbuseConfig {
 	cautious.MaxMessagesPerSession = 30
 	cautious.BlockedUserAgents = append(cautious.BlockedUserAgents, "Mozilla/4.*", "MSIE.*")
 	cautious.TokenBudget = 10000
-	cautious.CheapModel = "gpt-4o-mini"
 	cautious.EmergencyPreset = "cautious"
 
 	lockdown := DefaultAbuseConfig()
@@ -366,7 +412,6 @@ func EmergencyPresets() map[string]AbuseConfig {
 		"axios/*", "PostmanRuntime/*",
 	}
 	lockdown.TokenBudget = 2000
-	lockdown.CheapModel = "gpt-4o-mini"
 	lockdown.EmergencyMode = true
 	lockdown.EmergencyPreset = "lockdown"
 
@@ -396,13 +441,17 @@ func (s *Server) abusePresetHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Notify api-service to reload its config
+	if s.opts.ApiSvcURL != "" {
+		s.notifyApiServiceReload()
+	}
+
 	slog.Warn("emergency preset applied",
 		"preset", preset,
 		"emergency_mode", cfg.EmergencyMode,
 		"rps", cfg.RPS,
 		"burst", cfg.Burst,
 		"token_budget", cfg.TokenBudget,
-		"cheap_model", cfg.CheapModel,
 	)
 
 	respondJSON(w, http.StatusOK, cfg)
@@ -423,7 +472,6 @@ func (s *Server) emergencyStatusHandler(w http.ResponseWriter, r *http.Request) 
 		"rps":              cfg.RPS,
 		"burst":            cfg.Burst,
 		"token_budget":     cfg.TokenBudget,
-		"cheap_model":      cfg.CheapModel,
 		"max_messages":     cfg.MaxMessagesPerSession,
 		"min_interval_ms":  cfg.MinIntervalMs,
 		"active":           cfg.EmergencyMode && cfg.EmergencyPreset == "lockdown",

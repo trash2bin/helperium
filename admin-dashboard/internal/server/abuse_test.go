@@ -288,9 +288,8 @@ func TestEmergencyPreset_CautiousHasTokenBudget(t *testing.T) {
 	if cautious.TokenBudget == 0 {
 		t.Error("cautious preset should have TokenBudget > 0")
 	}
-	if cautious.CheapModel == "" {
-		t.Error("cautious preset should have CheapModel set")
-	}
+	// CheapModel removed — use provider_priority fallback via LiteLLM Router instead
+	_ = cautious // placeholder
 }
 
 func TestAbusePreset_ApplyLockdown(t *testing.T) {
@@ -432,9 +431,7 @@ func TestEmergencyPreset_CautiousReturnsCautiousSettings(t *testing.T) {
 	if cfg.TokenBudget != 10000 {
 		t.Errorf("cautious token_budget=%d, want 10000", cfg.TokenBudget)
 	}
-	if cfg.CheapModel != "gpt-4o-mini" {
-		t.Errorf("cautious cheap_model=%q, want gpt-4o-mini", cfg.CheapModel)
-	}
+	// CheapModel field removed — use provider_priority fallback via LiteLLM Router
 	if cfg.MinIntervalMs < 1500 {
 		t.Errorf("cautious min_interval_ms=%d, want >=2000", cfg.MinIntervalMs)
 	}

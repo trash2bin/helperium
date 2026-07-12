@@ -506,7 +506,8 @@ async def admin_get_config(request: Request) -> AdminConfigResponse:
         "Применяет новые параметры конфигурации RAG. "
         "После обновления сбрасывает pipeline — новый pipeline создастся "
         "при следующем вызове get_pipeline() с обновлённым конфигом. "
-        "embedding_api_key не принимается (читается только из env)."
+        "embedding_api_key: \"***\" = оставить текущий, пустая строка = очистить, "
+        "новое значение = применить."
     ),
 )
 async def admin_put_config(
@@ -516,6 +517,20 @@ async def admin_put_config(
     config = state.config
 
     update_data = req.model_dump(exclude_none=True)
+
+    # Спецобработка embedding_api_key
+    if "embedding_api_key" in update_data:
+        key_val = update_data.pop("embedding_api_key")
+        if key_val == "":
+            # Пустая строка — очистить ключ
+            config.embedding_api_key = None
+        elif key_val == "***":
+            # Маскирован — оставить как есть
+            pass
+        else:
+            # Новый ключ — применить
+            config.embedding_api_key = key_val
+
     for key, value in update_data.items():
         if hasattr(config, key):
             setattr(config, key, value)

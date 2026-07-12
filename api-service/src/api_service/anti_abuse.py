@@ -61,6 +61,13 @@ class AbuseConfig:
     )
     block_empty_user_agent: bool = True
 
+    # Token budget — session-level token spending limit
+    token_budget: int = 0  # 0 = unlimited
+
+    # Emergency
+    emergency_mode: bool = False
+    emergency_preset: str = "normal"
+
 
 def load_abuse_config() -> AbuseConfig:
     """Load AbuseConfig from environment variables (falling back to defaults)."""
@@ -90,6 +97,7 @@ def load_abuse_config() -> AbuseConfig:
         min_interval_ms=_int_env("ABUSE_MIN_INTERVAL_MS", 1000),
         max_messages_per_session=_int_env("ABUSE_MAX_MESSAGES", 50),
         max_repeated_count=_int_env("ABUSE_MAX_REPEATED", 3),
+        token_budget=_int_env("ABUSE_TOKEN_BUDGET", 0),
     )
 
 

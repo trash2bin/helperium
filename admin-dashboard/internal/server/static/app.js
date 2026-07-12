@@ -60,16 +60,18 @@ function dashboard() {
 
     // ── Anti-Abuse ──
     abuseTab: 'global', // 'global' | 'agent'
-    abuseGlobal: { rps: null, burst: null, max_message_length: null, min_interval_ms: null, max_messages_per_session: null, token_budget: null, cheap_model: null, block_empty_user_agent: null, blocked_user_agents: [], _ua_text: '' },
+    abuseGlobal: { rps: null, burst: null, max_message_length: null, min_interval_ms: null, max_messages_per_session: null, token_budget: null, block_empty_user_agent: null, blocked_user_agents: [], _ua_text: '', history_turns: null, history_content_chars: null, max_iterations: null, max_empty_rounds: null, max_turn_tokens: null, session_ttl_hours: null },
     abuseAgent: null,
     abuseAgentName: '',
     abuseAgentOverrides: {},
     abuseSaving: false,
     abuseSaveMsg: '',
+    abuseReloading: false,
+    abuseReloadMsg: '',
     abuseAgentList: [],
 
     // ── Emergency Panel ──
-    emergencyStatus: { rps: null, burst: null, token_budget: null, cheap_model: null, max_messages: null, min_interval_ms: null },
+    emergencyStatus: { rps: null, burst: null, token_budget: null, max_messages: null, min_interval_ms: null },
     emergencyActive: false,
     emergencyCurrentPreset: 'normal',
     emergencyApplying: false,
@@ -248,6 +250,20 @@ function dashboard() {
         // error already set
       } finally {
         this.abuseSaving = false;
+      }
+    },
+
+    async reloadAbuseOnApi() {
+      this.abuseReloading = true;
+      this.abuseReloadMsg = '';
+      try {
+        await this.api('/api/admin/abuse-config/reload', { method: 'POST' });
+        this.abuseReloadMsg = '✅ Config reloaded on api-service';
+        setTimeout(() => { this.abuseReloadMsg = ''; }, 3000);
+      } catch (e) {
+        this.abuseReloadMsg = '❌ ' + (e.message || 'Reload failed');
+      } finally {
+        this.abuseReloading = false;
       }
     },
 

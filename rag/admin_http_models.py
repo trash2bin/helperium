@@ -71,7 +71,7 @@ class AdminConfigResponse(BaseModel):
 
 
 class AdminConfigUpdateRequest(BaseModel):
-    """Обновление RAG-конфига (все поля опциональны, api_key не принимается)."""
+    """Обновление RAG-конфига (все поля опциональны)."""
 
     embedding_provider: str | None = Field(default=None)
     embedding_model: str | None = Field(default=None)
@@ -80,6 +80,13 @@ class AdminConfigUpdateRequest(BaseModel):
     embedding_local_files_only: bool | None = Field(default=None)
     embedding_query_prefix: str | None = Field(default=None)
     embedding_passage_prefix: str | None = Field(default=None)
+    embedding_api_key: str | None = Field(
+        default=None,
+        description=(
+            "API-ключ эмбеддингов. Если прислать \"***\" — оставить текущий. "
+            "Если прислать пустую строку — очистить. Если прислать новый ключ — применить."
+        ),
+    )
     embedding_api_base: str | None = Field(default=None)
     embedding_dimensions: int | None = Field(default=None)
 

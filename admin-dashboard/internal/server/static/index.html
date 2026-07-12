@@ -812,6 +812,11 @@
                     <input type="text" x-model="ragSettings.embedding_model" placeholder="text-embedding-3-small">
                   </div>
                   <div class="form-group">
+                    <label x-text="__('rag.embeddingApiKey')"></label>
+                    <input type="password" x-model="ragSettings.embedding_api_key" placeholder="sk-...">
+                    <small class="text-muted" x-text="__('rag.embeddingApiKeyDesc')"></small>
+                  </div>
+                  <div class="form-group">
                     <label x-text="__('rag.embeddingApiBase')"></label>
                     <input type="text" x-model="ragSettings.embedding_api_base" placeholder="https://api.openai.com/v1">
                   </div>
@@ -1013,10 +1018,6 @@
               <span class="metric-value" x-text="emergencyStatus.token_budget || '∞'"></span>
             </div>
             <div class="metric">
-              <span class="metric-label" x-text="__('abuse.cheapModelLabel')"></span>
-              <span class="metric-value" x-text="emergencyStatus.cheap_model || '—'"></span>
-            </div>
-            <div class="metric">
               <span class="metric-label" x-text="__('abuse.maxMsgLabel')"></span>
               <span class="metric-value" x-text="emergencyStatus.max_messages"></span>
             </div>
@@ -1074,11 +1075,6 @@
                   <input type="number" x-model.number="abuseGlobal.token_budget" min="0" :placeholder="__('abuse.tokenBudgetPlaceholder')">
                   <small class="text-muted" x-text="__('abuse.tokenBudgetDesc')"></small>
                 </div>
-                <div class="form-group">
-                  <label x-text="__('abuse.cheapModelLabel')"></label>
-                  <input type="text" x-model="abuseGlobal.cheap_model" :placeholder="__('abuse.cheapModelPlaceholder')">
-                  <small class="text-muted" x-text="__('abuse.cheapModelDesc')"></small>
-                </div>
               </div>
               <div class="form-group">
                 <label class="checkbox-row">
@@ -1100,6 +1096,69 @@
                 <span x-show="abuseSaveMsg" style="color:var(--accent);font-size:13px;" x-text="abuseSaveMsg"></span>
               </div>
             </form>
+          </div>
+
+          <!-- ── Runtime Settings ── -->
+          <div class="card" x-show="abuseGlobal" x-cloak>
+            <h3><span x-text="__('abuse.runtimeTitle')"></span></h3>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px;" x-text="__('abuse.runtimeDesc')"></p>
+            <form @submit.prevent="saveAbuseGlobal()" class="form">
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.historyTurnsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.history_turns" min="1" :placeholder="__('abuse.historyTurnsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.historyTurnsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.historyContentCharsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.history_content_chars" min="100" :placeholder="__('abuse.historyContentCharsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.historyContentCharsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.sessionTtlLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.session_ttl_hours" min="0" :placeholder="__('abuse.sessionTtlPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.sessionTtlDesc')"></small>
+                </div>
+              </div>
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.maxIterationsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_iterations" min="1" :placeholder="__('abuse.maxIterationsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.maxIterationsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.maxEmptyRoundsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_empty_rounds" min="0" :placeholder="__('abuse.maxEmptyRoundsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.maxEmptyRoundsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.maxTurnTokensLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_turn_tokens" min="100" :placeholder="__('abuse.maxTurnTokensPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.maxTurnTokensDesc')"></small>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" :disabled="abuseSaving">
+                  <span x-show="abuseSaving">⏳</span>
+                  <span x-show="!abuseSaving" x-text="__('btn.saveRuntime')"></span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- ── Reload button ── -->
+          <div class="card" x-show="abuseGlobal" x-cloak>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <div>
+                <strong x-text="__('abuse.reloadTitle')"></strong>
+                <p class="text-muted" style="font-size:12px;" x-text="__('abuse.reloadDesc')"></p>
+              </div>
+              <button @click="reloadAbuseOnApi()" class="btn" :disabled="abuseReloading" style="white-space:nowrap;">
+                <span x-show="!abuseReloading">🔄 <span x-text="__('abuse.reloadBtn')"></span></span>
+                <span x-show="abuseReloading">⏳</span>
+              </button>
+            </div>
+            <div x-show="abuseReloadMsg" style="margin-top:8px;font-size:13px;" x-text="abuseReloadMsg"></div>
           </div>
           <div class="card" x-show="abuseGlobal" x-cloak>
             <h3 x-text="__('abuse.currentConfigTitle')"></h3>
@@ -1127,36 +1186,38 @@
             <form @submit.prevent="saveAbuseAgent()" class="form">
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label x-text="__('abuse.rpsOverrideLabel')"></label>
+                  <label x-text="__('abuse.overrideRps')"></label>
                   <input type="number" x-model.number="abuseAgentOverrides.rps" step="0.1" min="0.1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideRpsDesc')"></small>
                 </div>
                 <div class="form-group">
-                  <label x-text="__('abuse.burstOverrideLabel')"></label>
+                  <label x-text="__('abuse.overrideBurst')"></label>
                   <input type="number" x-model.number="abuseAgentOverrides.burst" min="1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideBurstDesc')"></small>
                 </div>
               </div>
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label x-text="__('abuse.tokenBudgetOverrideLabel')"></label>
+                  <label x-text="__('abuse.overrideTokenBudget')"></label>
                   <input type="number" x-model.number="abuseAgentOverrides.token_budget" min="0" :placeholder="__('abuse.overridePlaceholder')">
-                </div>
-                <div class="form-group">
-                  <label x-text="__('abuse.cheapModelOverrideLabel')"></label>
-                  <input type="text" x-model="abuseAgentOverrides.cheap_model" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideTokenBudgetDesc')"></small>
                 </div>
               </div>
               <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
                 <div class="form-group">
-                  <label x-text="__('abuse.maxMsgLengthOverrideLabel')"></label>
+                  <label x-text="__('abuse.overrideMaxMsgLen')"></label>
                   <input type="number" x-model.number="abuseAgentOverrides.max_message_length" min="1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideMaxMsgLenDesc')"></small>
                 </div>
                 <div class="form-group">
-                  <label x-text="__('abuse.minIntervalOverrideLabel')"></label>
+                  <label x-text="__('abuse.overrideMinInterval')"></label>
                   <input type="number" x-model.number="abuseAgentOverrides.min_interval_ms" min="0" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideMinIntervalDesc')"></small>
                 </div>
                 <div class="form-group">
-                  <label x-text="__('abuse.maxMsgsOverrideLabel')"></label>
+                  <label x-text="__('abuse.overrideMaxMsgSession')"></label>
                   <input type="number" x-model.number="abuseAgentOverrides.max_messages_per_session" min="1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideMaxMsgSessionDesc')"></small>
                 </div>
               </div>
               <div class="form-actions">
