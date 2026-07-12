@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from agent_tutor_sdk.rag.client import RagClientSync, RAG_SERVICE_URL
+from helperium_sdk.rag.client import RagClientSync, RAG_SERVICE_URL
 
 # Settings
 os.environ["RAG_LOCAL_FILES_ONLY"] = "1"
@@ -152,7 +152,7 @@ def cmd_delete(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Управление документами RAG-системы agent-tutor",
+        description="Управление документами RAG-системы helperium",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

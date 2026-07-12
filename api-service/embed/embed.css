@@ -1,4 +1,4 @@
-/* Agent Tutor Embeddable Chat Widget Styles */
+/* Helperium Embeddable Chat Widget Styles */
 /* These styles are also inlined in embed.js for Shadow DOM isolation */
 
 :host {
@@ -16,7 +16,7 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-.agent-tutor-widget {
+.helperium-widget {
   all: initial;
   display: block;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

@@ -12,7 +12,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rag.service import app, state
-from agent_tutor_sdk.rag.models import RagSearchResult
+from helperium_sdk.rag.models import RagSearchResult
 
 
 @pytest.fixture(autouse=True)

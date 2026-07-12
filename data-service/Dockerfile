@@ -7,12 +7,12 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 
 # Кешируем зависимости
-COPY agent-tutor-go/go.mod agent-tutor-go/go.sum /build/agent-tutor-go/
+COPY helperium-go/go.mod helperium-go/go.sum /build/helperium-go/
 COPY data-service/go.mod data-service/go.sum /build/data-service/
 RUN cd /build/data-service && go mod download
 
 # Копируем исходники и собираем
-COPY agent-tutor-go/ /build/agent-tutor-go/
+COPY helperium-go/ /build/helperium-go/
 COPY data-service/ /build/data-service/
 RUN cd /build/data-service && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /data-service ./cmd/server/
 

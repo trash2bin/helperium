@@ -24,7 +24,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agent-tutor/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
 )
 
 // genericSchemaDDL — нейтральная (e-commerce) DDL, совместимая и с SQLite,

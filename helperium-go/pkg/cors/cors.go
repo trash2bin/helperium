@@ -1,4 +1,4 @@
-// Package cors provides CORS configuration helpers for agent-tutor Go services.
+// Package cors provides CORS configuration helpers for helperium Go services.
 //
 // Both data-service and mcp-gateway use this package to read the CORS_ALLOW_ORIGINS
 // environment variable, with a fallback to "*" for backward compatibility.

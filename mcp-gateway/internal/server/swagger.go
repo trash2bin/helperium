@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/agent-tutor/agent-tutor-go/pkg/cors"
-	"github.com/agent-tutor/agent-tutor-go/pkg/swaggerui"
+	"github.com/trash2bin/helperium/helperium-go/pkg/cors"
+	"github.com/trash2bin/helperium/helperium-go/pkg/swaggerui"
 )
 
 // SwaggerHandler serves the Swagger UI page via the shared swaggerui package.

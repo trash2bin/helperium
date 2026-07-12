@@ -3,7 +3,7 @@ package runtime_test
 import (
 	"testing"
 
-	"github.com/agent-tutor/data-service/internal/runtime"
+	"github.com/trash2bin/helperium/data-service/internal/runtime"
 )
 
 // TestEntityResolver_AllEntities - тестирует возврат всех сущностей

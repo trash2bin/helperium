@@ -12,8 +12,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
 )
 
 // ── Helpers ──

@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
-	"github.com/agent-tutor/mcp-gateway/internal/ragclient"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/mcp-gateway/internal/httpclient"
+	"github.com/trash2bin/helperium/mcp-gateway/internal/ragclient"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

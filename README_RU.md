@@ -1,4 +1,4 @@
-# Agent Tutor
+# Helperium
 
 Платформа для бизнеса, у которого есть база данных и нужен AI-помощник на сайте. Подключается база и агент сам разбирается в её структуре и отвечает на вопросы посетителей, конкретный доступ к данным и таблицам настриваеться в админ панеле.
 
@@ -90,8 +90,8 @@
 ## Быстрый старт
 
 ```bash
-git clone https://github.com/trash2bin/agent-tutor
-cd agent-tutor
+git clone https://github.com/trash2bin/helperium
+cd helperium
 uv sync
 ./scripts/dev.sh start
 # Открыть http://127.0.0.1:8080

@@ -1,6 +1,6 @@
 # Contributor License Agreement (CLA)
 
-Thank you for contributing to Agent Tutor. By submitting code, documentation, or other content to this repository, you agree to the following terms.
+Thank you for contributing to Helperium. By submitting code, documentation, or other content to this repository, you agree to the following terms.
 
 ## Grant of License
 

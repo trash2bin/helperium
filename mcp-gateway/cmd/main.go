@@ -21,10 +21,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/agent-tutor/agent-tutor-go/pkg/cors"
-	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
-	gwserver "github.com/agent-tutor/mcp-gateway/internal/server"
-	"github.com/agent-tutor/mcp-gateway/internal/tools"
+	"github.com/trash2bin/helperium/helperium-go/pkg/cors"
+	"github.com/trash2bin/helperium/mcp-gateway/internal/httpclient"
+	gwserver "github.com/trash2bin/helperium/mcp-gateway/internal/server"
+	"github.com/trash2bin/helperium/mcp-gateway/internal/tools"
 )
 
 var globalClient *httpclient.Client
@@ -241,7 +241,7 @@ func createServerForTenant(tenantID string) (*server.MCPServer, error) {
 		return nil, err
 	}
 	slog.Info("Config fetched, creating server", "tenantID", tenantID)
-	mcpServer := server.NewMCPServer("agent-tutor", "1.0.0")
+	mcpServer := server.NewMCPServer("helperium", "1.0.0")
 	slog.Info("Creating registry", "tenantID", tenantID)
 	registry := tools.NewRegistry(cfg)
 	slog.Info("Registering tools", "tenantID", tenantID)
@@ -260,7 +260,7 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 	}
 
 	slog.Info("Creating composite MCP server", "tenants", tenantIDs)
-	composite := server.NewMCPServer("agent-tutor", "1.0.0")
+	composite := server.NewMCPServer("helperium", "1.0.0")
 
 	for _, tenantID := range tenantIDs {
 		slog.Info("Fetching config for tenant", "tenantID", tenantID)

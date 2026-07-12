@@ -16,7 +16,7 @@ services:
   # PostgreSQL (локальная БД для разработки / pre-prod)
   # Поднять:  docker compose up db
   #          docker compose up -d db
-  # Проверить: docker compose exec db psql -U tutor -d agent_tutor -c '\dt'
+  # Проверить: docker compose exec db psql -U tutor -d helperium -c '\dt'
   # ──────────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
@@ -27,19 +27,19 @@ services:
     environment:
       POSTGRES_USER: tutor
       POSTGRES_PASSWORD: tutor
-      POSTGRES_DB: agent_tutor
+      POSTGRES_DB: helperium
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tutor -d agent_tutor"]
+      test: ["CMD-SHELL", "pg_isready -U tutor -d helperium"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 10s
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   data-service:
-    image: agent-tutor-data:latest
+    image: helperium-data:latest
     build:
       context: .
       dockerfile: data-service/Dockerfile
@@ -58,12 +58,12 @@ services:
       <<: *hc-curl
       start_period: 5s
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   rag:
     profiles: ["full", "rag"]
-    image: agent-tutor-rag:latest
+    image: helperium-rag:latest
     build:
       context: .
       dockerfile: rag/Dockerfile
@@ -84,12 +84,12 @@ services:
       <<: *hc-curl
       start_period: 120s
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   # MCP-gateway (Go, фаза 3.4+) — основной MCP-сервер, инструменты из конфига
   mcp-gateway:
-    image: agent-tutor-mcp-gateway:latest
+    image: helperium-mcp-gateway:latest
     build:
       context: .
       dockerfile: mcp-gateway/Dockerfile
@@ -105,12 +105,12 @@ services:
       data-service:
         condition: service_healthy
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
 
   api:
-    image: agent-tutor-api:latest
+    image: helperium-api:latest
     build:
       context: .
       dockerfile: api-service/Dockerfile
@@ -146,11 +146,11 @@ services:
       mcp-gateway:
         condition: service_healthy
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   admin-dashboard:
-    image: agent-tutor-admin:latest
+    image: helperium-admin:latest
     build:
       context: ./admin-dashboard
       dockerfile: Dockerfile
@@ -172,11 +172,11 @@ services:
       api:
         condition: service_healthy
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   web:
-    image: agent-tutor-web:latest
+    image: helperium-web:latest
     build:
       context: .
       dockerfile: demo/web/Dockerfile
@@ -199,7 +199,7 @@ services:
       api:
         condition: service_healthy
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   # CADDY (profile: prod): HTTPS + reverse-proxy to web
@@ -220,7 +220,7 @@ services:
       web:
         condition: service_healthy
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   # ──────────────────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
   grafana:
@@ -263,7 +263,7 @@ services:
     depends_on:
       - prometheus
     networks:
-      - agent-tutor-net
+      - helperium-net
     <<: *restart
 
 volumes:
@@ -303,5 +303,5 @@ volumes:
   grafana_data:
 
 networks:
-  agent-tutor-net:
+  helperium-net:
     driver: bridge

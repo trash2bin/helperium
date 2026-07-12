@@ -5,7 +5,7 @@
 //
 // Usage:
 //
-//	import "github.com/agent-tutor/agent-tutor-go/pkg/metrics"
+//	import "github.com/trash2bin/helperium/helperium-go/pkg/metrics"
 //	import "github.com/prometheus/client_golang/prometheus/promhttp"
 //
 //	r.Handle("/metrics", promhttp.Handler())

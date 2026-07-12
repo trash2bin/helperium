@@ -2,8 +2,8 @@ import os
 import argparse
 import sys
 
-from agent_tutor_sdk.data_client import DataServiceClientSync
-from agent_tutor_sdk.rag.client import RagClientSync, RAG_SERVICE_URL
+from helperium_sdk.data_client import DataServiceClientSync
+from helperium_sdk.rag.client import RagClientSync, RAG_SERVICE_URL
 from rag.fixtures.document_generator import MaterialDocumentGenerator
 
 
@@ -59,7 +59,7 @@ def cmd_generate_all(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Генерация учебных материалов для agent-tutor",
+        description="Генерация учебных материалов для helperium",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/trash2bin/helperium/helperium-go/config"
 
 	_ "modernc.org/sqlite"
 )

@@ -1,5 +1,5 @@
 [project]
-name = "agent-tutor-workspace"
+name = "helperium-workspace"
 version = "1.1.0"
 license = "MPL-2.0"
 readme = "README.md"
@@ -19,7 +19,7 @@ rag = [
 
 # ── Workspace ─────────────────────────────────────────────────────────
 [tool.uv.sources]
-agent-tutor-sdk = { workspace = true }
+helperium-sdk = { workspace = true }
 rag = { workspace = true }
 api-service = { workspace = true }
 demo-web = { workspace = true }
@@ -27,7 +27,7 @@ demo-web = { workspace = true }
 [tool.uv.workspace]
 members = [
     "agent-db",
-    "agent-tutor-sdk",
+    "helperium-sdk",
     "rag",
     "api-service",
     "demo/web",
@@ -53,7 +53,7 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = [
-    "agent-tutor-sdk/tests",
+    "helperium-sdk/tests",
     "rag/tests",
     "api-service/src/api_service/tests",
     "demo/web/tests",

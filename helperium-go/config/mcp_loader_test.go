@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // writeTempConfig пишет конфиг во временный файл и возвращает его путь.
@@ -22,13 +22,13 @@ func writeTempConfig(t *testing.T, data string) string {
 // withConfigSchemaNoop — убирает CONFIG_SCHEMA (тесты сами знают где она).
 func withSchemaPath(t *testing.T) {
 	t.Helper()
-	// Берём схему из specs/ относительно agent-tutor-go/
+	// Берём схему из specs/ относительно helperium-go/
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("os.Getwd: %v", err)
 	}
 	candidates := []string{
-		filepath.Join(wd, "..", "..", "specs", "config.schema.json"), // agent-tutor-go/config → repo/specs
+		filepath.Join(wd, "..", "..", "specs", "config.schema.json"), // helperium-go/config → repo/specs
 		filepath.Join(wd, "..", "..", "specs", "config.schema.json"),
 	}
 	for _, c := range candidates {

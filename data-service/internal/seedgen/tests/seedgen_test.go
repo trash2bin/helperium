@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agent-tutor/data-service/internal/seedgen"
+	"github.com/trash2bin/helperium/data-service/internal/seedgen"
 )
 
 // TestLoad_ValidSeed — загрузка корректного seed.json

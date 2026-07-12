@@ -8,7 +8,7 @@ import (
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver — для тестового AdapterSubset
 
-	"github.com/agent-tutor/data-service/internal/runtime"
+	"github.com/trash2bin/helperium/data-service/internal/runtime"
 )
 
 // =============================================================================

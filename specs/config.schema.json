@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agent-tutor.local/specs/config.schema.json",
+  "$id": "https://helperium.local/specs/config.schema.json",
   "title": "data-service config",
   "description": "Конфиг data-service для generic B2B SaaS режима. Определяет: какой driver, какие сущности извлекаем из БД клиента, какие endpoint'ы публикуем, какие MCP-инструменты генерируем.",
   "type": "object",
@@ -30,7 +30,7 @@
           "examples": [
             "university.db",
             "file:./data/university.db",
-            "postgres://tutor:tutor@127.0.0.1:5432/agent_tutor"
+            "postgres://tutor:tutor@127.0.0.1:5432/helperium"
           ]
         },
         "pool_size": {

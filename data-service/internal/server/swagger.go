@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/agent-tutor/agent-tutor-go/pkg/cors"
-	"github.com/agent-tutor/agent-tutor-go/pkg/swaggerui"
-	"github.com/agent-tutor/data-service/internal/openapigen"
+	"github.com/trash2bin/helperium/helperium-go/pkg/cors"
+	"github.com/trash2bin/helperium/helperium-go/pkg/swaggerui"
+	"github.com/trash2bin/helperium/data-service/internal/openapigen"
 )
 
 const (

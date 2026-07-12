@@ -2,7 +2,7 @@
 
 TypedDict'ы, используемые внутри пайплайна (парсер → чанкер → репозиторий → сервис).
 Не являются публичным API — не экспортируются наружу.
-Публичные Pydantic-модели (Document, Material, RagSearchResult, ...) — в agent_tutor_sdk.rag.models.
+Публичные Pydantic-модели (Document, Material, RagSearchResult, ...) — в helperium_sdk.rag.models.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class DocumentRow(TypedDict, total=False):
     """Строка из таблицы documents — внутреннее представление.
 
     repository.list_documents() / get_document_by_id() возвращают эти ряды,
-    конвертация в публичный agent_tutor_sdk.rag.models.Document — в pipeline/service.
+    конвертация в публичный helperium_sdk.rag.models.Document — в pipeline/service.
     """
 
     id: str

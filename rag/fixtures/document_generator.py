@@ -17,9 +17,9 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 from faker import Faker
 
-from agent_tutor_sdk.data_client import DataServiceClientSync as DataServiceClient
-from agent_tutor_sdk.models import Entity
-from agent_tutor_sdk.rag.client import RagClientSync, RAG_SERVICE_URL
+from helperium_sdk.data_client import DataServiceClientSync as DataServiceClient
+from helperium_sdk.models import Entity
+from helperium_sdk.rag.client import RagClientSync, RAG_SERVICE_URL
 from rag.fixtures._material import Material
 from rag.fixtures.catalog import (
     CURRICULUM,

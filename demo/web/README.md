@@ -1,6 +1,6 @@
 # Web Service (demo-web)
 
-FastAPI reverse-proxy для multi-tenant архитектуры agent-tutor.
+FastAPI reverse-proxy для multi-tenant архитектуры helperium.
 
 ## Роль в системе
 

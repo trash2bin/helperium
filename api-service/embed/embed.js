@@ -1,5 +1,5 @@
 /**
- * Agent Tutor — Embeddable Chat Widget
+ * Helperium — Embeddable Chat Widget
  * ======================================
  * Vanilla JS, no dependencies. Shadow DOM isolation.
  *
@@ -949,7 +949,7 @@
   function buildUI() {
     // Create host element
     var host = document.createElement('div');
-    host.id = 'agent-tutor-widget-' + CONFIG.agent.replace(/[^a-zA-Z0-9_-]/g, '');
+    host.id = 'helperium-widget-' + CONFIG.agent.replace(/[^a-zA-Z0-9_-]/g, '');
 
     // Shadow DOM
     var shadow = host.attachShadow({ mode: 'open' });

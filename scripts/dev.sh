@@ -139,7 +139,7 @@ cmd_start() {
     echo "⚠️  .venv not found, running uv sync..."
     # uv sync ставит dev-зависимости, uv pip install -e — workspace members
     # (чтобы их транзитивные зависимости тоже установились)
-    (cd "$PROJECT_ROOT" && uv sync --group dev && uv pip install -e agent-tutor-sdk -e rag -e api-service -e demo/web -e fixtures)
+    (cd "$PROJECT_ROOT" && uv sync --group dev && uv pip install -e helperium-sdk -e rag -e api-service -e demo/web -e fixtures)
 
     # .pth для editable install: hatchling кладёт папку пакета на sys.path вместо корня проекта
     local pyver=$("$PROJECT_ROOT/.venv/bin/python3" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
@@ -412,8 +412,8 @@ SCENARIOS_DIR="$PROJECT_ROOT/scenarios"
 CONFIG_SCHEMA="${CONFIG_SCHEMA:-$PROJECT_ROOT/specs/config.schema.json}"
 
 # Delegate db commands to agent-db CLI
-# Set AGENT_TUTOR_ROOT so agent-db finds the project root regardless of cwd
-export AGENT_TUTOR_ROOT="$PROJECT_ROOT"
+# Set HELPERIUM_ROOT so agent-db finds the project root regardless of cwd
+export HELPERIUM_ROOT="$PROJECT_ROOT"
 
 # db subcommand: ./scripts/dev.sh db <list|materialize|serve|test|drop>
 cmd_db() {
@@ -683,7 +683,7 @@ cmd_db_drop() {
       echo "⚠️  PostgreSQL: drop должен делаться вручную (защита от clobber)."
       echo ""
       echo "   Сбросить только схему public:"
-      echo "     docker exec agent-tutor-db-1 psql -U tutor -d agent_tutor \\"
+      echo "     docker exec helperium-db-1 psql -U tutor -d helperium \\"
       echo "       -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public'"
       exit 1
       ;;

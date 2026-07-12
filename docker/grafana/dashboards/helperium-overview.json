@@ -1,8 +1,8 @@
 {
-  "title": "\ud83d\udd0d Agent Tutor \u2014 Monitoring Overview",
+  "title": "\ud83d\udd0d Helperium \u2014 Monitoring Overview",
   "version": 1,
   "schemaVersion": 39,
-  "tags": ["agent-tutor", "monitoring"],
+  "tags": ["helperium", "monitoring"],
   "timezone": "browser",
   "time": {
     "from": "now-1h",

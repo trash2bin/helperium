@@ -34,11 +34,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/data-service/internal/configgen"
-	"github.com/agent-tutor/data-service/internal/datasource"
-	"github.com/agent-tutor/data-service/internal/runtime"
-	"github.com/agent-tutor/data-service/internal/runtime/handlers"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/data-service/internal/configgen"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/runtime"
+	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
 )
 
 // ── TenantInstance ──

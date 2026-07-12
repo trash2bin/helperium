@@ -15,8 +15,8 @@ import pytest
 import respx
 from httpx import Request, Response
 
-from agent_tutor_sdk.data_client import AsyncDataServiceClient, DataServiceClientSync
-from agent_tutor_sdk.models import Entity
+from helperium_sdk.data_client import AsyncDataServiceClient, DataServiceClientSync
+from helperium_sdk.models import Entity
 
 BASE_URL = "http://test-ds:8084"
 

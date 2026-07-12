@@ -3,7 +3,7 @@ import pytest
 from rag.config import RagConfig
 from rag.interfaces import EmbeddingProtocol
 from rag.vector_store import ChromaDBVectorStore
-from agent_tutor_sdk.rag.models import RagSearchResult
+from helperium_sdk.rag.models import RagSearchResult
 
 
 class MockEmbeddingService(EmbeddingProtocol):

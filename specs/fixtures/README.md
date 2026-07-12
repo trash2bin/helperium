@@ -38,7 +38,7 @@ DB_PATH=./university.db \
 директория `fixtures/` перестала быть workspace member'ом и осталась только
 как папка с артефактами. Но `specs/fixtures/` лучше потому что:
 
-- `fixtures/` рядом с `agent-tutor-sdk/`, `rag/` — соседствует с кодом.
+- `fixtures/` рядом с `helperium-sdk/`, `rag/` — соседствует с кодом.
 - `specs/fixtures/` — соседствует с OpenAPI-схемами, которые тоже являются
   декларативными артефактами между кодом и внешним миром.
 - Один gitignore-rule (`specs/fixtures/*`) вместо ad-hoc папки.

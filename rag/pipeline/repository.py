@@ -22,7 +22,7 @@ from rag._types import (
     DocumentRow,
     MaterialRow,
 )
-from agent_tutor_sdk.rag.models import Document
+from helperium_sdk.rag.models import Document
 
 logger = logging.getLogger(__name__)
 

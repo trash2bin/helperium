@@ -12,7 +12,7 @@ from __future__ import annotations
 from pydantic import ValidationError
 import pytest
 
-from agent_tutor_sdk.api.models import (
+from helperium_sdk.api.models import (
     WidgetConfig,
     LLMConfig,
     AgentCreateRequest,

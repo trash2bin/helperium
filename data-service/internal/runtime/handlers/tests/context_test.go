@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-tutor/data-service/internal/runtime/handlers"
+	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
 )
 
 // TestRespondJSON — базовый тест RespondJSON

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/agent-tutor/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
 )
 
 // TestConnAdapter verifies the delegation methods.

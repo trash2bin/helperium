@@ -1,11 +1,11 @@
 # agent-db
 
-Unified CLI for agent-tutor database, scenario, tenant, seed, and test management.
+Unified CLI for helperium database, scenario, tenant, seed, and test management.
 
 ## Installation
 
 ```bash
-cd agent-tutor/agent-db
+cd helperium/agent-db
 uv pip install -e .
 ```
 

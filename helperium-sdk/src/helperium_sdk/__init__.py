@@ -1,4 +1,4 @@
-"""Agent-Tutor SDK — shared library for all agent-tutor services.
+"""Helperium SDK — shared library for all helperium services.
 
 Contains:
 - db.* — database abstraction (SQLite / PostgreSQL)

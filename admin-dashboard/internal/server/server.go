@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-tutor/agent-tutor-go/pkg/metrics"
+	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

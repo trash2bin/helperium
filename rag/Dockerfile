@@ -8,7 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-COPY agent-tutor-sdk agent-tutor-sdk/
+COPY helperium-sdk helperium-sdk/
 COPY rag/pyproject.toml rag/
 RUN uv sync --frozen --no-install-project --package rag --no-dev
 COPY . .
@@ -25,7 +25,7 @@ RUN apt-get update && \
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --from=builder --chown=app:app /app/rag /app/rag
-COPY --from=builder --chown=app:app /app/agent-tutor-sdk /app/agent-tutor-sdk
+COPY --from=builder --chown=app:app /app/helperium-sdk /app/helperium-sdk
 
 
 ENV PATH=/app/.venv/bin:$PATH \

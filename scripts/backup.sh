@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Minimal backup script for Agent Tutor platform data.
+# Minimal backup script for Helperium platform data.
 # Backs up tenant configs and .env (secrets).
 # ChromaDB / session data are rebuildable — not backed up.
 # Client's production DB is client's responsibility.

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from agent_tutor_sdk.models import Entity
+from helperium_sdk.models import Entity
 
 
 def test_minimal_payload() -> None:

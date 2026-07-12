@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/agent-tutor-go/pkg/metrics"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
 )
 
 // ── Middleware ──

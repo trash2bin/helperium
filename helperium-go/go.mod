@@ -1,4 +1,4 @@
-module github.com/agent-tutor/agent-tutor-go
+module github.com/trash2bin/helperium/helperium-go
 
 go 1.24.0
 

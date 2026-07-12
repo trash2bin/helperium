@@ -28,8 +28,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/agent-tutor/data-service/internal/datasource"
-	"github.com/agent-tutor/data-service/internal/seedgen"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/seedgen"
 )
 
 const defaultSeedPath = "fixtures/seed.json"

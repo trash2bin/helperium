@@ -10,7 +10,7 @@ from rag.config import RagConfig
 from rag.embedding.protocol import EmbeddingProtocol
 from rag.vector_store.protocol import VectorStoreProtocol
 from rag.prometheus_metrics import rag_cache_hits, rag_cache_misses
-from agent_tutor_sdk.rag.models import (
+from helperium_sdk.rag.models import (
     Document,
     DocumentImportResult,
     RagContext,

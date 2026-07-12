@@ -1,8 +1,8 @@
 [project]
-name = "agent-tutor-sdk"
+name = "helperium-sdk"
 version = "1.1.0"
 license = "MPL-2.0"
-description = "Shared SDK for agent-tutor services"
+description = "Shared SDK for helperium services"
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "pydantic>=2.0.0",
@@ -14,4 +14,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_tutor_sdk"]
+packages = ["src/helperium_sdk"]

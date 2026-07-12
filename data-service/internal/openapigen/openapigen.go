@@ -10,7 +10,7 @@ package openapigen
 import (
 	"strings"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // Generate создаёт OpenAPI 3.1.0 спецификацию из конфига data-service.

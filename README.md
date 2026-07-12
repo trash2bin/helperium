@@ -16,7 +16,7 @@ No code per database. No sending proprietary data to third-party clouds.
 
 ## Overview
 
-Any business with a SQL database — an online shop, a university, a logistics company, a hospital — can connect it to Agent Tutor. The platform introspects the schema, auto-generates tools, and exposes an AI agent that answers end-user questions in real time.
+Any business with a SQL database — an online shop, a university, a logistics company, a hospital — can connect it to Helperium. The platform introspects the schema, auto-generates tools, and exposes an AI agent that answers end-user questions in real time.
 
 Unlike static RAG systems that require manual re-indexing, this platform queries the live database in read-only mode. The business owner controls exactly which tables, columns, and operations are visible to the agent through an administrative dashboard. The LLM layer can be deployed locally on GPU-equipped hardware or routed through any OpenAI-compatible provider.
 
@@ -127,8 +127,8 @@ All `.data/` paths are configurable via environment variables and mounted as vol
 The platform runs without Docker overhead via a shell script:
 
 ```bash
-git clone https://github.com/trash2bin/agent-tutor
-cd agent-tutor
+git clone https://github.com/trash2bin/helperium
+cd helperium
 uv sync
 ./scripts/dev.sh start
 open http://127.0.0.1:8080
@@ -162,7 +162,7 @@ Test counts are dynamic and reported by the pipeline. Current coverage exceeds 1
 - `data-service`: 326 tests (CRUD, schema introspection, write-tool approval)
 - `rag`: 104 tests (chunking, embeddings, re-embedding pipeline)
 - `web`: 55 tests (reverse proxy, multi-tenant routing, SSE proxy)
-- `agent-tutor-sdk`: 83 tests (shared models, HTTP clients)
+- `helperium-sdk`: 83 tests (shared models, HTTP clients)
 - E2E suites: data isolation, MCP tool routing, composite multi-tenant sessions
 
 ## Embedded Widget

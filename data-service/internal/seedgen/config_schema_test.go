@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // boolPtr returns a pointer to the given bool. Helper for building

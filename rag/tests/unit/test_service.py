@@ -3,7 +3,7 @@ from httpx import ASGITransport, AsyncClient
 from unittest.mock import MagicMock, patch
 
 from rag.service import app, state
-from agent_tutor_sdk.rag.models import Document, RagSearchResult
+from helperium_sdk.rag.models import Document, RagSearchResult
 
 
 @pytest.fixture(autouse=True)

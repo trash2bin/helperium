@@ -2,7 +2,7 @@ import sqlite3
 import pytest
 from rag.config import RagConfig
 from rag.repository import DocumentRepository
-from agent_tutor_sdk.rag.models import Document
+from helperium_sdk.rag.models import Document
 
 
 @pytest.fixture

@@ -56,7 +56,7 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
     if len(tenantIDs) == 1 {
         return createServerForTenant(tenantIDs[0]) // legacy
     }
-    composite := server.NewMCPServer("agent-tutor", "1.0.0")
+    composite := server.NewMCPServer("helperium", "1.0.0")
     for _, tenantID := range tenantIDs {
         cfg := globalClient.FetchConfigWithTenant(tenantID)
         registry := tools.NewPrefixedRegistry(cfg, tenantID) // префикс

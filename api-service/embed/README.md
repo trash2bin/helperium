@@ -1,4 +1,4 @@
-# Agent Tutor — Embeddable Chat Widget
+# Helperium — Embeddable Chat Widget
 
 Виджет чата для встраивания на любой сайт. Vanilla JS, без зависимостей, изолирован в Shadow DOM.
 

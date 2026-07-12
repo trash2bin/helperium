@@ -23,8 +23,8 @@ specs/
 
 **Жизненно важный рантайм-артефакт.** Без него data-service не стартанёт:
 
-- `agent-tutor-go/config/loader.go` ищет схему по цепочке путей при загрузке
-- `agent-tutor-go/config/validate.go` валидирует каждый конфиг JSON Schema
+- `helperium-go/config/loader.go` ищет схему по цепочке путей при загрузке
+- `helperium-go/config/validate.go` валидирует каждый конфиг JSON Schema
 - Тесты ищут `specs/config.schema.json` относительно CWD или бинарника
 
 **Принцип:** схема — Source of Truth. Примеры (`config.example.json`,

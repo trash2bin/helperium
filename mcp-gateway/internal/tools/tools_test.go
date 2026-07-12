@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

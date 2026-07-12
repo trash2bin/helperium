@@ -4,7 +4,7 @@ version = "1.1.0"
 license = "MPL-2.0"
 requires-python = ">=3.12, <3.14"
 dependencies = [
-    "agent-tutor-sdk",
+    "helperium-sdk",
     "fastapi>=0.137.2",
     "uvicorn[standard]>=0.38.0",
     "starlette>=0.50.0",

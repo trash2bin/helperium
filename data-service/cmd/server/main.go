@@ -43,12 +43,12 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/agent-tutor-go/pkg/metrics"
-	"github.com/agent-tutor/data-service/internal/configgen"
-	"github.com/agent-tutor/data-service/internal/datasource"
-	"github.com/agent-tutor/data-service/internal/seedgen"
-	"github.com/agent-tutor/data-service/internal/server"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
+	"github.com/trash2bin/helperium/data-service/internal/configgen"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/seedgen"
+	"github.com/trash2bin/helperium/data-service/internal/server"
 )
 
 const defaultConfigPath = "specs/config.example.json"

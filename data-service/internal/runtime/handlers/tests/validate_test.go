@@ -12,8 +12,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/agent-tutor/data-service/internal/runtime"
-	"github.com/agent-tutor/data-service/internal/runtime/handlers"
+	"github.com/trash2bin/helperium/data-service/internal/runtime"
+	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
 )
 
 // ════════════════════════════════════════════════════════════════

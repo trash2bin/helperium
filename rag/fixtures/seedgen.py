@@ -24,7 +24,7 @@ from pathlib import Path
 
 from faker import Faker
 
-from agent_tutor_sdk.seed_models import StorageSeed
+from helperium_sdk.seed_models import StorageSeed
 from rag.fixtures.catalog import (
     CURRICULUM,
     DISCIPLINE_NAMES,

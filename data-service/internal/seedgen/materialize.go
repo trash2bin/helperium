@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
 )
 
 // Materialize создаёт БД из сценария:

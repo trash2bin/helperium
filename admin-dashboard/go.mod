@@ -1,11 +1,11 @@
-module github.com/agent-tutor/admin-dashboard
+module github.com/trash2bin/helperium/admin-dashboard
 
 go 1.24.0
 
 require (
-	github.com/agent-tutor/agent-tutor-go v0.0.0-00010101000000-000000000000
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/prometheus/client_golang v1.23.2
+	github.com/trash2bin/helperi../helperium-go v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -21,4 +21,4 @@ require (
 	google.golang.org/protobuf v1.36.8 // indirect
 )
 
-replace github.com/agent-tutor/agent-tutor-go => ../agent-tutor-go
+replace github.com/trash2bin/helperi../helperium-go => ../helperium-go

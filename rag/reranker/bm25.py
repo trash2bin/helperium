@@ -6,7 +6,7 @@ import math
 import re
 from typing import List
 
-from agent_tutor_sdk.rag.models import RagSearchResult
+from helperium_sdk.rag.models import RagSearchResult
 
 
 class BM25Reranker:

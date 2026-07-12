@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-tutor/admin-dashboard/internal/server"
-	"github.com/agent-tutor/agent-tutor-go/pkg/metrics"
+	"github.com/trash2bin/helperium/admin-dashboard/internal/server"
+	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
 )
 
 func main() {

@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/agent-tutor/agent-tutor-go/config"
+import "github.com/trash2bin/helperium/helperium-go/config"
 
 // ConfigToEntities конвертирует config.Entity в runtime.Entity.
 func ConfigToEntities(cfgEntities []config.Entity) []Entity {

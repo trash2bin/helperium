@@ -13,7 +13,7 @@ import pytest
 
 from rag.pipeline.pipeline import RAGPipeline
 from rag.config import RagConfig
-from agent_tutor_sdk.rag.models import RagSearchResult
+from helperium_sdk.rag.models import RagSearchResult
 
 
 @pytest.fixture

@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/mcp-gateway/internal/httpclient"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/mcp-gateway/internal/httpclient"
 )
 
 // ════════════════════════════════════════════════════════════════

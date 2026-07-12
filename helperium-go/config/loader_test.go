@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // specPath возвращает абсолютный путь к файлу в specs/.
@@ -19,8 +19,8 @@ func specPath(t *testing.T, name string) string {
 		t.Fatalf("os.Getwd: %v", err)
 	}
 	candidates := []string{
-		filepath.Join(wd, "..", "..", "specs", name), // agent-tutor-go/config → repo/specs
-		filepath.Join(wd, "..", "..", "..", "specs", name), // на случай запуска из agent-tutor-go/
+		filepath.Join(wd, "..", "..", "specs", name), // helperium-go/config → repo/specs
+		filepath.Join(wd, "..", "..", "..", "specs", name), // на случай запуска из helperium-go/
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {

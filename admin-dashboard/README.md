@@ -2,7 +2,7 @@
 
 **Порт:** `:8085`
 **Стек:** Go (chi) + Alpine.js (UI)
-**Назначение:** Веб-интерфейс для администрирования всех сервисов agent-tutor: управление тенантами, конфигами, MCP-инструментами, RAG-документами и AI-агентами.
+**Назначение:** Веб-интерфейс для администрирования всех сервисов helperium: управление тенантами, конфигами, MCP-инструментами, RAG-документами и AI-агентами.
 
 ---
 
@@ -240,7 +240,7 @@ Big Red Button на странице Anti-Abuse: Normal → Cautious → Lockdow
 ```yaml
 # docker-compose.yml
 admin-dashboard:
-  image: agent-tutor-admin:latest
+  image: helperium-admin:latest
   build:
     context: ./admin-dashboard
     dockerfile: Dockerfile

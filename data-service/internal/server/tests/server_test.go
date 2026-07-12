@@ -13,10 +13,10 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/agent-tutor/agent-tutor-go/config"
-	"github.com/agent-tutor/data-service/internal/datasource"
-	"github.com/agent-tutor/data-service/internal/seedgen"
-	"github.com/agent-tutor/data-service/internal/server"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/seedgen"
+	"github.com/trash2bin/helperium/data-service/internal/server"
 )
 
 // testSchema — DDL для in-memory SQLite в тестах.

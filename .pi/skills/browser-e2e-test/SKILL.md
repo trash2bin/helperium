@@ -1,11 +1,11 @@
 ---
 name: browser-e2e-test
-description: "Manual E2E тестирование Agent Tutor через живой браузер (Playwright): admin dashboard, tenant persistence, write-tool approval, demo web UI."
+description: "Manual E2E тестирование Helperium через живой браузер (Playwright): admin dashboard, tenant persistence, write-tool approval, demo web UI."
 ---
 
-# Browser E2E Testing — Agent Tutor
+# Browser E2E Testing — Helperium
 
-Этот skill описывает, как тестировать Agent Tutor через браузер с помощью Playwright.
+Этот skill описывает, как тестировать Helperium через браузер с помощью Playwright.
 
 **Когда использовать:**
 - Нужно проверить, что тенанты пережили restart (persistence)
@@ -24,7 +24,7 @@ description: "Manual E2E тестирование Agent Tutor через жив�
 Перед тестом сервисы должны быть запущены:
 
 ```bash
-cd /Users/ivan/code/agent-tutor
+cd /Users/ivan/code/helperium
 ./scripts/dev.sh start   # или docker compose up -d
 ```
 
@@ -221,7 +221,7 @@ await page.waitForTimeout(2000);
 
 // 2. Клик по триггеру чата (через Shadow DOM)
 await page.evaluate(() => {
-  const host = document.querySelector('[id^="agent-tutor-widget-"]');
+  const host = document.querySelector('[id^="helperium-widget-"]');
   if (!host || !host.shadowRoot) throw new Error('Widget host not found');
   const trigger = host.shadowRoot.querySelector('.at-trigger');
   if (!trigger) throw new Error('Trigger not found');
@@ -241,7 +241,7 @@ await page.waitForTimeout(500);
 
 // 4. Написать сообщение через Shadow DOM
 await page.evaluate(() => {
-  const host = document.querySelector('[id^="agent-tutor-widget-"]');
+  const host = document.querySelector('[id^="helperium-widget-"]');
   if (!host || !host.shadowRoot) return;
   const textarea = host.shadowRoot.querySelector('.at-form textarea');
   if (!textarea) return;
@@ -251,7 +251,7 @@ await page.evaluate(() => {
 
 // 5. Отправить (через Shadow DOM — submit form)
 await page.evaluate(() => {
-  const host = document.querySelector('[id^="agent-tutor-widget-"]');
+  const host = document.querySelector('[id^="helperium-widget-"]');
   if (!host || !host.shadowRoot) return;
   const submitBtn = host.shadowRoot.querySelector('.at-form button[type="submit"]');
   if (submitBtn) submitBtn.click();
@@ -512,7 +512,7 @@ console.log('Session state:', sessionState);
 
 ```
 document.body
-  └── <div id="agent-tutor-widget-{agent}">         ← хост
+  └── <div id="helperium-widget-{agent}">         ← хост
         └── #shadow-root (open)
               ├── <style>…</style>
               ├── <div class="at-root">
@@ -561,7 +561,7 @@ async function runTenantChatTest(page) {
 
   // 4. Open the chat widget (click trigger button inside Shadow DOM)
   await page.evaluate(() => {
-    const host = document.querySelector('[id^="agent-tutor-widget-"]');
+    const host = document.querySelector('[id^="helperium-widget-"]');
     if (!host || !host.shadowRoot) throw new Error('Widget host not found');
     const trigger = host.shadowRoot.querySelector('.at-trigger');
     if (!trigger) throw new Error('Trigger button not found in Shadow DOM');
@@ -587,7 +587,7 @@ async function runTenantChatTest(page) {
 
   // 6. Send a message via the widget (inside Shadow DOM)
   await page.evaluate(() => {
-    const host = document.querySelector('[id^="agent-tutor-widget-"]');
+    const host = document.querySelector('[id^="helperium-widget-"]');
     if (!host || !host.shadowRoot) return;
     const textarea = host.shadowRoot.querySelector('.at-form textarea');
     const submitBtn = host.shadowRoot.querySelector('.at-form button[type="submit"]');
@@ -603,7 +603,7 @@ async function runTenantChatTest(page) {
 
   // 8. Read the assistant's response from Shadow DOM
   const response1 = await page.evaluate(() => {
-    const host = document.querySelector('[id^="agent-tutor-widget-"]');
+    const host = document.querySelector('[id^="helperium-widget-"]');
     if (!host || !host.shadowRoot) return null;
     const msgs = host.shadowRoot.querySelectorAll('.at-messages .at-msg');
     for (const msg of msgs) {
@@ -627,7 +627,7 @@ async function runTenantChatTest(page) {
 
   // 10. Send a different question (now against default tenant's DB)
   await page.evaluate(() => {
-    const host = document.querySelector('[id^="agent-tutor-widget-"]');
+    const host = document.querySelector('[id^="helperium-widget-"]');
     if (!host || !host.shadowRoot) return;
     const textarea = host.shadowRoot.querySelector('.at-form textarea');
     const submitBtn = host.shadowRoot.querySelector('.at-form button[type="submit"]');
@@ -641,7 +641,7 @@ async function runTenantChatTest(page) {
   await page.waitForTimeout(20000);
 
   const response2 = await page.evaluate(() => {
-    const host = document.querySelector('[id^="agent-tutor-widget-"]');
+    const host = document.querySelector('[id^="helperium-widget-"]');
     if (!host || !host.shadowRoot) return null;
     const msgs = host.shadowRoot.querySelectorAll('.at-messages .at-msg');
     for (const msg of msgs) {

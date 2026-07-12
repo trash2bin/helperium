@@ -28,7 +28,7 @@
 | **RAG** (Python) | `:8082` | Поиск по документам (ChromaDB), чанкинг, эмбеддинги (local/LiteLLM), кэш (Local/Redis), admin config API, Prometheus метрики, re-embedding pipeline. | [README](rag/README.md) |
 | **API** (Python) | `:8081` | Оркестратор агента, LiteLLM, Agent Store (CRUD), rate limiter, управление сессиями и бэклогом. Встраиваемый чат-виджет: [embed/README.md](api-service/embed/README.md). | [AGENT_WORKFLOW](api-service/README.md) |
 | **Web** (Python) | `:8080` | UI-интерфейс + reverse-proxy. Проксирует `X-Tenant-ID` и поддерживает tenant routing. | [README](demo/web/README.md) |
-| **SDK** (Python) | — | Общие Pydantic-модели и клиенты для сервисов. | [pyproject.toml](agent-tutor-sdk/pyproject.toml) |
+| **SDK** (Python) | — | Общие Pydantic-модели и клиенты для сервисов. | [pyproject.toml](helperium-sdk/pyproject.toml) |
 
 > **Мониторинг (v1.1.0):** Все сервисы отдают Prometheus-метрики на `/metrics`.
 > См. [секцию 10](#-10-monitoring--observability): Prometheus (:9090) + Grafana (:3000) с предустановленным дашбордом (12 панелей).
@@ -119,7 +119,7 @@ uv run pytest rag/tests/                   # RAG (индексация, поис
 uv run pytest api-service/src/api_service/tests/              # API (OpenAPI spec, backlog, sessions, rate limiter)
 uv run pytest demo/web/tests/              # Web (26 proxy + 4 url mapping тестов)
 uv run pytest demo/tests/                  # Settings (18 тестов конфигурации из env)
-uv run pytest agent-tutor-sdk/tests/       # SDK модели и seedgen
+uv run pytest helperium-sdk/tests/       # SDK модели и seedgen
 ```
 
 > Примечание: тесты MCP-клиента и оркестратора помечены `@pytest.mark.skip` — ожидают переписывания под новый MCP SDK протокол.
@@ -294,7 +294,7 @@ act --pull=false           # весь пайплайн
 
 ### 📦 Версионирование
 
-Все 6 Python-пакетов (`agent-db`, `agent-tutor-sdk`, `api-service`, `demo-web`, `rag`, `pyproject.toml`) и 2 Go-модуля (`data-service`, `mcp-gateway`) синхронизированы на одной версии:
+Все 6 Python-пакетов (`agent-db`, `helperium-sdk`, `api-service`, `demo-web`, `rag`, `pyproject.toml`) и 2 Go-модуля (`data-service`, `mcp-gateway`) синхронизированы на одной версии:
 - Текущая: **`1.1.0`**
 - Go: `go 1.26.4`
 
@@ -344,7 +344,7 @@ docker compose --profile monitoring up -d
 # Grafana:    http://localhost:3000 (admin/admin)
 ```
 
-Grafana дашборд предустановлен (12 панелей) — `docker/grafana/dashboards/agent-tutor-overview.json`.
+Grafana дашборд предустановлен (12 панелей) — `docker/grafana/dashboards/helperium-overview.json`.
 
 ### Logging
 

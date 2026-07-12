@@ -1,7 +1,7 @@
 """RAG SDK — HTTP client and public models for the RAG service."""
 
-from agent_tutor_sdk.rag.client import RagClient, RAG_SERVICE_URL
-from agent_tutor_sdk.rag.models import (
+from helperium_sdk.rag.client import RagClient, RAG_SERVICE_URL
+from helperium_sdk.rag.models import (
     Document,
     DocumentChunk,
     DocumentImportResult,

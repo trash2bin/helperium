@@ -17,7 +17,7 @@ from urllib.parse import quote
 
 import httpx
 
-from agent_tutor_sdk.models import Entity
+from helperium_sdk.models import Entity
 
 logger = logging.getLogger(__name__)
 

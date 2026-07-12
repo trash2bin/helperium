@@ -1,4 +1,4 @@
-# 📊 Мониторинг Agent Tutor — полное руководство
+# 📊 Мониторинг Helperium — полное руководство
 
 ## Что это и зачем
 
@@ -88,7 +88,7 @@ docker/
     │   └── datasource.yml          ← откуда Grafana берёт данные
     ├── dashboards/
     │   ├── dashboard.yml           ← provisioning — автоподгрузка дашбордов
-    │   └── agent-tutor-overview.json  ← сам дашборд (12 панелей)
+    │   └── helperium-overview.json  ← сам дашборд (12 панелей)
     └── MONITORING.md               ← этот файл
 ```
 
@@ -142,7 +142,7 @@ docker-compose.yml — секции `prometheus` и `grafana` в profile: monito
 
 ## PromQL для дашборда
 
-Дашборд `agent-tutor-overview.json` содержит 12 панелей. PromQL-запросы:
+Дашборд `helperium-overview.json` содержит 12 панелей. PromQL-запросы:
 
 ### Data Service
 - **Request Rate**: `rate(data_requests_total[1m])` — запросов/сек
@@ -170,7 +170,7 @@ docker-compose.yml — секции `prometheus` и `grafana` в profile: monito
 
 ### Добавить панель в дашборд
 
-1. Открыть `docker/grafana/dashboards/agent-tutor-overview.json`
+1. Открыть `docker/grafana/dashboards/helperium-overview.json`
 2. Добавить объект в массив `panels[]`
 3. `gridPos` — расположение на сетке (12 колонок, каждая строка 8h)
 4. `targets[].expr` — PromQL-запрос
@@ -179,7 +179,7 @@ docker-compose.yml — секции `prometheus` и `grafana` в profile: monito
 ### Добавить новую метрику в сервис
 
 **Go (data-service / mcp-gateway / admin-dashboard):**
-1. Определить в `agent-tutor-go/pkg/metrics/metrics.go`: `prometheus.NewCounterVec(...)`
+1. Определить в `helperium-go/pkg/metrics/metrics.go`: `prometheus.NewCounterVec(...)`
 2. Зарегистрировать в `RegisterMetrics()`
 3. Вызвать `.WithLabelValues(...).Inc()` / `.Observe()` в нужном месте
 
@@ -237,4 +237,4 @@ curl -s http://127.0.0.1:8084/metrics?tenant=default | grep data_requests_total
 ## Советы
 
 - **Prometheus UI** http://127.0.0.1:9090/graph — можно вводить любые PromQL-запросы
-- **Сбросить данные Prometheus**: `docker compose down && docker volume rm agent-tutor_prometheus_data`
+- **Сбросить данные Prometheus**: `docker compose down && docker volume rm helperium_prometheus_data`

@@ -1,16 +1,16 @@
-module github.com/agent-tutor/mcp-gateway
+module github.com/trash2bin/helperium/mcp-gateway
 
 go 1.26.5
 
 require (
-	github.com/agent-tutor/agent-tutor-go v0.0.0-00010101000000-000000000000
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.8.3
 	github.com/prometheus/client_golang v1.21.1
+	github.com/trash2bin/helperi../helperium-go v0.0.0-00010101000000-000000000000
 )
 
-replace github.com/agent-tutor/agent-tutor-go => ../agent-tutor-go
+replace github.com/trash2bin/helperi../helperium-go => ../helperium-go
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

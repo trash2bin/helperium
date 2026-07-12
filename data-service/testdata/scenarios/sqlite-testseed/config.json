@@ -2,7 +2,7 @@
   "version": 1,
   "data_source": {
     "driver": "sqlite",
-    "dsn": "/Users/ivan/code/agent-tutor/data.db",
+    "dsn": "/Users/ivan/code/helperium/data.db",
     "pool_size": 1,
     "read_only": true
   },

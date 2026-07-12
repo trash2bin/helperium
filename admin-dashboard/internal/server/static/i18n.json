@@ -3,7 +3,7 @@
   "translations": {
     "ru": {
       "login.title": "⚙️ Admin Dashboard",
-      "login.subtitle": "Agent Tutor — управление платформой",
+      "login.subtitle": "Helperium — управление платформой",
       "login.tokenLabel": "ADMIN_TOKEN",
       "login.tokenPlaceholder": "Введите токен доступа",
       "login.submit": "Войти",
@@ -332,7 +332,7 @@
     },
     "en": {
       "login.title": "⚙️ Admin Dashboard",
-      "login.subtitle": "Agent Tutor — platform management",
+      "login.subtitle": "Helperium — platform management",
       "login.tokenLabel": "ADMIN_TOKEN",
       "login.tokenPlaceholder": "Enter access token",
       "login.submit": "Sign in",

@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agent-tutor/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
 )
 
 // TestPostgresAdapter_Driver — адаптер сообщает свой идентификатор.

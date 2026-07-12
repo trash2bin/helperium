@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agent-tutor/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
 )
 
 // TestSqliteAdapter_Driver — адаптер сообщает свой идентификатор.

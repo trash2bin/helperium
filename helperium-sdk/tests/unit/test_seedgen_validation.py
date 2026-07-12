@@ -8,7 +8,7 @@
 уникальные id и FK-целостность между коллекциями.
 
 Запуск:
-    uv run pytest agent-tutor-sdk/tests/unit/test_seedgen_validation.py -v
+    uv run pytest helperium-sdk/tests/unit/test_seedgen_validation.py -v
 """
 
 from __future__ import annotations

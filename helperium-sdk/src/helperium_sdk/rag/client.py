@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from agent_tutor_sdk.rag.models import (
+from helperium_sdk.rag.models import (
     Document,
     DocumentImportResult,
     RagContext,

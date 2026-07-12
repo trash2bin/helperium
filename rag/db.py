@@ -1,6 +1,6 @@
 """Лёгкий менеджер SQLite-соединения для RAG.
 
-Не зависит от agent_tutor_sdk. Использует только стандартный sqlite3.
+Не зависит от helperium_sdk. Использует только стандартный sqlite3.
 """
 
 from __future__ import annotations

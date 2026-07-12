@@ -19,8 +19,8 @@ Internal cheat sheet. Not for the client — for you. Updated: July 2026.
 ```bash
 ssh root@client-server
 apt install docker.io docker-compose-v2
-git clone https://github.com/trash2bin/agent-tutor
-cd agent-tutor
+git clone https://github.com/trash2bin/helperium
+cd helperium
 
 mkdir -p .data/{app,rag,hf_cache,uploads,pg}
 cp .env.example .env
@@ -224,8 +224,8 @@ bash scripts/backup.sh  # → backups/<date>/tenants/ + .env
 ```bash
 ssh root@client-server
 apt install docker.io docker-compose-v2
-git clone https://github.com/trash2bin/agent-tutor
-cd agent-tutor
+git clone https://github.com/trash2bin/helperium
+cd helperium
 
 mkdir -p .data/{app,rag,hf_cache,uploads,pg}
 cp .env.example .env
