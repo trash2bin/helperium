@@ -3,7 +3,7 @@
 # dev.sh — нативный запуск всех сервисов (Mac / без Docker)
 # =============================================================================
 # Usage:
-#   ./scripts/dev.sh start         — поднять все сервисы (data + rag + mcp + api + web)
+#   ./scripts/dev.sh start         — поднять все сервисы (data + rag + mcp + admin + api + web)
 #   ./scripts/dev.sh stop          — погасить все
 #   ./scripts/dev.sh status        — healthcheck каждого
 #   ./scripts/dev.sh logs [svc]    — tail -f лога (svc: rag|mcp|api|web|data|all)
@@ -27,7 +27,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$PROJECT_ROOT/.data/logs"
 PID_DIR="$PROJECT_ROOT/.data/pids"
 
-SERVICES=("data" "rag" "mcp" "api" "web")
+SERVICES=("data" "rag" "mcp" "admin" "api" "web")
 declare -A SERVICE_CMD=(
   [data]="LOG_LEVEL=info $PROJECT_ROOT/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
   [rag]="uv run --package rag python -m rag.service"
@@ -36,6 +36,7 @@ declare -A SERVICE_CMD=(
 
   [api]="uv run --package api-service python -m api_service.server"
   [web]="uv run --package demo-web python -m demo.web.server"
+  [admin]="$PROJECT_ROOT/admin-dashboard/bin/admin-dashboard"
 )
 
 # Дефолтные порты (перебиваются из .env)
@@ -44,6 +45,7 @@ RAG_PORT=${RAG_PORT:-8082}
 MCP_PORT=${MCP_PORT:-8083}
 API_PORT=${API_PORT:-8081}
 WEB_PORT=${WEB_PORT:-8080}
+ADMIN_PORT=${ADMIN_PORT:-8085}
 
 declare -A SERVICE_PORT=(
   [data]=$DATA_PORT
@@ -51,6 +53,7 @@ declare -A SERVICE_PORT=(
   [mcp]=$MCP_PORT
   [api]=$API_PORT
   [web]=$WEB_PORT
+  [admin]=$ADMIN_PORT
 )
 
 # Какие сервисы ждать по health перед стартом следующих
@@ -60,6 +63,7 @@ declare -A SERVICE_DEPS=(
   [mcp]="data rag"
   [api]="mcp"
   [web]="api"
+  [admin]="data api"
 )
 
 # =============================================================================
@@ -78,7 +82,8 @@ load_env() {
     MCP_PORT=${MCP_PORT:-8083}
     API_PORT=${API_PORT:-8081}
     WEB_PORT=${WEB_PORT:-8080}
-    SERVICE_PORT=([data]=$DATA_PORT [rag]=$RAG_PORT [mcp]=$MCP_PORT [api]=$API_PORT [web]=$WEB_PORT)
+    ADMIN_PORT=${ADMIN_PORT:-8085}
+    SERVICE_PORT=([data]=$DATA_PORT [rag]=$RAG_PORT [mcp]=$MCP_PORT [api]=$API_PORT [web]=$WEB_PORT [admin]=$ADMIN_PORT)
 
     # Если DATABASE_URL задана, а DS_CONFIG нет — авто-выбор PostgreSQL конфига
     if [ -n "${DATABASE_URL:-}" ] && [ -z "${DS_CONFIG:-}" ]; then
@@ -109,6 +114,7 @@ health_url() {
     mcp) echo "http://127.0.0.1:$MCP_PORT/health" ;;
     api) echo "http://127.0.0.1:$API_PORT/health" ;;
     web) echo "http://127.0.0.1:$WEB_PORT/" ;;
+    admin) echo "http://127.0.0.1:$ADMIN_PORT/api/health" ;;
   esac
 }
 
@@ -171,6 +177,14 @@ cmd_start() {
   }
   echo "  ✅ mcp-gateway built"
 
+  echo "  🔨 Building admin-dashboard..."
+  mkdir -p "$PROJECT_ROOT/admin-dashboard/bin"
+  (cd "$PROJECT_ROOT/admin-dashboard" && go build -o bin/admin-dashboard ./cmd/server/) || {
+    echo "  ❌ Failed to build mcp-gateway"
+    exit 1
+  }
+  echo "  ✅ mcp-gateway built"
+
   for svc in "${SERVICES[@]}"; do
     if is_running "$svc"; then
       echo "  ⏭️  $svc already running (pid $(cat "$(pidfile "$svc")"))"
@@ -204,6 +218,7 @@ cmd_start() {
         ;;
       api) extra_env="MCP_SERVICE_URL=http://127.0.0.1:$MCP_PORT" ;;
       web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT" ;;
+      admin) extra_env="LISTEN_ADDR=:$ADMIN_PORT ADMIN_TOKEN=$ADMIN_TOKEN DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT API_SERVICE_URL=http://127.0.0.1:$API_PORT LOG_LEVEL=$LOG_LEVEL LOG_FORMAT=$LOG_FORMAT" ;;
     esac
 
     echo "  🚀 Starting $svc..."
@@ -229,6 +244,7 @@ cmd_start() {
   echo "  MCP    http://127.0.0.1:$MCP_PORT    logs: $(logfile mcp)"
   echo "  API    http://127.0.0.1:$API_PORT    logs: $(logfile api)"
   echo "  WEB    http://127.0.0.1:$WEB_PORT    logs: $(logfile web)"
+  echo "  ADMIN  http://127.0.0.1:$ADMIN_PORT    logs: $(logfile admin)"
   echo ""
   echo "  Commands:"
   echo "    ./scripts/dev.sh status          — healthcheck"
@@ -329,6 +345,7 @@ _stop_svc_by_pgrep() {
     mcp) pattern="mcp-gateway" ;; # Go-бинарник
     api) pattern="python -m api_service.server" ;;
     web) pattern="python -m demo.web.server" ;;
+    admin) pattern="admin-dashboard/bin/admin-dashboard" ;;
   esac
   local pids
   pids=$(pgrep -f "$pattern" 2>/dev/null || echo "")
@@ -756,7 +773,7 @@ case "${1:-help}" in
     echo "Usage: $0 <command> [args]"
     echo ""
     echo "Commands:"
-    echo "  start              — поднять все сервисы (data + rag + mcp + api + web)"
+    echo "  start              — поднять все сервисы (data + rag + mcp + admin + api + web)"
     echo "  stop               — погасить все"
     echo "  restart            — перезапустить"
     echo "  status             — healthcheck"

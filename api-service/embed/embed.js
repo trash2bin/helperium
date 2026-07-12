@@ -792,7 +792,7 @@
         if (!response.ok) {
           targetNode.classList.remove('at-thinking');
           targetNode.classList.add('at-error');
-          targetNode.textContent = ''Error: ' + response.status;
+          targetNode.textContent = 'Error: ' + response.status;
           return;
         }
 

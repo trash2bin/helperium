@@ -476,6 +476,10 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	}
 
 	resolvePath := func(dsn string) string {
+		// URL-формат (postgres://, file:, etc.) — не трогаем, это not a file path
+		if strings.Contains(dsn, "://") {
+			return dsn
+		}
 		if dsn != "" && !filepath.IsAbs(dsn) && configPath != "" {
 			return filepath.Join(filepath.Dir(configPath), dsn)
 		}
