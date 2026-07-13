@@ -37,6 +37,7 @@ from .types import (
 
 from api_service.backlog import backlog
 from api_service.guardrails import get_guard_checker
+from api_service.error_messages import classify_error
 from api_service.spending import get_spending_checker
 
 logger = logging.getLogger("api_service.agent.orchestrator")
@@ -124,6 +125,7 @@ class LLMAgent:
         llm_config: dict | None = None,
         llm_client: LLMClient | None = None,
         system_prompt: str | None = None,
+        lang: str = "ru",
     ) -> AsyncIterator[AgentEvent]:
         """Stream agent events: tokens, tool calls, tool results, final.
 
@@ -161,6 +163,7 @@ class LLMAgent:
                 tenant_ids,
                 request_llm=request_llm,
                 system_prompt=system_prompt,
+                lang=lang,
             ):
                 yield event
 
@@ -184,6 +187,7 @@ class LLMAgent:
         tenant_ids: list[str] | None = None,
         request_llm: LLMClientProtocol | None = None,
         system_prompt: str | None = None,
+        lang: str = "ru",
     ) -> AsyncIterator[AgentEvent]:
         """Execute a single conversation turn with multiple iterations."""
         # ── 0. Guard: check input for prompt injection ───────────────
@@ -345,7 +349,7 @@ class LLMAgent:
 
         except Exception as exc:
             backlog.error(session_id, ctx.turn_id, ctx.iteration, str(exc))
-            yield AgentEvent("error", ErrorEventData(message=str(exc)))
+            yield AgentEvent("error", ErrorEventData(message=classify_error(exc, lang)))
 
 
 # ── Default singleton ─────────────────────────────────────────────────────

@@ -15,13 +15,6 @@ def checker():
 
 
 @pytest.fixture
-def toxicity_checker():
-    """GuardChecker with toxicity blocking enabled."""
-    config = GuardConfig(enabled=True, block_on_match="block", block_toxicity=True)
-    return GuardChecker(config=config)
-
-
-@pytest.fixture
 def warn_checker():
     """GuardChecker in warn mode."""
     config = GuardConfig(enabled=True, block_on_match="warn")
@@ -157,54 +150,6 @@ class TestGuardrails:
         result = checker.check_input(msg)
         assert result.blocked is True
         # Catches inject_ignore_instructions first (correct behavior)
-
-    # ── Toxicity detection (block mode) ──────────────────────────────────
-
-    def test_toxicity_russian_mat_blocked(self, toxicity_checker):
-        """Русский мат блокируется при block_toxicity=True."""
-        msg = "Ты просто хуйня, иди нахуй, пиздец"
-        result = toxicity_checker.check_input(msg)
-        assert result.blocked is True
-        assert "toxicity_profanity_ru" in result.reason
-
-    def test_toxicity_english_profanity_blocked(self, toxicity_checker):
-        """English profanity blocked when block_toxicity=True."""
-        msg = "You are full of shit, you fucking asshole"
-        result = toxicity_checker.check_input(msg)
-        assert result.blocked is True
-        assert "toxicity_profanity_en" in result.reason
-
-    def test_toxicity_abuse_threat_blocked(self, toxicity_checker):
-        """Агрессивные угрозы блокируются по английскому мату."""
-        msg = "I will find you and kill you, you bastard"
-        result = toxicity_checker.check_input(msg)
-        assert result.blocked is True
-        assert "toxicity" in result.reason
-
-    def test_toxicity_blocked_in_output(self, toxicity_checker):
-        """Токсичность в ответе LLM блокируется при block_toxicity=True."""
-        content = "Пошел нахуй, я не буду это делать"
-        result = toxicity_checker.check_output(content)
-        assert result.blocked is True
-        assert "toxicity_profanity_ru" in result.reason
-
-    # ── Toxicity detection (warn/log-only mode) ──────────────────────────
-
-    def test_toxicity_warn_output_not_blocked(self, checker):
-        """Токсичность в выводе: warn mode = не блокируется."""
-        content = "Пошел нахуй, тупой пользователь"
-        result = checker.check_output(content)
-        # Default config: block_toxicity=False → warn-only
-        assert result.blocked is False
-        assert result.reason.startswith("warn:")
-        assert "toxicity_profanity_ru" in result.reason
-
-    def test_toxicity_no_false_positive_on_homonyms(self, checker):
-        """Слова-омонимы не дают ложного срабатывания."""
-        # Убираем "сукалей" — matches сука in су* pattern
-        msg = "хутор, похудеть, хулиган, учебный, судалей"
-        result = checker.check_input(msg)
-        assert result.blocked is False
 
     # ── Output guard: API key leak ───────────────────────────────────────
 

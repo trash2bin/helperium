@@ -78,6 +78,7 @@ from api_service.prometheus_metrics import (
 from api_service.guardrails import get_guard_checker
 from api_service.spending import get_spending_checker
 from api_service.provider_store import get_provider_store
+from api_service.error_messages import classify_error
 
 configure_logging()
 logger = logging.getLogger("api_service.server")
@@ -231,6 +232,14 @@ async def _check_abuse(
     return None
 
 
+def _get_lang(request: Request) -> str:
+    """Extract language from Accept-Language header."""
+    accept = request.headers.get("Accept-Language", "")
+    if accept.startswith("ru"):
+        return "ru"
+    return "en"
+
+
 async def chat_handler(request: Request) -> StreamingResponse:
     """Streaming chat endpoint that handles user messages."""
     try:
@@ -271,17 +280,22 @@ async def chat_handler(request: Request) -> StreamingResponse:
     chat_sessions_total.inc()
     chat_messages_total.labels(status="sent").inc()
 
+    lang = _get_lang(request)
+
     async def events():
         try:
             async for event in get_agent().stream_events(
-                message, session_id=effective_session_id, tenant_ids=tenant_ids
+                message,
+                session_id=effective_session_id,
+                tenant_ids=tenant_ids,
+                lang=lang,
             ):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
                     yield _sse(payload)
             yield _sse({"type": "done"})
         except Exception as exc:
-            yield _sse({"type": "error", "text": _format_error(exc)})
+            yield _sse({"type": "error", "text": classify_error(exc, lang)})
 
     return StreamingResponse(events(), media_type="text/event-stream")
 
@@ -328,13 +342,6 @@ def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | No
         text = data.get("message") if isinstance(data, dict) else data
         return {"type": "error", "text": text}
     return None
-
-
-def _format_error(exc: BaseException) -> str:
-    """Format an exception for error reporting."""
-    if isinstance(exc, ExceptionGroup):
-        return "; ".join(_format_error(item) for item in exc.exceptions)
-    return str(exc)
 
 
 @asynccontextmanager
@@ -431,9 +438,11 @@ async def add_embed_security_headers(
         embed_widget_requests.labels(endpoint=request.url.path).inc()
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        # Cache static assets for 1 year (they are versioned by deploy)
+        # Cache static assets
         if request.url.path.endswith((".js", ".css")):
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            # Dev: no cache so widget updates reflect immediately
+            # Production: set EMBED_DIR and/or reverse proxy adds its own Cache-Control
+            response.headers["Cache-Control"] = "no-cache"
         else:
             # Non-asset embed files: short cache to avoid stale 404s
             response.headers.setdefault("Cache-Control", "no-cache")
@@ -813,6 +822,7 @@ async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
             llm_config=req.llm_config.model_dump() if req.llm_config else None,
             provider_priority=req.provider_priority or None,
             abuse_config=req.abuse_config,
+            system_prompt=req.system_prompt,
         )
         return AgentResponse(**result)
     except ValueError as exc:
@@ -865,6 +875,7 @@ async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResp
         llm_config=req.llm_config.model_dump() if req.llm_config else None,
         provider_priority=req.provider_priority,
         abuse_config=req.abuse_config,
+        system_prompt=req.system_prompt,
     )
     if not result:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
@@ -937,7 +948,10 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     # ["shop"] → scope to shop tenant only
     tenant_ids = tenant_ids_raw if tenant_ids_raw else None
     llm_config = agent.get("llm_config")
-    system_prompt = llm_config.get("system_prompt") if llm_config else None
+    # system_prompt: новое отдельное поле (через админку), fallback на старый llm_config.system_prompt
+    system_prompt = agent.get("system_prompt") or (
+        llm_config.get("system_prompt") if llm_config else None
+    )
 
     # Anti-abuse with per-agent config merge
     agent_abuse_config = agent.get("abuse_config")
@@ -971,6 +985,8 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     # Prefix: each agent has isolated session namespace
     effective_session_id = f"agent:{name}:{session_id}"
 
+    lang = _get_lang(request)
+
     async def events():
         try:
             kwargs: dict = dict(
@@ -978,6 +994,7 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
                 session_id=effective_session_id,
                 tenant_ids=tenant_ids,
                 system_prompt=system_prompt,
+                lang=lang,
             )
             if request_llm:
                 kwargs["llm_client"] = request_llm
@@ -989,7 +1006,7 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
                     yield _sse(payload)
             yield _sse({"type": "done"})
         except Exception as exc:
-            yield _sse({"type": "error", "text": _format_error(exc)})
+            yield _sse({"type": "error", "text": classify_error(exc, lang)})
 
     return StreamingResponse(events(), media_type="text/event-stream")
 

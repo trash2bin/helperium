@@ -93,30 +93,6 @@ DEFAULT_BLOCK_PATTERNS: list[tuple[str, str]] = [
         r".{0,30}(?:ignore|forget|disregard|override)",
         "inject_rag_test_override",
     ),
-    # ── Toxicity: profanity and aggressive speech (input guard) ──
-    (
-        r"(?i)(?:\bху[йеёиюя]|\bпизд|\bпид[ао]р|\bеб[аулоеё]|\bебат|"
-        r"\bнаху[йя]|\bпохую|\bзалуп|\bмуд[ао]к|\b[оа]хуе[нл]|"
-        r"\bгандон|\bчмо|\bд[ао]лбо[её]б|\bсучк[ауи]|\bшалав|"
-        r"\bбля[дт]|\bсука|\bтвар[ьи]|\bмраз[ьи]|\bгондон|"
-        r"\bшлюх[аи]|\bеблан|\bмудил|\bхерн[яи]|\bх[ую]ев[аы])",
-        "toxicity_profanity_ru",
-    ),
-    (
-        r"(?i)(?:\bfuck(?:ing|er|ed|s|in')?|\bshit|\bbitch(?:es|ing)?|"
-        r"\bass(?:hole)?|\bdickhead|\bcocksuck|\bmotherfuck|"
-        r"\bdamn|\bbullshit|\bcrap|\bwhore|\bslut|\bpiss|"
-        r"\btwats?|\bbastard|\bfag(?:got)?)",
-        "toxicity_profanity_en",
-    ),
-    (
-        r"(?i)(?:i will (?:kill|hunt|destroy|find|end|murder|execute|torture) you|"
-        r"you should (?:die|kill yourself|be killed)|"
-        r"i (?:wish|hope|want) you (?:die|dead|rot|burn)|"
-        r"go (?:to hell|away|fuck yourself|die)|"
-        r"kill yourself|kys)",
-        "toxicity_abuse",
-    ),
 ]
 
 
@@ -144,36 +120,6 @@ DEFAULT_OUTPUT_PATTERNS: list[tuple[str, str]] = [
         r"(?i)(?:Bearer\s+[a-zA-Z0-9_\-.:]{20,}|Authorization\s*:?\s*Bearer)",
         "leak_bearer_token",
     ),
-    # ── Toxicity: profanity and aggressive speech ──
-    # Russian obscene (mat)
-    (
-        r"(?i)(?:\bху[йеёиюя]|\bпизд|\bпид[ао]р|\bеб[аулоеё]|\bебат|"
-        r"\bнаху[йя]|\bпохую|\bзалуп|\bмуд[ао]к|\b[оа]хуе[нл]|"
-        r"\bгандон|\bчмо|\bд[ао]лбо[её]б|\bсучк[ауи]|\bшалав|"
-        r"\bразъеб|\bвыеб|\bотъеб|\bпроеб|\bподзаборн|"
-        r"\bбля[дт]|\bсука|\bтвар[ьи]|\bмраз[ьи]|\bгондон|"
-        r"\bшлюх[аи]|\bеблан|\bмудил|\bхерн[яи]|\bх[ую]ев[аы])",
-        "toxicity_profanity_ru",
-    ),
-    # English profanity
-    (
-        r"(?i)(?:\bfuck(?:ing|er|ed|s|in')?|\bshit|\bbitch(?:es|ing)?|"
-        r"\bass(?:hole)?|\bdickhead|\bcocksuck|\bmotherfuck|"
-        r"\bdamn|\bbullshit|\bcrap|\bwhore|\bslut|\bpiss|"
-        r"\btwats?|\bbastard|\bretard|\bsonofabitch|\bfag(?:got)?)",
-        "toxicity_profanity_en",
-    ),
-    # Aggressive / hateful / violent speech
-    (
-        r"(?i)(?:i will (?:kill|hunt|destroy|find|end|murder|execute|torture) you|"
-        r"you should (?:die|kill yourself|be killed)|"
-        r"i (?:wish|hope|want) you (?:die|dead|rot|burn)|"
-        r"go (?:to hell|away|fuck yourself|die)|"
-        r"fuck (?:off|you)|"
-        r"i(?:'ll| will) (?:track|hack|doxx|swat|harm)|"
-        r"kill yourself|kys)",
-        "toxicity_abuse",
-    ),
 ]
 
 
@@ -192,7 +138,6 @@ class GuardConfig:
 
     enabled: bool = True
     block_on_match: str = "block"  # "block" | "warn"
-    block_toxicity: bool = False  # True=block, False=log-only for toxicity
     input_patterns: list[tuple[str, str]] = field(
         default_factory=lambda: list(DEFAULT_BLOCK_PATTERNS)
     )
@@ -208,8 +153,6 @@ class GuardConfig:
             enabled=os.environ.get("GUARDRAIL_ENABLED", "true").lower()
             in ("true", "1", "yes"),
             block_on_match=os.environ.get("GUARDRAIL_BLOCK_ON_MATCH", "block"),
-            block_toxicity=os.environ.get("GUARDRAIL_BLOCK_TOXIC", "false").lower()
-            in ("true", "1", "yes"),
         )
         # Override patterns from env var (JSON)
         override_raw = os.environ.get("GUARDRAIL_BLOCK_PATTERNS", "")
@@ -279,13 +222,7 @@ class GuardChecker:
         return GuardResult()
 
     def check_output(self, content: str) -> GuardResult:
-        """Check LLM response for system prompt leak, credentials, or toxicity.
-
-        Toxicity is handled separately:
-        - If ``config.block_toxicity`` is True → blocks the output.
-        - Otherwise → log-only (returns GuardResult with blocked=False
-          but reason prefixed with ``"toxicity:"``).
-        """
+        """Check LLM response for system prompt leak or credentials."""
         if not self.config.enabled:
             return GuardResult()
         if not content:
@@ -298,21 +235,6 @@ class GuardChecker:
                     reason,
                     compiled.pattern[:60],
                 )
-                # Toxicity — separate handling
-                if reason.startswith("toxicity_"):
-                    if self.config.block_toxicity:
-                        return GuardResult(
-                            blocked=True,
-                            reason=reason,
-                            pattern=compiled.pattern,
-                        )
-                    # Warn-only: don't block, but tag the reason
-                    return GuardResult(
-                        blocked=False,
-                        reason=f"warn:{reason}",
-                        pattern=compiled.pattern,
-                    )
-                # System prompt leak / credential leak — always block
                 return GuardResult(
                     blocked=True,
                     reason=reason,

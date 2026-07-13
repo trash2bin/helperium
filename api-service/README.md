@@ -136,6 +136,7 @@ curl -X POST http://localhost:8081/api/agents \
 | `data-greeting` | ❌ | "Чем могу помочь?" | Приветственное сообщение |
 | `data-accent` | ❌ | `#0f766e` | Акцентный цвет |
 | `data-position` | ❌ | `right` | Положение: `right` / `left` |
+| `data-lang` | ❌ | `en` | Язык сообщений об ошибках: `ru` или `en` |
 
 ### Автозагрузка конфига из API
 
@@ -167,6 +168,23 @@ curl -X POST http://localhost:8081/api/agents \
     }
   }'
 ```
+
+### Сообщения об ошибках
+
+Вместо сырых исключений (``litellm.RateLimitError``, ``429 Too Many Requests``)
+пользователь видит понятное сообщение на выбранном языке.
+
+| Ситуация | Русский | English |
+|---|---|---|
+| Rate limit | Сервер временно перегружен. Повторите через несколько секунд. | Server is temporarily overloaded. Please retry. |
+| Ошибка модели | Ошибка доступа к модели. Попробуйте позже. | Model access error. Try again later. |
+| Длинный диалог | Диалог слишком длинный. Начните новый разговор. | Conversation too long. Start a new chat. |
+| Модель не отвечает | Модель не отвечает. Попробуйте задать более короткий вопрос. | Model not responding. Try a shorter question. |
+| Внутренняя ошибка | Извините, произошла внутренняя ошибка. | Sorry, an internal error occurred. |
+
+Язык определяется:
+1. **Embed-виджет** — через атрибут `data-lang="ru"` на `<script>`
+2. **HTTP API** — через заголовок `Accept-Language` (передаётся браузером автоматически)
 
 ### Что умеет виджет
 

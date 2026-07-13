@@ -41,6 +41,23 @@
 | `data-show-header` | `"true"` | Показывать шапку: `"true"` или `"false"` |
 | `data-bot-bubble-color` | `"#eef3f4"` | Цвет фона пузырька ассистента |
 | `data-bot-bubble-text` | `"var(--ink)"` | Цвет текста пузырька ассистента |
+| `data-lang` | `"en"` | Язык сообщений об ошибках: `"ru"` или `"en"`. Если не указан — английский. |
+
+### Сообщения об ошибках
+
+Вместо сырых исключений (например `litellm.RateLimitError`) пользователь видит человеческое сообщение на выбранном языке:
+
+| Ситуация | Русский | English |
+|---|---|---|
+| Лимит запросов (rate limit) | Сервер временно перегружен. Пожалуйста, повторите ваш вопрос через несколько секунд. | Server is temporarily overloaded. Please retry your question in a few seconds. |
+| Ошибка доступа к модели | Ошибка доступа к модели. Попробуйте позже или обратитесь к администратору. | Model access error. Please try again later or contact the administrator. |
+| Диалог слишком длинный | Диалог слишком длинный. Пожалуйста, начните новый разговор. | The conversation is too long. Please start a new chat. |
+| Модель не отвечает | Модель не отвечает. Пожалуйста, попробуйте снова или задайте более короткий вопрос. | The model is not responding. Please try again or ask a shorter question. |
+| Внутренняя ошибка | Извините, произошла внутренняя ошибка. Попробуйте ещё раз. | Sorry, an internal error occurred. Please try again. |
+
+Язык определяется:
+1. Через `data-lang="ru"` на `<script>` (для embed-виджета)
+2. Через HTTP-заголовок `Accept-Language` (для HTTP API)
 
 ## Как это работает
 

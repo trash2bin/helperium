@@ -34,6 +34,7 @@
     greeting: script.getAttribute('data-greeting') || 'How can I help?',
     accent: script.getAttribute('data-accent') || '#0f766e',
     position: script.getAttribute('data-position') === 'left' ? 'left' : 'right',
+    lang: script.getAttribute('data-lang') || (navigator.language.startsWith('ru') ? 'ru' : 'en'),
     placeholder: script.getAttribute('data-placeholder') || 'Ask a question...',
     width: script.getAttribute('data-width') || 'min(380px, calc(100vw - 28px))',
     height: script.getAttribute('data-height') || 'min(620px, calc(100vh - 44px))',
@@ -852,9 +853,14 @@
                 // Show tool indicator above message
                 ensureToolStrip(targetNode, tools, displayNames);
               } else if (payload.type === 'done') {
+                // Skip fallback message if there was already an error
+                if (targetNode.classList.contains('at-error')) return;
                 var raw = targetNode.dataset.raw || '';
                 if (!raw.trim()) {
-                  setFinalText(targetNode, 'No response from the model. Try rephrasing.');
+                  var noRespMsg = CONFIG.lang === 'ru'
+                    ? 'Не удалось получить ответ от модели. Пожалуйста, переформулируйте вопрос.'
+                    : 'No response from the model. Please rephrase your question.';
+                  setFinalText(targetNode, noRespMsg);
                 }
                 // Save to sessionStorage
                 var toolNames = [];
@@ -865,7 +871,9 @@
               } else if (payload.type === 'error') {
                 targetNode.classList.remove('at-thinking');
                 targetNode.classList.add('at-error');
-                targetNode.textContent = 'Error: ' + (payload.text || '');
+                targetNode.textContent = payload.text || (CONFIG.lang === 'ru'
+                  ? 'Произошла ошибка. Попробуйте ещё раз.'
+                  : 'An error occurred. Please try again.');
               }
             });
 
