@@ -1,3 +1,18 @@
+// Package main is the MCP Gateway server.
+//
+// HTTP routes served:
+//   GET  /mcp                             -> SSE stream (opens persistent connection)
+//   POST /mcp/message?sessionId=...       -> JSON-RPC (tool calls, list tools)
+//
+// HTTP routes called (to upstream services):
+//   createServerForTenant() / createCompositeServer():
+//     FetchConfigWithTenant() -> data-service:GET /mcp/manifest (load MCP config)
+//   makeHandler -> client.Call() -> data-service:GET /{endpoint} (data query)
+//   ragClient.SearchDocuments() -> rag:POST /search
+//   ragClient.ListDocuments()   -> rag:POST /documents/list
+//   ragClient.GetRagContext()   -> rag:POST /context
+//
+// Config env: DATA_SERVICE_URL, RAG_SERVICE_URL
 package main
 
 import (

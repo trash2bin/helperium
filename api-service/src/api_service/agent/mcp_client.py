@@ -1,5 +1,13 @@
 """MCP (Model Context Protocol) client for tool interaction.
 
+HTTP routes called:
+    _open_connection() -> mcp-gateway:GET /mcp (SSE handshake, opens stream)
+    call_tool()        -> mcp-gateway:POST /mcp/message?sessionId=... (JSON-RPC)
+    list_tools()       -> mcp-gateway:POST /mcp/message?sessionId=... (JSON-RPC)
+    _reconnect()       -> mcp-gateway:GET /mcp (SSE reconnection)
+
+MCP transport: legacy HTTP+SSE (GET opens SSE stream, POST sends JSON-RPC).
+
 Talks to the MCP Gateway via the *legacy* HTTP+SSE transport, using the
 official `mcp` Python SDK's `sse_client`.
 

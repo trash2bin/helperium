@@ -1,3 +1,27 @@
+"""FastAPI server for the LLM agent orchestration service.
+
+HTTP routes served:
+    POST /api/chat (SSE)                             -> orchestrator.stream_events (internal)
+    POST /api/chat/{agent_name} (SSE)                -> orchestrator.stream_events (internal)
+    GET  /health                                     -> health check
+    GET  /api/agents/{name}                          -> agent_store.get_agent
+    PUT  /api/agents/{name}                          -> agent_store.update_agent
+    POST /api/agents                                 -> agent_store.create_agent
+    GET  /api/agents                                 -> agent_store.list_agents
+    GET  /api/backlog, /api/backlog/{session_id}     -> backlog stats
+    GET  /api/session/history                        -> session_store.get_turns
+    GET  /embed/{path}                               -> embed widget static
+    POST /admin/abuse-config/reload                  -> reload abuse config
+
+HTTP routes called (outbound):
+    MCPClient.call_tool()    -> mcp-gateway:POST /mcp/message?sessionId=... (SSE/JSON-RPC)
+    MCPClient.list_tools()   -> mcp-gateway:POST /mcp/message?sessionId=... (SSE/JSON-RPC)
+    RagClient.build_rag_context()  -> rag:POST /context
+    RagClient.search_documents()   -> rag:POST /search
+    RagClient.list_documents()     -> rag:POST /documents/list
+    DataServiceClient.get()        -> data-service:GET /{entity}/{id}
+"""
+
 from __future__ import annotations
 
 import json

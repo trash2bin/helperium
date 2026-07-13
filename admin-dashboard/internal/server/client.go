@@ -1,3 +1,10 @@
+// Package server provides HTTP clients for upstream services.
+//
+// HTTP routes called:
+//   DataServiceClient.Do(GET  /admin/{path}) -> data-service:GET  /admin/{path}
+//   DataServiceClient.Do(POST /admin/{path}) -> data-service:POST /admin/{path}
+//   RagClient.Do(GET  /{path})              -> rag:GET  /{path}
+//   RagClient.Do(POST /{path})              -> rag:POST /{path}
 package server
 
 import (

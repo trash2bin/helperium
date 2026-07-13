@@ -1,5 +1,23 @@
-"""
-FastAPI-based web server with reverse proxy to API service.
+"""FastAPI-based web server with reverse proxy to multiple upstream services.
+
+HTTP routes proxied:
+    proxy_manifest()        -> data-service:GET /mcp/manifest
+    proxy_data_entity()     -> data-service:GET /{entity}
+    proxy_data_stats()      -> data-service:GET /stats
+    proxy_rag_documents()   -> rag:POST /documents/list
+    proxy_tenant_api(data/) -> data-service:GET /{path}
+    proxy_tenant_api(rag/)  -> rag:POST|GET /{path}
+    proxy_chat()            -> api-service:POST /api/chat (SSE)
+    proxy_chat_by_agent()   -> api-service:POST /api/chat/{agent_name} (SSE)
+    proxy_health()          -> api-service:GET /health
+    proxy_backlog()         -> api-service:GET /api/backlog
+    proxy_backlog_detail()  -> api-service:GET /api/backlog/{session_id}
+    proxy_session_history() -> api-service:GET /api/session/history
+    proxy_embed()           -> api-service:GET /embed/{path}
+    proxy_api_any()         -> api-service:ANY /api/{path}
+    get_tenants()           -> data-service:GET /health (discovery)
+    proxy_tenant_api(api/)  -> api-service:ANY /{path}
+
 Stage 0.4: Translated from Starlette to FastAPI + /api/* reverse proxy + SSE-proxy.
 """
 

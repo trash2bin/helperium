@@ -4,6 +4,12 @@
 // over uploaded documents (lectures, methodical materials).
 //
 // All endpoints use POST with JSON body (consistent with RAG's FastAPI service).
+//
+// HTTP routes called:
+//   SearchDocuments() -> rag:POST /search          (semantic search)
+//   ListDocuments()   -> rag:POST /documents/list  (list documents)
+//   GetRagContext()   -> rag:POST /context         (build LLM context)
+//   IsAvailable()     -> rag:GET  /health          (health check)
 package ragclient
 
 import (

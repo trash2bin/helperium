@@ -1,3 +1,14 @@
+// Package server provides the admin-dashboard HTTP server.
+//
+// HTTP routes called (proxy to upstream services):
+//   proxyGetToDataService()  -> data-service:GET /admin/{path}  (tenant CRUD, config, tools)
+//   proxyPostToDataService() -> data-service:POST /admin/{path} (create tenant, rewrite config)
+//   proxyGetToApiService()   -> api-service:GET /api/agents/{name}  (get agent abuse config)
+//   proxyPutToApiService()   -> api-service:PUT /api/agents/{name}  (update agent abuse config)
+//   notifyApiServiceReload() -> api-service:POST /admin/abuse-config/reload (reload abuse)
+//   RagClient.GetConfig()    -> rag:GET /admin/config  (get RAG config)
+//   RagClient.UpdateConfig() -> rag:PUT /admin/config  (update RAG config)
+//   RagClient.GetStats()     -> rag:GET /admin/stats   (get RAG stats)
 package server
 
 import (

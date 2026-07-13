@@ -2,6 +2,13 @@
 //
 // Tools are auto-generated from config endpoints with optional overrides
 // from explicit mcp_tools in the config file.
+//
+// HTTP routes called (through httpclient.Client and ragclient.Client):
+//   data-service:GET /mcp/manifest  (via FetchConfigWithTenant, on every tool call)
+//   data-service:GET /{endpoint}    (via client.Call, the actual data query)
+//   rag:POST /search                (via ragClient.SearchDocuments)
+//   rag:POST /documents/list        (via ragClient.ListDocuments)
+//   rag:POST /context               (via ragClient.GetRagContext)
 package tools
 
 import (

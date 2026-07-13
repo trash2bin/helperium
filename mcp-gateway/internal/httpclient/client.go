@@ -1,3 +1,9 @@
+// Package httpclient provides HTTP client for calling data-service.
+//
+// HTTP routes called:
+//   FetchConfigWithTenant() -> data-service:GET /mcp/manifest (load tenant MCP config)
+//   Call()                 -> data-service:GET /{endpoint}       (execute data query)
+//   Call()                 -> data-service:GET /{endpoint}/{id}  (get entity by ID)
 package httpclient
 
 import (
@@ -27,6 +33,8 @@ type Client struct {
 	http    *http.Client
 }
 
+// New creates a new HTTP client for data-service.
+// DATA_SERVICE_URL env var (default: http://127.0.0.1:8084).
 func New() *Client {
 	base := os.Getenv("DATA_SERVICE_URL")
 	if base == "" {

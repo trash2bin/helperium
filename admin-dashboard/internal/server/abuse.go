@@ -1,3 +1,9 @@
+// Package server provides admin-dashboard HTTP server (abuse config management).
+//
+// HTTP routes called (to upstream services):
+//   proxyGetToApiService()  -> api-service:GET /api/agents/{name}    (get agent abuse config)
+//   proxyPutToApiService()  -> api-service:PUT /api/agents/{name}    (update agent abuse config)
+//   notifyApiServiceReload()-> api-service:POST /admin/abuse-config/reload (reload abuse)
 package server
 
 import (
