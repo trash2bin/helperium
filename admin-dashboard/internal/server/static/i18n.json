@@ -405,7 +405,11 @@
       "abuse.tokenBudgetDesc": "Лимит токенов на сессию. 0 = безлимит.",
       "abuse.minIntervalDesc": "Мин. миллисекунд между сообщениями в одной сессии. Защита от спама.",
       "abuse.minIntervalLabel": "Мин. интервал (мс)",
-      "llm.enabled": "Включен"
+      "llm.enabled": "Включен",
+      "agent.labelSystemPrompt": "Системный промпт (переопределение)",
+      "agent.systemPromptPlaceholder": "Ты — помощник для отдела продаж. Отвечай кратко и по делу.\nИспользуй русский язык.",
+      "agent.systemPromptHint": "Переопределяет глобальный system prompt из LLM конфига. Можно оставить пустым.",
+      "agent.systemPromptEditHint": "Переопределяет глобальный system prompt. Оставь пустым для глобального."
     },
     "en": {
       "login.title": "⚙️ Admin Dashboard",
@@ -810,7 +814,11 @@
       "abuse.tokenBudgetDesc": "Max tokens per session. 0 = unlimited.",
       "abuse.minIntervalDesc": "Min ms between messages in one session. Anti-spam protection.",
       "abuse.minIntervalLabel": "Min interval (ms)",
-      "llm.enabled": "Enabled"
+      "llm.enabled": "Enabled",
+      "agent.labelSystemPrompt": "System prompt (override)",
+      "agent.systemPromptPlaceholder": "You are a sales assistant. Answer concisely.\nUse Russian language.",
+      "agent.systemPromptHint": "Overrides the global system prompt from LLM config. Leave empty for default.",
+      "agent.systemPromptEditHint": "Overrides the global system prompt. Leave empty for default."
     }
   }
 }

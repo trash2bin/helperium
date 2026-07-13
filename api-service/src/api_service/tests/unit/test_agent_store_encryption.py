@@ -16,6 +16,9 @@ from cryptography.fernet import Fernet
 import api_service.agent_store as agent_store_mod
 from api_service.agent_store import AgentStore
 
+# For encryption patching — functions live in agent_repository module
+import api_service.agent_repository as agent_repo_mod
+
 # One-time Fernet key shared across all encryption tests
 TEST_KEY = Fernet.generate_key().decode()
 TEST_FERNET = Fernet(TEST_KEY.encode())
@@ -59,13 +62,13 @@ class TestEncryptDecryptDirect:
 
     def test_encrypt_without_key_noop(self, monkeypatch):
         """Without ENCRYPTION_KEY, encrypt/decrypt pass through unchanged."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", None)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", None)
         assert agent_store_mod._encrypt_value("test") == "test"
         assert agent_store_mod._decrypt_value("test") == "test"
 
     def test_encrypt_with_key_changes_value(self, monkeypatch):
         """With a key, encrypted output differs from input."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         original = json.dumps(SAMPLE_LLM, ensure_ascii=False)
         encrypted = agent_store_mod._encrypt_value(original)
         assert encrypted != original
@@ -74,7 +77,7 @@ class TestEncryptDecryptDirect:
 
     def test_roundtrip_with_key(self, monkeypatch):
         """With a key, encrypt then decrypt returns original."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         original = json.dumps(SAMPLE_LLM, ensure_ascii=False)
         encrypted = agent_store_mod._encrypt_value(original)
         decrypted = agent_store_mod._decrypt_value(encrypted)
@@ -82,23 +85,23 @@ class TestEncryptDecryptDirect:
 
     def test_encrypt_none(self, monkeypatch):
         """_encrypt_value(None) returns None regardless of key."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         assert agent_store_mod._encrypt_value(None) is None
 
     def test_decrypt_none(self, monkeypatch):
         """_decrypt_value(None) returns None regardless of key."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         assert agent_store_mod._decrypt_value(None) is None
 
     def test_decrypt_corrupted_value_returns_none(self, monkeypatch):
         """With a key, corrupted ciphertext returns None."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         result = agent_store_mod._decrypt_value("invalid!@#")
         assert result is None
 
     def test_decrypt_corrupted_value_warns(self, monkeypatch, caplog):
         """With a key, corrupted ciphertext logs a warning."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         with caplog.at_level("WARNING"):
             agent_store_mod._decrypt_value("invalid!@#")
         assert len(caplog.records) >= 1
@@ -113,7 +116,7 @@ class TestEncryptionIntegration:
 
     def test_encrypt_decrypt_roundtrip(self, agent_store, monkeypatch):
         """With key, create agent with llm_config, read back — values match."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         agent_store.create_agent(
             "crypto-agent",
             description="Encrypted agent",
@@ -125,7 +128,7 @@ class TestEncryptionIntegration:
 
     def test_encrypt_stored_differs_from_plaintext(self, agent_store, monkeypatch):
         """With key, the raw DB value is base64 ciphertext, not JSON."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         agent_store.create_agent(
             "raw-check",
             llm_config=SAMPLE_LLM,
@@ -147,7 +150,7 @@ class TestEncryptionIntegration:
 
     def test_create_and_update_with_encryption(self, agent_store, monkeypatch):
         """With key, create agent, update llm_config — new data, old not mixed."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", TEST_FERNET)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         agent_store.create_agent(
             "updatable-crypto",
             llm_config=SAMPLE_LLM,
@@ -166,7 +169,7 @@ class TestEncryptionIntegration:
 
     def test_plaintext_fallback(self, agent_store, monkeypatch):
         """Without key, llm_config stored as plaintext JSON and read back correctly."""
-        monkeypatch.setattr(agent_store_mod, "_FERNET", None)
+        monkeypatch.setattr(agent_repo_mod, "_FERNET", None)
         agent_store.create_agent(
             "plain-agent",
             llm_config=SAMPLE_LLM,

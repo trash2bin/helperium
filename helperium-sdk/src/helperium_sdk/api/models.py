@@ -165,6 +165,10 @@ class AgentCreateRequest(BaseModel):
         default=None,
         description="Per-agent abuse settings overrides (keys match AbuseConfig fields)",
     )
+    system_prompt: str | None = Field(
+        default=None,
+        description="Per-agent system prompt override",
+    )
 
 
 class AgentUpdateRequest(BaseModel):
@@ -190,6 +194,10 @@ class AgentUpdateRequest(BaseModel):
         default=None,
         description="Per-agent abuse settings overrides",
     )
+    system_prompt: str | None = Field(
+        default=None,
+        description="Per-agent system prompt override",
+    )
 
 
 class AgentResponse(BaseModel):
@@ -211,6 +219,10 @@ class AgentResponse(BaseModel):
     abuse_config: dict | None = Field(
         default=None,
         description="Per-agent abuse settings overrides",
+    )
+    system_prompt: str | None = Field(
+        default=None,
+        description="Per-agent system prompt override",
     )
     created_at: str = Field(..., description="ISO timestamp")
     updated_at: str = Field(..., description="ISO timestamp")

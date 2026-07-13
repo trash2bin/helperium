@@ -106,6 +106,7 @@ class TestGetAgent:
             tenant_ids=["t1", "t2"],
             widget_config=SAMPLE_WIDGET,
             llm_config=SAMPLE_LLM,
+            system_prompt="Ты — помощник для отдела продаж. Отвечай кратко и по делу.",
         )
         got = agent_store.get_agent("full-agent")
         assert got is not None
@@ -114,8 +115,48 @@ class TestGetAgent:
         assert got["tenant_ids"] == ["t1", "t2"]
         assert got["widget_config"] == SAMPLE_WIDGET
         assert got["llm_config"] == SAMPLE_LLM
+        assert (
+            got["system_prompt"]
+            == "Ты — помощник для отдела продаж. Отвечай кратко и по делу."
+        )
         assert got["created_at"] is not None
         assert got["updated_at"] is not None
+
+    def test_get_agent_system_prompt(self, agent_store):
+        """system_prompt is stored and returned as plaintext."""
+        agent_store.create_agent(
+            "sp-agent",
+            system_prompt="You are a catalog assistant.",
+        )
+        got = agent_store.get_agent("sp-agent")
+        assert got["system_prompt"] == "You are a catalog assistant."
+
+    def test_update_agent_system_prompt(self, agent_store):
+        """Update only system_prompt without touching other fields."""
+        agent_store.create_agent(
+            "sp-update",
+            description="Has prompt",
+            system_prompt="Original prompt",
+        )
+        updated = agent_store.update_agent(
+            "sp-update",
+            system_prompt="Updated prompt",
+        )
+        assert updated["system_prompt"] == "Updated prompt"
+        assert updated["description"] == "Has prompt"  # unchanged
+
+    def test_update_agent_system_prompt_clear(self, agent_store):
+        """Setting system_prompt to '' should clear it."""
+        agent_store.create_agent(
+            "sp-clear",
+            system_prompt="Some prompt",
+        )
+        updated = agent_store.update_agent(
+            "sp-clear",
+            system_prompt="",
+        )
+        # '' is an explicit value → should be stored as ''
+        assert updated["system_prompt"] == ""
 
 
 class TestUpdateAgent:

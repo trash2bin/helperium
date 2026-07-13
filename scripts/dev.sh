@@ -60,7 +60,7 @@ declare -A SERVICE_PORT=(
 declare -A SERVICE_DEPS=(
   [data]=""
   [rag]=""
-  [mcp]="data rag"
+  [mcp]="data"
   [api]="mcp"
   [web]="api"
   [admin]="data api"
@@ -183,7 +183,7 @@ cmd_start() {
     echo "  ❌ Failed to build mcp-gateway"
     exit 1
   }
-  echo "  ✅ mcp-gateway built"
+  echo "  ✅ admin-dashboard built"
 
   for svc in "${SERVICES[@]}"; do
     if is_running "$svc"; then
@@ -209,6 +209,9 @@ cmd_start() {
         if [ -n "${ADMIN_TOKEN:-}" ]; then
           extra_env="ADMIN_TOKEN=$ADMIN_TOKEN"
         fi
+        ;;
+      data)
+        extra_env="TENANTS_DIR=$PROJECT_ROOT/.data/tenants"
         ;;
       mcp)
         extra_env="DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT LOG_LEVEL=info"

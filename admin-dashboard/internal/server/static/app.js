@@ -24,6 +24,7 @@ function dashboard() {
     // ── Config ──
     config: {},
     manifest: null,
+    ragSettings: { embedding_provider: '', embedding_model: '', embedding_api_key: '', embedding_api_base: '', embedding_dimensions: 1536, chunker_type: 'recursive', chunk_size: 768, chunk_overlap: 160, reranker_enabled: false, reranker_k1: 1.5, reranker_b: 0.75, cache_enabled: false, cache_ttl: 300, cache_maxsize: 256 },
     configDirty: false,
     savingDisplayNames: false,
     saveIndicator: '',          // 'readonly' | 'config' | ''
@@ -32,7 +33,7 @@ function dashboard() {
     introspecting: false,
 
     // ── Tools ──
-    pendingTools: null,
+    pendingTools: { tools: [], mode: 'read_only' },
 
     // ── RAG ──
     ragHealth: {},
@@ -51,9 +52,9 @@ function dashboard() {
     agents: [],
     availableTenants: [],
     showNewAgentForm: false,
-    newAgent: { name: '', description: '', tenant_ids_selected: [], provider_priority: [] },
+    newAgent: { name: '', description: '', tenant_ids_selected: [], provider_priority: [], system_prompt: '' },
     editingAgent: false,
-    editAgentData: { name: '', description: '', tenant_ids: [], provider_priority: [] },
+    editAgentData: { name: '', description: '', tenant_ids: [], provider_priority: [], system_prompt: '' },
     llmProviderStoreList: [],
     creatingAgent: false,
     savingAgent: false,
@@ -80,7 +81,7 @@ function dashboard() {
     emergencyConflicting: false,
 
     // ── LLM Provider Fallback ──
-    llmConfig: null,
+    llmConfig: { providers: [], fallback_enabled: false },
     llmError: '',
 
     // ═══════════════════════════════════���═══════
@@ -114,7 +115,7 @@ function dashboard() {
     // ── Provider CRUD ──
     llmTab: 'list',
     llmNew: { name: '', model: '', api_key: '', api_base: '', enabled: true, provider: '' },
-    llmEdit: null,
+    llmEdit: { model: '', api_key: '', api_base: '', has_api_key: false, api_key_masked: '', enabled: true },
     llmEditName: '',
     llmProviderList: null,
     llmSaving: false,
@@ -684,7 +685,7 @@ function dashboard() {
     // ═══════════════════════════════════════════
     //  RAG
     // ═══════════════════════════════════════════
-    ragSettings: null,
+    ragSettings: { embedding_provider: '', embedding_model: '', embedding_api_key: '', embedding_api_base: '', embedding_dimensions: 1536, chunker_type: 'recursive', chunk_size: 768, chunk_overlap: 160, reranker_enabled: false, reranker_k1: 1.5, reranker_b: 0.75, cache_enabled: false, cache_ttl: 300, cache_maxsize: 256 },
     ragStats: null,
     ragSettingsLoading: false,
     ragSettingsSaving: false,
@@ -890,6 +891,7 @@ function dashboard() {
           description: this.newAgent.description,
           tenant_ids: this.newAgent.tenant_ids_selected || [],
           provider_priority: this.newAgent.provider_priority || [],
+          system_prompt: this.newAgent.system_prompt || null,
         };
         this.agentCreateResult = await this.api('/api/agents', {
           method: 'POST',
@@ -911,6 +913,7 @@ function dashboard() {
         description: agent.description || '',
         tenant_ids: [...(agent.tenant_ids || [])],
         provider_priority: [...(agent.provider_priority || [])],
+        system_prompt: agent.system_prompt || '',
       };
       this.loadLlmProviderStoreList();
       this.editingAgent = true;
@@ -926,6 +929,7 @@ function dashboard() {
             description: this.editAgentData.description,
             tenant_ids: this.editAgentData.tenant_ids,
             provider_priority: this.editAgentData.provider_priority || [],
+            system_prompt: this.editAgentData.system_prompt || null,
           }),
         });
         this.editingAgent = false;

@@ -393,8 +393,8 @@
                 <div x-show="newTenantUploadFile" style="display:flex;align-items:center;gap:10px;">
                   <div style="font-size:24px;">📄</div>
                   <div style="text-align:left;">
-                    <div x-text="newTenantUploadFile.name" style="font-weight:600;"></div>
-                    <div style="font-size:11px;color:#8b949e;" x-text="(newTenantUploadFile.size / 1024).toFixed(1) + ' KB'"></div>
+                    <div x-text="newTenantUploadFile?.name || ''" style="font-weight:600;"></div>
+                    <div style="font-size:11px;color:#8b949e;" x-text="newTenantUploadFile ? (newTenantUploadFile.size / 1024).toFixed(1) + ' KB' : ''"></div>
                   </div>
                   <button type="button" @click.prevent="newTenantUploadFile = null; $el.closest('label').querySelector('input').value = ''" class="btn btn-sm" style="margin-left:auto;">✕</button>
                 </div>
@@ -571,8 +571,9 @@
         </div>
 
         <!-- All tools from manifest -->
-        <div x-show="manifest && manifest.mcp_tools && manifest.mcp_tools.length" class="card" x-cloak>
-          <h3><span x-text="__('tool.mcpTools')"></span> (<span x-text="manifest.mcp_tools.length"></span>) <button @click="saveToolDisplayNames()" class="btn btn-primary btn-sm" :disabled="savingDisplayNames" style="float:right;" x-text="__('tool.saveDisplayNames')"></button></h3>
+        <template x-if="manifest && manifest.mcp_tools && manifest.mcp_tools.length">
+        <div class="card" x-cloak>
+          <h3><span x-text="__('tool.mcpTools')"></span> (<span x-text="manifest?.mcp_tools?.length ?? 0"></span>) <button @click="saveToolDisplayNames()" class="btn btn-primary btn-sm" :disabled="savingDisplayNames" style="float:right;" x-text="__('tool.saveDisplayNames')"></button></h3>
           <table class="table">
             <thead>
               <tr>
@@ -611,13 +612,14 @@
             </tbody>
           </table>
         </div>
+        </template>
 
         <!-- Read-only status + pending tools -->
         <div x-show="manifest" class="card" x-cloak>
           <h3 x-text="__('tool.accessMode')"></h3>
           <p>
-            <span x-show="manifest.data_source?.read_only !== false" style="color:#d29922;" x-text="__('config.readOnly')"></span>
-            <span x-show="manifest.data_source?.read_only === false" style="color:#3fb950;" x-text="__('config.readWrite')"></span>
+            <span x-show="manifest?.data_source?.read_only !== false" style="color:#d29922;" x-text="__('config.readOnly')"></span>
+            <span x-show="manifest?.data_source?.read_only === false" style="color:#3fb950;" x-text="__('config.readWrite')"></span>
             —
             <span x-show="pendingTools && pendingTools.mode === 'read_write'" x-text="__('tool.allWritesAllowed')"></span>
             <span x-show="pendingTools && pendingTools.mode !== 'read_write'" x-text="__('tool.writesBlocked')"></span>
@@ -718,8 +720,8 @@
                 <div x-show="ragUploadFile" style="display:flex;align-items:center;gap:10px;">
                   <div style="font-size:24px;">📄</div>
                   <div style="text-align:left;">
-                    <div x-text="ragUploadFile.name" style="font-weight:600;"></div>
-                    <div style="font-size:11px;color:#8b949e;" x-text="(ragUploadFile.size / 1024).toFixed(1) + ' KB'"></div>
+                    <div x-text="ragUploadFile?.name || ''" style="font-weight:600;"></div>
+                    <div style="font-size:11px;color:#8b949e;" x-text="ragUploadFile ? (ragUploadFile.size / 1024).toFixed(1) + ' KB' : ''"></div>
                   </div>
                   <button type="button" @click="ragUploadFile = null" class="btn btn-sm" style="margin-left:auto;">✕</button>
                 </div>
@@ -781,7 +783,8 @@
         <div x-show="ragTab === 'settings'">
           <div x-show="ragSettingsLoading" class="text-muted" style="padding:24px;" x-text="__('loading')"></div>
 
-          <div x-show="!ragSettingsLoading && ragSettings">
+          <template x-if="!ragSettingsLoading && ragSettings">
+          <div>
             <!-- Stats -->
             <div class="stats-grid" style="margin-bottom:16px;">
               <div class="stat-card">
@@ -898,6 +901,7 @@
               </div>
             </div>
           </div>
+          </template>
         </div>
       </div>
 
@@ -1255,7 +1259,7 @@
             <div class="stat-value">
               <span x-show="llmConfig?.fallback_enabled === true" style="color:#3fb950;" x-text="__('llm.fallbackOn')"></span>
               <span x-show="llmConfig?.fallback_enabled === false" style="color:#8b949e;" x-text="__('llm.fallbackOff')"></span>
-              <span x-show="llmConfig === null || llmConfig.fallback_enabled === undefined" style="color:#8b949e;">—</span>
+              <span x-show="(llmConfig === null && !llmConfig) || llmConfig?.fallback_enabled === undefined" style="color:#8b949e;">—</span>
             </div>
             <div class="stat-label" x-text="__('llm.fallbackEnabled')"></div>
           </div>
@@ -1381,7 +1385,8 @@
 
         <!-- ═══ EDIT TAB ═══ -->
         <div x-show="llmTab === 'edit'" x-cloak>
-          <div class="card" x-show="llmEdit">
+          <template x-if="llmEdit">
+          <div class="card">
             <h3 x-text="__('llm.editTitle') + ' ' + llmEditName"></h3>
             <form @submit.prevent="saveLlmProvider()" class="form">
               <div class="form-group">
@@ -1421,6 +1426,7 @@
               <div x-show="llmSaveMsg" style="margin-top:8px;" x-text="llmSaveMsg"></div>
             </form>
           </div>
+          </template>
         </div>
       </div>
     </main>
@@ -1483,6 +1489,12 @@
                 </div>
               </details>
             </div>
+          </div>
+          <!-- ── System prompt (Create) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelSystemPrompt')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:4px;font-size:11px;" x-text="__('agent.systemPromptHint')"></small>
+            <textarea x-model="newAgent.system_prompt" :placeholder="__('agent.systemPromptPlaceholder')" style="width:100%;min-height:60px;font-family:monospace;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);resize:vertical;"></textarea>
           </div>
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary" :disabled="creatingAgent">
@@ -1551,6 +1563,12 @@
               </details>
             </div>
           </div>
+          <!-- ── System prompt (Edit) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelSystemPrompt')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:4px;font-size:11px;" x-text="__('agent.systemPromptEditHint')"></small>
+            <textarea x-model="editAgentData.system_prompt" :placeholder="__('agent.systemPromptPlaceholder')" style="width:100%;min-height:60px;font-family:monospace;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);resize:vertical;"></textarea>
+          </div>
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary" :disabled="savingAgent">
               <span x-show="savingAgent">⏳</span>
@@ -1562,7 +1580,7 @@
       </div>
     </div>
 
-    </div>
+  </div>
 
   <script src="/app.js"></script>
 </body>
