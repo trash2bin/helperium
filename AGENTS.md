@@ -199,9 +199,17 @@ Authorization: Bearer $ADMIN_TOKEN
 
 **Способ 3: Через agent-db CLI**
 ```bash
-uv run agent-db tenant register autoparts
+uv run agent-db register autoparts sqlite-testseed
 ```
 → POST /admin/tenants с config.json из scenario
+
+**Способ 4: Через e2e helpers** (рекомендуется для CI/тестов)
+```python
+from tests.e2e.helpers import register_tenant, seed_database
+
+seed_database(db_path, seed_path, project_root)
+result = register_tenant("autoparts", config)
+```
 
 ### Rewrite — Автогенерация конфига из БД
 ```bash
@@ -453,9 +461,9 @@ curl -X POST -H "X-Tenant-ID: test" -H "Authorization: Bearer $ADMIN_TOKEN" \
 - Если tenant не указан в заголовке, его данные и инструменты недоступны
 
 **Верификация изоляции:**
-- `uv run agent-db e2e-data` — data-level: tenant-a не видит БД tenant-b
-- `uv run agent-db e2e-mcp` — tool-level: tenant-shop не может вызвать инструмент tenant-uni
-- `uv run agent-db e2e-mcp-composite` — composite routing: `tenant-uni__list_student` идёт строго в data-service tenant-uni
+- `pytest tests/e2e/test_data_isolation.py -v` — data-level: tenant-a не видит БД tenant-b
+- `pytest tests/e2e/test_mcp_dynamic.py -v` — tool-level: tenant-shop не может вызвать инструмент tenant-uni
+- `pytest tests/e2e/test_mcp_composite.py -v` — composite routing: tenant-uni__list_student идёт строго в data-service tenant-uni
 
 ---
 
@@ -615,15 +623,60 @@ uv run agent-db e2e-full               # полный e2e пайплайн
 - **Тома**: Данные хранятся в `./.data/` (БД, индексы ChromaDB, кэш моделей).
 
 ### 🗄️ Работа с данными и сценариями (Критично для тестов)
-Сервис `data-service` поддерживает фабрику тестовых БД через CLI-утилиту `agent-db`.
-- `uv run agent-db scenario list` — список сценариев (`sqlite-testseed`, `big-testseed`, `shop`...).
-- `uv run agent-db materialize <name>` — создать/пересоздать БД из сценария.
-- `uv run agent-db tenant register <name>` — зарегистрировать тенанта.
-- `uv run agent-db tenant list` — список активных тенантов.
-- `uv run agent-db e2e --tenants default,shop` — полный E2E: materialize + register + proxy + SSE chat.
-- `uv run agent-db e2e-data` — детерминированные тесты изоляции данных и admin API.
-- `uv run agent-db e2e-mcp` — детерминированные тесты MCP-инструментов.
-- `uv run agent-db e2e-full` — все три уровня (data + mcp + chat).
+
+Seed generation вынесен из `data-service/internal/seedgen/` (Go) в `agent-db/agent_db/seedgen/` (Python).
+`data-service --materialize` и `cmd/seed-cli/` удалены.
+
+#### Python seedgen (рекомендуется)
+
+```python
+from agent_db.seedgen import materialize, generate_ddl, apply, TestSeed
+
+# Создать БД из сценария
+cfg = materialize("data-service/testdata/scenarios/sqlite-testseed", force=True)
+
+# Или напрямую в SQLite
+import sqlite3
+conn = sqlite3.connect(":memory:")
+apply(conn, TestSeed)
+
+# Сгенерировать DDL из описания сущностей
+ddl = generate_ddl(entities, "sqlite")
+```
+
+Быстро накидать свою БД:
+```bash
+mkdir -p agent-db/scenarios/mydb
+cp specs/config.example.json agent-db/scenarios/mydb/config.json
+# правишь config под свою схему, создаёшь seed.json с данными
+uv run --package agent-db python3 -c "from agent_db.seedgen import materialize; materialize('agent-db/scenarios/mydb', force=True)"
+curl -X POST http://127.0.0.1:8084/admin/tenants -H "Authorization: Bearer secret" ...
+```
+
+#### agent-db CLI (legacy)
+- `uv run agent-db register <tenant_id> <scenario>` — зарегистрировать тенанта (вызывает Python seedgen под капотом)
+- `uv run agent-db tenants` — список активных тенантов
+- `uv run agent-db drop <scenario>` — удалить БД сценария
+
+#### pytest e2e (рекомендуется)
+Новые тесты в `tests/e2e/` — модульные, с Python seedgen для генерации БД:
+```bash
+# Все e2e (с LLM) — 52 теста, ~15 сек
+uv run pytest tests/e2e/ -v
+
+# Без LLM — 48 тестов, ~5 сек
+uv run pytest tests/e2e/ -v --ignore=tests/e2e/llm
+
+# Traceback выключить
+uv run pytest tests/e2e/ --no-traceback
+
+# Отдельные модули
+uv run pytest tests/e2e/test_admin_lifecycle.py -v
+uv run pytest tests/e2e/test_agents.py -v
+
+# LLM-тесты (требуют MISTRAL_API_KEY из .env)
+uv run pytest tests/e2e/llm/ -v
+```
 
 ---
 
@@ -636,18 +689,33 @@ uv run pytest rag/tests/                   # RAG (индексация, поис
 uv run pytest api-service/src/api_service/tests/              # API (OpenAPI spec, guardrails, sessions, spending) — 262 теста
 uv run pytest demo/web/tests/              # Web (73 теста: proxy, CORS, URL mapping)
 uv run pytest demo/tests/                  # Settings (18 тестов конфигурации из env)
-uv run pytest helperium-sdk/tests/       # SDK модели и seedgen — 66 тестов
+uv run pytest helperium-sdk/tests/       # SDK модели и seedgen — 83 теста
 ```
 
 ### 2. Go Unit/Integration тесты
 ```bash
-go test ./data-service/... ./mcp-gateway/...  # ~655 тестов в 25 пакетах (data-service: ~470, mcp-gateway: ~100, admin-dashboard: ~26, helperium-go: ~30)
+go test ./data-service/... ./mcp-gateway/...  # ~585 тестов в 16 пакетах (data-service: ~416, mcp-gateway: ~121, admin-dashboard: ~26, helperium-go: ~22)
+# Seedgen больше не часть data-service — вынесен в agent-db/agent_db/seedgen/ (Python)
 ```
 
-### 3. Сквозные интеграционные скрипты
-- `uv run agent-db e2e-data` — изоляция данных между tenant'ами (8 детерминированных тестов).
-- `uv run agent-db e2e-mcp` — динамические MCP-инструменты (3 детерминированных теста).
-- `uv run agent-db e2e-full` — все три уровня: data + mcp + SSE chat.
+### 3. Сквозные интеграционные тесты
+
+**Рекомендуемый CI (pytest e2e):**
+- `uv run pytest tests/e2e/ -v` — 48 тестов: data isolation, admin lifecycle, MCP dynamic/composite, SSE session, agents, config persistence. Без LLM.
+- `uv run pytest tests/e2e/test_data_isolation.py -v` — только data isolation.
+- `uv run pytest tests/e2e/agents -v` — CRUD агентов, LLM providers, widget-config.
+- `uv run pytest tests/e2e/ -v --llm-key` — 52 теста, включая LLM SSE чат.
+- `uv run pytest tests/e2e/llm/ -v` — только LLM-тесты (#MISTRAL_API_KEY).
+
+**LLM тесты (в `tests/e2e/llm/`):**
+- `test_chat_over_http` — прямой HTTP POST /api/chat с SSE парсингом
+- `test_chat_via_agent_endpoint` — чат через конкретного агента /api/chat/{name}
+- `test_llm_calls_tool_and_returns` — LLM использует MCP инструменты и возвращает ответ
+- `test_chat_without_tenant_id_falls_back` — отказоустойчивость без X-Tenant-ID
+
+**Legacy (agent-db CLI, не обновляется):**
+- `uv run agent-db e2e-data` — изоляция данных между tenant'ами (8 тестов, дублируется pytest)
+- `uv run agent-db e2e-mcp` — динамические MCP-инструменты (3 теста, дублируется pytest)
 
 ---
 
@@ -825,7 +893,7 @@ act --pull=false           # весь пайплайн
 
 1. [ ] `make ci` — зелёный (если не уверен — `make ci-test-py` быстрее: ~10 сек)
 2. [ ] Pre-commit hooks — все Passed
-3. [ ] `uv run agent-db e2e-full` — зелёный (если менялась логика data-service / mcp-gateway / orchestrator)
+3. [ ] `uv run pytest tests/e2e/ -v` — 44 e2e теста (без LLM), либо `uv run agent-db e2e-full` (если нужны legacy команды)
 
 ---
 

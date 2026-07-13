@@ -34,9 +34,7 @@ internal/
 │   └── tests/                  # black-box query builder тесты
 ├── server/                     # HTTP server, middleware, TenantStore, admin API
 │   └── tests/                  # black-box scenario/integration тесты
-├── seedgen/                    # DDL из конфига → seed БД
-│   └── tests/                  # black-box seed тесты
-└── testdata/scenarios/         # Самостоятельные сценарии (config.json + seed.json)
+└── testdata/scenarios/         # Pre-built database files (data.db) для тестов
 ```
 
 **Принцип:** white-box тесты (`package xxx`) остаются рядом с исходным кодом, black-box тесты (`package xxx_test`) вынесены в `tests/` внутри каждого пакета для чистоты иерархии.
@@ -153,18 +151,18 @@ curl "http://127.0.0.1:8084/metrics?tenant=default" | grep data_
 
 ## Сценарии (Test DB Factory)
 
-`testdata/scenarios/<name>/` = `config.json + seed.json` → воспроизводимые БД.
+`testdata/scenarios/<name>/` содержат pre-built `data.db` для Go-тестов и исходные `seed.json` (используется Python seedgen для пересоздания).
 
 | Сценарий | Драйвер | Назначение |
 |---|---|---|
 | `sqlite-testseed` | SQLite | Базовый смоук (13 entities) |
-| `postgres-testseed` | PG | Cross-driver parity |
+| `postgres-testseed` | PG | Cross-driver parity (только seed.json, без data.db) |
 | `big-testseed` | SQLite | Load test (500 students, 4000 grades) |
 | `shop` | SQLite | Сторонняя БД (FK lookups) |
 
 ```bash
-# Materialize (создать/пересоздать БД)
-go run ./cmd/server/ --materialize testdata/scenarios/sqlite-testseed [--force]
+# Пересоздать data.db из seed.json (через Python seedgen в agent-db)
+uv run --package agent-db python3 -c "from agent_db.seedgen import materialize; materialize('data-service/testdata/scenarios/sqlite-testseed', force=True)"
 
 # Запуск сервера со сценарием
 go run ./cmd/server/ --config testdata/scenarios/sqlite-testseed/config.json
@@ -175,17 +173,17 @@ go run ./cmd/server/ --config testdata/scenarios/sqlite-testseed/config.json
 ## Тестирование
 
 ```bash
-# Все go-тесты (470 шт, 14 пакетов)
-go test ./internal/... -count=1
+# Все go-тесты (416 шт, 11 пакетов)
+go test ./... -count=1
 
 # White-box тесты (рядом с кодом)
-go test ./internal/server/ ./internal/runtime/... ./internal/datasource/ ./internal/configgen/... ./internal/seedgen/... -count=1
+go test ./internal/server/ ./internal/runtime/... ./internal/datasource/ ./internal/configgen/... -count=1
 
 # Black-box тесты (в tests/)
-go test ./internal/server/tests/ ./internal/runtime/tests/ ./internal/runtime/handlers/tests/ ./internal/datasource/tests/ ./internal/seedgen/tests/ -count=1
+go test ./internal/server/tests/ ./internal/runtime/tests/ ./internal/runtime/handlers/tests/ ./internal/datasource/tests/ -count=1
 
 # Race detector (флаки)
-go test -race ./internal/... -count=3
+go test -race ./... -count=3
 for i in {1..5}; do go test ./internal/server/tests/ -run TestConcurrency -race; done
 
 # Cross-driver parity (PG)
@@ -194,14 +192,11 @@ AGENT_TUTOR_TEST_PG=1 go test ./internal/server/tests/ -run TestCrossDriver -v
 
 # Integration (faker + PG)
 uv run python tests/integration/test_with_faker.py --students 50 --grades 200
-
-# E2E через agent-db (требует запущенный data-service:8084)
-uv run agent-db e2e-data    # изоляция, admin lifecycle, security
-uv run agent-db e2e-mcp     # динамические MCP тулы
-uv run agent-db e2e         # materialize → register → web proxy
 ```
 
-**Test helpers:** `internal/server/tests/scenario_test_helpers_test.go` — `loadScenario()`, `buildTestRouter()` для in-memory httptest.
+**Test helpers:** `internal/server/tests/scenario_loader_test.go` — `loadScenario()`, `buildTestRouter()` для in-memory httptest на pre-built data.db.
+
+**Seed generation** больше не часть data-service — вынесен в `agent-db/agent_db/seedgen/`. Для пересоздания БД из сценария используй Python seedgen: `uv run --package agent-db python3 -c "from agent_db.seedgen import materialize; materialize('agent-db/scenarios/shop', force=True)"`
 
 ---
 
@@ -230,7 +225,7 @@ uv run agent-db e2e         # materialize → register → web proxy
 | `bind: address already in use` | Порт 8084 занят | `lsof -ti:8084 \| xargs kill -9` |
 | `config: load "...config.example.json": no such file` | Не тот cwd | Запуск из корня: `go run ./data-service/cmd/server/ --config ./specs/config.example.json` |
 | `ADMIN_TOKEN not configured` / 401 | Токен mismatch | `export ADMIN_TOKEN=secret` (совпадает с `agent-db`) |
-| `seed-cli failed` | Остались `tenant_a_e2e.db` | `rm -f tenant_a_e2e.db tenant_b_e2e.db *.db-wal *.db-shm` |
+| `Python seedgen failed: no entity` | config.json не содержит entities | Добавить `entities[]` в конфиг |
 | PG `connection refused` | Colima PG упал | `docker ps \| grep postgres`, `pg_isready -h localhost -p 5432` |
 | `LOG_LEVEL=debug` не даёт трассировки | LOG_LEVEL не включена | Добавить `LOG_LEVEL=debug` в env до запуска |
 

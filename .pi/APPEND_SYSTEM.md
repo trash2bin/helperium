@@ -24,8 +24,16 @@ Received a task
 
 ## 2. Graph-first workflow (codebase questions)
 
-**The graph covers 2430 nodes, 4234 edges, 144 files.
+**The graph covers 4890 nodes, 9035 edges across the entire project.
 Never read source files first. The graph answers faster and costs zero tokens.**
+
+**Limitations the agent must know:**
+- Graph built via static AST analysis (tree-sitter) — **does NOT see HTTP calls** between services
+- `httpx.get()`, `http.Get()`, `sse_client()` are invisible to the graph
+- For cross-service HTTP queries, check `doc/api-flow.md` or the annotated docstrings in client files
+- 12 client files have docstring annotations like: `FetchConfigWithTenant() -> data-service:GET /mcp/manifest`
+- These are: mcp-gateway httpclient/tools/ragclient, admin-dashboard server/abuse/client, api-service server/mcp_client, helperium-sdk data_client/rag_client, demo-web server
+- ~65 isolated nodes (files with 0 edges) — mostly normal: go.mod, package-main utils, READMEs
 
 ### Step 1 — Orient via index
 Always start with ctx_search to locate relevant terms in the indexed GRAPH_REPORT.md:
@@ -116,9 +124,22 @@ graphify_export_callflow({})
 // Open the file — don't read it into context
 ```
 
-### Known weak areas (use ctx_execute instead for these)
+### "How do services talk to each other?" (cross-service HTTP)
+```
+// Graph does NOT see HTTP calls directly.
+// Use the annotated docstring files + doc/api-flow.md instead:
+graphify_explain({ concept: "doc/api-flow.md" })
+// Or check specific client files:
+graphify_explain({ concept: "demo/web/server.py" })     // proxy_manifest, proxy_chat, etc.
+graphify_explain({ concept: "mcp_client.py" })           // SSE → mcp-gateway
+graphify_explain({ concept: "ragclient/client.go" })      // → rag:POST /search, /context
+graphify_explain({ concept: "httpclient/client.go" })     // → data-service:GET /mcp/manifest
+```
+
+### Known weak areas (use ctx_execute + doc/api-flow.md instead)
 - `.env` files and environment variables
 - `scripts/dev.sh` and shell scripts
+- **HTTP calls between services** — graph is AST-only, use `doc/api-flow.md`
 - Runtime config (not in the graph's static analysis)
 
 ---
@@ -129,19 +150,44 @@ When you know which subsystem you're in, use these as entry points for graphify 
 
 | Community | Entry concept | What it covers |
 |---|---|---|
-| `University MCP Server` | `mcp_server/` | Python MCP server, tools, health |
-| `Data Service Tools` | `AsyncDataServiceClient` | HTTP wrappers of MCP tools |
-| `ChromaDB Vector Store` | `vector_store.py` | RAG vector storage + interfaces |
-| `LLM Agent Streaming` | `orchestrator.py` | Agent loop, SSE streaming |
-| `Agent Type Definitions` | `types.py` | Message, ToolCall, EventData |
-| `Conversation History Manager` | `conversation.py` | Dialog memory, locks |
-| `Tool Call Parser` | `tool_parser.py` | Native + JSON tool call parsing |
-| `MCP HTTP Client` | `mcp_client.py` | Long-lived MCP session |
+| Community | Entry concept | What it covers |
+|---|---|---|
+| `API Service Proxy` | `demo/web/server.py` | All reverse proxy routes (→ data, rag, api) |
+| `MCP Client Session` | `mcp_client.py` | SSE session → mcp-gateway |
+| `MCP Gateway Multi-Tenant` | `createCompositeServer()` | Composite mode, tenant routing |
+| `MCP Server Core` | `main.go`, `sseSession` | SSE lifecycle, JSON-RPC handling |
+| `HTTP Client Layer` | `httpclient/client.go` | mcp-gateway → data-service HTTP |
+| `Data Service Client SDK` | `data_client.py` | Python SDK → data-service |
+| `RAG Client Operations` | `rag/client.py` / `ragclient/client.go` | → rag: search, list, context |
 
-Graph built from commit `932288d0`. Check freshness:
+### Backend services
+| Community | Entry concept | What it covers |
+|---|---|---|
+| `CRUD HTTP Handlers` | `handlers/default.go` | Generic list/find/get_by_id/custom_query |
+| `HTTP Middleware Stack` | `server/middleware.go` | TenantID, BodyLimit, Throttle, Recovery |
+| `Agent Store CRUD` | `agent_store.py` | SQLite agent registry |
+| `Tenant Storage Management` | `tenant.go` | Tenant lifecycle, config hot-reload |
+| `SSE Event Formatting` | `event_stream.py` | AgentEvent → SSE format |
+| `MCP Tools Manifest` | `tools/tools.go` | Tool registration, registry |
+
+### RAG
+| Community | Entry concept | What it covers |
+|---|---|---|
+| `RAG Service DTOs` | `http_models.py` | Request/response models |
+| `RAG Service Endpoints` | `service.py` | FastAPI endpoints |
+| `RAG TTL Cache` | `cache/` | Local + Redis cache |
+
+### Admin / docs
+| Community | Entry concept | What it covers |
+|---|---|---|
+| `doc/api-flow.md` | `doc/api-flow.md` | Full HTTP communication matrix (10 channels) |
+| `Admin Dashboard` | `server.go`, `app.js` | Admin UI, Alpine.js frontend |
+| `AGENTS.md` | `AGENTS.md` | Technical passport, data flow diagrams |
+
+**Graph freshness:** built from commit `988523f2`. Check:
 ```
 ctx_execute("shell", `echo "HEAD: $(git rev-parse HEAD)"`)
-// If diverged from 932288d0 → graphify_update({ path: "." })
+// If diverged → graphify_update({ path: "." })  (AST-only, 0 tokens)
 ```
 
 ---
@@ -271,7 +317,7 @@ This creates a feedback loop: the graph gets smarter with each session.
 
 ## Constraints
 
-- **Never read `graphify-out/graph.json` or `graphify-out/GRAPH_REPORT.md` directly** — 2.3MB / 51KB, use tools
+- **Never read `graphify-out/graph.json` or `graphify-out/GRAPH_REPORT.md` directly** — ~5MB / ~95KB, use tools
 - **Never delete `graphify-out/`** — rebuilding costs API tokens
 - **Never use raw Bash for output >1KB** — use ctx_execute or ctx_batch_execute
 - **Never grep/glob for class references** — graphify_explain is faster and token-free
