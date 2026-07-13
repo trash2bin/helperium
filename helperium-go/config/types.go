@@ -393,6 +393,11 @@ type MCPTool struct {
 	// Name — имя инструмента (snake_case).
 	Name string `json:"name"`
 
+	// DisplayName — публичное имя для отображения пользователю в UI.
+	// Если пусто, UI использует Name.
+	// Заполняется вручную через admin API или напрямую в config.json.
+	DisplayName string `json:"display_name,omitempty"`
+
 	// Endpoint — путь endpoint'а из endpoints[].
 	Endpoint string `json:"endpoint"`
 

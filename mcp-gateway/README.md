@@ -66,7 +66,32 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 }
 ```
 
-#### 3. Prefixed Registry
+#### 3. DisplayName (публичное имя для UI)
+
+Каждый инструмент может иметь `display_name` — человекочитаемое имя для отображения в UI.
+Не влияет на MCP-протокол (LLM видит `name`). Настраивается вручную:
+
+```json
+{
+  "mcp_tools": [
+    {
+      "name": "find_catalog_brand",
+      "display_name": "Поиск брендов в каталоге",
+      "endpoint": "/catalog_brand",
+      "description": "Поиск брендов по названию",
+      "params": [{"name": "search", "type": "string", "required": true}]
+    }
+  ]
+}
+```
+
+**Как это работает:**
+1. `GET /mcp/tools/mapping` возвращает `{"find_catalog_brand": "Поиск брендов в каталоге", ...}`
+2. `api-service` MCPClient загружает маппинг при открытии SSE-сессии
+3. SSE-события `tool_call` и `tool_result` содержат `display_name`
+4. frontend (включая embed-виджет) использует `display_name` с контекстной иконкой (🔍 поиск, 📋 чтение, 📊 запрос, ⚡ остальное)
+
+**Где настраивается:** admin dashboard → Тулы → колонка "Отображаемое имя" → 💾 Сохранить имена
 
 Функция `NewPrefixedRegistry(cfg, tenantID)` в `internal/tools/tools.go`:
 
@@ -340,6 +365,7 @@ curl http://127.0.0.1:8083/metrics | grep mcp_
 
 | Путь | Метод | Описание | Заголовок |
 |---|---|---|---|
+| `/mcp/tools/mapping` | GET | JSON: `{"tool_name": "display_name_or_name"}` | `X-Tenant-ID` |
 | `/health` | GET | Статус сервиса | - |
 | `/mcp` | GET | SSE endpoint (MCP streamable HTTP) | `X-Tenant-ID` |
 | `/mcp/message` | POST | JSON-RPC сообщения; без `sessionId` возвращает прямой JSON-ответ, с `sessionId` пишет в SSE-сессию | `X-Tenant-ID` |

@@ -305,12 +305,22 @@ def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | No
         text = data.get("content") if isinstance(data, dict) else ""
         return {"type": "final", "text": text}
     if event_type == "tool_call":
-        name = data.get("name") if isinstance(data, dict) else ""
-        return {"type": "tool_call", "name": name}
+        name = data.get("name", "") if isinstance(data, dict) else ""
+        display_name = data.get("display_name", "") or name
+        return {
+            "type": "tool_call",
+            "name": name,
+            "display_name": display_name,
+        }
     if event_type == "tool_result":
-        name = data.get("name") if isinstance(data, dict) else ""
+        name = data.get("name", "") if isinstance(data, dict) else ""
+        display_name = data.get("display_name", "") or name
         result = data.get("result") if isinstance(data, dict) else None
-        payload: dict[str, Any] = {"type": "tool_result", "name": name}
+        payload: dict[str, Any] = {
+            "type": "tool_result",
+            "name": name,
+            "display_name": display_name,
+        }
         if result is not None:
             payload["result"] = result
         return payload

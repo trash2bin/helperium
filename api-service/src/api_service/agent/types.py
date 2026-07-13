@@ -168,6 +168,7 @@ class ToolCallEventData(TypedDict):
 
     id: str
     name: str
+    display_name: NotRequired[str]
     arguments: dict[str, Any]
 
 
@@ -176,6 +177,7 @@ class ToolResultEventData(TypedDict):
 
     id: str
     name: str
+    display_name: NotRequired[str]
     result: str
 
 

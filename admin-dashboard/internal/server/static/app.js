@@ -25,6 +25,7 @@ function dashboard() {
     config: {},
     manifest: null,
     configDirty: false,
+    savingDisplayNames: false,
     saveIndicator: '',          // 'readonly' | 'config' | ''
     saveIndicatorText: '',
     saving: false,
@@ -623,6 +624,43 @@ function dashboard() {
         await this.refreshPendingTools();
       } catch (e) {
         // error already set
+      }
+    },
+
+    async saveToolDisplayNames() {
+      if (!this.selectedTenant || !this.manifest?.mcp_tools) return;
+      this.savingDisplayNames = true;
+      this.error = '';
+      try {
+        // Make sure config.mcp_tools exists
+        if (!this.config.mcp_tools) {
+          this.config.mcp_tools = [];
+        }
+        // Merge display_name from manifest into config
+        for (const manifestTool of this.manifest.mcp_tools) {
+          const existing = this.config.mcp_tools.find(t => t.name === manifestTool.name);
+          if (existing) {
+            existing.display_name = manifestTool.display_name || '';
+          } else {
+            // Need full tool definition — fetch from manifest
+            // Minimal tool def
+            this.config.mcp_tools.push({
+              name: manifestTool.name,
+              endpoint: manifestTool.endpoint,
+              description: manifestTool.description,
+              params: manifestTool.params || [],
+              display_name: manifestTool.display_name || '',
+            });
+          }
+        }
+        // Also add any tools that are in config but not in manifest (keeps existing)
+        // Save
+        await this.saveConfig();
+        alert(this.__('tool.displayNamesSaved'));
+      } catch (e) {
+        // error already set
+      } finally {
+        this.savingDisplayNames = false;
       }
     },
 

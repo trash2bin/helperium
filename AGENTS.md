@@ -280,6 +280,7 @@ Authorization: Bearer $ADMIN_TOKEN
 | `endpoints[].method: POST/PUT/DELETE` | Write-операции. Нужны для мутации данных |
 | `auth{}` | Row-level isolation (multi-tenant в одной БД) |
 | `mcp_tools[].description` | Уточнить описание для LLM (на английском, контекстно) |
+| `mcp_tools[].display_name` | Человекочитаемое имя для UI (русский). Пусто → fallback к `name`. Настраивается в админке |
 | `introspection{}` | IncludeSchemas, ExcludeTables для фильтрации при rewrite |
 | `approved_tools[]` | Список write-эндпоинтов, разрешённых даже в read_only-режиме |
 | `data_source.readonly_dsn` | Database-level read-only (отдельный PG юзер) |

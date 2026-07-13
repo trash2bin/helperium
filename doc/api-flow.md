@@ -24,6 +24,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 | HTTP Call | Route | Method | Purpose |
 |---|---|---|---|
 | `proxy_manifest()` | GET `/mcp/manifest` | HTTP | Fetch MCP tool manifest for tenant |
+| `proxy_mapping()` | GET `/mcp/tools/mapping` | HTTP | Fetch display_name map for tenant tools |
 | `proxy_data_entity()` | GET `/{entity}` | HTTP | Generic data entity lookup |
 | `proxy_data_entity()` | GET `/{entity}/{id}` | HTTP | Entity by ID |
 | `proxy_data_stats()` | GET `/stats` | HTTP | Data statistics |
@@ -78,7 +79,19 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 **Config env:** `DATA_SERVICE_URL` (default: `http://127.0.0.1:8084`)
 **SSRF Protection:** `ValidateURL()` rejects private IPs
 
-### 5. api-service → mcp-gateway (MCP SSE + JSON-RPC)
+### 5. api-service → mcp-gateway (display_name mapping)
+
+**Source:** `api-service/src/api_service/agent/mcp_client.py` (`fetch_tool_mapping()`)
+**Target:** `mcp-gateway:8083`
+
+| HTTP Call | Route | Method | Purpose |
+|---|---|---|---|
+| `fetch_tool_mapping()` | GET `/mcp/tools/mapping` | HTTP | Get `{tool_name: display_name}` map |
+
+**Auth:** `X-Tenant-ID` from context
+**Used for:** SSE payload enrichment — `display_name` field in `tool_call` and `tool_result` events
+
+### 6. api-service → mcp-gateway (MCP SSE + JSON-RPC)
 
 **Source:** `api-service/src/api_service/agent/mcp_client.py`
 **Target:** `mcp-gateway:8083`
@@ -99,7 +112,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 **Config env:** `MCP_SERVICE_URL`
 **One persistent SSE session per tenant**, lock-serialized per tenant
 
-### 6. api-service → rag (RAG context for agent)
+### 7. api-service → rag (RAG context for agent)
 
 **Source:** `helperium-sdk/src/helperium_sdk/rag/client.py`
 **Target:** `rag:8082`
@@ -113,7 +126,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 **Config env:** `RAG_SERVICE_URL`
 
-### 7. admin-dashboard → data-service (admin API)
+### 8. admin-dashboard → data-service (admin API)
 
 **Source:** `admin-dashboard/internal/server/server.go`
 **Target:** `data-service:8084`
@@ -128,7 +141,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 **Headers forwarded:** `X-Tenant-ID`, `Authorization: Bearer {admin_token}`
 **Config field:** `Opts.DataServiceURL`
 
-### 8. admin-dashboard → api-service (abuse + agent config)
+### 9. admin-dashboard → api-service (abuse + agent config)
 
 **Source:** `admin-dashboard/internal/server/abuse.go`
 **Target:** `api-service:8081`
@@ -141,7 +154,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 **Config field:** `Opts.ApiSvcURL`
 
-### 9. admin-dashboard → rag (admin config)
+### 10. admin-dashboard → rag (admin config)
 
 **Source:** `admin-dashboard/internal/server/server.go` (via `RagClient`)
 **Target:** `rag:8082`
@@ -154,7 +167,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 **Config field:** `Opts.RagSvcURL`
 
-### 10. api-service → data-service (for future use)
+### 11. api-service → data-service (for future use)
 
 **Source:** `helperium-sdk/src/helperium_sdk/data_client.py`
 **Target:** `data-service:8084`

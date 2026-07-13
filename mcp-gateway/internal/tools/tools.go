@@ -40,6 +40,7 @@ type Registry struct {
 // toolDef — внутреннее описание одного MCP-инструмента.
 type toolDef struct {
 	Name        string
+	DisplayName string
 	Endpoint    string
 	Description string
 	Params      []config.EndpointParam
@@ -107,8 +108,9 @@ func (r *Registry) buildTools() {
 	// to avoid duplicates with the explicit ones.
 	if len(r.cfg.MCPTools) > 0 {
 		for _, mt := range r.cfg.MCPTools {
-			auto[mt.Name] = toolDef{
+				auto[mt.Name] = toolDef{
 				Name:        mt.Name,
+				DisplayName: mt.DisplayName,
 				Endpoint:    mt.Endpoint,
 				Description: mt.Description,
 				Params:      mt.Params,
@@ -377,6 +379,7 @@ func endpointToToolDef(ep config.Endpoint, entities []config.Entity, customQueri
 
 	return toolDef{
 		Name:        name,
+		DisplayName: "",
 		Endpoint:    ep.Path,
 		Description: desc,
 		Params:      params,

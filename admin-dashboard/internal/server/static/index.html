@@ -572,11 +572,12 @@
 
         <!-- All tools from manifest -->
         <div x-show="manifest && manifest.mcp_tools && manifest.mcp_tools.length" class="card" x-cloak>
-          <h3><span x-text="__('tool.mcpTools')"></span> (<span x-text="manifest.mcp_tools.length"></span>)</h3>
+          <h3><span x-text="__('tool.mcpTools')"></span> (<span x-text="manifest.mcp_tools.length"></span>) <button @click="saveToolDisplayNames()" class="btn btn-primary btn-sm" :disabled="savingDisplayNames" style="float:right;" x-text="__('tool.saveDisplayNames')"></button></h3>
           <table class="table">
             <thead>
               <tr>
                 <th x-text="__('label.name')"></th>
+                <th x-text="__('tool.displayName')"></th>
                 <th x-text="__('label.method')"></th>
                 <th x-text="__('label.path')"></th>
                 <th x-text="__('label.description')"></th>
@@ -587,6 +588,9 @@
               <template x-for="tool in manifest.mcp_tools" :key="tool.name">
                 <tr>
                   <td style="font-weight:600;font-family:monospace;" x-text="tool.name"></td>
+                  <td>
+                    <input type="text" x-model="tool.display_name" class="input-sm" :placeholder="__('tool.noDisplayName')" style="min-width:180px;" @input="configDirty = true">
+                  </td>
                   <td>
                     <span class="method-badge" :class="'method-' + ((findEndpoint(tool.endpoint)?.method || '').toLowerCase())" x-text="findEndpoint(tool.endpoint)?.method || '—'"></span>
                   </td>

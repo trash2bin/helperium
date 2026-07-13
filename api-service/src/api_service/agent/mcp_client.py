@@ -48,6 +48,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
@@ -90,6 +91,7 @@ class _TenantConnection:
     session_ctx: Any  # the ClientSession(...) async context manager
     call_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     list_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    tool_display_names: dict[str, str] = field(default_factory=dict)
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):
@@ -155,12 +157,32 @@ class MCPClient:
             raise
 
         logger.info("[MCP] Session ready for tenants=%s", tenant_key or "(default)")
-        return _TenantConnection(
+        conn = _TenantConnection(
             tenant_id=tenant_key,
             session=session,
             http_ctx=http_ctx,
             session_ctx=session_ctx,
         )
+
+        # ── Load tool display_name mapping from mcp-gateway ────────────
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as hclient:
+                url = settings.mcp_service_url.rstrip("/") + "/mcp/tools/mapping"
+                resp = await hclient.get(url, headers=headers)
+                if resp.status_code == 200:
+                    conn.tool_display_names = resp.json()
+                    logger.info(
+                        "[MCP] Loaded %d tool display names for tenants=%s",
+                        len(conn.tool_display_names),
+                        tenant_key or "(default)",
+                    )
+        except Exception:
+            logger.warning(
+                "[MCP] Failed to fetch tool display names for tenants=%s, falling back to tool names",
+                tenant_key or "(default)",
+            )
+
+        return conn
 
     async def _get_connection(
         self, tenant_ids: list[str] | None = None
@@ -243,6 +265,16 @@ class MCPClient:
             }
             for tool in result.tools
         ]
+
+    async def get_display_name(
+        self, tenant_ids: list[str] | None, tool_name: str
+    ) -> str | None:
+        """Return the user-facing display name for a tool, or None if not available."""
+        try:
+            conn = await self._get_connection(tenant_ids)
+            return conn.tool_display_names.get(tool_name)
+        except Exception:
+            return None
 
     async def call_tool(
         self, session: "_SessionProxy", name: str, arguments: dict[str, Any]

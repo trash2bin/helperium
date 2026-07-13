@@ -733,11 +733,16 @@ function handleEventChunk(chunk, target) {
   if (payload.type === "tool_call") {
     sseLog("Tool call:", payload.name, payload.arguments);
     const tools = JSON.parse(target.dataset.tools || "[]");
+    const displayNames = JSON.parse(target.dataset.displayNames || "{}");
     if (!tools.includes(payload.name)) {
       tools.push(payload.name);
       target.dataset.tools = JSON.stringify(tools);
     }
-    ensureAssistantToolStrip(target, tools);
+    if (payload.display_name && !displayNames[payload.name]) {
+      displayNames[payload.name] = payload.display_name;
+      target.dataset.displayNames = JSON.stringify(displayNames);
+    }
+    ensureAssistantToolStrip(target, tools, displayNames);
   }
   if (payload.type === "done" && !(target.dataset.raw || "").trim()) {
     sseLog("Done event (empty response)");
@@ -820,31 +825,47 @@ function renderAssistantMarkup(raw) {
   return chunks.join("");
 }
 
-function renderToolStrip(toolNames = []) {
+function renderToolStrip(toolNames = [], displayNames = {}) {
   const uniqueTools = [...new Set(normalizeToolNames(toolNames))];
   if (!uniqueTools.length) return "";
-  return `<div class="tool-strip">${uniqueTools.map((name) => `<span>tool: ${escapeHtml(name)}</span>`).join("")}</div>`;
+  return `<div class="tool-strip">${uniqueTools.map((name) => {
+    const display = displayNames[name] || name;
+    const icon = getToolIcon(display);
+    return `<span>${icon} ${escapeHtml(display)}</span>`;
+  }).join("")}</div>`;
 }
 
-function createToolStripNode(toolNames = []) {
+function getToolIcon(displayText) {
+  const lower = displayText.toLowerCase();
+  if (lower.includes("поиск") || lower.includes("найти")) return "🔍";
+  if (lower.includes("чтение") || lower.includes("получение") || lower.includes("данных")) return "📋";
+  if (lower.includes("запрос")) return "📊";
+  return "⚡";
+}
+
+function createToolStripNode(toolNames = [], displayNames = {}) {
   const node = document.createElement("div");
   node.className = "assistant-tools";
   node.dataset.tools = JSON.stringify(normalizeToolNames(toolNames));
-  node.innerHTML = renderToolStrip(toolNames);
+  if (Object.keys(displayNames).length > 0) {
+    node.dataset.displayNames = JSON.stringify(displayNames);
+  }
+  node.innerHTML = renderToolStrip(toolNames, displayNames);
   return node;
 }
 
-function ensureAssistantToolStrip(target, toolNames = []) {
+function ensureAssistantToolStrip(target, toolNames = [], displayNames = {}) {
   const normalizedTools = normalizeToolNames(toolNames);
   if (!normalizedTools.length) return null;
   const messages = $("#messages");
   const previous = target.previousElementSibling;
   if (previous && previous.classList.contains("assistant-tools")) {
     previous.dataset.tools = JSON.stringify(normalizedTools);
-    previous.innerHTML = renderToolStrip(normalizedTools);
+    previous.dataset.displayNames = JSON.stringify(displayNames);
+    previous.innerHTML = renderToolStrip(normalizedTools, displayNames);
     return previous;
   }
-  const node = createToolStripNode(normalizedTools);
+  const node = createToolStripNode(normalizedTools, displayNames);
   messages.insertBefore(node, target);
   return node;
 }

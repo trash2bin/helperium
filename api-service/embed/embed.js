@@ -672,17 +672,29 @@
       scrollToBottom(messagesEl);
     }
 
-    function makeToolStrip(toolNames) {
+    function makeToolStrip(toolNames, displayNames) {
+      displayNames = displayNames || {};
       var unique = [];
       toolNames.forEach(function (n) {
         if (unique.indexOf(n) === -1) unique.push(n);
       });
+      if (!unique.length) return null;
       var el = document.createElement('div');
       el.className = 'at-tool-strip';
       el.innerHTML = unique.map(function (name) {
-        return '<span>\uD83D\uDD27 ' + escapeHtml(name) + '</span>';
+        var display = displayNames[name] || name;
+        var icon = getToolIcon(display);
+        return '<span>' + icon + ' ' + escapeHtml(display) + '</span>';
       }).join('');
       return el;
+    }
+
+    function getToolIcon(displayText) {
+      var lower = displayText.toLowerCase();
+      if (lower.indexOf('поиск') !== -1 || lower.indexOf('найти') !== -1) return '\uD83D\uDD0D';
+      if (lower.indexOf('чтение') !== -1 || lower.indexOf('получение') !== -1 || lower.indexOf('данных') !== -1) return '\uD83D\uDCCB';
+      if (lower.indexOf('запрос') !== -1) return '\uD83D\uDCCA';
+      return '\u26A1';
     }
 
     function appendToken(target, text) {
@@ -731,6 +743,7 @@
     function streamChat(message, targetNode) {
       targetNode.classList.add('at-thinking');
       targetNode.dataset.tools = '[]';
+      targetNode.dataset.displayNames = '{}';
       targetNode.dataset.saved = 'false';
 
       var url = CONFIG.apiBase + '/api/chat/' + encodeURIComponent(CONFIG.agent);
@@ -827,12 +840,17 @@
                 setFinalText(targetNode, payload.text || '');
               } else if (payload.type === 'tool_call') {
                 var tools = JSON.parse(targetNode.dataset.tools || '[]');
+                var displayNames = JSON.parse(targetNode.dataset.displayNames || '{}');
                 if (tools.indexOf(payload.name) === -1) {
                   tools.push(payload.name);
                   targetNode.dataset.tools = JSON.stringify(tools);
                 }
+                if (payload.display_name && !displayNames[payload.name]) {
+                  displayNames[payload.name] = payload.display_name;
+                  targetNode.dataset.displayNames = JSON.stringify(displayNames);
+                }
                 // Show tool indicator above message
-                ensureToolStrip(targetNode, tools);
+                ensureToolStrip(targetNode, tools, displayNames);
               } else if (payload.type === 'done') {
                 var raw = targetNode.dataset.raw || '';
                 if (!raw.trim()) {
@@ -873,20 +891,24 @@
       });
     }
 
-    function ensureToolStrip(targetNode, toolNames) {
+    function ensureToolStrip(targetNode, toolNames, displayNames) {
+      displayNames = displayNames || {};
       var unique = [];
       toolNames.forEach(function (n) {
         if (unique.indexOf(n) === -1) unique.push(n);
       });
+      if (!unique.length) return;
       var prev = targetNode.previousElementSibling;
       if (prev && prev.className === 'at-tool-strip') {
         prev.innerHTML = unique.map(function (name) {
-          return '<span>\uD83D\uDD27 ' + escapeHtml(name) + '</span>';
+          var display = displayNames[name] || name;
+          var icon = getToolIcon(display);
+          return '<span>' + icon + ' ' + escapeHtml(display) + '</span>';
         }).join('');
         return;
       }
-      var strip = makeToolStrip(unique);
-      messagesEl.insertBefore(strip, targetNode);
+      var strip = makeToolStrip(unique, displayNames);
+      if (strip) messagesEl.insertBefore(strip, targetNode);
     }
 
     // ── Event Bindings ──

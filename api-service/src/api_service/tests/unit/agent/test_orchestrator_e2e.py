@@ -149,6 +149,9 @@ class FakeMCPClient:
         self.calls.append({"name": name, "arguments": arguments})
         return self.tool_result
 
+    async def get_display_name(self, tenant_ids, tool_name):
+        return tool_name
+
     async def close(self):
         pass
 

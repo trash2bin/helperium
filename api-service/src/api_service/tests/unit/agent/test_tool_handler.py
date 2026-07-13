@@ -23,6 +23,7 @@ def mock_mcp():
         reminder="show this data",
         ok=True,
     )
+    mock.get_display_name.return_value = None  # fallback — вернёт name
     return mock
 
 
@@ -157,6 +158,24 @@ class TestToolHandler:
         assert tc_event.data["name"] == "get_grade"
         assert tc_event.data["arguments"] == {"student_id": 42}
 
+    async def test_tool_call_event_data_has_display_name(
+        self, handler, ctx, session, mock_mcp
+    ):
+        """ToolCall event carries display_name from MCPClient."""
+        mock_mcp.get_display_name.return_value = "Поиск студентов"
+
+        tool_calls: list[ParsedToolCall] = [
+            {"id": "c1", "name": "find_student", "arguments": {"name": "Alice"}},
+        ]
+
+        events = [e async for e in handler.execute(tool_calls, session, ctx)]
+
+        tc_event = events[0]
+        assert tc_event.data["display_name"] == "Поиск студентов"
+
+        tr_event = events[1]
+        assert tr_event.data["display_name"] == "Поиск студентов"
+
     async def test_tool_result_event_data(self, handler, ctx, session, mock_mcp):
         """ToolResult event has correct id, name, result."""
         tool_calls: list[ParsedToolCall] = [
@@ -170,6 +189,8 @@ class TestToolHandler:
         assert tr_event.data["id"] == "c1"
         assert tr_event.data["name"] == "find_student"
         assert tr_event.data["result"] == '{"data": "ok"}'
+        # display_name falls back to name when MCP returns None
+        assert tr_event.data["display_name"] == "find_student"
 
     async def test_empty_tool_calls(self, handler, ctx, session):
         """Empty tool_calls list → no events, no messages appended."""

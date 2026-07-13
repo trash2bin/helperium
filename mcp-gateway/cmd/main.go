@@ -371,6 +371,7 @@ func buildRouter() *chi.Mux {
 	})
 
 	r.Get("/mcp/manifest", manifestProxyHandler)
+	r.Get("/mcp/tools/mapping", mappingHandler)
 	return r
 }
 
@@ -576,6 +577,39 @@ func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(cfg)
+}
+
+// mappingHandler возвращает маппинг имён тулов → display_name для фронтенда.
+// Используется веб-прокси для отображения читаемых названий инструментов вместо имён.
+func mappingHandler(w http.ResponseWriter, r *http.Request) {
+	tenantIDs := resolveTenantIDs(r)
+	tenantID := ""
+	if len(tenantIDs) > 0 {
+		tenantID = tenantIDs[0]
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
+	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
+	if err != nil {
+		slog.Error("Failed to fetch config for mapping", "tenantID", tenantID, "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	mapping := make(map[string]string, len(cfg.MCPTools))
+	for _, mt := range cfg.MCPTools {
+		display := mt.DisplayName
+		if display == "" {
+			display = mt.Name
+		}
+		mapping[mt.Name] = display
+	}
+
+	json.NewEncoder(w).Encode(mapping)
 }
 
 func writeJSONRPCError(w http.ResponseWriter, id any, code int, message string) {

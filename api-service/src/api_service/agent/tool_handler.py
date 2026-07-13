@@ -54,12 +54,21 @@ class ToolHandler:
         ``ctx.turn_messages`` for each result.  One failed tool does not
         abort the others.
         """
+        # ── Pre-resolve display_names for all tool calls ──────────────
+        display_names: dict[str, str] = {}
+        for tc in tool_calls:
+            n = tc["name"]
+            if n not in display_names:
+                dn = await self._mcp.get_display_name(ctx.tenant_ids, n)
+                display_names[n] = dn if dn else n
+
         for tool_call in tool_calls:
             name: str = tool_call["name"]
             arguments: dict[str, Any] = tool_call["arguments"]
             tool_call_id: str = (
                 tool_call.get("id") or f"call_{name}_{uuid.uuid4().hex[:8]}"
             )
+            display_name = display_names[name]
 
             # ── Log the request ────────────────────────────────────────
             backlog.tool_call(
@@ -74,6 +83,7 @@ class ToolHandler:
                 ToolCallEventData(
                     id=tool_call_id,
                     name=name,
+                    display_name=display_name,
                     arguments=arguments,
                 ),
             )
@@ -130,6 +140,7 @@ class ToolHandler:
                 ToolResultEventData(
                     id=tool_call_id,
                     name=name,
+                    display_name=display_name,
                     result=tool_result.tool_content,
                 ),
             )
