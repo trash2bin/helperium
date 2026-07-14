@@ -824,8 +824,11 @@ pre-commit run --all-files  # прогнать на всех файлах
 | `check-added-large-files` | pre-commit-hooks | Файлы >500KB в коммите |
 | `check-merge-conflict` | pre-commit-hooks | Маркеры merge conflict |
 | `gitleaks` | gitleaks `v8.24.0` | Секреты в коде |
+| `admin-dashboard-stale` | local | Бинарник admin-dashboard не старше `app.js` (забыл `go build`) |
+| `admin-dashboard-tests` | local | 24 vitest теста на `api()` + OpenAPI contract (при изменении `app.js`) |
 
 > Pre-commit — быстрый (`go vet`, не `golangci-lint` — он медленный). Полный линтинг только в CI.
+> Хуки admin-dashboard проверяют что бинарник свежий (`go build`) и JS тесты проходят.
 
 ### 🔧 Линтеры — настройка и прогон
 
@@ -859,12 +862,13 @@ cd mcp-gateway && golangci-lint run ./...
 ### 🏁 Makefile — локальная симуляция CI
 
 ```bash
-make ci         # полный прогон (линт + audit + тесты Python и Go)
+make ci         # полный прогон (линт + audit + тесты Python, Go и admin-dashboard)
 make ci-lint-py # только Python линт + typecheck
 make ci-test-py # только Python тесты (api-service + demo + RAG unit + SDK)
 make ci-lint-go # только Go линтинг (data-service + mcp-gateway)
 make ci-test-go # только Go тесты (data-service + mcp-gateway)
 make ci-audit   # полный security audit (uv audit + govulncheck)
+make ci-admin   # сборка admin-dashboard + JS тесты (Vitest: 24 теста, ~300ms)
 ```
 
 **Перед каждым пушем:** `make ci` — занимает ~2–3 мин, ловит ~95% проблем, которые упадут в CI.
@@ -872,6 +876,7 @@ make ci-audit   # полный security audit (uv audit + govulncheck)
 Альтернатива — запустить только нужный набор:
 - `make ci-test-py` — только Python тесты (509 тестов, ~10 сек)
 - `make ci-test-go` — только Go тесты (655 тестов, ~30 сек)
+- `make ci-admin` — только admin-dashboard (сборка + JS тесты, ~2 сек)
 
 ### 🐳 act — точная симуляция GitHub Actions
 
@@ -882,6 +887,49 @@ act --pull=false           # весь пайплайн
 ```
 
 Требует Docker Desktop. Использует **те же раннеры, те же версии тулов** — 100% совпадение с CI. Полезно, когда `make ci` прошёл, но CI падает на невоспроизводимых отличиях (macOS vs Ubuntu, версии тулов).
+
+### 🎯 Admin-dashboard: защита от регрессий (v1.1.1)
+
+Admin-dashboard — SPA на Alpine.js, вкомпилированная в Go-бинар через `//go:embed`.
+Источник багов: несоответствие между фронтом и API (формат ответа, валидация).
+
+**Три уровня защиты:**
+
+1. **JS unit-тесты** (`admin-dashboard/tests/api.test.js`, 16 тестов) — проверяют
+   `api()` функцию: парсинг 200/204/422/401, Pydantic validation errors,
+   сетевые ошибки. Mock'и, ~200ms.
+
+2. **Contract-тесты** (`admin-dashboard/tests/contract.test.js`, 8 тестов) — живые
+   запросы к работающему api-service через admin-dashboard прокси. Проверяют:
+   - OpenAPI spec: 204 без content-type, pattern на name, required поля
+   - Live 422 с Pydantic detail[] (формат ошибки)
+   - Live 204 No Content (без content-type заголовка)
+   - Live 404 для несуществующего агента
+
+   Если тесты упали — значит api-service поменял контракт, и admin-dashboard
+   надо обновлять. Тесты пропускаются если сервисы не запущены.
+
+3. **Pre-commit хуки:**
+   - `admin-dashboard-stale` — не даёт закоммитить изменения в `app.js` без
+     пересборки бинарника (`go build`)
+   - `admin-dashboard-tests` — гоняет все 24 теста при изменении `app.js`
+
+**Запуск:**
+```bash
+make ci-admin                 # сборка + все тесты
+cd admin-dashboard/tests && npm test  # только тесты (без сборки)
+```
+
+**OpenAPI контракт** — `specs/api.openapi.yaml` (автогенерация из FastAPI):
+```bash
+# Обновить спека после изменения api-service:
+curl -s http://127.0.0.1:8081/openapi.json | python3 -c "import sys,yaml,json; yaml.dump(json.load(sys.stdin), sys.stdout)" > specs/api.openapi.yaml
+
+# Сгенерировать TS-типы для админки:
+npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server/static/api-types/api-service.d.ts
+```
+
+--
 
 ### 📦 Версионирование
 

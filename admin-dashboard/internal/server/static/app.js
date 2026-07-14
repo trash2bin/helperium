@@ -416,14 +416,31 @@ function dashboard() {
         let body;
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
-          body = await res.json();
+          try {
+            body = await res.json();
+          } catch (_jsonErr) {
+            // Empty body with JSON content-type (e.g. 204 No Content)
+            const text = await res.text();
+            body = text ? { error: text } : {};
+          }
         } else {
           const text = await res.text();
           body = text ? { error: text } : {};
         }
 
         if (!res.ok) {
-          const msg = body.message || body.error || res.statusText;
+          // Extract human-readable error from Pydantic 422 / FastAPI errors
+          let msg = body.message || body.error || res.statusText;
+          if (body.detail && Array.isArray(body.detail)) {
+            // Pydantic validation error: show first meaningful message
+            const d = body.detail[0];
+            msg = d.msg || msg;
+            if (d.input !== undefined) {
+              msg += ` (got: ${JSON.stringify(d.input)})`;
+            }
+          } else if (body.detail && typeof body.detail === 'string') {
+            msg = body.detail;
+          }
           this.error = msg;
           throw new Error(msg);
         }
@@ -868,6 +885,7 @@ function dashboard() {
       this.error = '';
       try {
         const resp = await this.api('/api/agents');
+        this.agentCreateResult = null;
         this.agents = resp.agents || [];
       } catch (e) {
         this.agents = [];
@@ -882,6 +900,11 @@ function dashboard() {
     },
 
     async createAgent() {
+      // Client-side validation — pattern ^[a-z][a-z0-9_-]*$
+      if (!this.newAgent.name || !/^[a-z][a-z0-9_-]*$/.test(this.newAgent.name)) {
+        this.agentCreateResult = { error: this.__('agent.namePatternHint') };
+        return;
+      }
       this.creatingAgent = true;
       this.error = '';
       this.agentCreateResult = null;
@@ -898,7 +921,7 @@ function dashboard() {
           body: JSON.stringify(body),
         });
         this.showNewAgentForm = false;
-        this.newAgent = { name: '', description: '', tenant_ids_selected: [] };
+        this.newAgent = { name: '', description: '', tenant_ids_selected: [], provider_priority: [], system_prompt: null };
         await this.loadAgents();
       } catch (e) {
         this.agentCreateResult = { error: e.message };
@@ -923,7 +946,7 @@ function dashboard() {
       this.savingAgent = true;
       this.error = '';
       try {
-        await this.api('/api/agents/' + this.editAgentData.name, {
+        await this.api('/api/agents/' + encodeURIComponent(this.editAgentData.name), {
           method: 'PUT',
           body: JSON.stringify({
             description: this.editAgentData.description,
@@ -945,7 +968,7 @@ function dashboard() {
       if (!confirm(this.__('confirm.deleteAgent') + ' "' + name + '"?')) return;
       this.error = '';
       try {
-        await this.api('/api/agents/' + name, { method: 'DELETE' });
+        await this.api('/api/agents/' + encodeURIComponent(name), { method: 'DELETE' });
         await this.loadAgents();
       } catch (e) {
         // error already set

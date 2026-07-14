@@ -29,5 +29,11 @@ ci-test-go:
 	go test ./data-service/... -count=1 -timeout 180s
 	go test ./mcp-gateway/... -count=1 -timeout 180s
 
-ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go
+ci-admin:
+	@echo "=== Admin dashboard JS tests ==="
+	cd admin-dashboard && go build -o bin/admin-dashboard ./cmd/server/
+	cd admin-dashboard/tests && npm test
+	@echo "✅ Admin dashboard OK"
+
+ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-admin
 	@echo "✅ CI passed locally"

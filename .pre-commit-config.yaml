@@ -45,6 +45,24 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
 
+  - repo: local
+    hooks:
+      - id: admin-dashboard-stale
+        name: admin-dashboard binary stale check
+        entry: admin-dashboard/scripts/check-stale-binary.sh
+        language: script
+        files: ^admin-dashboard/
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: admin-dashboard-tests
+        name: admin-dashboard JS tests
+        entry: admin-dashboard/scripts/run-tests.sh
+        language: script
+        files: ^admin-dashboard/internal/server/static/app\.js$
+        pass_filenames: false
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.24.0
     hooks:

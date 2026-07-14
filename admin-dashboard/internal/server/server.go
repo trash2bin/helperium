@@ -945,6 +945,12 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 		w.Header()[k] = v
 	}
 	w.Header().Del("Access-Control-Allow-Origin")
+	// 204 No Content — не пишем тело и сбрасываем Content-Type
+	if resp.StatusCode == http.StatusNoContent {
+		w.Header().Del("Content-Type")
+		w.WriteHeader(resp.StatusCode)
+		return
+	}
 	w.WriteHeader(resp.StatusCode)
 	w.Write(respBody)
 }

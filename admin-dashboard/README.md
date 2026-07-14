@@ -242,6 +242,77 @@ Big Red Button на странице Anti-Abuse: Normal → Cautious → Lockdow
 
 ---
 
+## 🔗 OpenAPI-контракты с api-service
+
+Admin-dashboard проксирует Agent CRUD в api-service. Формат данных должен
+совпадать с тем, что ожидает api-service.
+
+### Где лежит контракт
+
+```
+specs/api.openapi.yaml          # OpenAPI 3.1 спецификация api-service
+```
+
+Спецификация **автоматически генерируется FastAPI** из Pydantic-моделей
+и декораторов `@app.get/post`. При изменении эндпоинтов или моделей в
+api-service спека обновляется:
+
+```bash
+# Вручную (если тест упал):
+curl -s http://127.0.0.1:8081/openapi.json | python3 -c "import sys,yaml,json; yaml.dump(json.load(sys.stdin), sys.stdout)" > specs/api.openapi.yaml
+```
+
+### Типы TypeScript из OpenAPI
+
+В `admin-dashboard/internal/server/static/api-types/` лежат сгенерированные
+TS-типы для api-service (`api-service.d.ts`, ~1733 строки).
+
+Обновление:
+```bash
+npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server/static/api-types/api-service.d.ts
+```
+
+Хотя фронт написан на Alpine.js (не TS), типы полезны в JSDoc-аннотациях
+для IDE-подсказок и для проверки при Code Review.
+
+### Правило: контракт прежде всего
+
+При изменении любого эндпоинта api-service, которых касается admin-dashboard:
+
+1. Обнови OpenAPI spec
+2. Сгенерируй TS-типы
+3. Проверь что `admin-dashboard/tests/api.test.js` проходит
+4. Запусти `make ci` (или хотя бы JS-тесты)
+
+Без этого — баги вроде `"The string did not match the expected pattern"`
+или `"JSON.parse: unexpected end of data"` гарантированы.
+
+---
+
+## 🧪 Тестирование
+
+### JS-тесты (Vitest)
+
+```bash
+cd admin-dashboard/tests
+npm test              # однократный прогон
+npm run test:watch    # watch mode
+npm run test:coverage # с coverage
+```
+
+Что тестируется:
+- `api()` — парсинг ответов сервера (200, 204, 422, 401, network errors)
+- Обработка Pydantic validation errors (человеческий текст, а не "Unprocessable Entity")
+
+### E2E (Playwright)
+
+Сценарии в `.pi/skills/browser-e2e-test/SKILL.md`:
+- Tenant CRUD
+- Agent CRUD
+- Write-tool approval
+
+---
+
 ## Docker
 
 ```yaml
