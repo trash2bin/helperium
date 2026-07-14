@@ -27,7 +27,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
-	"github.com/trash2bin/helperium/data-service/internal/configgen"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
@@ -448,71 +447,5 @@ func deriveToolName(ep config.Endpoint) string {
 		return "query_" + strings.Trim(strings.ReplaceAll(strings.ReplaceAll(ep.Path, "{", ""), "}", ""), "/")
 	default:
 		return ""
-	}
-}
-
-// ── Dev-only: config rewrite из БД (был до фазы 3.7) ──
-
-// adminRewriteHandler — POST /admin/config/rewrite.
-// Генерирует конфиг из схемы БД и сохраняет на диск.
-// Это dev-инструмент, не production admin API.
-func adminRewriteHandler(adp datasource.Adapter, ds config.DataSourceConfig, configPath string, ctx *AdminContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := adp.Connect(r.Context(), ds.DSN)
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "connect_error", err.Error())
-			return
-		}
-		defer conn.Close() //nolint:errcheck
-
-		schema, err := adp.Introspect(r.Context(), conn)
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "introspect_error", err.Error())
-			return
-		}
-
-		dsConfig := config.DataSourceConfig{Driver: ds.Driver, DSN: ds.DSN}
-		newCfg := configgen.Generate(schema, dsConfig, nil)
-
-		data, err := json.MarshalIndent(newCfg, "", "  ")
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "marshal_error", err.Error())
-			return
-		}
-
-		if configPath == "" {
-			handlers.RespondError(w, http.StatusBadRequest, "no_config_path",
-				"configPath not configured on this instance")
-			return
-		}
-
-		if err := os.WriteFile(configPath, data, 0644); err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "write_error", err.Error())
-			return
-		}
-
-		slog.Info("config rewritten from DB schema",
-			"path", configPath,
-			"entities", len(newCfg.Entities),
-			"endpoints", len(newCfg.Endpoints),
-		)
-
-		// Hot reload
-		if ctx.ReloadFn != nil {
-			if err := ctx.ReloadFn(configPath); err != nil {
-				slog.Error("admin rewrite: reload failed", "error", err)
-				handlers.RespondError(w, http.StatusInternalServerError, "reload_error",
-					fmt.Sprintf("config saved but reload failed: %v", err))
-				return
-			}
-		}
-
-		handlers.RespondJSON(w, http.StatusOK, map[string]any{
-			"status":    "ok",
-			"path":      configPath,
-			"entities":  len(newCfg.Entities),
-			"endpoints": len(newCfg.Endpoints),
-			"note":      "Конфиг сохранён и применён без рестарта.",
-		})
 	}
 }

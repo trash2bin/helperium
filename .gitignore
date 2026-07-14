@@ -80,6 +80,3 @@ playwright-report/
 # Symlinks to specs/
 api-service/specs
 /cmd
-
-# Experimental / ad-hoc
-agent-tutor-go/

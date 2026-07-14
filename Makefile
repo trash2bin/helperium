@@ -33,6 +33,8 @@ ci-admin:
 	@echo "=== Admin dashboard JS tests ==="
 	cd admin-dashboard && go build -o bin/admin-dashboard ./cmd/server/
 	cd admin-dashboard/tests && npm test
+	@echo "=== Admin dashboard contract check (frontend vs Go routes) ==="
+	./scripts/check-admin-contract.sh
 	@echo "✅ Admin dashboard OK"
 
 ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-admin

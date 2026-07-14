@@ -40,113 +40,65 @@ Admin Dashboard (:8085)
 
 ## API эндпоинты
 
-Все эндпоинты требуют `Authorization: Bearer <ADMIN_TOKEN>` (кроме `/api/health`).
+> ⚠️ Эта секция **автогенерируется** из chi-роутов `server.go` командой:
+> `./scripts/check-admin-contract.sh --update-readme`.
+> **Не редактируй вручную** — обновится при следующем запуске скрипта.
 
-### Health
+Все эндпоинты под `/api`, защищены `Authorization: Bearer <ADMIN_TOKEN>`
+(кроме `/api/health`).
 
-```http
-GET /api/health
-→ {"status":"ok"}
-```
+| Method | Path |
+|---|---|
+| POST | `/api/abuse-preset/{preset}` |
+| GET | `/api/abuse-settings` |
+| PUT | `/api/abuse-settings` |
+| GET | `/api/agents` |
+| POST | `/api/agents` |
+| DELETE | `/api/agents/{name}` |
+| GET | `/api/agents/{name}` |
+| PUT | `/api/agents/{name}` |
+| GET | `/api/agents/{name}/abuse` |
+| PUT | `/api/agents/{name}/abuse` |
+| POST | `/api/chat/voice` |
+| GET | `/api/dashboard` |
+| POST | `/api/db/test` |
+| GET | `/api/emergency-status` |
+| GET | `/api/health` |
+| GET | `/api/llm-config` |
+| GET | `/api/llm-provider-list` |
+| GET | `/api/llm-providers` |
+| POST | `/api/llm-providers` |
+| DELETE | `/api/llm-providers/{name}` |
+| GET | `/api/llm-providers/{name}` |
+| PUT | `/api/llm-providers/{name}` |
+| POST | `/api/llm-providers/{name}/toggle` |
+| GET | `/api/rag/config` |
+| PUT | `/api/rag/config` |
+| POST | `/api/rag/documents/delete` |
+| POST | `/api/rag/documents/import` |
+| POST | `/api/rag/documents/list` |
+| POST | `/api/rag/documents/upload` |
+| GET | `/api/rag/health` |
+| GET | `/api/rag/stats` |
+| GET | `/api/tenants` |
+| POST | `/api/tenants` |
+| POST | `/api/tenants/upload-sqlite` |
+| DELETE | `/api/tenants/{id}` |
+| GET | `/api/tenants/{id}` |
+| GET | `/api/tenants/{id}/config` |
+| PUT | `/api/tenants/{id}/config` |
+| POST | `/api/tenants/{id}/introspect` |
+| GET | `/api/tenants/{id}/manifest` |
+| GET | `/api/tenants/{id}/tools/pending` |
+| POST | `/api/tenants/{id}/tools/{toolName}/approve` |
+| GET | `/api/voice-config` |
+| PUT | `/api/voice-config` |
 
-### Dashboard
-
-```http
-GET /api/dashboard
-→ {"tenants": [...], "tenant_count": 5, "data_service": "http://localhost:8084"}
-```
-
-### Tenant CRUD
-
-```http
-GET  /api/tenants                        # список тенантов
-POST /api/tenants                        # создать тенант (JSON)
-GET  /api/tenants/{id}                   # получить тенант
-DELETE /api/tenants/{id}                 # удалить тенант
-POST /api/tenants/upload-sqlite          # создать тенант из .db файла (multipart)
-```
-
-**POST /api/tenants** (JSON):
-```json
-{
-  "tenant_id": "my-client",
-  "driver": "postgres",
-  "dsn": "postgres://user:pass@host:5432/dbname?sslmode=disable"
-}
-```
-
-**POST /api/tenants/upload-sqlite** (multipart/form-data):
-- `file` — .db/.sqlite файл
-- `tenant_id` — ID нового тенанта
-- При создании автоматически запускается интроспекция схемы
-
-### Config
-
-```http
-GET  /api/tenants/{id}/config            # текущий конфиг (DSN скрыт)
-PUT  /api/tenants/{id}/config            # обновить конфиг → hot-reload
-POST /api/tenants/{id}/introspect        # пересканировать схему БД → новый конфиг
-GET  /api/tenants/{id}/manifest          # MCP-манифест инструментов
-```
-
-### Tool Approval
-
-```http
-GET  /api/tools/pending                  # write-тулы, ожидающие подтверждения
-POST /api/tools/{toolName}/approve       # подтвердить write-тул
-```
-
-### RAG
-
-```http
-GET  /api/rag/health                     # статус RAG сервиса
-POST /api/rag/documents/list             # список документов
-POST /api/rag/documents/import           # импорт по пути
-POST /api/rag/documents/upload           # загрузка файла (multipart)
-POST /api/rag/documents/delete           # удаление документа
-```
-
-### Agent CRUD
-
-```http
-GET  /api/agents                         # список агентов
-POST /api/agents                         # создать агента
-GET  /api/agents/{name}                  # получить агента
-PUT  /api/agents/{name}                  # обновить агента
-DELETE /api/agents/{name}                # удалить агента
-```
-
-**POST /api/agents:**
-```json
-{
-  "name": "my-chat-agent",
-  "description": "Агент для отдела продаж",
-  "tenant_ids": ["shop", "default"]
-}
-```
-
-### Anti-Abuse & Emergency
-
-```http
-GET  /api/abuse-settings                     # глобальные настройки abuse
-PUT  /api/abuse-settings                     # обновить глобальные
-GET  /api/agents/{name}/abuse                # per-agent abuse настройки
-PUT  /api/agents/{name}/abuse                # обновить per-agent
-POST /api/abuse-preset/{preset}              # emergency preset: normal / cautious / lockdown
-GET  /api/emergency-status                   # текущий статус emergency
-
-### LLM Provider Fallback
-
-```http
-GET /api/llm-config
-# → {"fallback_enabled": true, "num_models": 2, "providers": [...]}
-```
-
-### Metrics
-
-```http
-GET /metrics          # Prometheus метрики (admin_requests_total по path, status)
-```
+**Примечания:**
+- `/api/health` — без авторизации.
+- `/api/db/test` — тестовый эндпоинт (в production может быть отключён).
+- `/api/chat/voice` — голосовой ввод (voice mic), проксируется в api-service.
+- Prometheus метрики отдаются на `/metrics` (не под `/api`, отдельный chi-хендлер).
 
 ---
 

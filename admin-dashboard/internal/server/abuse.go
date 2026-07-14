@@ -316,6 +316,21 @@ func (s *Server) agentAbusePutHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(updateStatus)
 	w.Write(updateBody)
 }
+
+// abuseReloadHandler — UI-facing endpoint that triggers a reload of
+// anti-abuse config on the api-service (POST /api/admin/abuse-config/reload).
+func (s *Server) abuseReloadHandler(w http.ResponseWriter, r *http.Request) {
+	if s.opts.ApiSvcURL == "" {
+		respondError(w, http.StatusServiceUnavailable, "no_api_url", "api-service URL not configured")
+		return
+	}
+	s.notifyApiServiceReload()
+	respondJSON(w, http.StatusOK, map[string]any{
+		"status":  "reload_triggered",
+		"message": "API service abuse config reload triggered",
+	})
+}
+
 // notifyApiServiceReload sends a POST request to api-service to reload abuse config.
 func (s *Server) notifyApiServiceReload() {
 	apiURL := s.opts.ApiSvcURL + "/admin/abuse-config/reload"

@@ -17,6 +17,8 @@ from helperium_sdk.api.models import (
     AgentUpdateRequest,
     AgentResponse,
     AgentListResponse,
+    VoiceConfig,
+    VoiceAgentConfig,
 )
 
 __all__ = [
@@ -32,4 +34,6 @@ __all__ = [
     "AgentUpdateRequest",
     "AgentResponse",
     "AgentListResponse",
+    "VoiceConfig",
+    "VoiceAgentConfig",
 ]

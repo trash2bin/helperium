@@ -42,7 +42,9 @@
     headerColor: script.getAttribute('data-header-color') || '',
     showHeader: script.getAttribute('data-show-header') !== 'false',
     botBubbleColor: script.getAttribute('data-bot-bubble-color') || '#eef3f4',
-    botBubbleText: script.getAttribute('data-bot-bubble-text') || 'var(--ink)'
+    botBubbleText: script.getAttribute('data-bot-bubble-text') || 'var(--ink)',
+    voiceInput: script.getAttribute('data-voice-input') !== 'false',
+    voiceOutput: script.getAttribute('data-voice-output') !== 'false'
   };
 
   if (!CONFIG.agent) {
@@ -258,7 +260,7 @@
     '',
     '.at-form {',
     '  display: grid;',
-    '  grid-template-columns: 1fr 44px;',
+    '  grid-template-columns: 1fr;',
     '  gap: 8px;',
     '  padding: 12px;',
     '  border-top: 1px solid var(--line);',
@@ -290,6 +292,53 @@
     '  padding: 0;',
     '}',
     '.at-form button:hover { opacity: 0.9; }',
+    '.at-form button:disabled { opacity: 0.4; cursor: not-allowed; }',
+    '',
+    '.at-mic-btn {',
+    '  width: 36px; height: 36px;',
+    '  border: 0;',
+    '  border-radius: 50%;',
+    '  background: transparent;',
+    '  color: var(--muted);',
+    '  cursor: pointer;',
+    '  font-size: 18px;',
+    '  display: flex;',
+    '  align-items: center;',
+    '  justify-content: center;',
+    '  padding: 0;',
+    '  flex-shrink: 0;',
+    '  transition: background 0.2s, color 0.2s;',
+    '}',
+    '.at-mic-btn:hover { background: #f1f5f9; }',
+    '.at-mic-btn.at-mic-recording {',
+    '  background: var(--rose, #e11d48);',
+    '  color: white;',
+    '  animation: at-mic-pulse 1s infinite;',
+    '}',
+    '.at-mic-btn.at-mic-disabled {',
+    '  opacity: 0.3;',
+    '  cursor: not-allowed;',
+    '}',
+    '@keyframes at-mic-pulse {',
+    '  0% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.4); }',
+    '  70% { box-shadow: 0 0 0 8px rgba(225, 29, 72, 0); }',
+    '  100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }',
+    '}',
+    '.at-mic-timer {',
+    '  position: absolute;',
+    '  bottom: 56px;',
+    '  left: 50%;',
+    '  transform: translateX(-50%);',
+    '  background: var(--rose, #e11d48);',
+    '  color: white;',
+    '  font-size: 12px;',
+    '  font-weight: 700;',
+    '  padding: 3px 8px;',
+    '  border-radius: 999px;',
+    '  display: none;',
+    '  z-index: 10;',
+    '}',
+    '.at-mic-timer.at-mic-timer-visible { display: block; }',
     '',
     '.at-msg.at-retry-countdown {',
     '  align-self: center;',
@@ -507,19 +556,40 @@
     // Form
     var form = document.createElement('form');
     form.className = 'at-form';
+
+    // Mic timer (positioned above form, absolute)
+    var micTimer = document.createElement('div');
+    micTimer.className = 'at-mic-timer';
+    form.appendChild(micTimer);
+
+    var formRow = document.createElement('div');
+    formRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+
     var textarea = document.createElement('textarea');
     textarea.rows = 2;
     textarea.placeholder = CONFIG.placeholder;
-    form.appendChild(textarea);
+    formRow.appendChild(textarea);
+
+    var micBtn = document.createElement('button');
+    micBtn.type = 'button';
+    micBtn.className = 'at-mic-btn';
+    micBtn.title = CONFIG.lang === 'ru' ? 'Голосовое сообщение' : 'Voice message';
+    // TODO: Бля чо это нахуй за пиздец это надо вычистить это ужасно
+    micBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6.91 4c-.49 0-.9.36-.98.85C16.52 12.2 14.47 14 12 14s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.09-.6-.39-1.14-1-1.14z"/></svg>';
+    micBtn.style.display = CONFIG.voiceInput && navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? '' : 'none';
+    formRow.appendChild(micBtn);
+
     var sendBtn = document.createElement('button');
     sendBtn.type = 'submit';
     sendBtn.textContent = '\u2197'; // ↗
-    form.appendChild(sendBtn);
+    formRow.appendChild(sendBtn);
+
+    form.appendChild(formRow);
     panel.appendChild(form);
 
     host.appendChild(panel);
 
-    return { trigger: trigger, panel: panel, messages: messages, form: form, textarea: textarea, closeBtn: closeBtn, sendBtn: sendBtn, head: head };
+    return { trigger: trigger, panel: panel, messages: messages, form: form, textarea: textarea, closeBtn: closeBtn, sendBtn: sendBtn, head: head, micBtn: micBtn, micTimer: micTimer };
   }
 
   /* ─── Chat Logic ─── */
@@ -740,7 +810,80 @@
       streamChat(message, answerNode);
     }
 
-    // ── SSE Streaming ──
+    // ── SSE Streaming (shared parser — used by both text and voice chat) ──
+
+    function _pumpSSE(response, targetNode) {
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+
+      function pump() {
+        return reader.read().then(function (result) {
+          if (result.done) return;
+
+          buffer += decoder.decode(result.value, { stream: true });
+          var parts = buffer.split('\n\n');
+          buffer = parts.pop();
+
+          parts.forEach(function (chunk) {
+            var line = chunk.split('\n').find(function (l) { return l.indexOf('data:') === 0; });
+            if (!line) return;
+
+            try {
+              var payload = JSON.parse(line.slice(5).trim());
+            } catch (e) { return; }
+
+            if (targetNode.classList.contains('at-thinking')) {
+              targetNode.classList.remove('at-thinking');
+            }
+
+            if (payload.type === 'token') {
+              appendToken(targetNode, payload.text || '');
+            } else if (payload.type === 'final') {
+              setFinalText(targetNode, payload.text || '');
+            } else if (payload.type === 'tool_call') {
+              var tools = JSON.parse(targetNode.dataset.tools || '[]');
+              var displayNames = JSON.parse(targetNode.dataset.displayNames || '{}');
+              if (tools.indexOf(payload.name) === -1) {
+                tools.push(payload.name);
+                targetNode.dataset.tools = JSON.stringify(tools);
+              }
+              if (payload.display_name && !displayNames[payload.name]) {
+                displayNames[payload.name] = payload.display_name;
+                targetNode.dataset.displayNames = JSON.stringify(displayNames);
+              }
+              ensureToolStrip(targetNode, tools, displayNames);
+            } else if (payload.type === 'audio') {
+              if (CONFIG.voiceOutput && payload.data) {
+                playAudioBase64(payload.data);
+              }
+            } else if (payload.type === 'done') {
+              if (targetNode.classList.contains('at-error')) return;
+              var raw = targetNode.dataset.raw || '';
+              if (!raw.trim()) {
+                setFinalText(targetNode, CONFIG.lang === 'ru'
+                  ? 'Не удалось получить ответ.' : 'No response.');
+              }
+              var toolNames = [];
+              try { toolNames = JSON.parse(targetNode.dataset.tools || '[]'); } catch (e) { /* ignore */ }
+              appendStored('assistant', targetNode.dataset.raw || '', toolNames);
+              targetNode.dataset.saved = 'true';
+              scrollToBottom(messagesEl);
+            } else if (payload.type === 'error') {
+              targetNode.classList.remove('at-thinking');
+              targetNode.classList.add('at-error');
+              targetNode.textContent = payload.text || (CONFIG.lang === 'ru'
+                ? 'Произошла ошибка.' : 'An error occurred.');
+            }
+          });
+
+          return pump();
+        });
+      }
+
+      return pump();
+    }
+
     function streamChat(message, targetNode) {
       targetNode.classList.add('at-thinking');
       targetNode.dataset.tools = '[]';
@@ -759,20 +902,16 @@
           targetNode.remove();
 
           var retryAfter = response.headers.get('Retry-After');
-          var delay = 5; // default seconds
+          var delay = 5;
           if (retryAfter) {
             var parsed = parseInt(retryAfter, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              delay = parsed;
-            }
+            if (!isNaN(parsed) && parsed > 0) delay = parsed;
           }
 
-          // Track retry attempts per message text to prevent infinite loop
           retryAttempts[message] = (retryAttempts[message] || 0) + 1;
           var attempts = retryAttempts[message];
 
           if (attempts >= MAX_RETRIES) {
-            // Show manual retry button after exhausting auto-retries
             var failMsg = document.createElement('div');
             failMsg.className = 'at-msg at-assistant';
             failMsg.textContent = '\u26A0\uFE0F Server overloaded. Try again later.';
@@ -791,7 +930,6 @@
             return;
           }
 
-          // Show rate limit message
           var rateMsg = document.createElement('div');
           rateMsg.className = 'at-msg at-assistant';
           rateMsg.textContent = '\u26A0\uFE0F Server temporarily overloaded. Retry in ' + delay + 's.';
@@ -810,83 +948,12 @@
           return;
         }
 
-        var reader = response.body.getReader();
-        var decoder = new TextDecoder();
-        var buffer = '';
-
-        function pump() {
-          return reader.read().then(function (result) {
-            if (result.done) return;
-
-            buffer += decoder.decode(result.value, { stream: true });
-            var parts = buffer.split('\n\n');
-            buffer = parts.pop();
-
-            parts.forEach(function (chunk) {
-              var line = chunk.split('\n').find(function (l) { return l.indexOf('data:') === 0; });
-              if (!line) return;
-
-              try {
-                var payload = JSON.parse(line.slice(5).trim());
-              } catch (e) { return; }
-
-              // Remove thinking indicator
-              if (targetNode.classList.contains('at-thinking')) {
-                targetNode.classList.remove('at-thinking');
-              }
-
-              if (payload.type === 'token') {
-                appendToken(targetNode, payload.text || '');
-              } else if (payload.type === 'final') {
-                setFinalText(targetNode, payload.text || '');
-              } else if (payload.type === 'tool_call') {
-                var tools = JSON.parse(targetNode.dataset.tools || '[]');
-                var displayNames = JSON.parse(targetNode.dataset.displayNames || '{}');
-                if (tools.indexOf(payload.name) === -1) {
-                  tools.push(payload.name);
-                  targetNode.dataset.tools = JSON.stringify(tools);
-                }
-                if (payload.display_name && !displayNames[payload.name]) {
-                  displayNames[payload.name] = payload.display_name;
-                  targetNode.dataset.displayNames = JSON.stringify(displayNames);
-                }
-                // Show tool indicator above message
-                ensureToolStrip(targetNode, tools, displayNames);
-              } else if (payload.type === 'done') {
-                // Skip fallback message if there was already an error
-                if (targetNode.classList.contains('at-error')) return;
-                var raw = targetNode.dataset.raw || '';
-                if (!raw.trim()) {
-                  var noRespMsg = CONFIG.lang === 'ru'
-                    ? 'Не удалось получить ответ от модели. Пожалуйста, переформулируйте вопрос.'
-                    : 'No response from the model. Please rephrase your question.';
-                  setFinalText(targetNode, noRespMsg);
-                }
-                // Save to sessionStorage
-                var toolNames = [];
-                try { toolNames = JSON.parse(targetNode.dataset.tools || '[]'); } catch (e) { /* ignore */ }
-                appendStored('assistant', targetNode.dataset.raw || '', toolNames);
-                targetNode.dataset.saved = 'true';
-                scrollToBottom(messagesEl);
-              } else if (payload.type === 'error') {
-                targetNode.classList.remove('at-thinking');
-                targetNode.classList.add('at-error');
-                targetNode.textContent = payload.text || (CONFIG.lang === 'ru'
-                  ? 'Произошла ошибка. Попробуйте ещё раз.'
-                  : 'An error occurred. Please try again.');
-              }
-            });
-
-            return pump();
-          });
-        }
-
-        return pump();
+        return _pumpSSE(response, targetNode);
       }).catch(function (err) {
         targetNode.classList.remove('at-thinking');
         targetNode.classList.add('at-error');
+        // TODO: РЕФАКТОРИНГ ЭТООГО
         targetNode.innerHTML = '\u26A0\uFE0F No connection to server. Check your internet.<br><button class="at-retry-btn" data-message="' + escapeHtml(message) + '">Retry</button>';
-        // Bind retry button click
         var btn = targetNode.querySelector('.at-retry-btn');
         if (btn) {
           btn.addEventListener('click', function() {
@@ -960,16 +1027,177 @@
       handleSubmit();
     });
 
+    // ── Voice Input ──
+    var mediaRecorder = null;
+    var micChunks = [];
+    var micStream = null;
+    var micTimerInterval = null;
+    var micStartTime = 0;
+    var micDuration = 0;
+    var MAX_RECORDING_SEC = 120;
+
+    function updateMicTimer() {
+      micDuration = Math.floor((Date.now() - micStartTime) / 1000);
+      var m = Math.floor(micDuration / 60);
+      var s = micDuration % 60;
+      ui.micTimer.textContent = (m > 0 ? m + 'm ' : '') + s + 's';
+    }
+
+    function startVoiceRecording() {
+      if (mediaRecorder && mediaRecorder.state === 'recording') return;
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        ui.micBtn.classList.add('at-mic-disabled');
+        return;
+      }
+
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(function (stream) {
+          micStream = stream;
+          micChunks = [];
+
+          var mimeType = 'audio/webm;codecs=opus';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/webm';
+          }
+
+          mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+
+          mediaRecorder.ondataavailable = function (e) {
+            if (e.data.size > 0) micChunks.push(e.data);
+          };
+
+          mediaRecorder.onstop = function () {
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            micStream = null;
+            ui.micBtn.classList.remove('at-mic-recording');
+            ui.micTimer.classList.remove('at-mic-timer-visible');
+            if (micTimerInterval) { clearInterval(micTimerInterval); micTimerInterval = null; }
+
+            var blob = new Blob(micChunks, { type: mimeType });
+            if (blob.size === 0) return;
+
+            // Show user message with mic icon + duration
+            var durStr = ui.micTimer.textContent || (micDuration + 's');
+            addMessage('user', '🎤 ' + durStr, { persist: true });
+
+            var answerNode = addMessage('assistant', '', { persist: false, scroll: false });
+            streamVoiceChat(blob, answerNode);
+          };
+
+          mediaRecorder.start();
+          ui.micBtn.classList.add('at-mic-recording');
+          ui.micTimer.classList.add('at-mic-timer-visible');
+          micStartTime = Date.now();
+          micDuration = 0;
+          updateMicTimer();
+          micTimerInterval = setInterval(updateMicTimer, 1000);
+
+          // Auto-stop at max duration
+          if (MAX_RECORDING_SEC > 0) {
+            setTimeout(function () {
+              if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+              }
+            }, MAX_RECORDING_SEC * 1000);
+          }
+        })
+        .catch(function (err) {
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            addMessage('assistant', (CONFIG.lang === 'ru'
+              ? '❌ Разрешите доступ к микрофону в настройках браузера'
+              : '❌ Please allow microphone access in browser settings'),
+              { persist: false });
+          } else {
+            ui.micBtn.classList.add('at-mic-disabled');
+          }
+        });
+    }
+
+    function stopVoiceRecording() {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+    }
+
+    if (CONFIG.voiceInput && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      ui.micBtn.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        if (ui.micBtn.classList.contains('at-mic-recording')) {
+          stopVoiceRecording();
+        } else {
+          startVoiceRecording();
+        }
+      });
+    }
+
+    function streamVoiceChat(blob, targetNode) {
+      targetNode.classList.add('at-thinking');
+      targetNode.dataset.tools = '[]';
+      targetNode.dataset.displayNames = '{}';
+      targetNode.dataset.saved = 'false';
+
+      var url = CONFIG.apiBase + '/api/chat/voice';
+      var formData = new FormData();
+      formData.append('audio', blob, 'voice.webm');
+      formData.append('session_id', sessionId);
+      formData.append('agent', CONFIG.agent);
+      formData.append('lang', CONFIG.lang);
+
+      fetch(url, {
+        method: 'POST',
+        body: formData
+      }).then(function (response) {
+        if (response.status === 429) {
+          targetNode.classList.remove('at-thinking');
+          targetNode.remove();
+          var msg = document.createElement('div');
+          msg.className = 'at-msg at-assistant';
+          msg.textContent = CONFIG.lang === 'ru'
+            ? '⚠️ Сервер перегружен. Попробуйте позже.'
+            : '⚠️ Server overloaded. Try again later.';
+          messagesEl.appendChild(msg);
+          scrollToBottom(messagesEl);
+          return;
+        }
+
+        if (!response.ok) {
+          targetNode.classList.remove('at-thinking');
+          targetNode.classList.add('at-error');
+          targetNode.textContent = 'Error: ' + response.status;
+          return;
+        }
+
+        return _pumpSSE(response, targetNode);
+      }).catch(function () {
+        targetNode.classList.remove('at-thinking');
+        targetNode.classList.add('at-error');
+        targetNode.innerHTML = '\u26A0\uFE0F Connection error.';
+      });
+    }
+
+    // ── Audio playback for TTS ──
+    function playAudioBase64(b64data) {
+      try {
+        var binaryStr = atob(b64data);
+        var byteArray = new Uint8Array(binaryStr.length);
+        for (var i = 0; i < binaryStr.length; i++) {
+          byteArray[i] = binaryStr.charCodeAt(i);
+        }
+        var blob = new Blob([byteArray], { type: 'audio/mpeg' });
+        var url = URL.createObjectURL(blob);
+        var audio = new Audio(url);
+        audio.play().catch(function () {
+          // Autoplay blocked — user needs to interact first
+        });
+      } catch (e) {
+        // Invalid base64
+      }
+    }
+
     // ── Init ──
     restoreHistory();
   }
-
-  /* ─── Bootstrap ─── */
-
-  // Store refs for potential rebuild
-  var _currentHost = null;
-
-  /* ─── Bootstrap ─── */
 
   function init() {
     state.sessionId = getSessionId();

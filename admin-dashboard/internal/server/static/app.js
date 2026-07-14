@@ -84,6 +84,28 @@ function dashboard() {
     llmConfig: { providers: [], fallback_enabled: false },
     llmError: '',
 
+    // ── Voice Config ──
+    voiceConfig: {
+      enabled: true,
+      stt_providers: [],
+      tts_providers: [],
+      stt_fallback_enabled: true,
+      tts_fallback_enabled: true,
+      max_voice_message_size: 10485760,
+      min_voice_interval_seconds: 10,
+      max_voice_duration_seconds: 120,
+    },
+    voiceError: '',
+    voiceSaveMsg: '',
+    voiceSaveSuccess: false,
+    voiceSaving: false,
+    showAddSttProvider: false,
+    showAddTtsProvider: false,
+    editingSttIndex: -1,
+    editingTtsIndex: -1,
+    voiceSttForm: { name: '', provider: 'litellm', model: 'whisper-1', api_key: '', api_base: '', enabled: true },
+    voiceTtsForm: { name: '', provider: 'litellm', model: 'tts-1', voice: 'alloy', api_key: '', api_base: '', enabled: true },
+
     // ═══════════════════════════════════���═══════
     //  I18N
     // ═══════════════════════════════════════════
@@ -219,6 +241,147 @@ function dashboard() {
       this.llmTab = 'list';
       this.llmEdit = null;
       this.llmEditName = '';
+    },
+
+    // ═══════════════════════════════════════════
+    //  VOICE CONFIG METHODS
+    // ═══════════════════════════════════════════
+    async loadVoiceConfig() {
+      this.voiceError = '';
+      try {
+        this.voiceConfig = await this.api('/api/voice-config');
+      } catch (e) {
+        this.voiceError = e.message || this.__('llm.loadError');
+        this.voiceConfig = {
+        enabled: true,
+        stt_providers: [],
+        tts_providers: [],
+        stt_fallback_enabled: true,
+        tts_fallback_enabled: true,
+        max_voice_message_size: 10485760,
+        min_voice_interval_seconds: 10,
+        max_voice_duration_seconds: 120,
+      };
+      }
+    },
+
+    async saveVoiceConfig() {
+      this.voiceSaving = true;
+      this.voiceSaveMsg = '';
+      this.voiceSaveSuccess = false;
+      try {
+        await this.api('/api/voice-config', {
+          method: 'PUT',
+          body: JSON.stringify(this.voiceConfig),
+        });
+        this.voiceSaveMsg = this.__('msg.saved');
+        this.voiceSaveSuccess = true;
+        setTimeout(() => { this.voiceSaveMsg = ''; }, 3000);
+        await this.loadVoiceConfig();
+      } catch (e) {
+        this.voiceSaveMsg = e.message || this.__('msg.failed');
+        this.voiceSaveSuccess = false;
+      } finally {
+        this.voiceSaving = false;
+      }
+    },
+
+    cancelVoiceEdit() {
+      this.showAddSttProvider = false;
+      this.showAddTtsProvider = false;
+      this.editingSttIndex = -1;
+      this.editingTtsIndex = -1;
+      this.voiceSttForm = { name: '', provider: 'litellm', model: 'whisper-1', api_key: '', api_base: '', enabled: true };
+      this.voiceTtsForm = { name: '', provider: 'litellm', model: 'tts-1', voice: 'alloy', api_key: '', api_base: '', enabled: true };
+    },
+
+    editSttProvider(idx) {
+      const prov = this.voiceConfig?.stt_providers?.[idx];
+      if (!prov) return;
+      this.editingSttIndex = idx;
+      this.showAddSttProvider = true;
+      this.showAddTtsProvider = false;
+      this.voiceSttForm = {
+        name: prov.name,
+        provider: prov.provider,
+        model: prov.model,
+        api_key: prov.api_key || '',
+        api_base: prov.api_base || '',
+        enabled: prov.enabled !== false,
+      };
+    },
+
+    deleteSttProvider(idx) {
+      if (!confirm(this.__('voice.deleteConfirmMsg') + '?')) return;
+      if (!this.voiceConfig?.stt_providers) return;
+      this.voiceConfig.stt_providers.splice(idx, 1);
+      this.saveVoiceConfig();
+    },
+
+    saveSttProvider() {
+      if (!this.voiceConfig) return;
+      if (!this.voiceConfig.stt_providers) this.voiceConfig.stt_providers = [];
+      const body = {
+        name: this.voiceSttForm.name,
+        provider: this.voiceSttForm.provider,
+        model: this.voiceSttForm.model,
+        api_key: this.voiceSttForm.api_key || '',
+        api_base: this.voiceSttForm.api_base || '',
+        enabled: this.voiceSttForm.enabled,
+      };
+      if (this.editingSttIndex >= 0 && this.editingSttIndex < this.voiceConfig.stt_providers.length) {
+        // Preserve name if editing (name is the key)
+        this.voiceConfig.stt_providers[this.editingSttIndex] = body;
+      } else {
+        this.voiceConfig.stt_providers.push(body);
+      }
+      this.cancelVoiceEdit();
+      this.saveVoiceConfig();
+    },
+
+    editTtsProvider(idx) {
+      const prov = this.voiceConfig?.tts_providers?.[idx];
+      if (!prov) return;
+      this.editingTtsIndex = idx;
+      this.showAddTtsProvider = true;
+      this.showAddSttProvider = false;
+      this.voiceTtsForm = {
+        name: prov.name,
+        provider: prov.provider,
+        model: prov.model,
+        voice: prov.voice || 'alloy',
+        api_key: prov.api_key || '',
+        api_base: prov.api_base || '',
+        enabled: prov.enabled !== false,
+      };
+    },
+
+    deleteTtsProvider(idx) {
+      if (!confirm(this.__('voice.deleteConfirmMsg') + '?')) return;
+      if (!this.voiceConfig?.tts_providers) return;
+      this.voiceConfig.tts_providers.splice(idx, 1);
+      this.saveVoiceConfig();
+    },
+
+    saveTtsProvider() {
+      if (!this.voiceConfig) return;
+      if (!this.voiceConfig.tts_providers) this.voiceConfig.tts_providers = [];
+      const body = {
+        name: this.voiceTtsForm.name,
+        provider: this.voiceTtsForm.provider,
+        model: this.voiceTtsForm.model,
+        voice: this.voiceTtsForm.voice || 'alloy',
+        api_key: this.voiceTtsForm.api_key || '',
+        api_base: this.voiceTtsForm.api_base || '',
+        enabled: this.voiceTtsForm.enabled,
+      };
+      if (this.editingTtsIndex >= 0 && this.editingTtsIndex < this.voiceConfig.tts_providers.length) {
+        this.voiceConfig.tts_providers[this.editingTtsIndex] = body;
+      } else {
+        this.voiceConfig.tts_providers.push(body);
+      }
+      this.cancelVoiceEdit();
+      this.saveVoiceConfig();
     },
 
     // ═══════════════════════════════════════════
@@ -937,8 +1100,15 @@ function dashboard() {
         tenant_ids: [...(agent.tenant_ids || [])],
         provider_priority: [...(agent.provider_priority || [])],
         system_prompt: agent.system_prompt || '',
+        // Voice overrides
+        voice_config_enabled: agent.voice_config?.enabled ?? true,
+        voice_input_disabled: agent.voice_config?.voice_input_disabled ?? false,
+        voice_output_disabled: agent.voice_config?.voice_output_disabled ?? false,
+        voice_stt_provider: agent.voice_config?.stt_provider || '',
+        voice_tts_provider: agent.voice_config?.tts_provider || '',
       };
       this.loadLlmProviderStoreList();
+      this.loadVoiceConfig();
       this.editingAgent = true;
     },
 
@@ -946,14 +1116,33 @@ function dashboard() {
       this.savingAgent = true;
       this.error = '';
       try {
+        // Build voice_config from flat edit fields
+        var voiceConfig = {};
+        if (this.editAgentData.voice_config_enabled !== undefined) {
+          voiceConfig.enabled = this.editAgentData.voice_config_enabled;
+        }
+        if (this.editAgentData.voice_input_disabled) {
+          voiceConfig.voice_input_disabled = true;
+        }
+        if (this.editAgentData.voice_output_disabled) {
+          voiceConfig.voice_output_disabled = true;
+        }
+        if (this.editAgentData.voice_stt_provider) {
+          voiceConfig.stt_provider = this.editAgentData.voice_stt_provider;
+        }
+        if (this.editAgentData.voice_tts_provider) {
+          voiceConfig.tts_provider = this.editAgentData.voice_tts_provider;
+        }
+        const body = {
+          description: this.editAgentData.description,
+          tenant_ids: this.editAgentData.tenant_ids,
+          provider_priority: this.editAgentData.provider_priority || [],
+          system_prompt: this.editAgentData.system_prompt || null,
+          voice_config: Object.keys(voiceConfig).length > 0 ? voiceConfig : null,
+        };
         await this.api('/api/agents/' + encodeURIComponent(this.editAgentData.name), {
           method: 'PUT',
-          body: JSON.stringify({
-            description: this.editAgentData.description,
-            tenant_ids: this.editAgentData.tenant_ids,
-            provider_priority: this.editAgentData.provider_priority || [],
-            system_prompt: this.editAgentData.system_prompt || null,
-          }),
+          body: JSON.stringify(body),
         });
         this.editingAgent = false;
         await this.loadAgents();

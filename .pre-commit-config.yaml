@@ -56,6 +56,15 @@ repos:
 
   - repo: local
     hooks:
+      - id: admin-dashboard-contract
+        name: admin-dashboard contract check (frontend vs Go routes)
+        entry: scripts/check-admin-contract.sh
+        language: script
+        files: ^admin-dashboard/
+        pass_filenames: false
+
+  - repo: local
+    hooks:
       - id: admin-dashboard-tests
         name: admin-dashboard JS tests
         entry: admin-dashboard/scripts/run-tests.sh

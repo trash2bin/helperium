@@ -64,6 +64,8 @@ from api_service.http_models import (
     AgentUpdateRequest,
     AgentResponse,
     AgentListResponse,
+    VoiceConfig,
+    VoiceAgentConfig,
 )
 from api_service.agent_store import AgentStore
 from api_service.anti_abuse import AntiAbuseChecker, TokenBucket
@@ -85,6 +87,17 @@ from helperium_sdk.tracing import (
     add_span_attributes,
     shutdown as otel_shutdown,
 )
+
+# Audio / Voice imports
+import base64
+from fastapi import UploadFile, File, Form
+from api_service.audio.voice_config import (
+    load_voice_config,
+    save_voice_config,
+    resolve_voice_config,
+)
+from api_service.audio.stt_engine import STTEngine
+from api_service.audio.tts_engine import TTSEngine
 
 configure_logging()
 setup_opentelemetry("api-service")
@@ -348,6 +361,9 @@ def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | No
     if event_type == "error":
         text = data.get("message") if isinstance(data, dict) else data
         return {"type": "error", "text": text}
+    if event_type == "audio":
+        audio_data = data.get("data", "") if isinstance(data, dict) else ""
+        return {"type": "audio", "data": audio_data}
     return None
 
 
@@ -835,6 +851,58 @@ async def get_llm_config():
     }
 
 
+# ── Voice Config ──
+
+
+def _preserve_fields(
+    body_providers: list[dict], current_providers: list, fields: list[str]
+) -> None:
+    """Preserve masked sensitive fields when updating provider configs.
+
+    Frontend sends empty strings for api_key/api_base/voice to avoid
+    exposing secrets in the PUT body. This function fills them back
+    from the currently stored values when the incoming value is falsy.
+    """
+    existing = {p.name: p for p in current_providers}
+    for p in body_providers:
+        for field in fields:
+            if not p.get(field):
+                prev = existing.get(p.get("name", ""))
+                if prev and getattr(prev, field, None):
+                    p[field] = getattr(prev, field)
+
+
+@app.get("/api/voice-config")
+async def get_voice_config():
+    """Get current voice (STT/TTS) configuration."""
+    config = load_voice_config()
+    return config.model_dump(mode="json")
+
+
+@app.put("/api/voice-config")
+async def update_voice_config(body: dict) -> dict:
+    """Update and persist voice configuration.
+
+    Preserves existing api_key/api_base/voice per provider when the
+    incoming value is None or empty (masks sensitive fields).
+    """
+    current = load_voice_config()
+
+    # Preserve masked fields (frontend sends empty strings for security)
+    _preserve_fields(
+        body.get("stt_providers", []), current.stt_providers, ["api_key", "api_base"]
+    )
+    _preserve_fields(
+        body.get("tts_providers", []),
+        current.tts_providers,
+        ["api_key", "api_base", "voice"],
+    )
+
+    config = VoiceConfig(**body)
+    save_voice_config(config)
+    return config.model_dump(mode="json")
+
+
 # ── Agent CRUD ──
 
 
@@ -857,6 +925,7 @@ async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
             provider_priority=req.provider_priority or None,
             abuse_config=req.abuse_config,
             system_prompt=req.system_prompt,
+            voice_config=req.voice_config.model_dump() if req.voice_config else None,
         )
         return AgentResponse(**result)
     except ValueError as exc:
@@ -910,6 +979,7 @@ async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResp
         provider_priority=req.provider_priority,
         abuse_config=req.abuse_config,
         system_prompt=req.system_prompt,
+        voice_config=req.voice_config.model_dump() if req.voice_config else None,
     )
     if not result:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
@@ -1041,6 +1111,169 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
             yield _sse({"type": "done"})
         except Exception as exc:
             yield _sse({"type": "error", "text": classify_error(exc, lang)})
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
+# ── Voice Chat (должен быть ДО /api/chat/{name}, иначе {name} перехватит "voice") ──
+
+
+@app.post("/api/chat/voice")
+@limiter.limit(rate_limit)
+async def chat_voice_endpoint(
+    request: Request,
+    audio: UploadFile = File(...),
+    session_id: str = Form("default"),
+    agent: str | None = Form(None),
+    lang: str | None = Form(None),
+) -> StreamingResponse:
+    """Voice chat endpoint.
+
+    Accepts an audio file via multipart/form-data, transcribes it via
+    the configured STT provider(s), feeds the text through the existing
+    chat pipeline, and streams the response as SSE events.
+
+    If TTS providers are configured, the final answer is also sent as
+    an ``type="audio"`` SSE event with base64-encoded audio bytes.
+    """
+    try:
+        audio_bytes = await audio.read()
+    except Exception as exc:
+        return StreamingResponse(
+            _single_error(f"Failed to read audio: {exc}"),
+            media_type="text/event-stream",
+        )
+
+    if not audio_bytes:
+        return StreamingResponse(
+            _single_error("Empty audio file"),
+            media_type="text/event-stream",
+        )
+
+    # Load voice config
+    voice_config = load_voice_config()
+    if not voice_config.enabled:
+        return StreamingResponse(
+            _single_error("Voice input is disabled"),
+            media_type="text/event-stream",
+        )
+
+    # Size check
+    if len(audio_bytes) > voice_config.max_voice_message_size:
+        size_mb = len(audio_bytes) / (1024 * 1024)
+        max_mb = voice_config.max_voice_message_size / (1024 * 1024)
+        return StreamingResponse(
+            _single_error(f"Audio too large: {size_mb:.1f}MB > {max_mb:.0f}MB"),
+            media_type="text/event-stream",
+        )
+
+    # Resolve per-agent overrides
+    resolved_config = voice_config
+    agent_data = None
+    if agent:
+        agent_data = await asyncio.to_thread(get_agent_store().get_agent, agent)
+        if agent_data:
+            agent_voice_config = agent_data.get("voice_config")
+            if agent_voice_config:
+                agent_voice_obj = VoiceAgentConfig(**agent_voice_config)
+                resolved_config = resolve_voice_config(voice_config, agent_voice_obj)
+
+    # Re-check after agent overrides (voice_input_disabled, etc.)
+    if not resolved_config.enabled:
+        return StreamingResponse(
+            _single_error("Voice input is disabled"),
+            media_type="text/event-stream",
+        )
+
+    # Build STT engine and transcribe
+    stt_engine = STTEngine.from_config(resolved_config)
+    try:
+        stt_result = await stt_engine.transcribe(audio_bytes)
+    except RuntimeError as exc:
+        return StreamingResponse(
+            _single_error(f"Speech recognition failed: {exc}"),
+            media_type="text/event-stream",
+        )
+
+    text = stt_result.text
+    if not text.strip():
+        return StreamingResponse(
+            _single_error("No speech detected"),
+            media_type="text/event-stream",
+        )
+
+    logger.info(
+        "Voice: STT=%s text=%s (session=%s)",
+        stt_result.provider_name,
+        text[:80],
+        session_id,
+    )
+
+    # Determine tenant_ids: from agent config (primary) or X-Tenant-ID header (override)
+    tenant_ids = None
+    if agent_data and agent_data.get("tenant_ids"):
+        tenant_ids_raw = agent_data.get("tenant_ids")
+        tenant_ids = tenant_ids_raw if tenant_ids_raw else None
+    if not tenant_ids:
+        tenant_header = request.headers.get("X-Tenant-ID", "")
+        tenant_ids = (
+            [t.strip() for t in tenant_header.split(",") if t.strip()]
+            if tenant_header
+            else None
+        )
+
+    # Agent-specific session prefix
+    if agent:
+        effective_session_id = f"agent:{agent}:{session_id}"
+    else:
+        effective_session_id = f"direct:{session_id}"
+
+    # Resolve lang
+    request_lang = lang or _get_lang(request)
+
+    # Build TTS engine if configured
+    tts_enabled = (
+        len(resolved_config.tts_providers) > 0 and resolved_config.tts_fallback_enabled
+    )
+    tts_engine = TTSEngine.from_config(resolved_config) if tts_enabled else None
+
+    async def events():
+        final_text = ""
+        try:
+            async for event in get_agent().stream_events(
+                text,
+                session_id=effective_session_id,
+                tenant_ids=tenant_ids,
+                lang=request_lang,
+            ):
+                payload = _event_payload(event.type, event.data)
+                if payload is not None:
+                    if event.type == "final":
+                        final_text = event.data.get("content", "")
+                    yield _sse(payload)
+
+            # TTS: synthesize final response if configured
+            if tts_engine and final_text.strip():
+                try:
+                    tts_result = await tts_engine.synthesize(final_text)
+                    audio_b64 = base64.b64encode(tts_result.audio_bytes).decode()
+                    yield _sse(
+                        {
+                            "type": "audio",
+                            "data": audio_b64,
+                        }
+                    )
+                except Exception as exc:
+                    logger.warning("TTS synthesis failed: %s", exc)
+
+            yield _sse({"type": "done"})
+        except Exception as exc:
+            yield _sse(
+                {
+                    "type": "error",
+                    "text": classify_error(exc, request_lang),
+                }
+            )
 
     return StreamingResponse(events(), media_type="text/event-stream")
 

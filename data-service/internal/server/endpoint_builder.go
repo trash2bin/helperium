@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
-	"github.com/trash2bin/helperium/data-service/internal/configgen"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
@@ -205,45 +203,6 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 	r.MethodNotAllowed(handlers.MethodNotAllowedHandler)
 
 	return r, nil
-}
-
-// discoverHandler — GET /admin/discover: сгенерировать конфиг из схемы БД.
-func discoverHandler(adp datasource.Adapter, ds config.DataSourceConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := adp.Connect(r.Context(), ds.DSN)
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "connect_error", err.Error())
-			return
-		}
-		defer conn.Close() //nolint:errcheck
-
-		schema, err := adp.Introspect(r.Context(), conn)
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "introspect_error", err.Error())
-			return
-		}
-
-		dsConfig := config.DataSourceConfig{Driver: ds.Driver, DSN: ds.DSN}
-		cfg := configgen.Generate(schema, dsConfig, nil)
-
-		slog.Info("config generated via /admin/discover",
-			"entities", len(cfg.Entities),
-			"endpoints", len(cfg.Endpoints),
-		)
-
-		if r.URL.Query().Get("raw") == "true" {
-			data, err := json.MarshalIndent(cfg, "", "  ")
-			if err != nil {
-				handlers.RespondError(w, http.StatusInternalServerError, "marshal_error", err.Error())
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		handlers.RespondJSON(w, http.StatusOK, cfg)
-	}
 }
 
 // isWriteMethod возвращает true для мутирующих HTTP-методов.

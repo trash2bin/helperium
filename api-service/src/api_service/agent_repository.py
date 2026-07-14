@@ -116,6 +116,7 @@ class AgentRepository(ABC):
         provider_priority: list[str] | None = None,
         abuse_config: dict | None = None,
         system_prompt: str | None = None,
+        voice_config: dict | None = None,
     ) -> dict[str, Any]: ...
 
     @abstractmethod
@@ -129,6 +130,7 @@ class AgentRepository(ABC):
         provider_priority: list[str] | None = None,
         abuse_config: dict | None = None,
         system_prompt: str | None = None,
+        voice_config: dict | None = None,
     ) -> dict[str, Any] | None: ...
 
     @abstractmethod
@@ -178,6 +180,7 @@ class SqliteAgentRepository(AgentRepository):
                         widget_config TEXT,
                         llm_config   TEXT,
                         provider_priority TEXT NOT NULL DEFAULT '[]',
+                        voice_config TEXT,
                         created_at   TEXT NOT NULL,
                         updated_at   TEXT NOT NULL
                     )
@@ -191,6 +194,7 @@ class SqliteAgentRepository(AgentRepository):
                     "provider_priority",
                     "abuse_config",
                     "system_prompt",
+                    "voice_config",
                 ):
                     try:
                         conn.execute(f"ALTER TABLE agents ADD COLUMN {col} TEXT")
@@ -206,7 +210,7 @@ class SqliteAgentRepository(AgentRepository):
             conn = self._conn()
             try:
                 rows = conn.execute(
-                    "SELECT name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, created_at, updated_at "
+                    "SELECT name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, voice_config, created_at, updated_at "
                     "FROM agents ORDER BY created_at DESC"
                 ).fetchall()
                 return [self._row_to_dict(r) for r in rows]
@@ -218,7 +222,7 @@ class SqliteAgentRepository(AgentRepository):
             conn = self._conn()
             try:
                 row = conn.execute(
-                    "SELECT name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, created_at, updated_at "
+                    "SELECT name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, voice_config, created_at, updated_at "
                     "FROM agents WHERE name = ?",
                     (name,),
                 ).fetchone()
@@ -236,6 +240,7 @@ class SqliteAgentRepository(AgentRepository):
         provider_priority: list[str] | None = None,
         abuse_config: dict | None = None,
         system_prompt: str | None = None,
+        voice_config: dict | None = None,
     ) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
         tenant_ids_json = json.dumps(tenant_ids or [], ensure_ascii=False)
@@ -243,12 +248,13 @@ class SqliteAgentRepository(AgentRepository):
         llm_config_json = _encrypt_value(_json_or_none(llm_config))
         provider_priority_json = json.dumps(provider_priority or [], ensure_ascii=False)
         abuse_config_json = _json_or_none(abuse_config)
+        voice_config_json = _json_or_none(voice_config)
         with self._lock:
             conn = self._conn()
             try:
                 conn.execute(
-                    "INSERT INTO agents (name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO agents (name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, voice_config, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         name,
                         description,
@@ -258,6 +264,7 @@ class SqliteAgentRepository(AgentRepository):
                         provider_priority_json,
                         abuse_config_json,
                         system_prompt,
+                        voice_config_json,
                         now,
                         now,
                     ),
@@ -272,6 +279,7 @@ class SqliteAgentRepository(AgentRepository):
                     "provider_priority": provider_priority or [],
                     "abuse_config": _parse_config(abuse_config),
                     "system_prompt": system_prompt,
+                    "voice_config": _parse_config(voice_config),
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -290,13 +298,14 @@ class SqliteAgentRepository(AgentRepository):
         provider_priority: list[str] | None = None,
         abuse_config: dict | None = None,
         system_prompt: str | None = None,
+        voice_config: dict | None = None,
     ) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
             conn = self._conn()
             try:
                 existing = conn.execute(
-                    "SELECT name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, created_at, updated_at "
+                    "SELECT name, description, tenant_ids, widget_config, llm_config, provider_priority, abuse_config, system_prompt, voice_config, created_at, updated_at "
                     "FROM agents WHERE name = ?",
                     (name,),
                 ).fetchone()
@@ -340,6 +349,11 @@ class SqliteAgentRepository(AgentRepository):
                     if system_prompt is not None
                     else existing["system_prompt"]
                 )
+                new_voice_config = (
+                    voice_config
+                    if voice_config is not None
+                    else existing["voice_config"]
+                )
 
                 new_widget_config_json = _json_or_none(_unpack_json(new_widget_config))
                 new_llm_config_json = _encrypt_value(
@@ -349,9 +363,10 @@ class SqliteAgentRepository(AgentRepository):
                     new_provider_priority, ensure_ascii=False
                 )
                 new_abuse_config_json = _json_or_none(_unpack_json(new_abuse_config))
+                new_voice_config_json = _json_or_none(_unpack_json(new_voice_config))
 
                 conn.execute(
-                    "UPDATE agents SET description = ?, tenant_ids = ?, widget_config = ?, llm_config = ?, provider_priority = ?, abuse_config = ?, system_prompt = ?, updated_at = ? WHERE name = ?",
+                    "UPDATE agents SET description = ?, tenant_ids = ?, widget_config = ?, llm_config = ?, provider_priority = ?, abuse_config = ?, system_prompt = ?, voice_config = ?, updated_at = ? WHERE name = ?",
                     (
                         new_description,
                         new_tenant_ids,
@@ -360,6 +375,7 @@ class SqliteAgentRepository(AgentRepository):
                         new_provider_priority_json,
                         new_abuse_config_json,
                         new_system_prompt,
+                        new_voice_config_json,
                         now,
                         name,
                     ),
@@ -380,6 +396,7 @@ class SqliteAgentRepository(AgentRepository):
                     "provider_priority": new_provider_priority,
                     "abuse_config": _parse_config(_unpack_json(new_abuse_config)),
                     "system_prompt": new_system_prompt,
+                    "voice_config": _parse_config(_unpack_json(new_voice_config)),
                     "created_at": existing["created_at"],
                     "updated_at": now,
                 }
@@ -411,6 +428,7 @@ class SqliteAgentRepository(AgentRepository):
             else [],
             "abuse_config": _parse_config(row["abuse_config"]),
             "system_prompt": row["system_prompt"],
+            "voice_config": _parse_config(row["voice_config"]),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

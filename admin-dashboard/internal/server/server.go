@@ -13,6 +13,7 @@ package server
 
 import (
 	"embed"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -174,9 +175,15 @@ func (s *Server) Router() chi.Router {
 		r.Post("/llm-providers/{name}/toggle", s.llmProvidersToggleHandler)
 		r.Get("/llm-provider-list", s.llmProviderListHandler)
 
+		// Voice Config (STT/TTS) — proxy to api-service
+		r.Get("/voice-config", s.voiceConfigGetHandler)
+		r.Put("/voice-config", s.voiceConfigPutHandler)
+		r.Post("/chat/voice", s.voiceChatHandler)
+
 		// Anti-abuse / rate limit settings
 		r.Get("/abuse-settings", s.abuseSettingsGetHandler)
 		r.Put("/abuse-settings", s.abuseSettingsPutHandler)
+		r.Post("/admin/abuse-config/reload", s.abuseReloadHandler)
 		r.Get("/agents/{name}/abuse", s.agentAbuseGetHandler)
 		r.Put("/agents/{name}/abuse", s.agentAbusePutHandler)
 		r.Post("/abuse-preset/{preset}", s.abusePresetHandler)
@@ -922,7 +929,7 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 		return
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, apiURL, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, apiURL, bytes.NewReader(body))
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "proxy_error", err.Error())
 		return
@@ -931,7 +938,12 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 	if token := r.Header.Get("Authorization"); token != "" {
 		req.Header.Set("Authorization", token)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	// Сохраняем оригинальный Content-Type (может быть multipart/form-data с boundary для voice)
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/json"
+	}
+	req.Header.Set("Content-Type", ct)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -941,6 +953,15 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+
+	slog.Debug("proxyToApiService",
+		"method", r.Method,
+		"path", path,
+		"status", resp.StatusCode,
+		"content_type", ct,
+		"body_size", len(body),
+	)
+
 	for k, v := range resp.Header {
 		w.Header()[k] = v
 	}
@@ -1012,4 +1033,77 @@ func (s *Server) llmProvidersToggleHandler(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) llmProviderListHandler(w http.ResponseWriter, r *http.Request) {
 	s.proxyToApiService(w, r, "/admin/llm-provider-list")
+}
+
+func (s *Server) voiceConfigGetHandler(w http.ResponseWriter, r *http.Request) {
+	s.proxyToApiService(w, r, "/api/voice-config")
+}
+
+func (s *Server) voiceConfigPutHandler(w http.ResponseWriter, r *http.Request) {
+	s.proxyToApiService(w, r, "/api/voice-config")
+}
+
+func (s *Server) voiceChatHandler(w http.ResponseWriter, r *http.Request) {
+	// Multipart voice → SSE stream — нужен streaming, не proxyToApiService
+	apiURL := s.opts.ApiSvcURL + "/api/chat/voice"
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "read_error", err.Error())
+		return
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, apiURL, bytes.NewReader(body))
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "proxy_error", err.Error())
+		return
+	}
+
+	if token := r.Header.Get("Authorization"); token != "" {
+		req.Header.Set("Authorization", token)
+	}
+	if tenant := r.Header.Get("X-Tenant-ID"); tenant != "" {
+		req.Header.Set("X-Tenant-ID", tenant)
+	}
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/json"
+	}
+	req.Header.Set("Content-Type", ct)
+
+	slog.Debug("voiceChatHandler",
+		"api_url", apiURL,
+		"body_size", len(body),
+		"content_type", ct,
+	)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "api_unreachable", err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Проксируем статус + заголовки
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.Header().Del("Access-Control-Allow-Origin")
+	w.WriteHeader(resp.StatusCode)
+
+	// SSE streaming — копируем байты как есть
+	flusher, canFlush := w.(http.Flusher)
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			w.Write(buf[:n])
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
 }

@@ -45,6 +45,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -92,6 +93,7 @@ class _TenantConnection:
     call_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     list_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     tool_display_names: dict[str, str] = field(default_factory=dict)
+    last_used: float = field(default_factory=time.monotonic)
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):
@@ -146,7 +148,8 @@ class MCPClient:
         session_ctx = ClientSession(read_stream, write_stream)
         try:
             session = await session_ctx.__aenter__()
-            await session.initialize()
+            async with asyncio.timeout(15):
+                await session.initialize()
         except Exception:
             logger.exception(
                 "[MCP] Failed to initialize session for tenants=%s",
@@ -191,6 +194,19 @@ class MCPClient:
         async with self._registry_lock:
             conn = self._connections.get(tenant_key)
             if conn is not None:
+                # Session idle > 4 min — reconnect proactively
+                idle = time.monotonic() - conn.last_used
+                if idle > 240:
+                    logger.info(
+                        "[MCP] Session for tenants=%s idle %.0fs, reconnecting",
+                        tenant_key or "(default)",
+                        idle,
+                    )
+                    old = self._connections.pop(tenant_key, None)
+                    if old is not None:
+                        await old.close()
+                    conn = await self._open_connection(tenant_ids)
+                    self._connections[tenant_key] = conn
                 return conn
             conn = await self._open_connection(tenant_ids)
             self._connections[tenant_key] = conn
@@ -231,6 +247,7 @@ class MCPClient:
             async with asyncio.timeout(LOCK_ACQUIRE_TIMEOUT):
                 async with conn.list_lock:
                     result = await conn.session.list_tools()
+                    conn.last_used = time.monotonic()
         except TimeoutError:
             logger.warning(
                 "[MCP] list_tools timed out waiting for list lock for tenants=%s",
@@ -253,6 +270,7 @@ class MCPClient:
             async with asyncio.timeout(LOCK_ACQUIRE_TIMEOUT):
                 async with conn.list_lock:
                     result = await conn.session.list_tools()
+                    conn.last_used = time.monotonic()
 
         return [
             {
@@ -344,6 +362,7 @@ class MCPClient:
                     async with conn.call_lock:
                         async with asyncio.timeout(TOOL_EXECUTION_TIMEOUT):
                             result = await conn.session.call_tool(name, arguments)
+                            conn.last_used = time.monotonic()
             except TimeoutError:
                 logger.warning(
                     "[MCP] call_tool %s timed out for tenants=%s"

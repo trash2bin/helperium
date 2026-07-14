@@ -14,6 +14,7 @@ EventType = Literal[
     "tool_result",
     "final",
     "error",
+    "audio",
 ]
 
 
@@ -193,6 +194,12 @@ class ErrorEventData(TypedDict):
     message: str
 
 
+class AudioEventData(TypedDict):
+    """Data for audio (TTS) events — base64-encoded audio bytes."""
+
+    data: str  # base64-encoded audio bytes
+
+
 # Union type for all event data
 AgentEventData = (
     StatusEventData
@@ -201,6 +208,7 @@ AgentEventData = (
     | ToolResultEventData
     | FinalEventData
     | ErrorEventData
+    | AudioEventData
     | dict[str, Any]  # Fallback for any other data
 )
 

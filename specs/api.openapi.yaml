@@ -1,483 +1,287 @@
-components:
-  schemas:
-    AgentCreateRequest:
-      description: Request to create a new agent.
-      properties:
-        abuse_config:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          description: Per-agent abuse settings overrides (keys match AbuseConfig
-            fields)
-          title: Abuse Config
-        description:
-          default: ''
-          description: Human-readable description
-          title: Description
-          type: string
-        llm_config:
-          anyOf:
-          - $ref: '#/components/schemas/LLMConfig'
-          - type: 'null'
-          description: Per-agent LLM overrides
-        name:
-          description: Unique agent name (lowercase, no spaces)
-          minLength: 1
-          pattern: ^[a-z][a-z0-9_-]*$
-          title: Name
-          type: string
-        provider_priority:
-          description: Provider names in priority order (from ProviderStore)
-          items:
-            type: string
-          title: Provider Priority
-          type: array
-        system_prompt:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Per-agent system prompt override
-          title: System Prompt
-        tenant_ids:
-          description: Tenant IDs for this agent
-          items:
-            type: string
-          title: Tenant Ids
-          type: array
-        widget_config:
-          anyOf:
-          - $ref: '#/components/schemas/WidgetConfig'
-          - type: 'null'
-          description: Embed widget display configuration
-      required:
-      - name
-      title: AgentCreateRequest
-      type: object
-    AgentListResponse:
-      description: List of agents.
-      properties:
-        agents:
-          description: List of agents
-          items:
-            $ref: '#/components/schemas/AgentResponse'
-          title: Agents
-          type: array
-      required:
-      - agents
-      title: AgentListResponse
-      type: object
-    AgentResponse:
-      description: Agent metadata.
-      properties:
-        abuse_config:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          description: Per-agent abuse settings overrides
-          title: Abuse Config
-        created_at:
-          description: ISO timestamp
-          title: Created At
-          type: string
-        description:
-          default: ''
-          description: Human-readable description
-          title: Description
-          type: string
-        llm_config:
-          anyOf:
-          - $ref: '#/components/schemas/LLMConfig'
-          - type: 'null'
-          description: Per-agent LLM overrides
-        name:
-          description: Unique agent name
-          title: Name
-          type: string
-        provider_priority:
-          description: Provider names in priority order (from ProviderStore)
-          items:
-            type: string
-          title: Provider Priority
-          type: array
-        system_prompt:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Per-agent system prompt override
-          title: System Prompt
-        tenant_ids:
-          description: Tenant IDs
-          items:
-            type: string
-          title: Tenant Ids
-          type: array
-        updated_at:
-          description: ISO timestamp
-          title: Updated At
-          type: string
-        widget_config:
-          anyOf:
-          - $ref: '#/components/schemas/WidgetConfig'
-          - type: 'null'
-          description: Embed widget display configuration
-      required:
-      - name
-      - created_at
-      - updated_at
-      title: AgentResponse
-      type: object
-    AgentUpdateRequest:
-      description: Request to update an existing agent.
-      properties:
-        abuse_config:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          description: Per-agent abuse settings overrides
-          title: Abuse Config
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Human-readable description
-          title: Description
-        llm_config:
-          anyOf:
-          - $ref: '#/components/schemas/LLMConfig'
-          - type: 'null'
-          description: Per-agent LLM overrides
-        provider_priority:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          description: Provider names in priority order (from ProviderStore)
-          title: Provider Priority
-        system_prompt:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Per-agent system prompt override
-          title: System Prompt
-        tenant_ids:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          description: Tenant IDs for this agent
-          title: Tenant Ids
-        widget_config:
-          anyOf:
-          - $ref: '#/components/schemas/WidgetConfig'
-          - type: 'null'
-          description: Embed widget display configuration
-      title: AgentUpdateRequest
-      type: object
-    BacklogDetailResponse:
-      description: Events of a specific backlog session.
-      properties:
-        count:
-          description: Number of records
-          title: Count
-          type: integer
-        records:
-          description: List of session events
-          items:
-            $ref: '#/components/schemas/BacklogEvent'
-          title: Records
-          type: array
-        session_id:
-          description: Requested session ID
-          title: Session Id
-          type: string
-      required:
-      - records
-      - session_id
-      - count
-      title: BacklogDetailResponse
-      type: object
-    BacklogEvent:
-      additionalProperties: true
-      description: 'A single event/record in a backlog session.
-
-
-        Fields vary by ``event`` type — ``model_response`` events contain
-
-        ``duration_ms`` and ``tokens``. Extra fields are preserved via
-
-        ``extra=''allow''``.'
-      properties:
-        data:
-          additionalProperties: true
-          description: Event data
-          title: Data
-          type: object
-        event:
-          description: Event type
-          title: Event
-          type: string
-        iteration:
-          description: Iteration number
-          title: Iteration
-          type: integer
-        session_id:
-          description: Session ID
-          title: Session Id
-          type: string
-        ts:
-          description: Timestamp
-          title: Ts
-          type: string
-        turn_id:
-          description: Turn ID
-          title: Turn Id
-          type: string
-      required:
-      - session_id
-      - turn_id
-      - iteration
-      - event
-      - ts
-      - data
-      title: BacklogEvent
-      type: object
-    BacklogListResponse:
-      description: List of backlog sessions.
-      properties:
-        sessions:
-          description: List of session metadata entries
-          items:
-            $ref: '#/components/schemas/BacklogSessionMetadata'
-          title: Sessions
-          type: array
-      required:
-      - sessions
-      title: BacklogListResponse
-      type: object
-    BacklogSessionMetadata:
-      description: Metadata for one backlog session entry.
-      properties:
-        first_event:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          description: First event
-          title: First Event
-        last_event:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          description: Last event
-          title: Last Event
-        num_events:
-          description: Number of events
-          title: Num Events
-          type: integer
-        session_id:
-          description: Session ID
-          title: Session Id
-          type: string
-        size_bytes:
-          description: File size in bytes
-          title: Size Bytes
-          type: integer
-      required:
-      - session_id
-      - size_bytes
-      - num_events
-      title: BacklogSessionMetadata
-      type: object
-    ChatMessage:
-      description: A single message in chat history.
-      properties:
-        content:
-          default: ''
-          description: Message text
-          title: Content
-          type: string
-        role:
-          description: 'Role: user / assistant / system'
-          title: Role
-          type: string
-        tool_calls:
-          anyOf:
-          - items:
-              additionalProperties: true
-              type: object
-            type: array
-          - type: 'null'
-          description: Tool calls
-          title: Tool Calls
-      required:
-      - role
-      title: ChatMessage
-      type: object
-    HTTPValidationError:
-      properties:
-        detail:
-          items:
-            $ref: '#/components/schemas/ValidationError'
-          title: Detail
-          type: array
-      title: HTTPValidationError
-      type: object
-    HealthResponse:
-      description: API service health status.
-      properties:
-        api:
-          default: ok
-          title: Api
-          type: string
-        ollama:
-          additionalProperties: true
-          description: LLM provider connection status
-          title: Ollama
-          type: object
-      required:
-      - ollama
-      title: HealthResponse
-      type: object
-    LLMConfig:
-      description: Per-agent LLM configuration. All fields optional — falls back to
-        global defaults when null.
-      properties:
-        api_base:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Base URL for the API
-          title: Api Base
-        api_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: API key for the provider
-          title: Api Key
-        max_tokens:
-          anyOf:
-          - minimum: 1.0
-            type: integer
-          - type: 'null'
-          description: Maximum tokens in response
-          title: Max Tokens
-        model:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Model name (e.g. qwen2.5:0.5b or mistral/mistral-small)
-          title: Model
-        provider:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: 'LLM provider: ollama, mistral, openai, anthropic'
-          title: Provider
-        system_prompt:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: System prompt (overrides global)
-          title: System Prompt
-        temperature:
-          anyOf:
-          - maximum: 2.0
-            minimum: 0.0
-            type: number
-          - type: 'null'
-          description: Model temperature
-          title: Temperature
-      title: LLMConfig
-      type: object
-    SessionHistoryResponse:
-      description: Chat message history for a session.
-      properties:
-        messages:
-          description: Messages (role, content, tool_calls)
-          items:
-            $ref: '#/components/schemas/ChatMessage'
-          title: Messages
-          type: array
-      required:
-      - messages
-      title: SessionHistoryResponse
-      type: object
-    ValidationError:
-      properties:
-        ctx:
-          title: Context
-          type: object
-        input:
-          title: Input
-        loc:
-          items:
-            anyOf:
-            - type: string
-            - type: integer
-          title: Location
-          type: array
-        msg:
-          title: Message
-          type: string
-        type:
-          title: Error Type
-          type: string
-      required:
-      - loc
-      - msg
-      - type
-      title: ValidationError
-      type: object
-    WidgetConfig:
-      description: Embed widget display configuration for an agent.
-      properties:
-        accent_color:
-          default: '#0f766e'
-          description: Accent color (hex)
-          title: Accent Color
-          type: string
-        greeting:
-          default: Чем могу помочь?
-          description: Greeting message in chat
-          title: Greeting
-          type: string
-        position:
-          default: right
-          description: 'Widget position: right | left'
-          title: Position
-          type: string
-        title:
-          default: Ассистент
-          description: Widget header title
-          title: Title
-          type: string
-      title: WidgetConfig
-      type: object
+openapi: 3.1.0
 info:
+  title: Agent-Tutor Core API
   description: Backend API for the Agent-Tutor system. Handles orchestration, session
     history, and tool integration.
-  title: Agent-Tutor Core API
   version: 1.1.0
-openapi: 3.1.0
 paths:
+  /health:
+    get:
+      summary: Проверка здоровья API
+      description: Проверяет работоспособность API и доступность LLM провайдера.
+      operationId: health_endpoint_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/chat:
+    post:
+      summary: Стриминг чата
+      description: Основной эндпоинт для общения с агентом. Возвращает поток SSE событий.
+      operationId: chat_endpoint_api_chat_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/backlog:
+    get:
+      summary: Список сессий бэклога
+      description: Возвращает список всех сохраненных сессий из бэклога.
+      operationId: backlog_list_endpoint_api_backlog_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacklogListResponse'
+  /api/backlog/{session_id}:
+    get:
+      summary: Детали сессии бэклога
+      description: Возвращает все события конкретной сессии.
+      operationId: backlog_detail_endpoint_api_backlog__session_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 500
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacklogDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/backlog/stats/{session_id}:
+    get:
+      summary: Статистика LLM-вызовов сессии
+      description: Возвращает агрегированную статистику по токенам, стоимости и количеству
+        вызовов для сессии.
+      operationId: backlog_stats_endpoint_api_backlog_stats__session_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/backlog/errors:
+    get:
+      summary: Последние ошибки бэклога
+      description: Возвращает последние ошибки по всем сессиям.
+      operationId: backlog_errors_endpoint_api_backlog_errors_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/session/history:
+    get:
+      summary: История сессии
+      description: Возвращает историю сообщений для указанной сессии.
+      operationId: session_history_endpoint_api_session_history_get
+      parameters:
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          default: default
+          title: Session Id
+      - name: agent_name
+        in: query
+        required: false
+        schema:
+          type: string
+          title: Agent Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionHistoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /admin/guardrails:
+    get:
+      summary: Get Guardrails
+      description: Get current guard config.
+      operationId: get_guardrails_admin_guardrails_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+    post:
+      summary: Update Guardrails
+      description: 'Update guard config. Accepts: enabled, block_on_match.'
+      operationId: update_guardrails_admin_guardrails_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Config
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /admin/spending:
+    get:
+      summary: Get All Spending
+      description: Get spending overview.
+      operationId: get_all_spending_admin_spending_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /admin/spending/{tenant_id}:
+    get:
+      summary: Get Tenant Spending
+      description: Get spending for a specific tenant.
+      operationId: get_tenant_spending_admin_spending__tenant_id__get
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tenant Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      summary: Set Tenant Budget
+      description: 'Set per-tenant budget override.
+
+
+        Body: {"budget": 100.0}'
+      operationId: set_tenant_budget_admin_spending__tenant_id__post
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tenant Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Config
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/abuse-config:
     get:
+      summary: Get Abuse Config
       description: Get the current effective abuse configuration (from file + env).
       operationId: get_abuse_config_admin_abuse_config_get
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
-      summary: Get Abuse Config
     post:
+      summary: Save Abuse Config
       description: Save new abuse config directly (admin dashboard alternative endpoint).
       operationId: save_abuse_config_admin_abuse_config_post
       requestBody:
@@ -485,24 +289,24 @@ paths:
           application/json:
             schema:
               additionalProperties: true
-              title: Data
               type: object
+              title: Data
         required: true
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Save Abuse Config
   /admin/abuse-config/reload:
     post:
+      summary: Reload Abuse Config
       description: 'Reload abuse config from disk and apply runtime settings.
 
 
@@ -512,80 +316,23 @@ paths:
       operationId: reload_abuse_config_admin_abuse_config_reload_post
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
-      summary: Reload Abuse Config
-  /admin/guardrails:
-    get:
-      description: Get current guard config.
-      operationId: get_guardrails_admin_guardrails_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-      summary: Get Guardrails
-    post:
-      description: 'Update guard config. Accepts: enabled, block_on_match.'
-      operationId: update_guardrails_admin_guardrails_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              additionalProperties: true
-              title: Config
-              type: object
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Update Guardrails
-  /admin/llm-config:
-    get:
-      description: Get current LLM provider fallback configuration.
-      operationId: get_llm_config_admin_llm_config_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-      summary: Get Llm Config
-  /admin/llm-provider-list:
-    get:
-      description: List all available providers from LiteLLM (live, no hardcode).
-      operationId: list_litellm_providers_admin_llm_provider_list_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-      summary: List Litellm Providers
   /admin/llm-providers:
     get:
+      summary: List Llm Providers
       description: List all LLM providers with masked API keys.
       operationId: list_llm_providers_admin_llm_providers_get
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
-      summary: List Llm Providers
     post:
+      summary: Add Llm Provider
       description: "Add a new LLM provider.\n\nBody:\n    name (required): unique\
         \ provider name\n    model (required): model identifier (e.g. openai/gpt-4o,\
         \ anthropic/claude-3-sonnet)\n    provider: provider type — auto-detected\
@@ -598,70 +345,58 @@ paths:
           application/json:
             schema:
               additionalProperties: true
-              title: Body
               type: object
+              title: Body
         required: true
       responses:
         '201':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Add Llm Provider
-  /admin/llm-providers/{name}:
-    delete:
-      description: Delete an LLM provider.
-      operationId: delete_llm_provider_admin_llm_providers__name__delete
-      parameters:
-      - in: path
-        name: name
-        required: true
-        schema:
-          title: Name
-          type: string
+  /admin/llm-provider-list:
+    get:
+      summary: List Litellm Providers
+      description: List all available providers from LiteLLM (live, no hardcode).
+      operationId: list_litellm_providers_admin_llm_provider_list_get
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Delete Llm Provider
+  /admin/llm-providers/{name}:
     get:
+      summary: Get Llm Provider
       description: Get a single LLM provider with masked API key.
       operationId: get_llm_provider_admin_llm_providers__name__get
       parameters:
-      - in: path
-        name: name
+      - name: name
+        in: path
         required: true
         schema:
-          title: Name
           type: string
+          title: Name
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Get Llm Provider
     put:
+      summary: Update Llm Provider
       description: 'Update an existing LLM provider.
 
 
@@ -672,139 +407,147 @@ paths:
         Set api_key="__clear__" to clear the key.'
       operationId: update_llm_provider_admin_llm_providers__name__put
       parameters:
-      - in: path
-        name: name
+      - name: name
+        in: path
         required: true
         schema:
-          title: Name
           type: string
+          title: Name
       requestBody:
+        required: true
         content:
           application/json:
             schema:
+              type: object
               additionalProperties: true
               title: Body
-              type: object
-        required: true
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Llm Provider
+      description: Delete an LLM provider.
+      operationId: delete_llm_provider_admin_llm_providers__name__delete
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
           description: Validation Error
-      summary: Update Llm Provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/llm-providers/{name}/toggle:
     post:
+      summary: Toggle Llm Provider
       description: Toggle a provider on/off.
       operationId: toggle_llm_provider_admin_llm_providers__name__toggle_post
       parameters:
-      - in: path
-        name: name
+      - name: name
+        in: path
         required: true
         schema:
+          type: string
           title: Name
-          type: string
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Toggle Llm Provider
-  /admin/spending:
+  /admin/llm-config:
     get:
-      description: Get spending overview.
-      operationId: get_all_spending_admin_spending_get
+      summary: Get Llm Config
+      description: Get current LLM provider fallback configuration.
+      operationId: get_llm_config_admin_llm_config_get
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
-      summary: Get All Spending
-  /admin/spending/{tenant_id}:
+  /api/voice-config:
     get:
-      description: Get spending for a specific tenant.
-      operationId: get_tenant_spending_admin_spending__tenant_id__get
-      parameters:
-      - in: path
-        name: tenant_id
-        required: true
-        schema:
-          title: Tenant Id
-          type: string
+      summary: Get Voice Config
+      description: Get current voice (STT/TTS) configuration.
+      operationId: get_voice_config_api_voice_config_get
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Get Tenant Spending
-    post:
-      description: 'Set per-tenant budget override.
+    put:
+      summary: Update Voice Config
+      description: 'Update and persist voice configuration.
 
 
-        Body: {"budget": 100.0}'
-      operationId: set_tenant_budget_admin_spending__tenant_id__post
-      parameters:
-      - in: path
-        name: tenant_id
-        required: true
-        schema:
-          title: Tenant Id
-          type: string
+        Preserves existing api_key/api_base/voice per provider when the
+
+        incoming value is None or empty (masks sensitive fields).'
+      operationId: update_voice_config_api_voice_config_put
       requestBody:
         content:
           application/json:
             schema:
               additionalProperties: true
-              title: Config
               type: object
+              title: Body
         required: true
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
-              schema: {}
-          description: Successful Response
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Update Voice Config Api Voice Config Put
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Set Tenant Budget
   /api/agents:
     get:
+      summary: Список агентов
       description: Возвращает список всех созданных агентов.
       operationId: list_agents_endpoint_api_agents_get
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentListResponse'
-          description: Successful Response
-      summary: Список агентов
     post:
+      summary: Создать агента
       description: Создаёт нового агента с указанными tenant_id.
       operationId: create_agent_endpoint_api_agents_post
       requestBody:
@@ -815,303 +558,728 @@ paths:
         required: true
       responses:
         '201':
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentResponse'
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Создать агента
   /api/agents/{name}:
-    delete:
-      description: Удаляет агента по имени.
-      operationId: delete_agent_endpoint_api_agents__name__delete
-      parameters:
-      - in: path
-        name: name
-        required: true
-        schema:
-          title: Name
-          type: string
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Удалить агента
     get:
+      summary: Получить агента
       description: Возвращает данные конкретного агента по имени.
       operationId: get_agent_endpoint_api_agents__name__get
       parameters:
-      - in: path
-        name: name
+      - name: name
+        in: path
         required: true
         schema:
-          title: Name
           type: string
+          title: Name
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentResponse'
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Получить агента
     put:
+      summary: Обновить агента
       description: Обновляет описание и/или tenant_id агента.
       operationId: update_agent_endpoint_api_agents__name__put
       parameters:
-      - in: path
-        name: name
+      - name: name
+        in: path
         required: true
         schema:
-          title: Name
           type: string
+          title: Name
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AgentUpdateRequest'
-        required: true
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentResponse'
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Удалить агента
+      description: Удаляет агента по имени.
+      operationId: delete_agent_endpoint_api_agents__name__delete
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Name
+      responses:
+        '204':
+          description: Successful Response
+        '422':
           description: Validation Error
-      summary: Обновить агента
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/agents/{name}/widget-config:
     get:
+      summary: Конфиг виджета для агента
       description: Возвращает настройки embed-виджета для указанного агента.
       operationId: agent_widget_config_endpoint_api_agents__name__widget_config_get
       parameters:
-      - in: path
-        name: name
+      - name: name
+        in: path
         required: true
         schema:
-          title: Name
           type: string
+          title: Name
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema:
+                type: object
                 additionalProperties: true
                 title: Response Agent Widget Config Endpoint Api Agents  Name  Widget
                   Config Get
-                type: object
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Конфиг виджета для агента
-  /api/backlog:
-    get:
-      description: Возвращает список всех сохраненных сессий из бэклога.
-      operationId: backlog_list_endpoint_api_backlog_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BacklogListResponse'
-          description: Successful Response
-      summary: Список сессий бэклога
-  /api/backlog/errors:
-    get:
-      description: Возвращает последние ошибки по всем сессиям.
-      operationId: backlog_errors_endpoint_api_backlog_errors_get
-      parameters:
-      - in: query
-        name: limit
-        required: false
-        schema:
-          default: 50
-          maximum: 200
-          minimum: 1
-          title: Limit
-          type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Последние ошибки бэклога
-  /api/backlog/stats/{session_id}:
-    get:
-      description: Возвращает агрегированную статистику по токенам, стоимости и количеству
-        вызовов для сессии.
-      operationId: backlog_stats_endpoint_api_backlog_stats__session_id__get
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Статистика LLM-вызовов сессии
-  /api/backlog/{session_id}:
-    get:
-      description: Возвращает все события конкретной сессии.
-      operationId: backlog_detail_endpoint_api_backlog__session_id__get
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      - in: query
-        name: limit
-        required: false
-        schema:
-          default: 500
-          minimum: 1
-          title: Limit
-          type: integer
-      - in: query
-        name: offset
-        required: false
-        schema:
-          default: 0
-          minimum: 0
-          title: Offset
-          type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BacklogDetailResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Детали сессии бэклога
-  /api/chat:
+  /api/chat/voice:
     post:
-      description: Основной эндпоинт для общения с агентом. Возвращает поток SSE событий.
-      operationId: chat_endpoint_api_chat_post
+      summary: Chat Voice Endpoint
+      description: 'Voice chat endpoint.
+
+
+        Accepts an audio file via multipart/form-data, transcribes it via
+
+        the configured STT provider(s), feeds the text through the existing
+
+        chat pipeline, and streams the response as SSE events.
+
+
+        If TTS providers are configured, the final answer is also sent as
+
+        an ``type="audio"`` SSE event with base64-encoded audio bytes.'
+      operationId: chat_voice_endpoint_api_chat_voice_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_chat_voice_endpoint_api_chat_voice_post'
+        required: true
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
-      summary: Стриминг чата
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/chat/{name}:
     post:
+      summary: Чат с агентом по имени
       description: Стриминг чата с конкретным агентом. Tenant IDs берутся из конфига
         агента.
       operationId: chat_by_agent_endpoint_api_chat__name__post
       parameters:
-      - in: path
-        name: name
+      - name: name
+        in: path
         required: true
         schema:
-          title: Name
           type: string
+          title: Name
       responses:
         '200':
+          description: Successful Response
           content:
             application/json:
               schema: {}
-          description: Successful Response
         '422':
+          description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Чат с агентом по имени
-  /api/session/history:
-    get:
-      description: Возвращает историю сообщений для указанной сессии.
-      operationId: session_history_endpoint_api_session_history_get
-      parameters:
-      - in: query
-        name: session_id
-        required: false
-        schema:
-          default: default
+components:
+  schemas:
+    AgentCreateRequest:
+      properties:
+        name:
+          type: string
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_-]*$
+          title: Name
+          description: Unique agent name (lowercase, no spaces)
+        description:
+          type: string
+          title: Description
+          description: Human-readable description
+          default: ''
+        tenant_ids:
+          items:
+            type: string
+          type: array
+          title: Tenant Ids
+          description: Tenant IDs for this agent
+        widget_config:
+          anyOf:
+          - $ref: '#/components/schemas/WidgetConfig'
+          - type: 'null'
+          description: Embed widget display configuration
+        llm_config:
+          anyOf:
+          - $ref: '#/components/schemas/LLMConfig'
+          - type: 'null'
+          description: Per-agent LLM overrides
+        provider_priority:
+          items:
+            type: string
+          type: array
+          title: Provider Priority
+          description: Provider names in priority order (from ProviderStore)
+        abuse_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Abuse Config
+          description: Per-agent abuse settings overrides (keys match AbuseConfig
+            fields)
+        system_prompt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: System Prompt
+          description: Per-agent system prompt override
+        voice_config:
+          anyOf:
+          - $ref: '#/components/schemas/VoiceAgentConfig'
+          - type: 'null'
+          description: Per-agent voice configuration overrides
+      type: object
+      required:
+      - name
+      title: AgentCreateRequest
+      description: Request to create a new agent.
+    AgentListResponse:
+      properties:
+        agents:
+          items:
+            $ref: '#/components/schemas/AgentResponse'
+          type: array
+          title: Agents
+          description: List of agents
+      type: object
+      required:
+      - agents
+      title: AgentListResponse
+      description: List of agents.
+    AgentResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Unique agent name
+        description:
+          type: string
+          title: Description
+          description: Human-readable description
+          default: ''
+        tenant_ids:
+          items:
+            type: string
+          type: array
+          title: Tenant Ids
+          description: Tenant IDs
+        widget_config:
+          anyOf:
+          - $ref: '#/components/schemas/WidgetConfig'
+          - type: 'null'
+          description: Embed widget display configuration
+        llm_config:
+          anyOf:
+          - $ref: '#/components/schemas/LLMConfig'
+          - type: 'null'
+          description: Per-agent LLM overrides
+        provider_priority:
+          items:
+            type: string
+          type: array
+          title: Provider Priority
+          description: Provider names in priority order (from ProviderStore)
+        abuse_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Abuse Config
+          description: Per-agent abuse settings overrides
+        system_prompt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: System Prompt
+          description: Per-agent system prompt override
+        voice_config:
+          anyOf:
+          - $ref: '#/components/schemas/VoiceAgentConfig'
+          - type: 'null'
+          description: Per-agent voice configuration overrides
+        created_at:
+          type: string
+          title: Created At
+          description: ISO timestamp
+        updated_at:
+          type: string
+          title: Updated At
+          description: ISO timestamp
+      type: object
+      required:
+      - name
+      - created_at
+      - updated_at
+      title: AgentResponse
+      description: Agent metadata.
+    AgentUpdateRequest:
+      properties:
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Human-readable description
+        tenant_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Tenant Ids
+          description: Tenant IDs for this agent
+        widget_config:
+          anyOf:
+          - $ref: '#/components/schemas/WidgetConfig'
+          - type: 'null'
+          description: Embed widget display configuration
+        llm_config:
+          anyOf:
+          - $ref: '#/components/schemas/LLMConfig'
+          - type: 'null'
+          description: Per-agent LLM overrides
+        provider_priority:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Provider Priority
+          description: Provider names in priority order (from ProviderStore)
+        abuse_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Abuse Config
+          description: Per-agent abuse settings overrides
+        system_prompt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: System Prompt
+          description: Per-agent system prompt override
+        voice_config:
+          anyOf:
+          - $ref: '#/components/schemas/VoiceAgentConfig'
+          - type: 'null'
+          description: Per-agent voice configuration overrides
+      type: object
+      title: AgentUpdateRequest
+      description: Request to update an existing agent.
+    BacklogDetailResponse:
+      properties:
+        records:
+          items:
+            $ref: '#/components/schemas/BacklogEvent'
+          type: array
+          title: Records
+          description: List of session events
+        session_id:
+          type: string
           title: Session Id
+          description: Requested session ID
+        count:
+          type: integer
+          title: Count
+          description: Number of records
+      type: object
+      required:
+      - records
+      - session_id
+      - count
+      title: BacklogDetailResponse
+      description: Events of a specific backlog session.
+    BacklogEvent:
+      properties:
+        session_id:
           type: string
-      - in: query
-        name: agent_name
-        required: false
-        schema:
-          title: Agent Name
+          title: Session Id
+          description: Session ID
+        turn_id:
           type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionHistoryResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: История сессии
-  /health:
-    get:
-      description: Проверяет работоспособность API и доступность LLM провайдера.
-      operationId: health_endpoint_health_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-          description: Successful Response
-      summary: Проверка здоровья API
+          title: Turn Id
+          description: Turn ID
+        iteration:
+          type: integer
+          title: Iteration
+          description: Iteration number
+        event:
+          type: string
+          title: Event
+          description: Event type
+        ts:
+          type: string
+          title: Ts
+          description: Timestamp
+        data:
+          additionalProperties: true
+          type: object
+          title: Data
+          description: Event data
+      additionalProperties: true
+      type: object
+      required:
+      - session_id
+      - turn_id
+      - iteration
+      - event
+      - ts
+      - data
+      title: BacklogEvent
+      description: 'A single event/record in a backlog session.
+
+
+        Fields vary by ``event`` type — ``model_response`` events contain
+
+        ``duration_ms`` and ``tokens``. Extra fields are preserved via
+
+        ``extra=''allow''``.'
+    BacklogListResponse:
+      properties:
+        sessions:
+          items:
+            $ref: '#/components/schemas/BacklogSessionMetadata'
+          type: array
+          title: Sessions
+          description: List of session metadata entries
+      type: object
+      required:
+      - sessions
+      title: BacklogListResponse
+      description: List of backlog sessions.
+    BacklogSessionMetadata:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+          description: Session ID
+        size_bytes:
+          type: integer
+          title: Size Bytes
+          description: File size in bytes
+        num_events:
+          type: integer
+          title: Num Events
+          description: Number of events
+        first_event:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: First Event
+          description: First event
+        last_event:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Last Event
+          description: Last event
+      type: object
+      required:
+      - session_id
+      - size_bytes
+      - num_events
+      title: BacklogSessionMetadata
+      description: Metadata for one backlog session entry.
+    Body_chat_voice_endpoint_api_chat_voice_post:
+      properties:
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+        session_id:
+          type: string
+          title: Session Id
+          default: default
+        agent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent
+        lang:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lang
+      type: object
+      required:
+      - audio
+      title: Body_chat_voice_endpoint_api_chat_voice_post
+    ChatMessage:
+      properties:
+        role:
+          type: string
+          title: Role
+          description: 'Role: user / assistant / system'
+        content:
+          type: string
+          title: Content
+          description: Message text
+          default: ''
+        tool_calls:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Tool Calls
+          description: Tool calls
+      type: object
+      required:
+      - role
+      title: ChatMessage
+      description: A single message in chat history.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        api:
+          type: string
+          title: Api
+          default: ok
+        ollama:
+          additionalProperties: true
+          type: object
+          title: Ollama
+          description: LLM provider connection status
+      type: object
+      required:
+      - ollama
+      title: HealthResponse
+      description: API service health status.
+    LLMConfig:
+      properties:
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+          description: 'LLM provider: ollama, mistral, openai, anthropic'
+        api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key
+          description: API key for the provider
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+          description: Model name (e.g. qwen2.5:0.5b or mistral/mistral-small)
+        api_base:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Base
+          description: Base URL for the API
+        system_prompt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: System Prompt
+          description: System prompt (overrides global)
+        temperature:
+          anyOf:
+          - type: number
+            maximum: 2.0
+            minimum: 0.0
+          - type: 'null'
+          title: Temperature
+          description: Model temperature
+        max_tokens:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Max Tokens
+          description: Maximum tokens in response
+      type: object
+      title: LLMConfig
+      description: Per-agent LLM configuration. All fields optional — falls back to
+        global defaults when null.
+    SessionHistoryResponse:
+      properties:
+        messages:
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          type: array
+          title: Messages
+          description: Messages (role, content, tool_calls)
+      type: object
+      required:
+      - messages
+      title: SessionHistoryResponse
+      description: Chat message history for a session.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VoiceAgentConfig:
+      properties:
+        enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enabled
+          description: Override master switch for this agent
+        stt_provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stt Provider
+          description: STT provider name (must match a name in VoiceConfig.stt_providers)
+        tts_provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tts Provider
+          description: TTS provider name (must match a name in VoiceConfig.tts_providers)
+        stt_fallback:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Stt Fallback
+          description: Override STT fallback setting for this agent
+        tts_fallback:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Tts Fallback
+          description: Override TTS fallback setting for this agent
+        voice_input_disabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Voice Input Disabled
+          description: Explicitly disable voice input for this agent (hide mic in
+            widget)
+        voice_output_disabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Voice Output Disabled
+          description: Explicitly disable TTS for this agent
+      type: object
+      title: VoiceAgentConfig
+      description: 'Per-agent voice configuration overrides.
+
+
+        All fields are optional (None = fall back to global VoiceConfig).'
+    WidgetConfig:
+      properties:
+        title:
+          type: string
+          title: Title
+          description: Widget header title
+          default: Ассистент
+        greeting:
+          type: string
+          title: Greeting
+          description: Greeting message in chat
+          default: Чем могу помочь?
+        accent_color:
+          type: string
+          title: Accent Color
+          description: Accent color (hex)
+          default: '#0f766e'
+        position:
+          type: string
+          title: Position
+          description: 'Widget position: right | left'
+          default: right
+      type: object
+      title: WidgetConfig
+      description: Embed widget display configuration for an agent.

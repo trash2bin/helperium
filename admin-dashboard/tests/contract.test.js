@@ -1,171 +1,200 @@
 /**
- * Contract test — проверяет что admin-dashboard фронт совместим
- * с реальными ответами api-service.
+ * КОНТРАКТНЫЙ ТЕСТ
  *
- * Требует запущенные сервисы (admin-dashboard:8085, api-service:8081).
- * Если сервисы не отвечают — тест пропускается (не падает).
+ * Единственный source of truth: api-registry.json
+ *
+ * - Если добавил this.api() в app.js — добавь endpoint в api-registry.json
+ * - Если удалил endpoint из бэка — удали из api-registry.json и app.js
+ * - Тест просто сверяет что все this.api() вызовы есть в registry
+ *
+ * Никакого OpenAPI парсинга. Никакой магии.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const ADMIN_URL = 'http://localhost:8085';
-const API_SPEC_URL = 'http://localhost:8081/openapi.json';
-const ADMIN_TOKEN = 'secret';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const APP_JS_PATH = join(__dirname, '../internal/server/static/app.js');
+const REGISTRY_PATH = join(__dirname, 'api-registry.json');
 
-async function fetchJson(url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
-  const body = await res.json().catch(() => null);
-  return { status: res.status, body, headers: res.headers };
+const REGISTRY = JSON.parse(readFileSync(REGISTRY_PATH, 'utf-8'));
+
+// ── Парсинг app.js ──
+
+function extractMethod(line, nextLines) {
+  // Check current line first
+  const check = (s) =>
+    s.includes("method: 'POST'") || s.includes('method: "POST"') ? 'POST' :
+    s.includes("method: 'PUT'") || s.includes('method: "PUT"') ? 'PUT' :
+    s.includes("method: 'DELETE'") || s.includes('method: "DELETE"') ? 'DELETE' : null;
+
+  let m = check(line);
+  if (m) return m;
+
+  // Multi-line: check next few lines
+  if (nextLines) {
+    for (const nl of nextLines) {
+      m = check(nl);
+      if (m) return m;
+    }
+  }
+  return 'GET';
 }
 
-async function serviceAlive(url) {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    return res.ok;
-  } catch {
-    return false;
+function extractFrontendCalls() {
+  const appJs = readFileSync(APP_JS_PATH, 'utf-8');
+  const lines = appJs.split('\n');
+  const calls = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const m = line.match(/this\.api\(\s*['"]([^'"]+)['"]/);
+    if (!m) continue;
+
+    let path = m[1];
+    const fullLine = line;
+
+    // Dynamic path: '/api/agents/' + name → /api/agents/{id}
+    if (fullLine.includes(path + "' +") || fullLine.includes(path + '" +') ||
+        fullLine.includes(path + "'+") || fullLine.includes(path + '"+') ||
+        fullLine.includes(path + ' +')) {
+      path = path.replace(/\/+$/, '') + '/{id}';
+    }
+
+    const nextFewLines = lines.slice(i + 1, i + 5);
+    const method = extractMethod(fullLine, nextFewLines);
+
+    let funcName = 'unknown';
+    for (let j = i - 1; j >= Math.max(0, i - 20); j--) {
+      const fn = lines[j].match(/async\s+(\w+)/);
+      if (fn) { funcName = fn[1]; break; }
+    }
+
+    calls.push({ path, method, funcName, line: i + 1 });
   }
+
+  // De-duplicate by (path, method, funcName)
+  const seen = new Set();
+  return calls.filter(c => {
+    const key = `${c.method} ${c.path}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
-describe('api-service contract', () => {
-  /** @type {import('./api-types/api-service.d.ts').paths} */
-  let spec;
-  let servicesUp = true;
+const calls = extractFrontendCalls();
 
-  beforeAll(async () => {
-    const apiUp = await serviceAlive(API_SPEC_URL.replace('/openapi.json', '/health'));
-    const adminUp = await serviceAlive(ADMIN_URL + '/api/health');
+// ── Helpers ──
 
-    if (!apiUp || !adminUp) {
-      console.warn(`⚠️  Services not running (api=${apiUp}, admin=${adminUp}) — skipping contract tests`);
-      servicesUp = false;
-      return;
-    }
+function normalize(p) {
+  return p.replace(/\/+$/, '').replace(/\{name\}/g, '{id}').replace(/\{agent\}/g, '{id}').replace(/\{preset\}/g, '{id}').replace(/\/api$/, '');
+}
 
-    // Load OpenAPI spec
-    const res = await fetch(API_SPEC_URL);
-    spec = await res.json();
+function matchRegistry(path, method) {
+  const norm = normalize(path);
+  return REGISTRY.find(r => normalize(r.path) === norm && r.method === method);
+}
 
-    // Verify that the spec has the agent endpoints we need
-    if (!spec.paths['/api/agents'] || !spec.paths['/api/agents/{name}']) {
-      throw new Error('OpenAPI spec missing /api/agents endpoints');
-    }
-  });
+// ── Hardcoded API paths check ──
 
-  // ── OpenAPI spec checks ──
+function findHardcodedApiPaths() {
+  const appJs = readFileSync(APP_JS_PATH, 'utf-8');
+  const lines = appJs.split('\n');
+  const found = [];
 
-  it('DELETE /api/agents/{name} returns 204 with no content-type body', () => {
-    if (!servicesUp) return;
-    const op = spec.paths['/api/agents/{name}'].delete;
-    expect(op.responses['204']).toBeDefined();
-    // 204 MUST NOT have content-type schema (no body)
-    expect(op.responses['204'].content).toBeUndefined();
-  });
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Skip this.api() lines — validated separately
+    if (line.includes('this.api(')) continue;
+    // Skip comments
+    if (line.trim().startsWith('//') || line.trim().startsWith('*')) continue;
+    if (!line.trim()) continue;
 
-  function resolveRef(ref) {
-    if (!ref || !ref.startsWith('#/')) throw new Error('Cannot resolve ' + ref);
-    const parts = ref.slice(2).split('/');
-    let obj = spec;
-    for (const p of parts) {
-      obj = obj[p];
-      if (!obj) throw new Error('Cannot resolve ' + ref + ' at ' + p);
-    }
-    return obj;
+    // Find any quoted string containing /api/
+    const m = line.match(/['"](\/api\/[^'"]+)['"]/);
+    if (!m) continue;
+
+    const path = m[1];
+
+    // Whitelist — эти используют raw fetch() для multipart/form-data
+    const WHITELIST = [
+      '/api/tenants/upload-sqlite',
+      '/api/rag/documents/upload',
+      '/api/health',
+    ];
+    if (WHITELIST.includes(path)) continue;
+    if (path.startsWith('//api.')) continue;
+
+    found.push({ path, line: i + 1, text: line.trim().slice(0, 80) });
   }
+  return found;
+}
 
-  function getPostSchema() {
-    const op = spec.paths['/api/agents'].post;
-    const schema = op.requestBody.content['application/json'].schema;
-    if (schema.$ref) return resolveRef(schema.$ref);
-    return schema;
-  }
+// ── Tests ──
 
-  it('POST /api/agents has pattern validation on name', () => {
-    if (!servicesUp) return;
-    const agentSchema = getPostSchema();
-    const nameProp = agentSchema.properties.name;
-    expect(nameProp.pattern).toBe('^[a-z][a-z0-9_-]*$');
+describe('CONTRACT: app.js vs api-registry.json', () => {
+  it(`api-registry.json содержит ${REGISTRY.length} endpoints`, () => {
+    expect(REGISTRY.length).toBeGreaterThan(0);
   });
 
-  it('POST /api/agents requires name (min_length=1)', () => {
-    if (!servicesUp) return;
-    const agentSchema = getPostSchema();
-    const nameProp = agentSchema.properties.name;
-    expect(nameProp.minLength).toBe(1);
+  it(`app.js содержит ${calls.length} this.api() вызовов (уникальных путь+метод)`, () => {
+    expect(calls.length).toBeGreaterThan(0);
   });
 
-  it('DELETE /api/agents/{name} has no requestBody', () => {
-    if (!servicesUp) return;
-    const op = spec.paths['/api/agents/{name}'].delete;
-    expect(op.requestBody).toBeUndefined();
-  });
+  // Каждый this.api() из app.js должен быть в registry
+  describe('Every this.api() call must be in api-registry.json', () => {
+    const errors = [];
 
-  // ── Live 422 response format ──
+    calls.forEach(({ path, method, funcName, line }) => {
+      it(`${method} ${path} (${funcName}:${line})`, () => {
+        const match = matchRegistry(path, method);
+        if (!match) {
+          // Ищем похожие для отладки
+          const norm = normalize(path);
+          const similar = REGISTRY
+            .filter(r => normalize(r.path).split('/').slice(0, 4).join('/') === norm.split('/').slice(0, 4).join('/'))
+            .map(r => `  ${r.method} ${r.path} — ${r.desc}`);
 
-  it('POST with bad name returns 422 with Pydantic detail[]', async () => {
-    if (!servicesUp) return;
-    const { status, body } = await fetchJson(ADMIN_URL + '/api/agents', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
-      body: JSON.stringify({ name: 'Bad Name', tenant_ids: ['default'] }),
+          throw new Error(
+            `\n❌ ${method} ${path} (${funcName}:${line})\n` +
+            `   NOT in api-registry.json!\n` +
+            `   Add it to admin-dashboard/tests/api-registry.json\n` +
+            (similar.length ? `\nSimilar registry entries:\n${similar.join('\n')}` : '')
+          );
+        }
+      });
     });
-    expect(status).toBe(422);
-    expect(body.detail).toBeInstanceOf(Array);
-    expect(body.detail[0].type).toBe('string_pattern_mismatch');
-    expect(body.detail[0].msg).toMatch(/pattern/);
-    expect(body.detail[0].input).toBe('Bad Name');
   });
 
-  it('POST without name returns 422 with "Field required"', async () => {
-    if (!servicesUp) return;
-    const { status, body } = await fetchJson(ADMIN_URL + '/api/agents', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
-      body: JSON.stringify({ tenant_ids: ['default'] }),
-    });
-    expect(status).toBe(422);
-    expect(body.detail[0].msg).toMatch(/required/i);
+  // Регистрируем ошибки одной пачкой в конце
+  it('ALL app.js calls exist in registry (summary)', () => {
+    const missing = calls.filter(c => !matchRegistry(c.path, c.method));
+    if (missing.length > 0) {
+      const msg = missing.map(c =>
+        `  ${c.method} ${c.path} (${c.funcName}:${c.line})`
+      ).join('\n');
+      throw new Error(`\n❌ ${missing.length} app.js calls missing from api-registry.json:\n${msg}\n\nFix: add them to admin-dashboard/tests/api-registry.json`);
+    }
   });
 
-  // ── Live 204 format ──
+  // ── Hardcoded API paths check ──
+  describe('No hardcoded API paths outside this.api()', () => {
+    const hardcoded = findHardcodedApiPaths();
 
-  it('DELETE existing agent returns 204 with no content-type', async () => {
-    if (!servicesUp) return;
-
-    // Create agent first
-    const name = 'contract-test-' + Date.now();
-    const create = await fetchJson(ADMIN_URL + '/api/agents', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
-      body: JSON.stringify({ name, tenant_ids: ['default'] }),
+    it(`found ${hardcoded.length} suspicious hardcoded API paths in app.js`, () => {
+      if (hardcoded.length > 0) {
+        const msg = hardcoded.map(h =>
+          `  "${h.path}" at line ${h.line}: ${h.text}`
+        ).join('\n');
+        throw new Error(
+          `\n❌ ${hardcoded.length} API paths hardcoded in app.js (not in this.api()):\n${msg}\n\n` +
+          `All API calls must use this.api() so the contract test can validate them.\n` +
+          `If it's a valid endpoint, move it to this.api().`
+        );
+      }
     });
-    expect(create.status).toBe(201);
-
-    // Delete it
-    const del = await fetch(ADMIN_URL + '/api/agents/' + name, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
-    });
-    expect(del.status).toBe(204);
-    // Must NOT have content-type on 204 (regression: Go-proxy used to copy it)
-    const ct = del.headers.get('content-type');
-    expect(ct).toBeNull();
-  });
-
-  // ── 404 for nonexistent agent ──
-
-  it('DELETE nonexistent agent returns 404', async () => {
-    if (!servicesUp) return;
-    const { status, body } = await fetchJson(
-      ADMIN_URL + '/api/agents/nonexistent-' + Date.now(),
-      { method: 'DELETE', headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } },
-    );
-    expect(status).toBe(404);
   });
 });

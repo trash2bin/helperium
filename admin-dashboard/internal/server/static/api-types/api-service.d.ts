@@ -4,6 +4,216 @@
  */
 
 export interface paths {
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Проверка здоровья API
+         * @description Проверяет работоспособность API и доступность LLM провайдера.
+         */
+        get: operations["health_endpoint_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Стриминг чата
+         * @description Основной эндпоинт для общения с агентом. Возвращает поток SSE событий.
+         */
+        post: operations["chat_endpoint_api_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backlog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Список сессий бэклога
+         * @description Возвращает список всех сохраненных сессий из бэклога.
+         */
+        get: operations["backlog_list_endpoint_api_backlog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backlog/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Детали сессии бэклога
+         * @description Возвращает все события конкретной сессии.
+         */
+        get: operations["backlog_detail_endpoint_api_backlog__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backlog/stats/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Статистика LLM-вызовов сессии
+         * @description Возвращает агрегированную статистику по токенам, стоимости и количеству вызовов для сессии.
+         */
+        get: operations["backlog_stats_endpoint_api_backlog_stats__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backlog/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Последние ошибки бэклога
+         * @description Возвращает последние ошибки по всем сессиям.
+         */
+        get: operations["backlog_errors_endpoint_api_backlog_errors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * История сессии
+         * @description Возвращает историю сообщений для указанной сессии.
+         */
+        get: operations["session_history_endpoint_api_session_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/guardrails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Guardrails
+         * @description Get current guard config.
+         */
+        get: operations["get_guardrails_admin_guardrails_get"];
+        put?: never;
+        /**
+         * Update Guardrails
+         * @description Update guard config. Accepts: enabled, block_on_match.
+         */
+        post: operations["update_guardrails_admin_guardrails_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/spending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get All Spending
+         * @description Get spending overview.
+         */
+        get: operations["get_all_spending_admin_spending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/spending/{tenant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tenant Spending
+         * @description Get spending for a specific tenant.
+         */
+        get: operations["get_tenant_spending_admin_spending__tenant_id__get"];
+        put?: never;
+        /**
+         * Set Tenant Budget
+         * @description Set per-tenant budget override.
+         *
+         *     Body: {"budget": 100.0}
+         */
+        post: operations["set_tenant_budget_admin_spending__tenant_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/abuse-config": {
         parameters: {
             query?: never;
@@ -51,70 +261,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/guardrails": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Guardrails
-         * @description Get current guard config.
-         */
-        get: operations["get_guardrails_admin_guardrails_get"];
-        put?: never;
-        /**
-         * Update Guardrails
-         * @description Update guard config. Accepts: enabled, block_on_match.
-         */
-        post: operations["update_guardrails_admin_guardrails_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/llm-config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Llm Config
-         * @description Get current LLM provider fallback configuration.
-         */
-        get: operations["get_llm_config_admin_llm_config_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/llm-provider-list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Litellm Providers
-         * @description List all available providers from LiteLLM (live, no hardcode).
-         */
-        get: operations["list_litellm_providers_admin_llm_provider_list_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/llm-providers": {
         parameters: {
             query?: never;
@@ -141,6 +287,26 @@ export interface paths {
          *         enabled: whether the provider is active (default: true)
          */
         post: operations["add_llm_provider_admin_llm_providers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/llm-provider-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Litellm Providers
+         * @description List all available providers from LiteLLM (live, no hardcode).
+         */
+        get: operations["list_litellm_providers_admin_llm_provider_list_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -199,7 +365,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/spending": {
+    "/admin/llm-config": {
         parameters: {
             query?: never;
             header?: never;
@@ -207,10 +373,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get All Spending
-         * @description Get spending overview.
+         * Get Llm Config
+         * @description Get current LLM provider fallback configuration.
          */
-        get: operations["get_all_spending_admin_spending_get"];
+        get: operations["get_llm_config_admin_llm_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -219,7 +385,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/spending/{tenant_id}": {
+    "/api/voice-config": {
         parameters: {
             query?: never;
             header?: never;
@@ -227,18 +393,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Tenant Spending
-         * @description Get spending for a specific tenant.
+         * Get Voice Config
+         * @description Get current voice (STT/TTS) configuration.
          */
-        get: operations["get_tenant_spending_admin_spending__tenant_id__get"];
-        put?: never;
+        get: operations["get_voice_config_api_voice_config_get"];
         /**
-         * Set Tenant Budget
-         * @description Set per-tenant budget override.
-         *
-         *     Body: {"budget": 100.0}
+         * Update Voice Config
+         * @description Update and persist voice configuration.
          */
-        post: operations["set_tenant_budget_admin_spending__tenant_id__post"];
+        put: operations["update_voice_config_api_voice_config_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -317,106 +481,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/backlog": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Список сессий бэклога
-         * @description Возвращает список всех сохраненных сессий из бэклога.
-         */
-        get: operations["backlog_list_endpoint_api_backlog_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/backlog/errors": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Последние ошибки бэклога
-         * @description Возвращает последние ошибки по всем сессиям.
-         */
-        get: operations["backlog_errors_endpoint_api_backlog_errors_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/backlog/stats/{session_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Статистика LLM-вызовов сессии
-         * @description Возвращает агрегированную статистику по токенам, стоимости и количеству вызовов для сессии.
-         */
-        get: operations["backlog_stats_endpoint_api_backlog_stats__session_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/backlog/{session_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Детали сессии бэклога
-         * @description Возвращает все события конкретной сессии.
-         */
-        get: operations["backlog_detail_endpoint_api_backlog__session_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Стриминг чата
-         * @description Основной эндпоинт для общения с агентом. Возвращает поток SSE событий.
-         */
-        post: operations["chat_endpoint_api_chat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chat/{name}": {
         parameters: {
             query?: never;
@@ -437,40 +501,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/session/history": {
+    "/api/chat/voice": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * История сессии
-         * @description Возвращает историю сообщений для указанной сессии.
-         */
-        get: operations["session_history_endpoint_api_session_history_get"];
+        get?: never;
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
         /**
-         * Проверка здоровья API
-         * @description Проверяет работоспособность API и доступность LLM провайдера.
+         * Chat Voice Endpoint
+         * @description Voice chat endpoint.
+         *
+         *     Accepts an audio file via multipart/form-data, transcribes it via
+         *     the configured STT provider(s), feeds the text through the existing
+         *     chat pipeline, and streams the response as SSE events.
+         *
+         *     If TTS providers are configured, the final answer is also sent as
+         *     an ``type="audio"`` SSE event with base64-encoded audio bytes.
          */
-        get: operations["health_endpoint_health_get"];
-        put?: never;
-        post?: never;
+        post: operations["chat_voice_endpoint_api_chat_voice_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -487,35 +538,16 @@ export interface components {
          */
         AgentCreateRequest: {
             /**
-             * Abuse Config
-             * @description Per-agent abuse settings overrides (keys match AbuseConfig fields)
+             * Name
+             * @description Unique agent name (lowercase, no spaces)
              */
-            abuse_config?: {
-                [key: string]: unknown;
-            } | null;
+            name: string;
             /**
              * Description
              * @description Human-readable description
              * @default
              */
             description: string;
-            /** @description Per-agent LLM overrides */
-            llm_config?: components["schemas"]["LLMConfig"] | null;
-            /**
-             * Name
-             * @description Unique agent name (lowercase, no spaces)
-             */
-            name: string;
-            /**
-             * Provider Priority
-             * @description Provider names in priority order (from ProviderStore)
-             */
-            provider_priority?: string[];
-            /**
-             * System Prompt
-             * @description Per-agent system prompt override
-             */
-            system_prompt?: string | null;
             /**
              * Tenant Ids
              * @description Tenant IDs for this agent
@@ -523,6 +555,27 @@ export interface components {
             tenant_ids?: string[];
             /** @description Embed widget display configuration */
             widget_config?: components["schemas"]["WidgetConfig"] | null;
+            /** @description Per-agent LLM overrides */
+            llm_config?: components["schemas"]["LLMConfig"] | null;
+            /**
+             * Provider Priority
+             * @description Provider names in priority order (from ProviderStore)
+             */
+            provider_priority?: string[];
+            /**
+             * Abuse Config
+             * @description Per-agent abuse settings overrides (keys match AbuseConfig fields)
+             */
+            abuse_config?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * System Prompt
+             * @description Per-agent system prompt override
+             */
+            system_prompt?: string | null;
+            /** @description Per-agent voice configuration overrides */
+            voice_config?: components["schemas"]["VoiceAgentConfig"] | null;
         };
         /**
          * AgentListResponse
@@ -541,6 +594,31 @@ export interface components {
          */
         AgentResponse: {
             /**
+             * Name
+             * @description Unique agent name
+             */
+            name: string;
+            /**
+             * Description
+             * @description Human-readable description
+             * @default
+             */
+            description: string;
+            /**
+             * Tenant Ids
+             * @description Tenant IDs
+             */
+            tenant_ids?: string[];
+            /** @description Embed widget display configuration */
+            widget_config?: components["schemas"]["WidgetConfig"] | null;
+            /** @description Per-agent LLM overrides */
+            llm_config?: components["schemas"]["LLMConfig"] | null;
+            /**
+             * Provider Priority
+             * @description Provider names in priority order (from ProviderStore)
+             */
+            provider_priority?: string[];
+            /**
              * Abuse Config
              * @description Per-agent abuse settings overrides
              */
@@ -548,45 +626,22 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * System Prompt
+             * @description Per-agent system prompt override
+             */
+            system_prompt?: string | null;
+            /** @description Per-agent voice configuration overrides */
+            voice_config?: components["schemas"]["VoiceAgentConfig"] | null;
+            /**
              * Created At
              * @description ISO timestamp
              */
             created_at: string;
             /**
-             * Description
-             * @description Human-readable description
-             * @default
-             */
-            description: string;
-            /** @description Per-agent LLM overrides */
-            llm_config?: components["schemas"]["LLMConfig"] | null;
-            /**
-             * Name
-             * @description Unique agent name
-             */
-            name: string;
-            /**
-             * Provider Priority
-             * @description Provider names in priority order (from ProviderStore)
-             */
-            provider_priority?: string[];
-            /**
-             * System Prompt
-             * @description Per-agent system prompt override
-             */
-            system_prompt?: string | null;
-            /**
-             * Tenant Ids
-             * @description Tenant IDs
-             */
-            tenant_ids?: string[];
-            /**
              * Updated At
              * @description ISO timestamp
              */
             updated_at: string;
-            /** @description Embed widget display configuration */
-            widget_config?: components["schemas"]["WidgetConfig"] | null;
         };
         /**
          * AgentUpdateRequest
@@ -594,17 +649,17 @@ export interface components {
          */
         AgentUpdateRequest: {
             /**
-             * Abuse Config
-             * @description Per-agent abuse settings overrides
-             */
-            abuse_config?: {
-                [key: string]: unknown;
-            } | null;
-            /**
              * Description
              * @description Human-readable description
              */
             description?: string | null;
+            /**
+             * Tenant Ids
+             * @description Tenant IDs for this agent
+             */
+            tenant_ids?: string[] | null;
+            /** @description Embed widget display configuration */
+            widget_config?: components["schemas"]["WidgetConfig"] | null;
             /** @description Per-agent LLM overrides */
             llm_config?: components["schemas"]["LLMConfig"] | null;
             /**
@@ -613,28 +668,25 @@ export interface components {
              */
             provider_priority?: string[] | null;
             /**
+             * Abuse Config
+             * @description Per-agent abuse settings overrides
+             */
+            abuse_config?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * System Prompt
              * @description Per-agent system prompt override
              */
             system_prompt?: string | null;
-            /**
-             * Tenant Ids
-             * @description Tenant IDs for this agent
-             */
-            tenant_ids?: string[] | null;
-            /** @description Embed widget display configuration */
-            widget_config?: components["schemas"]["WidgetConfig"] | null;
+            /** @description Per-agent voice configuration overrides */
+            voice_config?: components["schemas"]["VoiceAgentConfig"] | null;
         };
         /**
          * BacklogDetailResponse
          * @description Events of a specific backlog session.
          */
         BacklogDetailResponse: {
-            /**
-             * Count
-             * @description Number of records
-             */
-            count: number;
             /**
              * Records
              * @description List of session events
@@ -645,6 +697,11 @@ export interface components {
              * @description Requested session ID
              */
             session_id: string;
+            /**
+             * Count
+             * @description Number of records
+             */
+            count: number;
         };
         /**
          * BacklogEvent
@@ -656,37 +713,37 @@ export interface components {
          */
         BacklogEvent: {
             /**
-             * Data
-             * @description Event data
+             * Session Id
+             * @description Session ID
              */
-            data: {
-                [key: string]: unknown;
-            };
+            session_id: string;
             /**
-             * Event
-             * @description Event type
+             * Turn Id
+             * @description Turn ID
              */
-            event: string;
+            turn_id: string;
             /**
              * Iteration
              * @description Iteration number
              */
             iteration: number;
             /**
-             * Session Id
-             * @description Session ID
+             * Event
+             * @description Event type
              */
-            session_id: string;
+            event: string;
             /**
              * Ts
              * @description Timestamp
              */
             ts: string;
             /**
-             * Turn Id
-             * @description Turn ID
+             * Data
+             * @description Event data
              */
-            turn_id: string;
+            data: {
+                [key: string]: unknown;
+            };
         } & {
             [key: string]: unknown;
         };
@@ -707,6 +764,21 @@ export interface components {
          */
         BacklogSessionMetadata: {
             /**
+             * Session Id
+             * @description Session ID
+             */
+            session_id: string;
+            /**
+             * Size Bytes
+             * @description File size in bytes
+             */
+            size_bytes: number;
+            /**
+             * Num Events
+             * @description Number of events
+             */
+            num_events: number;
+            /**
              * First Event
              * @description First event
              */
@@ -720,21 +792,20 @@ export interface components {
             last_event?: {
                 [key: string]: unknown;
             } | null;
-            /**
-             * Num Events
-             * @description Number of events
-             */
-            num_events: number;
+        };
+        /** Body_chat_voice_endpoint_api_chat_voice_post */
+        Body_chat_voice_endpoint_api_chat_voice_post: {
+            /** Audio */
+            audio: string;
             /**
              * Session Id
-             * @description Session ID
+             * @default default
              */
             session_id: string;
-            /**
-             * Size Bytes
-             * @description File size in bytes
-             */
-            size_bytes: number;
+            /** Agent */
+            agent?: string | null;
+            /** Lang */
+            lang?: string | null;
         };
         /**
          * ChatMessage
@@ -742,16 +813,16 @@ export interface components {
          */
         ChatMessage: {
             /**
+             * Role
+             * @description Role: user / assistant / system
+             */
+            role: string;
+            /**
              * Content
              * @description Message text
              * @default
              */
             content: string;
-            /**
-             * Role
-             * @description Role: user / assistant / system
-             */
-            role: string;
             /**
              * Tool Calls
              * @description Tool calls
@@ -789,30 +860,25 @@ export interface components {
          */
         LLMConfig: {
             /**
-             * Api Base
-             * @description Base URL for the API
+             * Provider
+             * @description LLM provider: ollama, mistral, openai, anthropic
              */
-            api_base?: string | null;
+            provider?: string | null;
             /**
              * Api Key
              * @description API key for the provider
              */
             api_key?: string | null;
             /**
-             * Max Tokens
-             * @description Maximum tokens in response
-             */
-            max_tokens?: number | null;
-            /**
              * Model
              * @description Model name (e.g. qwen2.5:0.5b or mistral/mistral-small)
              */
             model?: string | null;
             /**
-             * Provider
-             * @description LLM provider: ollama, mistral, openai, anthropic
+             * Api Base
+             * @description Base URL for the API
              */
-            provider?: string | null;
+            api_base?: string | null;
             /**
              * System Prompt
              * @description System prompt (overrides global)
@@ -823,6 +889,11 @@ export interface components {
              * @description Model temperature
              */
             temperature?: number | null;
+            /**
+             * Max Tokens
+             * @description Maximum tokens in response
+             */
+            max_tokens?: number | null;
         };
         /**
          * SessionHistoryResponse
@@ -837,16 +908,59 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
+        };
+        /**
+         * VoiceAgentConfig
+         * @description Per-agent voice configuration overrides.
+         *
+         *     All fields are optional (None = fall back to global VoiceConfig).
+         */
+        VoiceAgentConfig: {
+            /**
+             * Enabled
+             * @description Override master switch for this agent
+             */
+            enabled?: boolean | null;
+            /**
+             * Stt Provider
+             * @description STT provider name (must match a name in VoiceConfig.stt_providers)
+             */
+            stt_provider?: string | null;
+            /**
+             * Tts Provider
+             * @description TTS provider name (must match a name in VoiceConfig.tts_providers)
+             */
+            tts_provider?: string | null;
+            /**
+             * Stt Fallback
+             * @description Override STT fallback setting for this agent
+             */
+            stt_fallback?: boolean | null;
+            /**
+             * Tts Fallback
+             * @description Override TTS fallback setting for this agent
+             */
+            tts_fallback?: boolean | null;
+            /**
+             * Voice Input Disabled
+             * @description Explicitly disable voice input for this agent (hide mic in widget)
+             */
+            voice_input_disabled?: boolean | null;
+            /**
+             * Voice Output Disabled
+             * @description Explicitly disable TTS for this agent
+             */
+            voice_output_disabled?: boolean | null;
         };
         /**
          * WidgetConfig
@@ -854,11 +968,11 @@ export interface components {
          */
         WidgetConfig: {
             /**
-             * Accent Color
-             * @description Accent color (hex)
-             * @default #0f766e
+             * Title
+             * @description Widget header title
+             * @default Ассистент
              */
-            accent_color: string;
+            title: string;
             /**
              * Greeting
              * @description Greeting message in chat
@@ -866,17 +980,17 @@ export interface components {
              */
             greeting: string;
             /**
+             * Accent Color
+             * @description Accent color (hex)
+             * @default #0f766e
+             */
+            accent_color: string;
+            /**
              * Position
              * @description Widget position: right | left
              * @default right
              */
             position: string;
-            /**
-             * Title
-             * @description Widget header title
-             * @default Ассистент
-             */
-            title: string;
         };
     };
     responses: never;
@@ -887,6 +1001,337 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    health_endpoint_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    chat_endpoint_api_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backlog_list_endpoint_api_backlog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogListResponse"];
+                };
+            };
+        };
+    };
+    backlog_detail_endpoint_api_backlog__session_id__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlog_stats_endpoint_api_backlog_stats__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlog_errors_endpoint_api_backlog_errors_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_history_endpoint_api_session_history_get: {
+        parameters: {
+            query?: {
+                session_id?: string;
+                agent_name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_guardrails_admin_guardrails_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_guardrails_admin_guardrails_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_all_spending_admin_spending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_tenant_spending_admin_spending__tenant_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_tenant_budget_admin_spending__tenant_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_abuse_config_admin_abuse_config_get: {
         parameters: {
             query?: never;
@@ -962,101 +1407,6 @@ export interface operations {
             };
         };
     };
-    get_guardrails_admin_guardrails_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    update_guardrails_admin_guardrails_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_llm_config_admin_llm_config_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    list_litellm_providers_admin_llm_provider_list_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     list_llm_providers_admin_llm_providers_get: {
         parameters: {
             query?: never;
@@ -1108,6 +1458,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_litellm_providers_admin_llm_provider_list_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -1242,7 +1612,7 @@ export interface operations {
             };
         };
     };
-    get_all_spending_admin_spending_get: {
+    get_llm_config_admin_llm_config_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1262,13 +1632,11 @@ export interface operations {
             };
         };
     };
-    get_tenant_spending_admin_spending__tenant_id__get: {
+    get_voice_config_api_voice_config_get: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                tenant_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -1282,24 +1650,13 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
-    set_tenant_budget_admin_spending__tenant_id__post: {
+    update_voice_config_api_voice_config_put: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                tenant_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -1316,7 +1673,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -1511,142 +1870,6 @@ export interface operations {
             };
         };
     };
-    backlog_list_endpoint_api_backlog_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BacklogListResponse"];
-                };
-            };
-        };
-    };
-    backlog_errors_endpoint_api_backlog_errors_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    backlog_stats_endpoint_api_backlog_stats__session_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    backlog_detail_endpoint_api_backlog__session_id__get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BacklogDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    chat_endpoint_api_chat_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     chat_by_agent_endpoint_api_chat__name__post: {
         parameters: {
             query?: never;
@@ -1678,17 +1901,18 @@ export interface operations {
             };
         };
     };
-    session_history_endpoint_api_session_history_get: {
+    chat_voice_endpoint_api_chat_voice_post: {
         parameters: {
-            query?: {
-                session_id?: string;
-                agent_name?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_chat_voice_endpoint_api_chat_voice_post"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -1696,7 +1920,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionHistoryResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -1706,26 +1930,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    health_endpoint_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
                 };
             };
         };
