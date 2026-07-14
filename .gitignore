@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+agent-db/.venv/
 *.db
 *.db-*
 *.sqlite
