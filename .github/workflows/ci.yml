@@ -109,5 +109,10 @@ jobs:
           go-version: stable
           cache: true
       - name: Test
-        run: go test ./... -count=1 -timeout 180s -json 2>&1 | tee /tmp/gotest-json.log | grep -E '"Action":"(fail|skip)"'
+        # NOTE: grep removed from pipeline — go test -json exits 0 on success and
+        #       1 on failure, which is the correct signal. The old | grep -E ...
+        #       caused a false-positive CI failure when all tests passed (grep
+        #       exits 1 on no match, and GHA's pipefail propagates that).
+        #       Full JSON log saved via tee for inspection.
+        run: go test ./... -count=1 -timeout 180s -json 2>&1 | tee /tmp/gotest-json.log
         working-directory: ${{ matrix.dir }}

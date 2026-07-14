@@ -117,23 +117,12 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 	// Prometheus metrics — доступно всегда, без аутентификации
 	r.Handle("/metrics", promhttp.Handler())
 
-	// /admin/* — admin endpoints (protect ADMIN_TOKEN, фаза 3.7)
-	if introspectAdapter != nil && adminCtx != nil {
-		r.Route("/admin", func(r chi.Router) {
-			r.Use(AdminAuthMiddleware)
-			r.Use(AdminRateLimitMiddleware())
-			r.Get("/config", adminConfigHandler(cfg))
-			r.Post("/config", adminConfigUpdateHandler(adminCtx))
-			r.Post("/config/reload", adminConfigReloadHandler(adminCtx))
-			r.Get("/config/versions", adminConfigVersionsHandler(adminCtx))
-			r.Post("/config/rewrite", adminRewriteHandler(introspectAdapter, cfg.DataSource, configPath, adminCtx))
-			r.Get("/discover", discoverHandler(introspectAdapter, cfg.DataSource))
-			// Tool management: read-only approval flow (legacy — for backward compat)
-			// Per-tenant approval is handled via /admin/tenants/{id}/tools/* in BuildAdminRouter
-			r.Get("/tools/pending", adminPendingToolsHandler(cfg, approvedTools))
-			r.Post("/tools/{toolName}/approve", adminApproveToolHandler(cfg, approvedTools, nil))
-		})
-	}
+	// /admin/* — admin endpoints are mounted EXCLUSIVELY via TenantStore.BuildAdminRouter()
+	// in main.go (rootRouter.Mount("/admin", adminRouter)). The per-tenant router from
+	// NewRouterFromConfig does NOT register /admin/* — it is served by the top-level mount.
+	// (The previous inline /admin/* registration here required adminCtx != nil, which was
+	// never true — all callers pass nil. See main.go:store.BuildAdminRouter() for the
+	// actual admin endpoint registration.)
 
 	// Read-only guard: если DataSource.ReadOnly == true (по умолчанию),
 	// мутирующие методы (POST, PUT, PATCH, DELETE) не регистрируются,

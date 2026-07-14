@@ -1,9 +1,9 @@
 module github.com/trash2bin/helperium/admin-dashboard
 
-go 1.25.0
+go 1.26.5
 
 require (
-	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-chi/chi/v5 v5.3.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/trash2bin/helperium/helperium-go v0.0.0-20260713233759-a29e0303635c
 )
