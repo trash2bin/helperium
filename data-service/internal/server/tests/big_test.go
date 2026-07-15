@@ -84,9 +84,12 @@ func TestScenario_BigTestseed(t *testing.T) {
 	})
 
 	t.Run("find_students_by_name_nonexistent", func(t *testing.T) {
-		status, _ := getJSON[map[string]string](t, ts.URL+"/students?full_name=НеизвестныйНикогдаНеСуществовал")
-		if status != 404 {
-			t.Errorf("expected 404 for non-existing name, got %d", status)
+		status, results := getJSON[[]map[string]any](t, ts.URL+"/students?full_name=НеизвестныйНикогдаНеСуществовал")
+		if status != 200 {
+			t.Errorf("expected 200 for non-existing name, got %d", status)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected empty results, got %d items", len(results))
 		}
 	})
 
@@ -281,7 +284,7 @@ func TestScenario_BigTestseed_NoPanicsOnRandomQueries(t *testing.T) {
 		{"/grades", 200},
 		{"/schedule", 200},
 		{"/disciplines", 200},
-		{"/students?full_name=Неизвестный", 404},
+		{"/students?full_name=Неизвестный", 200},
 	}
 
 	for _, tc := range tests {

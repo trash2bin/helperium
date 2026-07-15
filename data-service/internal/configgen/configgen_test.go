@@ -2,6 +2,7 @@ package configgen
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
@@ -493,4 +494,153 @@ func TestGenerate_FindWithFilters(t *testing.T) {
 	if len(findTool.Params) < 3 {
 		t.Errorf("expected at least 3 params on find_customers, got %d", len(findTool.Params))
 	}
+}
+
+// TestGenerate_BoolFilterParams проверяет, что bool-колонки получают
+// фильтр с типом bool (true/false) в find/list параметрах.
+func TestGenerate_BoolFilterParams(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{{
+			Name:       "products",
+			PrimaryKey: []string{"id"},
+			Columns: []datasource.Column{
+				{Name: "id", Type: "int"},
+				{Name: "name", Type: "string"},
+				{Name: "is_active", Type: "bool"},
+				{Name: "is_promo", Type: "bool"},
+				{Name: "created_at", Type: "datetime"},
+				{Name: "deleted_at", Type: "date"},
+			},
+		}},
+	}
+
+	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+
+	var findEp *config.Endpoint
+	for i, ep := range cfg.Endpoints {
+		if ep.Op == config.OpFind && ep.Entity == "products" {
+			findEp = &cfg.Endpoints[i]
+			break
+		}
+	}
+	if findEp == nil {
+		t.Fatal("expected find endpoint for 'products'")
+	}
+
+	paramMap := make(map[string]config.ParamType)
+	for _, p := range findEp.Params {
+		paramMap[p.Name] = p.Type
+	}
+
+	// Bool columns should have bool type
+	if paramMap["is_active"] != config.ParamTypeBool {
+		t.Errorf("expected is_active to be bool, got %s", paramMap["is_active"])
+	}
+	if paramMap["is_promo"] != config.ParamTypeBool {
+		t.Errorf("expected is_promo to be bool, got %s", paramMap["is_promo"])
+	}
+
+	// Date/datetime should be string (ISO-8601)
+	if paramMap["created_at"] != config.ParamTypeString {
+		t.Errorf("expected created_at to be string, got %s", paramMap["created_at"])
+	}
+	if paramMap["deleted_at"] != config.ParamTypeString {
+		t.Errorf("expected deleted_at to be string, got %s", paramMap["deleted_at"])
+	}
+}
+
+// TestGenerate_DualFKCollision проверяет, что два FK на одну parent-таблицу
+// не схлопываются в один nav-тул (разные queryID).
+func TestGenerate_DualFKCollision(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{
+				Name:       "users",
+				PrimaryKey: []string{"id"},
+				Columns:    []datasource.Column{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
+			},
+			{
+				Name:       "orders",
+				PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "int"},
+					{Name: "buyer_id", Type: "int"},
+					{Name: "seller_id", Type: "int"},
+				},
+				ForeignKeys: []datasource.ForeignKey{
+					{Columns: []string{"buyer_id"}, ReferencedTable: "users", ReferencedColumns: []string{"id"}},
+					{Columns: []string{"seller_id"}, ReferencedTable: "users", ReferencedColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+
+	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+
+	// Two FKs to same parent → only ONE nav endpoint (same path),
+	// but TWO custom queries with different queryIDs.
+	var navCount int
+	for _, ep := range cfg.Endpoints {
+		if ep.Op == config.OpCustomQuery && ep.Entity == "orders" {
+			navCount++
+		}
+	}
+	if navCount != 1 {
+		t.Errorf("expected 1 nav endpoint for orders (same path), got %d", navCount)
+	}
+
+	// TWO custom queries with different SQL (one per FK)
+	var cqCount int
+	for _, cq := range cfg.CustomQueries {
+		if strings.Contains(cq.Description, "orders") {
+			cqCount++
+		}
+	}
+	if cqCount != 2 {
+		t.Errorf("expected 2 custom queries for orders (buyer+seller), got %d", cqCount)
+	}
+}
+
+// TestGenerate_CustomQueryToolNameCollapse проверяет, что двойные подчёркивания
+// схлопываются в имени MCP-тула для custom queries.
+func TestGenerate_CustomQueryToolNameCollapse(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{
+				Name:       "brands",
+				PrimaryKey: []string{"id"},
+				Columns:    []datasource.Column{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
+			},
+			{
+				Name:       "products",
+				PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "int"}, {Name: "name", Type: "string"}, {Name: "brand_id", Type: "int"},
+				},
+				ForeignKeys: []datasource.ForeignKey{
+					{Columns: []string{"brand_id"}, ReferencedTable: "brands", ReferencedColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+
+	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+
+	for _, tool := range cfg.MCPTools {
+		if tool.Endpoint == "/brands/{id}/products" {
+			// Should be products_by_brands, NOT query__brands_id_products
+			if strings.Contains(tool.Name, "__") {
+				t.Errorf("tool name has double underscore: %s", tool.Name)
+			}
+			if !strings.HasPrefix(tool.Name, "products_by_") {
+				t.Errorf("expected tool name to start with 'products_by_', got %s", tool.Name)
+			}
+			t.Logf("custom query tool: %s", tool.Name)
+			return
+		}
+	}
+	t.Error("expected custom query MCP tool for /brands/{id}/products")
 }

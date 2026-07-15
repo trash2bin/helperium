@@ -99,7 +99,7 @@ func (b *Builder) MapRows(
 		_ = rows.Close()
 	}()
 
-	var out []map[string]any
+	out := make([]map[string]any, 0)
 	count := 0
 	for rows.Next() {
 		row, err := mapper(rows)

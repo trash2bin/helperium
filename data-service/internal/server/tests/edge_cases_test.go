@@ -105,15 +105,18 @@ func TestEdgeCases_QueryParams(t *testing.T) {
 
 	t.Run("unicode_query", func(t *testing.T) {
 		// Поиск с эмодзи и юникодом
-		status, _ := getJSON[map[string]any](t,
+		status, results := getJSON[[]map[string]any](t,
 			ts.URL+"/students?full_name="+url.QueryEscape("🎉ПриветМир"))
-		if status != 404 {
-			t.Errorf("expected 404 for unicode, got %d", status)
+		if status != 200 {
+			t.Errorf("expected 200 for unicode, got %d", status)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected empty results for unicode, got %d items", len(results))
 		}
 	})
 
 	t.Run("null_bytes_in_query", func(t *testing.T) {
-		status, _ := getJSON[map[string]any](t,
+		status, _ := getJSON[[]map[string]any](t,
 			ts.URL+"/students?full_name="+url.QueryEscape("test%00null"))
 		if status >= 500 {
 			t.Errorf("null bytes: 5xx, got %d", status)

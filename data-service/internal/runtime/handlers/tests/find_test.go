@@ -119,11 +119,11 @@ func TestFindHandler_NotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "not_found") {
-		t.Errorf("response should contain not_found: %s", w.Body.String())
+	if !strings.Contains(w.Body.String(), "[]") {
+		t.Errorf("response should contain empty array []: %s", w.Body.String())
 	}
 }
 

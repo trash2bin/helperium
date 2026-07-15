@@ -87,17 +87,29 @@ func (b *Builder) BuildFind(entity Entity, searchField, value string) (Query, er
 	cols := buildColumnList(b.adapter, entity)
 	ph := b.adapter.TranslatePlaceholder(1)
 
-	// LIKE-поиск: совместимость со старыми хендлерами (поиск по подстроке).
+	// LIKE/ILIKE поиск: совместимость со старыми хендлерами (поиск по подстроке).
+	// PostgreSQL: ILIKE (case-insensitive). SQLite: LIKE (already case-insensitive).
 	// Безопасность: value в prepared statement, wildcards % и _ экранируются
 	// перед LIKE, чтобы предотвратить DoS через wildcard-атаки (full scan).
 	escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(value)
 	searchVal := "%" + escaped + "%"
 
+	likeOp := "LIKE"
+	if b.isPostgres() {
+		likeOp = "ILIKE"
+	}
+
 	q := Query{
-		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` LIKE ` + ph,
+		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` ` + likeOp + ` ` + ph,
 		Args: []any{searchVal},
 	}
 	return q, nil
+}
+
+// isPostgres checks if the adapter uses PostgreSQL-style placeholders ($1, $2, ...).
+// Used to choose ILIKE (PostgreSQL) vs LIKE (SQLite) for case-insensitive search.
+func (b *Builder) isPostgres() bool {
+	return strings.Contains(b.adapter.TranslatePlaceholder(1), "$")
 }
 
 // BuildFilter собирает SELECT с фильтрацией по нескольким полям.
@@ -114,7 +126,7 @@ func (b *Builder) BuildFind(entity Entity, searchField, value string) (Query, er
 //   filterOps:  ["like", "eq", "eq"]
 //
 // Результат:
-//   SELECT ... FROM customers WHERE "name" LIKE ? AND "status" = ? AND "city" = ?
+//   SELECT ... FROM customers WHERE "name" ILIKE ? AND "status" = ? AND "city" = ?
 //   Args: ["%Ivan%", "active", "Moscow"]
 func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []any, filterOps []string) (Query, error) {
 	if entity.Table == "" {
@@ -128,6 +140,12 @@ func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []a
 	var conditions []string
 	var args []any
 	phIdx := 1
+
+	// PostgreSQL uses ILIKE for case-insensitive search; SQLite LIKE is already case-insensitive.
+	likeOp := "LIKE"
+	if b.isPostgres() {
+		likeOp = "ILIKE"
+	}
 
 	for i, colName := range filterCols {
 		if i >= len(filterVals) || i >= len(filterOps) {
@@ -147,14 +165,14 @@ func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []a
 
 		switch op {
 		case "like":
-			// LIKE-поиск с экранированием wildcards
+			// LIKE/ILIKE поиск с экранированием wildcards
 			s, ok := val.(string)
 			if !ok {
 				continue
 			}
 			escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(s)
 			args = append(args, "%"+escaped+"%")
-			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" LIKE "+ph)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" "+likeOp+" "+ph)
 			phIdx++
 		case "eq":
 			args = append(args, val)

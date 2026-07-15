@@ -10,6 +10,7 @@ import (
 
 	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
+	"github.com/trash2bin/helperium/data-service/internal/configgen"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
@@ -111,6 +112,24 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, db runtime.Adapter
 
 	// MCP-манифест — единственный source of truth для mcp-gateway
 	r.Get("/mcp/manifest", handlers.MCPManifestHandler(cfg))
+
+	// MCP-схема — обселиченное описание БД для LLM-агента
+	// (требуется предварительный introspect через POST /admin/config/rewrite)
+	r.Get("/mcp/schema", func(w http.ResponseWriter, r *http.Request) {
+		inst := ts.resolveTenant(r)
+		if inst == nil {
+			handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
+				"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+			return
+		}
+		if inst.IntrospectedSchema == nil {
+			handlers.RespondError(w, http.StatusServiceUnavailable, "schema_not_available",
+				"schema not yet introspected — please call POST /admin/config/rewrite first")
+			return
+		}
+		result := configgen.GenerateSchemaForLLM(inst.IntrospectedSchema, inst.Config)
+		handlers.RespondJSON(w, http.StatusOK, result)
+	})
 
 	// Prometheus metrics — доступно всегда, без аутентификации
 	r.Handle("/metrics", promhttp.Handler())

@@ -55,9 +55,10 @@ type TenantInstance struct {
 	ConfigPath string                // path to the JSON config file (for hot reload)
 	CreatedAt  time.Time
 
-	Healthy       bool               // last health ping result
-	LastError     string             // last error message if unhealthy
-	ApprovedTools map[string]bool    // approved write endpoints (key = path, set on load from cfg.ApprovedTools)
+	Healthy            bool               // last health ping result
+	LastError          string             // last error message if unhealthy
+	ApprovedTools      map[string]bool    // approved write endpoints (key = path, set on load from cfg.ApprovedTools)
+	IntrospectedSchema *datasource.Schema // cached result of last Introspect (set by /admin/config/rewrite)
 }
 
 // ConnAdapter wraps datasource.Conn + datasource.Adapter into runtime.AdapterSubset.
@@ -883,6 +884,9 @@ func (ts *TenantStore) adminRewriteHandler(_ datasource.Adapter, _ string) http.
 			handlers.RespondError(w, http.StatusInternalServerError, "introspect_error", err.Error())
 			return
 		}
+
+		// Cache schema for /mcp/schema endpoint
+		inst.IntrospectedSchema = schema
 
 		dsConfig := config.DataSourceConfig{
 			Driver: inst.Config.DataSource.Driver,

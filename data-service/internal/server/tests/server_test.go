@@ -386,10 +386,13 @@ func TestFindStudentByName(t *testing.T) {
 
 func TestFindStudentByNameNotFound(t *testing.T) {
 	ts := newTestServer(t)
-	status, _ := getJSON[map[string]string](t,
+	status, results := getJSON[[]map[string]any](t,
 		ts.URL+"/students?full_name=Неизвестный+Студент")
-	if status != 404 {
-		t.Errorf("expected 404, got %d", status)
+	if status != 200 {
+		t.Errorf("expected 200, got %d", status)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results, got %d items", len(results))
 	}
 }
 
@@ -635,10 +638,13 @@ func testStudents(t *testing.T, ts *httptest.Server) {
 		t.Errorf("expected Мария Сидорова Ивановна in results")
 	}
 
-	status, _ = getJSON[map[string]string](t,
+	status, emptyResults := getJSON[[]map[string]any](t,
 		ts.URL+"/students?full_name=Неизвестный+Студент")
-	if status != 404 {
-		t.Errorf("expected 404, got %d", status)
+	if status != 200 {
+		t.Errorf("expected 200, got %d", status)
+	}
+	if len(emptyResults) != 0 {
+		t.Errorf("expected empty results, got %d items", len(emptyResults))
 	}
 
 	status, disciplines := getJSON[[]map[string]any](t,

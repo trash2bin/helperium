@@ -18,17 +18,64 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
-// skipPrefixes — таблицы, начинающиеся с этих префиксов, исключаются.
-// Можно расширять через Generate's skipPrefixes параметр.
-var defaultSkipPrefixes = []string{
-	"sqlite_",
-	"pg_",
-	"documents", // внутренняя таблица RAG
+// SkipRule defines a pattern for tables to exclude from tool generation.
+// Matching is done against the table name; multiple fields are AND-ed.
+type SkipRule struct {
+	Prefix  string // Match table name prefix (e.g., "auth_", "django_")
+	Suffix  string // Match table name suffix
+	Contains string // Match substring
+	Reason  string // Human-readable reason for skipping
 }
+
+// matches returns true if the table name satisfies this rule.
+func (r SkipRule) matches(name string) bool {
+	if r.Prefix != "" && !strings.HasPrefix(name, r.Prefix) {
+		return false
+	}
+	if r.Suffix != "" && !strings.HasSuffix(name, r.Suffix) {
+		return false
+	}
+	if r.Contains != "" && !strings.Contains(name, r.Contains) {
+		return false
+	}
+	return true
+}
+
+// DefaultSkipRules returns framework-agnostic rules for system tables.
+// Used by Generate to filter out Django, Laravel, Rails, and DB-internal tables.
+func DefaultSkipRules() []SkipRule {
+	return []SkipRule{
+		// SQLite internals
+		{Prefix: "sqlite_", Reason: "SQLite system table"},
+		// PostgreSQL internals
+		{Prefix: "pg_", Reason: "PostgreSQL system table"},
+		{Prefix: "pg_catalog", Reason: "PostgreSQL catalog"},
+		{Prefix: "information_schema", Reason: "SQL information schema"},
+		// Django framework
+		{Prefix: "auth_", Reason: "Django auth system (not business data)"},
+		{Prefix: "django_", Reason: "Django framework internals"},
+		{Prefix: "session", Reason: "Django session storage"},
+		// RAG internal
+		{Prefix: "documents", Reason: "RAG internal table"},
+		// Laravel (future)
+		{Prefix: "migrations", Reason: "Framework migration tracking"},
+		{Prefix: "jobs", Reason: "Queue internals"},
+		{Prefix: "failed_jobs", Reason: "Queue internals"},
+		// Rails (future)
+		{Prefix: "schema_migrations", Reason: "Rails migration tracking"},
+		{Prefix: "ar_internal_metadata", Reason: "Rails internals"},
+	}
+}
+
+// DisplayPrefixes are common table name prefixes to strip when generating
+// human-readable display names for entities and tools.
+// Change these when recompiling for a project that uses different prefixes
+// (e.g. "wp_" for WordPress, "ce_" for Concrete5).
+var DisplayPrefixes = []string{"catalog_", "auth_", "django_"}
 
 // isNameField возвращает true, если колонка похожа на поисковое имя.
 // Критерий: тип string, название содержит name/last_name/first_name/title.
@@ -58,8 +105,7 @@ func findSearchField(cols []datasource.Column) (datasource.Column, bool) {
 //   - ds — data_source часть конфига (driver + dsn)
 //   - skipPrefixes — дополнительные префиксы для исключения таблиц (nil = только дефолтные)
 func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixes []string) *config.Config {
-	mergedSkip := append([]string{}, defaultSkipPrefixes...)
-	mergedSkip = append(mergedSkip, skipPrefixes...)
+	skipRules := DefaultSkipRules()
 
 	// Read-only by default: сгенерированный конфиг не должен мутировать БД.
 	// Клиент может явно выставить read_only: false вручную через admin API.
@@ -84,7 +130,7 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 	})
 
 	for _, tbl := range tables {
-		if shouldSkip(tbl.Name, mergedSkip) {
+		if shouldSkip(tbl.Name, skipRules, skipPrefixes) {
 			continue
 		}
 
@@ -208,10 +254,12 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 				continue
 			}
 
-			// custom_query ID: {child_table}_by_{parent_table}
-			queryID := fmt.Sprintf("%s_by_%s", entity.Name, parentEntity.Name)
+			// custom_query ID: {child_table}_by_{parent_table}_{fk_column}
+			// Include FK column name to avoid collision when two FKs in the
+			// same table point to the same parent (e.g. buyer_id + seller_id → users).
+			queryID := fmt.Sprintf("%s_by_%s_%s", entity.Name, parentEntity.Name, rel.LocalFK)
 			if _, exists := customQueries[queryID]; exists {
-				continue // уже добавлен (дублирующие FK)
+				continue
 			}
 
 			// SELECT * FROM child_table WHERE fk = ?
@@ -233,6 +281,7 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 				}
 			}
 			if !dup {
+				required := true
 				endpoints = append(endpoints, config.Endpoint{
 					Method:      config.MethodGET,
 					Path:        navPath,
@@ -240,6 +289,15 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 					QueryID:     queryID,
 					Entity:      entity.Name,
 					Description: fmt.Sprintf("All %s for a given %s", entity.Name, parentEntity.Name),
+					Params: []config.EndpointParam{
+						{
+							Name:     parentID,
+							In:       config.ParamInPath,
+							Type:     config.ParamTypeString,
+							Required: &required,
+							Description: fmt.Sprintf("ID of %s", parentEntity.Name),
+						},
+					},
 				})
 			}
 		}
@@ -348,10 +406,24 @@ func firstPK(pk []string) string {
 	return ""
 }
 
-// shouldSkip проверяет, начинается ли имя с одного из skip-префиксов.
-func shouldSkip(name string, prefixes []string) bool {
-	for _, p := range prefixes {
-		if strings.HasPrefix(name, p) {
+// shouldSkip checks if a table name matches any skip rule.
+// If skipRules is provided, uses structured SkipRule matching.
+// Otherwise falls back to legacy prefix-only matching.
+func shouldSkip(name string, skipRules []SkipRule, legacyPrefixes []string) bool {
+	// For schema-qualified names (e.g. "public.auth_group"),
+	// match against both the full name and the short name (after last dot).
+	shortName := name
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		shortName = name[idx+1:]
+	}
+
+	for _, rule := range skipRules {
+		if rule.matches(name) || rule.matches(shortName) {
+			return true
+		}
+	}
+	for _, p := range legacyPrefixes {
+		if strings.HasPrefix(name, p) || strings.HasPrefix(shortName, p) {
 			return true
 		}
 	}
@@ -401,18 +473,17 @@ func buildFilterParams(cols []datasource.Column, entity config.Entity, searchCol
 		paramRequired := false
 
 		if col.Name == searchCol {
-			// Основное поле поиска — текстовый LIKE-поиск
+			// Search field — text LIKE search
 			params = append(params, config.EndpointParam{
 				Name:     col.Name,
 				In:       config.ParamInQuery,
 				Type:     config.ParamTypeString,
 				Required: &paramRequired,
 				Description: fmt.Sprintf(
-					"Text search on '%s' (LIKE match, partial). "+
-						"If omitted, returns all records.", col.Name),
+					"Text search on '%s' (partial match).", col.Name),
 			})
 		} else if col.Type == datasource.TypeInt || col.Type == datasource.TypeFloat {
-			// Числовые колонки — точное совпадение
+			// Numeric columns — exact match
 			params = append(params, config.EndpointParam{
 				Name:     col.Name,
 				In:       config.ParamInQuery,
@@ -421,8 +492,31 @@ func buildFilterParams(cols []datasource.Column, entity config.Entity, searchCol
 				Description: fmt.Sprintf(
 					"Filter by exact '%s' value.", col.Name),
 			})
+		} else if col.Type == datasource.TypeBool {
+			// Boolean columns — exact match (true/false)
+			params = append(params, config.EndpointParam{
+				Name:     col.Name,
+				In:       config.ParamInQuery,
+				Type:     config.ParamTypeBool,
+				Required: &paramRequired,
+				Description: fmt.Sprintf(
+					"Filter by '%s' (true/false).", col.Name),
+			})
+		} else if col.Type == datasource.TypeDatetime || col.Type == datasource.TypeDate {
+			// Date/datetime — ISO-8601 text comparison
+			params = append(params, config.EndpointParam{
+				Name:     col.Name,
+				In:       config.ParamInQuery,
+				Type:     config.ParamTypeString,
+				Required: &paramRequired,
+				Description: fmt.Sprintf(
+					"Filter by '%s' (ISO-8601 date, e.g. 2024-01-15).", col.Name),
+			})
+		} else if col.Type == datasource.TypeJSON {
+			// JSON/JSONB — cannot use ILIKE/LIKE, skip as filter param
+			continue
 		} else if col.Type == datasource.TypeString {
-			// String колонки — точное совпадение (для FK, email, phone и т.д.)
+			// String columns — exact match (FK, email, phone etc.)
 			params = append(params, config.EndpointParam{
 				Name:     col.Name,
 				In:       config.ParamInQuery,
@@ -495,40 +589,459 @@ func boolPtr(v bool) *bool {
 	return &v
 }
 
-// formatFieldsHint форматирует подсказку о полях сущности для описания MCP-тула.
-// Пример: "\nFields: name(string), email(string), city(string), status(string)"
-func formatFieldsHint(ent *config.Entity) string {
-	if len(ent.Fields) == 0 {
+// ── LLM-friendly schema ────────────────────────────────────────────────────
+
+// SchemaForLLM — обселиченное описание схемы для LLM-агента.
+// Не содержит raw SQL, только семантические типы и связи.
+type SchemaForLLM struct {
+	// Entities — список сущностей, доступных агенту. Каждая сущность — это
+	// таблица, но абстрагированная через бизнес-имя и семантические типы.
+	Entities []LLMEntity `json:"entities"`
+
+	// WorkflowHints — стратегические подсказки агенту: как искать,
+	// какие связи использовать, какие тулы вызывать.
+	WorkflowHints []string `json:"workflow_hints,omitempty"`
+}
+
+// LLMEntity — описание одной сущности для LLM.
+type LLMEntity struct {
+	// Name — бизнес-имя сущности ("Товар (catalog_product)").
+	Name string `json:"name"`
+
+	// ToolPrefix — префикс для тулов, ссылающихся на эту сущность ("catalog_product").
+	// Нужен для построения правильных ссылок на find_*, get_*, list_*.
+	ToolPrefix string `json:"-"`
+
+	// Description — комментарий из БД либо авто-описание.
+	Description string `json:"description,omitempty"`
+
+	// SearchFields — поля, по которым работает нечёткий поиск (ILIKE/LIKE).
+	// Агент может передавать текст в name-параметр find_* тула.
+	SearchFields string `json:"search_fields,omitempty"`
+
+	// FilterFields — поля для точной фильтрации, сгруппированные по типу.
+	FilterFields []FilterGroup `json:"filter_fields,omitempty"`
+
+	// Relations — связи с другими сущностями (FK).
+	Relations []LLMRelation `json:"relations,omitempty"`
+}
+
+// FilterGroup — группа фильтров одного типа.
+type FilterGroup struct {
+	// Label — "exact" / "bool" / "range" / "text search" / "enum".
+	Label string `json:"label"`
+
+	// Fields — список колонок с описанием.
+	Fields []FilterField `json:"fields"`
+}
+
+// FilterField — одна колонка-фильтр.
+type FilterField struct {
+	Name        string `json:"name"`
+	Column      string `json:"column"`      // оригинальное имя в БД (snake_case)
+	Type        string `json:"type"`         // string/int/float/bool/date/enum
+	Description string `json:"description,omitempty"`
+	IsFK        bool   `json:"is_fk,omitempty"`   // true если это внешний ключ
+	FKEntity    string `json:"fk_entity,omitempty"` // имя сущности, на которую ссылается FK
+}
+
+// LLMRelation — связь с другой сущностью.
+type LLMRelation struct {
+	// Field — колонка в текущей таблице (FK).
+	Field string `json:"field"`
+
+	// ReferencedEntity — имя связанной сущности.
+	ReferencedEntity string `json:"referenced_entity"`
+
+	// ReferencedTool — тул для навигации к связанным данным.
+	ReferencedTool string `json:"referenced_tool,omitempty"`
+}
+
+// GenerateSchemaForLLM превращает datasource.Schema в обселиченное
+// описание для LLM-агента. Никакого raw SQL.
+//
+// cfg — сгенерированный config.Config (нужен для entities, endpoints, FK).
+func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *SchemaForLLM {
+	if schema == nil {
+		return &SchemaForLLM{Entities: []LLMEntity{}}
+	}
+
+	// Build entity map from config (shortName -> Entity)
+	entityMap := make(map[string]config.Entity)
+	for _, e := range cfg.Entities {
+		entityMap[e.Name] = e
+	}
+
+	// Build table -> entity name map
+	tableToEntity := make(map[string]string)
+	for _, e := range cfg.Entities {
+		short := e.Name
+		full := e.Table
+		tableToEntity[full] = short
+		// Also index by short name
+		tableToEntity[short] = short
+	}
+
+	// Build FK index: (tableName, column) -> referenced table
+	fkIndex := make(map[[2]string]string) // key: (table, column) -> referencedTable
+	for _, tbl := range schema.Tables {
+		for _, fk := range tbl.ForeignKeys {
+			for i, col := range fk.Columns {
+				if i < len(fk.ReferencedColumns) {
+					fkIndex[[2]string{tbl.Name, col}] = fk.ReferencedTable
+				}
+			}
+		}
+	}
+
+	// Build entity -> relation index from config.Relation
+	entityRelations := make(map[string][]config.Relation)
+	for _, e := range cfg.Entities {
+		if len(e.Relations) > 0 {
+			entityRelations[e.Name] = append(entityRelations[e.Name], e.Relations...)
+		}
+	}
+
+	entities := make([]LLMEntity, 0, len(cfg.Entities))
+	hints := []string{}
+	hintSet := make(map[string]bool)
+
+	for _, e := range cfg.Entities {
+		// Find the original datasource.Table for this entity
+		var tbl *datasource.Table
+		for i := range schema.Tables {
+			stripped := schema.Tables[i].Name
+			if idx := strings.LastIndex(stripped, "."); idx >= 0 {
+				stripped = stripped[idx+1:]
+			}
+			if stripped == e.Name || schema.Tables[i].Name == e.Table {
+				tbl = &schema.Tables[i]
+				break
+			}
+		}
+		if tbl == nil {
+			continue
+		}
+
+		// Build name and description
+		businessName := shortBusinessName(e.Name)
+		displayName := fmt.Sprintf("%s (%s)", businessName, e.Name)
+
+		desc := e.Description
+		if desc == "" {
+			desc = fmt.Sprintf("Таблица %s", e.Name)
+		}
+
+		// Search fields
+		var searchFields []string
+		for _, ep := range cfg.Endpoints {
+			if ep.Entity == e.Name && ep.SearchField != "" {
+				searchFields = append(searchFields, ep.SearchField)
+			}
+		}
+
+		// Filter fields — group by type
+		exactFields := make([]FilterField, 0)
+		boolFields := make([]FilterField, 0)
+		rangeFields := make([]FilterField, 0)
+
+		for _, f := range e.Fields {
+			isPK := f.PrimaryKey != nil && *f.PrimaryKey
+			if isPK {
+				continue
+			}
+
+			// Check FK
+			fkRef := fkIndex[[2]string{tbl.Name, f.Column}]
+			if fkRef == "" {
+				// Also try short table name
+				short := tbl.Name
+				if idx := strings.LastIndex(short, "."); idx >= 0 {
+					short = short[idx+1:]
+				}
+				fkRef = fkIndex[[2]string{short, f.Column}]
+				if fkRef == "" {
+					fkRef = fkIndex[[2]string{e.Name, f.Column}]
+				}
+			}
+
+			// Resolve FK entity name
+			fkEntity := ""
+			if fkRef != "" {
+				if refShort := tableToEntity[fkRef]; refShort != "" {
+					fkEntity = shortBusinessName(refShort)
+				} else {
+					short := fkRef
+					if idx := strings.LastIndex(short, "."); idx >= 0 {
+						short = short[idx+1:]
+					}
+					fkEntity = shortBusinessName(short)
+				}
+			}
+
+			// Check if search field (already handled above, skip from filters)
+			isSearch := false
+			for _, sf := range searchFields {
+				if sf == f.Column || sf == f.Name {
+					isSearch = true
+					break
+				}
+			}
+			if isSearch {
+				continue
+			}
+
+			fieldDesc := f.Description
+			if fkEntity != "" {
+				if fieldDesc != "" {
+					fieldDesc += " | "
+				}
+				fieldDesc += fmt.Sprintf("FK → %s (используй поиск по %s)", fkEntity, fkEntity)
+			}
+
+			ff := FilterField{
+				Name:        shortColumnName(f.Name),
+				Column:      f.Column,
+				Type:        string(f.Type),
+				Description: fieldDesc,
+				IsFK:        fkRef != "",
+				FKEntity:    fkEntity,
+			}
+
+			switch f.Type {
+			case config.FieldTypeBool:
+				boolFields = append(boolFields, ff)
+			case config.FieldTypeInt, config.FieldTypeFloat:
+				rangeFields = append(rangeFields, ff)
+			default:
+				exactFields = append(exactFields, ff)
+			}
+		}
+
+		// Relations from config
+		relations := make([]LLMRelation, 0)
+		for _, rel := range entityRelations[e.Name] {
+			targetName := rel.Table
+			if targetShort := tableToEntity[rel.Table]; targetShort != "" {
+				targetName = targetShort
+			}
+			relations = append(relations, LLMRelation{
+				Field:            rel.LocalFK,
+				ReferencedEntity: shortBusinessName(targetName),
+			})
+		}
+
+		// Build filter groups
+		filterFields := make([]FilterGroup, 0)
+		if len(boolFields) > 0 {
+			filterFields = append(filterFields, FilterGroup{Label: "bool", Fields: boolFields})
+		}
+		if len(rangeFields) > 0 {
+			filterFields = append(filterFields, FilterGroup{Label: "range", Fields: rangeFields})
+		}
+		if len(exactFields) > 0 {
+			filterFields = append(filterFields, FilterGroup{Label: "exact", Fields: exactFields})
+		}
+
+		entities = append(entities, LLMEntity{
+			Name:         displayName,
+			ToolPrefix:   e.Name, // e.g. "catalog_product"
+			Description:  desc,
+			SearchFields: strings.Join(searchFields, ", "),
+			FilterFields: filterFields,
+			Relations:    relations,
+		})
+	}
+
+	// Generate workflow hints
+	hintKey := func(h string) string {
+		return strings.ToLower(strings.TrimSpace(h))
+	}
+
+	// Check for category-like entities (тип детали, не производитель)
+	hasCategory := false
+	hasBrand := false
+	for _, e := range entities {
+		low := strings.ToLower(e.Name)
+		if strings.Contains(low, "категори") || strings.Contains(low, "category") {
+			hasCategory = true
+		}
+		if strings.Contains(low, "бренд") || strings.Contains(low, "brand") {
+			hasBrand = true
+		}
+	}
+
+	if hasCategory && hasBrand {
+		h := "Категории = тип детали (тормозные колодки, амортизаторы). Бренды = производитель (Bosch, KYB, TRW). Сначала ищи категорию, потом — товары через products_by_category."
+		if !hintSet[hintKey(h)] {
+			hints = append(hints, h)
+			hintSet[hintKey(h)] = true
+		}
+	} else if hasCategory {
+		h := "Категории = тип детали. Сначала ищи категорию, потом — товары через products_by_category."
+		if !hintSet[hintKey(h)] {
+			hints = append(hints, h)
+			hintSet[hintKey(h)] = true
+		}
+	}
+
+	// car_applicability — JSONB, ILIKE не работает. Хинт убран до появления
+	// поддержки JSONB-фильтрации в find-эндпоинте.
+	// TODO: добавить обратно когда data-service научится фильтровать по JSONB.
+
+	return &SchemaForLLM{
+		Entities:      entities,
+		WorkflowHints: hints,
+	}
+}
+
+// shortBusinessName отрезает префикс (catalog_, auth_, django_) и
+// возвращает читаемое имя.
+func shortBusinessName(name string) string {
+	for _, pfx := range DisplayPrefixes {
+		if strings.HasPrefix(name, pfx) {
+			result := strings.TrimPrefix(name, pfx)
+			if result == "cartitem" {
+				return "Cart item"
+			}
+			if result == "sitesettings" {
+				return "Settings"
+			}
+			return titleCase(result)
+		}
+	}
+	return titleCase(name)
+}
+
+// titleCase capitalises the first letter of an ASCII string.
+func titleCase(s string) string {
+	if s == "" {
 		return ""
 	}
-	parts := make([]string, 0, len(ent.Fields))
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+
+// shortColumnName делает snake_case колонку читаемой для LLM.
+func shortColumnName(name string) string {
+	// Простейшее преобразование: _ → пробел
+	result := strings.ReplaceAll(name, "_", " ")
+	// Если выглядит как FK (_id), подчёркиваем
+	if strings.HasSuffix(name, "_id") {
+		result = strings.TrimSuffix(result, " id") + " ID"
+	}
+	return result
+}
+
+// ── Pluralization ───────────────────────────────────────────────────────────
+
+// pluralizeEntity returns the English plural form of an entity name.
+func pluralizeEntity(name string) string {
+	special := map[string]string{
+		"product":      "products",
+		"brand":        "brands",
+		"category":     "categories",
+		"order":        "orders",
+		"cart":         "cart",
+		"cartitem":     "cart_items",
+		"sitesettings": "settings",
+		"user":         "users",
+		"group":        "groups",
+	}
+	if p, ok := special[name]; ok {
+		return p
+	}
+	short := name
+	for _, prefix := range DisplayPrefixes {
+		if strings.HasPrefix(short, prefix) {
+			short = strings.TrimPrefix(short, prefix)
+			break
+		}
+	}
+	if p, ok := special[short]; ok {
+		return p
+	}
+	if strings.HasSuffix(short, "s") {
+		return short
+	}
+	if strings.HasSuffix(short, "y") {
+		return short[:len(short)-1] + "ies"
+	}
+	return short + "s"
+}
+
+// toolDisplayName generates a human-readable English display name for a tool.
+func toolDisplayName(op, entityName string) string {
+	short := entityName
+	for _, prefix := range DisplayPrefixes {
+		if strings.HasPrefix(short, prefix) {
+			short = strings.TrimPrefix(short, prefix)
+			break
+		}
+	}
+	plural := pluralizeEntity(entityName)
+	switch op {
+	case string(config.OpGetByID):
+		return fmt.Sprintf("%s by ID", short)
+	case string(config.OpFind):
+		return fmt.Sprintf("Find %s", short)
+	case string(config.OpList):
+		return fmt.Sprintf("All %s", plural)
+	case string(config.OpCount):
+		return fmt.Sprintf("Count %s", plural)
+	case string(config.OpDistinct):
+		return fmt.Sprintf("Distinct %s", plural)
+	default:
+		return ""
+	}
+}
+
+// compactFilterSummary builds a grouped description of filter fields.
+// Groups: search (partial), exact (string/int/float), bool (true/false).
+func compactFilterSummary(ent *config.Entity) string {
+	if ent == nil || len(ent.Fields) == 0 {
+		return ""
+	}
+	var searchFields, exactFields, boolFields []string
 	for _, f := range ent.Fields {
 		if f.PrimaryKey != nil && *f.PrimaryKey {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s(%s)", f.Name, f.Type))
+		if f.Name == "limit" || f.Name == "offset" {
+			continue
+		}
+		lower := f.Name
+		isSearch := lower == "name" || strings.HasSuffix(lower, "_name") || strings.HasSuffix(lower, "_title") || strings.HasPrefix(lower, "name")
+		if isSearch && f.Type == config.FieldTypeString {
+			searchFields = append(searchFields, lower)
+		} else if f.Type == config.FieldTypeBool {
+			boolFields = append(boolFields, lower)
+		} else {
+			exactFields = append(exactFields, lower)
+		}
 	}
-	return fmt.Sprintf("\nFields: %s", strings.Join(parts, ", "))
+	var parts []string
+	if len(searchFields) > 0 {
+		parts = append(parts, fmt.Sprintf("partial match on '%s'", strings.Join(searchFields, ", ")))
+	}
+	if len(exactFields) > 0 {
+		show := exactFields
+		if len(show) > 3 {
+			show = show[:3]
+			show = append(show, fmt.Sprintf("+%d more", len(exactFields)-3))
+		}
+		parts = append(parts, fmt.Sprintf("exact: %s", strings.Join(show, ", ")))
+	}
+	if len(boolFields) > 0 {
+		parts = append(parts, fmt.Sprintf("bool: %s", strings.Join(boolFields, ", ")))
+	}
+	return strings.Join(parts, "; ")
 }
 
-// formatRelationsHint форматирует подсказку о связях сущности.
-// Пример: "\nRelations: category → categories, order_items ← order_items"
-func formatRelationsHint(ent *config.Entity) string {
-	if len(ent.Relations) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(ent.Relations))
-	for _, r := range ent.Relations {
-		parts = append(parts, fmt.Sprintf("%s → %s", r.Field, r.Table))
-	}
-	return fmt.Sprintf("\nRelations: %s", strings.Join(parts, ", "))
-}
-
-// GenerateMCPTools создаёт MCP-тулы из эндпоинтов с разговорными описаниями для LLM.
-// Экспортируемая функция — используется как configgen.Generate, так и
-// handlers.MCPManifestHandler для рантайм-генерации без зависимости от дискового конфига.
+// GenerateMCPTools creates compact MCP tools from endpoints with LLM-friendly descriptions.
+// Descriptions are kept under ~100 chars. Field dumps and relation hints are removed.
+// DisplayName provides human-readable Russian names for the admin UI.
 func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity) []config.MCPTool {
-	// Быстрый lookup: entity name → entity
 	entityMap := make(map[string]*config.Entity, len(entities))
 	for i := range entities {
 		entityMap[entities[i].Name] = &entities[i]
@@ -540,70 +1053,95 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity) []c
 			continue
 		}
 
-		var toolName, desc string
+		var toolName, desc, displayName string
+		ent := entityMap[ep.Entity]
+
 		switch ep.Op {
 		case config.OpGetByID:
 			toolName = fmt.Sprintf("get_%s", ep.Entity)
 			desc = fmt.Sprintf(
-				"Returns a single %s record by its unique identifier. "+
-					"Use when you already know the record ID (e.g. from find_%s).",
+				"Get a single %s by its ID. "+
+					"Use after find_%s when you have a specific ID.",
 				ep.Entity, ep.Entity)
+			displayName = toolDisplayName(string(config.OpGetByID), ep.Entity)
 
 		case config.OpFind:
 			toolName = fmt.Sprintf("find_%s", ep.Entity)
-			desc = fmt.Sprintf(
-				"Searches for %s by text query on name field. "+
-					"Supports filtering by any field. "+
-					"If no parameter provided, returns all records (use limit to paginate).",
-				ep.Entity)
-			// Add field info
-			if ent, ok := entityMap[ep.Entity]; ok {
-				desc += formatFieldsHint(ent)
-				desc += formatRelationsHint(ent)
+			filters := compactFilterSummary(ent)
+			if filters != "" {
+				desc = fmt.Sprintf(
+					"Search %s by name (partial match). Filters: %s. "+
+						"If user asks about a type (e.g. 'muffler', 'brake pads'), "+
+						"search categories first, then navigate to products.",
+					pluralizeEntity(ep.Entity), filters)
+			} else {
+				desc = fmt.Sprintf(
+					"Search %s by text query. Example: find_%s(name='query')",
+					pluralizeEntity(ep.Entity), ep.Entity)
 			}
+			displayName = toolDisplayName(string(config.OpFind), ep.Entity)
 
 		case config.OpList:
 			toolName = fmt.Sprintf("list_%s", ep.Entity)
 			desc = fmt.Sprintf(
-				"Returns all %s records. "+
-					"Supports filtering by any field and pagination (limit/offset).",
-				ep.Entity)
-			if ent, ok := entityMap[ep.Entity]; ok {
-				desc += formatFieldsHint(ent)
-				desc += formatRelationsHint(ent)
-			}
+				"List all %s. Supports filters and pagination. "+
+					"Use when find_%s returns no results or you need all records.",
+				pluralizeEntity(ep.Entity), ep.Entity)
+			displayName = toolDisplayName(string(config.OpList), ep.Entity)
 
 		case config.OpDistinct:
 			toolName = fmt.Sprintf("distinct_%s", ep.Entity)
 			desc = fmt.Sprintf(
-				"Returns unique values for enum-like columns in %s. "+
-					"Use this to discover valid filter values before searching.",
-				ep.Entity)
+				"Get unique values for enum columns in %s. "+
+					"Use to discover valid filter values.",
+				pluralizeEntity(ep.Entity))
+			displayName = toolDisplayName(string(config.OpDistinct), ep.Entity)
 
 		case config.OpCount:
 			toolName = fmt.Sprintf("count_%s", ep.Entity)
 			desc = fmt.Sprintf(
-				"Counts %s records matching the given filters. "+
-					"Returns {entity, count}. Faster than fetching all records.",
-				ep.Entity)
+				"Count %s matching filters. Returns {entity, count}.",
+				pluralizeEntity(ep.Entity))
+			displayName = toolDisplayName(string(config.OpCount), ep.Entity)
 
 		case config.OpCustomQuery:
-			toolName = fmt.Sprintf("query_%s", ep.Path)
-			toolName = strings.ReplaceAll(toolName, "{", "")
-			toolName = strings.ReplaceAll(toolName, "}", "")
-			toolName = strings.ReplaceAll(toolName, "/", "_")
-			toolName = strings.TrimPrefix(toolName, "_")
-			if ep.Description != "" {
-				desc = fmt.Sprintf("Executes custom query: %s", ep.Description)
-			} else {
-				desc = fmt.Sprintf("Executes custom query at %s", ep.Path)
+			// Short name: {child_plural}_by_{parent} (e.g. "products_by_brand")
+			pathParts := strings.Split(strings.Trim(ep.Path, "/"), "/")
+			parentName := ""
+			if len(pathParts) >= 1 {
+				parentName = pathParts[0]
 			}
+			if parentName == "" {
+				parts := strings.Split(ep.QueryID, "_by_")
+				if len(parts) == 2 {
+					parentName = parts[1]
+				}
+			}
+			childShort := ep.Entity
+			for _, pfx := range DisplayPrefixes {
+				childShort = strings.TrimPrefix(childShort, pfx)
+			}
+			parentShort := parentName
+			for _, pfx := range DisplayPrefixes {
+				parentShort = strings.TrimPrefix(parentShort, pfx)
+			}
+			toolName = fmt.Sprintf("%s_by_%s", pluralizeEntity(ep.Entity), parentShort)
+			displayName = fmt.Sprintf("%s by %s", pluralizeEntity(ep.Entity), parentShort)
+
+			// Strategic description: guides LLM workflow
+			desc = fmt.Sprintf(
+				"Get all %s for a given %s. "+
+					"Use after find_%s to get the ID, then call this to list related %s. "+
+					"Supports filters and pagination.",
+				pluralizeEntity(ep.Entity), parentShort,
+				parentName, pluralizeEntity(ep.Entity))
 		}
 
 		if toolName != "" {
 			params := deriveToolParams(ep)
 			tools = append(tools, config.MCPTool{
 				Name:        toolName,
+				DisplayName: displayName,
 				Endpoint:    ep.Path,
 				Description: desc,
 				Params:      params,

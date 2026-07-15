@@ -146,16 +146,8 @@ func FindHandler(c *Context, entityName, searchField, queryParam string) http.Ha
 
 		setPaginationHeaders(w, total, limit, offset)
 
-		// Если результат пустой — 404
-		if len(results) == 0 {
-			RespondJSON(w, http.StatusNotFound, map[string]string{
-				"error":   "not_found",
-				"message": "resource not found",
-			})
-			return
-		}
-
-		// Всегда возвращаем массив для консистентности
+		// Всегда возвращаем массив для консистентности (включая пустой).
+		// LLM корректно обрабатывает пустой массив [] — это не ошибка.
 		RespondJSON(w, http.StatusOK, results)
 	}
 }

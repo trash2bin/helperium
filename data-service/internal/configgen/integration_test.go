@@ -1,176 +1,420 @@
+//go:build integration
+
 package configgen
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
-// TestShop_IntrospectRelations проверяет на реальной shop базе данных,
-// что FK introspection + configgen генерируют правильные relations.
-func TestShop_IntrospectRelations(t *testing.T) {
-	ctx := context.Background()
-	adapter := datasource.SqliteAdapter{}
-
-	conn, err := adapter.Connect(ctx, "../../testdata/scenarios/shop/data.db")
-	if err != nil {
-		t.Fatalf("connect: %v", err)
+// autopartsDSN возвращает DSN для реальной autoparts PostgreSQL базы.
+// Требует запущенного контейнера: docker compose up -d db
+func autopartsDSN(t *testing.T) string {
+	t.Helper()
+	dsn := os.Getenv("AUTOPARTS_DSN")
+	if dsn == "" {
+		dsn = "postgres://autoparts:autoparts_secret_2024@127.0.0.1:5434/autoparts?sslmode=disable"
 	}
-	defer conn.Close() //nolint:errcheck
+	return dsn
+}
+
+// connectAutoparts подключается к реальной autoparts PostgreSQL базе.
+func connectAutoparts(t *testing.T) datasource.Conn {
+	t.Helper()
+	adapter := datasource.PostgresAdapter{}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := adapter.Connect(ctx, autopartsDSN(t))
+	if err != nil {
+		t.Fatalf("connect to autoparts: %v\n\nУбедитесь, что контейнер запущен:\n  docker compose up -d db", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+// TestAutoparts_Introspect проверяет, что Introspect корректно читает
+// схему реальной autoparts PostgreSQL базы.
+func TestAutoparts_Introspect(t *testing.T) {
+	conn := connectAutoparts(t)
+	adapter := datasource.PostgresAdapter{}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	schema, err := adapter.Introspect(ctx, conn)
 	if err != nil {
 		t.Fatalf("introspect: %v", err)
 	}
 
-	// Проверяем что FK introspection работает
-	fkCount := 0
-	for _, tbl := range schema.Tables {
-		fkCount += len(tbl.ForeignKeys)
-	}
-	t.Logf("schema: %d tables, %d foreign keys", len(schema.Tables), fkCount)
-	if fkCount == 0 {
-		t.Fatal("expected at least 1 FK in shop schema")
+	t.Logf("driver=%s tables=%d", schema.Driver, len(schema.Tables))
+
+	// Ожидаем 17 таблиц (7 catalog_*, 6 auth_*, 4 django_*)
+	if len(schema.Tables) < 7 {
+		t.Fatalf("expected at least 7 tables, got %d", len(schema.Tables))
 	}
 
-	// Генерируем конфиг
-	ds := config.DataSourceConfig{
-		Driver: "sqlite",
-		DSN:    "../../../testdata/scenarios/shop/data.db",
+	// Индексируем по имени
+	byName := make(map[string]datasource.Table)
+	for _, tbl := range schema.Tables {
+		byName[tbl.Name] = tbl
 	}
+
+	// catalog_product должен существовать и иметь FK
+	product, ok := byName["public.catalog_product"]
+	if !ok {
+		t.Fatal("expected table 'public.catalog_product'")
+	}
+	if len(product.PrimaryKey) == 0 {
+		t.Error("catalog_product should have a primary key")
+	}
+	t.Logf("catalog_product: %d columns, %d FKs, PK=%v",
+		len(product.Columns), len(product.ForeignKeys), product.PrimaryKey)
+
+	// catalog_product должен иметь FK на catalog_brand и catalog_category
+	fkTargets := make(map[string]string) // local_col → ref_table
+	for _, fk := range product.ForeignKeys {
+		for _, col := range fk.Columns {
+			fkTargets[col] = fk.ReferencedTable
+		}
+	}
+	if ref, ok := fkTargets["brand_id"]; !ok || !strings.Contains(ref, "catalog_brand") {
+		t.Errorf("expected FK brand_id → catalog_brand, got %q", ref)
+	}
+	if ref, ok := fkTargets["category_id"]; !ok || !strings.Contains(ref, "catalog_category") {
+		t.Errorf("expected FK category_id → catalog_category, got %q", ref)
+	}
+
+	// catalog_cartitem должен иметь FK на cart и product
+	cartitem, ok := byName["public.catalog_cartitem"]
+	if !ok {
+		t.Fatal("expected table 'public.catalog_cartitem'")
+	}
+	cartitemFKs := make(map[string]string)
+	for _, fk := range cartitem.ForeignKeys {
+		for _, col := range fk.Columns {
+			cartitemFKs[col] = fk.ReferencedTable
+		}
+	}
+	if ref, ok := cartitemFKs["cart_id"]; !ok || !strings.Contains(ref, "catalog_cart") {
+		t.Errorf("expected FK cart_id → catalog_cart, got %q", ref)
+	}
+	if ref, ok := cartitemFKs["product_id"]; !ok || !strings.Contains(ref, "catalog_product") {
+		t.Errorf("expected FK product_id → catalog_product, got %q", ref)
+	}
+
+	// catalog_category self-referencing FK (parent_id)
+	category, ok := byName["public.catalog_category"]
+	if !ok {
+		t.Fatal("expected table 'public.catalog_category'")
+	}
+	for _, fk := range category.ForeignKeys {
+		for _, col := range fk.Columns {
+			if col == "parent_id" && !strings.Contains(fk.ReferencedTable, "catalog_category") {
+				t.Errorf("expected FK parent_id → catalog_category, got %q", fk.ReferencedTable)
+			}
+		}
+	}
+
+	// Bool колонки в catalog_product
+	for _, col := range product.Columns {
+		if col.Name == "is_available" && col.Type != datasource.TypeBool {
+			t.Errorf("expected is_available to be bool, got %s", col.Type)
+		}
+		if col.Name == "is_popular" && col.Type != datasource.TypeBool {
+			t.Errorf("expected is_popular to be bool, got %s", col.Type)
+		}
+	}
+
+	// Datetime колонки
+	for _, col := range product.Columns {
+		if col.Name == "created_at" && col.Type != datasource.TypeDatetime {
+			t.Errorf("expected created_at to be datetime, got %s", col.Type)
+		}
+	}
+}
+
+// TestAutoparts_Generate проверяет полный пайплайн: Introspect → Generate
+// на реальной autoparts PostgreSQL базе.
+func TestAutoparts_Generate(t *testing.T) {
+	conn := connectAutoparts(t)
+	adapter := datasource.PostgresAdapter{}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	schema, err := adapter.Introspect(ctx, conn)
+	if err != nil {
+		t.Fatalf("introspect: %v", err)
+	}
+
+	ds := config.DataSourceConfig{
+		Driver: "postgres",
+		DSN:    autopartsDSN(t),
+	}
+
 	cfg := Generate(schema, ds, nil)
 
-	// Подсчитываем relations
-	totalRelations := 0
-	for _, e := range cfg.Entities {
-		totalRelations += len(e.Relations)
+	// Write config to temp file for inspection
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
 	}
-	t.Logf("configgen: %d entities, %d endpoints, %d relations, %d MCP tools, %d custom_queries",
-		len(cfg.Entities), len(cfg.Endpoints), totalRelations, len(cfg.MCPTools), len(cfg.CustomQueries))
-
-	// Shop schema has 5 FK constraints:
-	//   products.category_id → categories.id
-	//   orders.customer_id → customers.id
-	//   order_items.order_id → orders.id
-	//   order_items.product_id → products.id
-	//   reviews.product_id → products.id
-	//   reviews.customer_id → customers.id
-	if totalRelations < 5 {
-		t.Errorf("expected at least 5 relations from FK, got %d", totalRelations)
+	tmpFile := t.TempDir() + "/autoparts-generated.json"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		t.Fatalf("write: %v", err)
 	}
+	t.Logf("config written to %s (%d bytes)", tmpFile, len(data))
 
-	// Проверяем конкретные relations
-	relationMap := make(map[string]string) // "entity.field" → "target_table"
-	for _, e := range cfg.Entities {
-		for _, r := range e.Relations {
-			key := fmt.Sprintf("%s.%s", e.Name, r.Field)
-			relationMap[key] = r.Table
-		}
-	}
-
-	expectedRelations := map[string]string{
-		"products.category_id": "categories",
-		"orders.customer_id":   "customers",
-		"order_items.order_id": "orders",
-		"order_items.product_id": "products",
-		"reviews.product_id":   "products",
-		"reviews.customer_id":  "customers",
-	}
-
-	for key, expectedTable := range expectedRelations {
-		if actual, ok := relationMap[key]; !ok {
-			t.Errorf("missing relation %s", key)
-		} else if actual != expectedTable {
-			t.Errorf("relation %s: expected %s, got %s", key, expectedTable, actual)
-		}
-	}
-
-	// Логируем для наглядности
-	for _, e := range cfg.Entities {
-		if len(e.Relations) > 0 {
-			t.Logf("  %s relations:", e.Name)
-			for _, r := range e.Relations {
-				t.Logf("    %s (FK=%s) → %s [%s]", r.Field, r.LocalFK, r.Table, r.Kind)
+	// === Entities ===
+	t.Run("entities", func(t *testing.T) {
+		// After skip rules: 7 catalog_* tables (auth_*, django_* skipped)
+		if len(cfg.Entities) != 7 {
+			t.Errorf("expected 7 entities (catalog_*), got %d", len(cfg.Entities))
+			for _, e := range cfg.Entities {
+				t.Logf("  entity: %s (table=%s)", e.Name, e.Table)
 			}
 		}
-	}
 
-	// ── Phase 2: Navigation Endpoints ──
-	// Проверяем что для каждого FK сгенерирован navigation endpoint
-	navEndpoints := make(map[string]bool)
-	for _, ep := range cfg.Endpoints {
-		if ep.Op == config.OpCustomQuery {
-			navEndpoints[ep.Path] = true
-			t.Logf("  nav endpoint: %s (query=%s)", ep.Path, ep.QueryID)
+		// Verify expected entities exist
+		entityNames := make(map[string]bool)
+		for _, e := range cfg.Entities {
+			entityNames[e.Name] = true
 		}
-	}
-
-	expectedNavEndpoints := []string{
-		"/categories/{id}/products",
-		"/customers/{id}/orders",
-		"/customers/{id}/reviews",
-		"/orders/{id}/order_items",
-		"/products/{id}/order_items",
-		"/products/{id}/reviews",
-	}
-
-	for _, ep := range expectedNavEndpoints {
-		if !navEndpoints[ep] {
-			t.Errorf("missing navigation endpoint %s", ep)
-		}
-	}
-
-	// Проверяем custom queries
-	if len(cfg.CustomQueries) != 6 {
-		t.Errorf("expected 6 custom queries, got %d", len(cfg.CustomQueries))
-	}
-	for queryID, cq := range cfg.CustomQueries {
-		if cq.SQL == "" {
-			t.Errorf("custom query %s has empty SQL", queryID)
-		}
-		if len(cq.Params) != 1 {
-			t.Errorf("custom query %s: expected 1 param, got %d", queryID, len(cq.Params))
-		}
-		t.Logf("  query %s: %s (param=%s)", queryID, cq.SQL, cq.Params[0])
-	}
-
-	// ── Phase 4: Pagination ──
-	// Проверяем что limit/offset параметры добавлены к find/list endpoints
-	paginationParams := make(map[string]bool)
-	for _, ep := range cfg.Endpoints {
-		if ep.Op == config.OpFind || ep.Op == config.OpList {
-			for _, p := range ep.Params {
-				paginationParams[ep.Path+":"+p.Name] = true
+		for _, expected := range []string{
+			"catalog_brand", "catalog_cart", "catalog_cartitem",
+			"catalog_category", "catalog_order", "catalog_product",
+			"catalog_sitesettings",
+		} {
+			if !entityNames[expected] {
+				t.Errorf("expected entity %q", expected)
 			}
 		}
-	}
-	for _, path := range []string{"/products", "/customers", "/categories"} {
-		if !paginationParams[path+":limit"] {
-			t.Errorf("missing 'limit' param on %s", path)
+	})
+
+	// === FK Relations ===
+	t.Run("relations", func(t *testing.T) {
+		var product *config.Entity
+		for i, e := range cfg.Entities {
+			if e.Name == "catalog_product" {
+				product = &cfg.Entities[i]
+				break
+			}
 		}
-		if !paginationParams[path+":offset"] {
-			t.Errorf("missing 'offset' param on %s", path)
+		if product == nil {
+			t.Fatal("expected catalog_product entity")
 		}
+
+		// Should have 2 relations: brand_id → catalog_brand, category_id → catalog_category
+		if len(product.Relations) != 2 {
+			t.Errorf("expected 2 relations on catalog_product, got %d", len(product.Relations))
+			for _, r := range product.Relations {
+				t.Logf("  relation: %s → %s (kind=%s)", r.LocalFK, r.Table, r.Kind)
+			}
+		}
+
+		relMap := make(map[string]config.Relation)
+		for _, r := range product.Relations {
+			relMap[r.LocalFK] = r
+		}
+		if r, ok := relMap["brand_id"]; ok {
+			if !strings.Contains(r.Table, "catalog_brand") {
+				t.Errorf("brand_id relation should reference catalog_brand, got %q", r.Table)
+			}
+		} else {
+			t.Error("missing brand_id relation")
+		}
+
+		// cartitem relations
+		var cartitem *config.Entity
+		for i, e := range cfg.Entities {
+			if e.Name == "catalog_cartitem" {
+				cartitem = &cfg.Entities[i]
+				break
+			}
+		}
+		if cartitem == nil {
+			t.Fatal("expected catalog_cartitem entity")
+		}
+		if len(cartitem.Relations) != 2 {
+			t.Errorf("expected 2 relations on catalog_cartitem, got %d", len(cartitem.Relations))
+		}
+	})
+
+	// === Bool Filters ===
+	t.Run("bool_filters", func(t *testing.T) {
+		// find_catalog_product should have bool filter params
+		var findEp *config.Endpoint
+		for i, ep := range cfg.Endpoints {
+			if ep.Op == config.OpFind && ep.Entity == "catalog_product" {
+				findEp = &cfg.Endpoints[i]
+				break
+			}
+		}
+		if findEp == nil {
+			t.Fatal("expected find endpoint for catalog_product")
+		}
+
+		boolParams := make([]string, 0)
+		for _, p := range findEp.Params {
+			if p.Type == config.ParamTypeBool {
+				boolParams = append(boolParams, p.Name)
+			}
+		}
+		expectedBools := []string{"is_available", "is_popular", "is_new", "is_bestseller", "is_promo", "is_active"}
+		for _, name := range expectedBools {
+			found := false
+			for _, bp := range boolParams {
+				if bp == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected bool filter param %q, bool params: %v", name, boolParams)
+			}
+		}
+		t.Logf("bool filter params: %v", boolParams)
+	})
+
+	// === Datetime Filters ===
+	t.Run("datetime_filters", func(t *testing.T) {
+		var findEp *config.Endpoint
+		for i, ep := range cfg.Endpoints {
+			if ep.Op == config.OpFind && ep.Entity == "catalog_product" {
+				findEp = &cfg.Endpoints[i]
+				break
+			}
+		}
+		if findEp == nil {
+			t.Fatal("expected find endpoint for catalog_product")
+		}
+
+		var hasCreatedAt bool
+		for _, p := range findEp.Params {
+			if p.Name == "created_at" && p.Type == config.ParamTypeString {
+				hasCreatedAt = true
+				if !strings.Contains(p.Description, "ISO-8601") {
+					t.Errorf("created_at description should mention ISO-8601, got %q", p.Description)
+				}
+			}
+		}
+		if !hasCreatedAt {
+			t.Error("expected created_at string filter param (datetime)")
+		}
+	})
+
+	// === Count Endpoints ===
+	t.Run("count_endpoints", func(t *testing.T) {
+		countEndpoints := 0
+		for _, ep := range cfg.Endpoints {
+			if ep.Op == config.OpCount {
+				countEndpoints++
+			}
+		}
+		if countEndpoints != 7 {
+			t.Errorf("expected 7 count endpoints, got %d", countEndpoints)
+		}
+	})
+
+	// === MCP Tools ===
+	t.Run("mcp_tools", func(t *testing.T) {
+		// Should have find, get, list, count, distinct for each entity
+		toolNames := make(map[string]bool)
+		for _, tool := range cfg.MCPTools {
+			toolNames[tool.Name] = true
+		}
+
+		// Key tools
+		for _, expected := range []string{
+			"find_catalog_product",
+			"get_catalog_product",
+			"find_catalog_brand",
+			"get_catalog_brand",
+			"count_catalog_product",
+			"distinct_catalog_product",
+		} {
+			if !toolNames[expected] {
+				t.Errorf("expected MCP tool %q", expected)
+			}
+		}
+
+		// No double underscores in tool names
+		for _, tool := range cfg.MCPTools {
+			if strings.Contains(tool.Name, "__") {
+				t.Errorf("tool name has double underscore: %s", tool.Name)
+			}
+		}
+
+		t.Logf("total MCP tools: %d", len(cfg.MCPTools))
+	})
+
+	// === Custom Queries (Navigation) ===
+	t.Run("custom_queries", func(t *testing.T) {
+		// Should have navigation queries from FKs
+		if len(cfg.CustomQueries) == 0 {
+			t.Error("expected custom queries from FK relations, got 0")
+		}
+
+		// Check for catalog_product → catalog_brand navigation
+		hasProductByBrand := false
+		for queryID := range cfg.CustomQueries {
+			if strings.Contains(queryID, "catalog_product") && strings.Contains(queryID, "catalog_brand") {
+				hasProductByBrand = true
+				break
+			}
+		}
+		if !hasProductByBrand {
+			t.Error("expected custom query for catalog_product_by_catalog_brand")
+		}
+
+		t.Logf("custom queries: %d", len(cfg.CustomQueries))
+		for id, cq := range cfg.CustomQueries {
+			t.Logf("  %s: %s", id, cq.Description)
+		}
+	})
+
+	// === No double underscores in any endpoint path ===
+	t.Run("clean_paths", func(t *testing.T) {
+		for _, ep := range cfg.Endpoints {
+			if strings.Contains(ep.Path, "//") {
+				t.Errorf("endpoint has double slash: %s", ep.Path)
+			}
+		}
+	})
+}
+
+// TestAutoparts_ToolCount проверяет, что генерируется разумное количество тулов
+// (не 90+, не 0).
+func TestAutoparts_ToolCount(t *testing.T) {
+	conn := connectAutoparts(t)
+	adapter := datasource.PostgresAdapter{}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	schema, err := adapter.Introspect(ctx, conn)
+	if err != nil {
+		t.Fatalf("introspect: %v", err)
 	}
 
-	// ── Phase 6: Distinct Endpoints ──
-	// Проверяем что distinct endpoint'ы сгенерированы для enum-колонок
-	distinctEndpoints := make(map[string]bool)
-	for _, ep := range cfg.Endpoints {
-		if ep.Op == config.OpDistinct {
-			distinctEndpoints[ep.Path] = true
-			t.Logf("  distinct endpoint: %s", ep.Path)
-		}
+	cfg := Generate(schema, config.DataSourceConfig{
+		Driver: "postgres",
+		DSN:    autopartsDSN(t),
+	}, nil)
+
+	t.Logf("entities=%d endpoints=%d tools=%d custom_queries=%d",
+		len(cfg.Entities), len(cfg.Endpoints), len(cfg.MCPTools), len(cfg.CustomQueries))
+
+	// Sanity bounds
+	if len(cfg.Entities) < 5 || len(cfg.Entities) > 20 {
+		t.Errorf("unexpected entity count: %d", len(cfg.Entities))
 	}
-	// orders.status → /orders/distinct
-	// customers.city → /customers/distinct
-	if !distinctEndpoints["/orders/distinct"] {
-		t.Error("missing /orders/distinct endpoint (status is enum)")
-	}
-	if !distinctEndpoints["/customers/distinct"] {
-		t.Error("missing /customers/distinct endpoint (city is enum)")
+	if len(cfg.MCPTools) < 10 || len(cfg.MCPTools) > 60 {
+		t.Errorf("unexpected tool count: %d", len(cfg.MCPTools))
 	}
 }
