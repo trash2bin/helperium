@@ -93,6 +93,7 @@ class _TenantConnection:
     call_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     list_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     tool_display_names: dict[str, str] = field(default_factory=dict)
+    schema: dict | None = None  # LLM-friendly schema description (from /mcp/schema)
     last_used: float = field(default_factory=time.monotonic)
 
     async def close(self) -> None:
@@ -182,6 +183,28 @@ class MCPClient:
         except Exception:
             logger.warning(
                 "[MCP] Failed to fetch tool display names for tenants=%s, falling back to tool names",
+                tenant_key or "(default)",
+            )
+
+        # ── Load LLM-friendly schema from mcp-gateway ──────────────────
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as hclient:
+                url = settings.mcp_service_url.rstrip("/") + "/mcp/schema"
+                resp = await hclient.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    conn.schema = data
+                    entities = len(data.get("entities", []))
+                    hints = len(data.get("workflow_hints", []))
+                    logger.info(
+                        "[MCP] Loaded schema for tenants=%s: %d entities, %d hints",
+                        tenant_key or "(default)",
+                        entities,
+                        hints,
+                    )
+        except Exception:
+            logger.warning(
+                "[MCP] Failed to fetch schema for tenants=%s — LLM will not have schema context",
                 tenant_key or "(default)",
             )
 
@@ -291,6 +314,18 @@ class MCPClient:
         try:
             conn = await self._get_connection(tenant_ids)
             return conn.tool_display_names.get(tool_name)
+        except Exception:
+            return None
+
+    async def get_schema(self, tenant_ids: list[str] | None = None) -> dict | None:
+        """Return the LLM-friendly schema description for tenant(s).
+
+        Schema is fetched once when the MCP connection opens and cached
+        on the connection object. Returns None if unavailable.
+        """
+        try:
+            conn = await self._get_connection(tenant_ids)
+            return conn.schema
         except Exception:
             return None
 
@@ -477,3 +512,6 @@ class _SessionProxy:
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         return await self.client.call_tool(self, name, arguments)
+
+    async def get_schema(self) -> dict | None:
+        return await self.client.get_schema(self.tenant_ids)

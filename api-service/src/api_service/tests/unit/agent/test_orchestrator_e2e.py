@@ -140,6 +140,7 @@ class FakeMCPClient:
         proxy.tenant_ids = tenant_ids or []
         proxy.list_tools = AsyncMock(return_value=[])
         proxy.call_tool = AsyncMock(return_value=self.tool_result)
+        proxy.get_schema = AsyncMock(return_value=None)
         yield proxy
 
     async def list_tools(self, session):

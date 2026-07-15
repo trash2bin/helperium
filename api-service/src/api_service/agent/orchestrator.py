@@ -231,6 +231,17 @@ class LLMAgent:
                     [t.get("function", {}).get("name") for t in ctx.tools],
                 )
 
+                # ── 2b. Inject schema into context (if available) ────────
+                schema = await session.get_schema()
+                if schema and schema.get("entities"):
+                    schema_note = _build_schema_message(schema)
+                    ctx.messages.append({"role": "system", "content": schema_note})
+                    logger.info(
+                        "[AGENT] Injected schema with %d entities and %d hints into prompt",
+                        len(schema["entities"]),
+                        len(schema.get("workflow_hints", [])),
+                    )
+
                 # ── 3. Agent loop ──────────────────────────────────────
                 for iteration in range(self.max_iterations):
                     ctx.iteration = iteration
@@ -350,6 +361,55 @@ class LLMAgent:
         except Exception as exc:
             backlog.error(session_id, ctx.turn_id, ctx.iteration, str(exc))
             yield AgentEvent("error", ErrorEventData(message=classify_error(exc, lang)))
+
+
+def _build_schema_message(schema: dict) -> str:
+    """Build a system-prompt block from the LLM-friendly schema.
+
+    Compact format — no raw SQL, only semantic information the LLM
+    needs to make effective tool calls.
+    """
+    lines = ["=== СТРУКТУРА ДАННЫХ (автоматически загружена из БД) ==="]
+
+    for ent in schema.get("entities", []):
+        name = ent.get("name", "?")
+        lines.append(f"\n📦 {name}")
+
+        desc = ent.get("description", "")
+        if desc:
+            lines.append(f"   Описание: {desc}")
+
+        sf = ent.get("search_fields", "")
+        if sf:
+            lines.append(f"   Поиск: по полю '{sf}' (ILIKE, нечёткий)")
+
+        for fg in ent.get("filter_fields", []):
+            label = fg.get("label", "")
+            fields = fg.get("fields", [])
+            if not fields:
+                continue
+            parts = []
+            for f in fields:
+                desc = f.get("description", "")
+                col = f.get("column", f.get("name", "?"))
+                if desc:
+                    parts.append(f"{col} ({desc})")
+                else:
+                    parts.append(col)
+            lines.append(f"   Фильтр ({label}): {', '.join(parts)}")
+
+        for rel in ent.get("relations", []):
+            field = rel.get("field", "?")
+            ref = rel.get("referenced_entity", "?")
+            lines.append(f"   Связь: {field} → {ref}")
+
+    hints = schema.get("workflow_hints", [])
+    if hints:
+        lines.append("\n📌 Стратегические подсказки:")
+        for h in hints:
+            lines.append(f"   • {h}")
+
+    return "\n".join(lines)
 
 
 # ── Default singleton ─────────────────────────────────────────────────────

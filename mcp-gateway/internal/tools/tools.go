@@ -155,7 +155,6 @@ func (r *Registry) RegisterAll(mcpServer *server.MCPServer) {
 		registerOne(mcpServer, td, r.client, name, r.tenantID)
 	}
 	r.registerRagTools(mcpServer)
-	r.registerSchemaTool(mcpServer)
 }
 
 // registerRagTools registers static RAG tools (search_documents, list_documents,
@@ -191,36 +190,7 @@ func (r *Registry) registerRagTools(mcpServer *server.MCPServer) {
 	mcpServer.AddTool(contextTool, MakeAuditHandler("get_rag_context", r.tenantID, r.makeRagHandler("context")))
 }
 
-// registerSchemaTool registers the get_schema introspection tool.
-// Returns the full database schema (entities, fields, relations, endpoints)
-// so the agent can understand what data is available before making queries.
-func (r *Registry) registerSchemaTool(mcpServer *server.MCPServer) {
-	schemaTool := mcp.NewTool(
-		"get_schema",
-		mcp.WithDescription(
-			"Returns the full database schema: all tables, columns, types, primary keys, "+
-				"foreign key relations, and available endpoints. "+
-				"Call this FIRST to understand what data is available before making queries. "+
-				"The response shows entity relationships that you can navigate.",
-	),
-	)
-	mcpServer.AddTool(schemaTool, MakeAuditHandler("get_schema", r.tenantID, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Build a compact schema representation
-		schema := map[string]any{
-			"entities": r.cfg.Entities,
-			"endpoints": r.cfg.Endpoints,
-		}
-		if r.cfg.CustomQueries != nil {
-			schema["custom_queries"] = r.cfg.CustomQueries
-		}
 
-		data, err := json.MarshalIndent(schema, "", "  ")
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to marshal schema: %v", err)), nil
-		}
-		return mcp.NewToolResultText(string(data)), nil
-	}))
-}
 
 // makeRagHandler creates a handler that delegates to RAG service via HTTP.
 func (r *Registry) makeRagHandler(kind string) server.ToolHandlerFunc {

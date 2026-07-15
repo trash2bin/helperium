@@ -380,6 +380,7 @@ func buildRouter() *chi.Mux {
 
 	r.Get("/mcp/manifest", manifestProxyHandler)
 	r.Get("/mcp/tools/mapping", mappingHandler)
+	r.Get("/mcp/schema", schemaProxyHandler)
 	return r
 }
 
@@ -587,8 +588,6 @@ func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(cfg)
 }
 
-// mappingHandler возвращает маппинг имён тулов → display_name для фронтенда.
-// Используется веб-прокси для отображения читаемых названий инструментов вместо имён.
 func mappingHandler(w http.ResponseWriter, r *http.Request) {
 	tenantIDs := resolveTenantIDs(r)
 	tenantID := ""
@@ -625,6 +624,23 @@ func writeJSONRPCError(w http.ResponseWriter, id any, code int, message string) 
 	json.NewEncoder(w).Encode(map[string]any{
 		"jsonrpc": "2.0", "error": map[string]any{"code": code, "message": message}, "id": id,
 	})
+}
+
+// schemaProxyHandler прокидывает запрос /mcp/schema в data-service.
+func schemaProxyHandler(w http.ResponseWriter, r *http.Request) {
+	tenantIDs := resolveTenantIDs(r)
+	tenantID := ""
+	if len(tenantIDs) > 0 {
+		tenantID = tenantIDs[0]
+	}
+
+	data, err := globalClient.FetchSchemaWithTenant(tenantID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
 }
 
 // ── Debug Handlers ──

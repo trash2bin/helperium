@@ -264,6 +264,34 @@ func (c *Client) InvalidateManifestCache(tenantIDs ...string) {
 	}
 }
 
+// FetchSchemaWithTenant fetches the LLM-friendly schema description from data-service.
+// Not cached — schema is small and may change per-request context.
+func (c *Client) FetchSchemaWithTenant(tenantID string) ([]byte, error) {
+	u := c.baseURL + "/mcp/schema"
+
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: create schema request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if tenantID != "" {
+		req.Header.Set("X-Tenant-ID", tenantID)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: fetch schema from %s: %w", u, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("mcp: schema endpoint returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
 func (c *Client) Call(ctx context.Context, endpoint string, params map[string]any) (any, error) {
 	u := c.baseURL + endpoint
 
