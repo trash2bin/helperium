@@ -51,14 +51,30 @@ class TestChatRouteOrdering:
             )
 
     def test_chat_agent_name_route(self):
-        """POST /api/chat/default должен найтись (route {name})."""
+        """POST /api/chat/default — route {name} сматчился (не пустой 404 от роутера).
+
+        Если агент 'default' есть в БД — 200, если нет — 404 от хендлера.
+        В обоих случаях тело должно быть SSE, не пустое 'Not Found'.
+        """
         app = _get_app()
         with TestClient(app) as client:
             status, body = _request(client, "POST", "/api/chat/default")
-            assert status != 404, (
-                f"/api/chat/default вернул 404 — route {{{{name}}}} не сматчился. "
-                f"Status: {status}, body: {body[:200]}"
+            body_str = (
+                body.decode("utf-8", errors="replace")
+                if isinstance(body, bytes)
+                else ""
             )
+            # Статус может быть 200 (агент есть) или 404 (агента нет) — оба от хендлера
+            assert status in (200, 404), (
+                f"/api/chat/default вернул {status} — не похоже на хендлер. "
+                f"Body: {body_str[:200]}"
+            )
+            # Если 404 — проверяем что это хендлер (SSE с "Agent"), не роутер
+            if status == 404:
+                assert "Agent" in body_str and "not found" in body_str, (
+                    f"/api/chat/default: route {{{{name}}}} не сматчился (роутер 404). "
+                    f"Тело: {body_str[:200]}"
+                )
 
     def test_chat_no_name_route(self):
         """POST /api/chat должен найтись (route без имени)."""
