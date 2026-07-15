@@ -25,6 +25,7 @@ admin-dashboard/bin/*
 .claude/
 .pi/fix-*
 .pi/scout-*
+.pi/nvidia-skills/
 fixtures.json
 TECHNICAL_DOC.md
 .agent_memory.json
