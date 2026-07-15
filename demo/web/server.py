@@ -36,7 +36,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from demo.settings import PROJECT_ROOT, settings
-from helperium_sdk.tracing import setup_opentelemetry, instrument_fastapi, add_span_attributes, shutdown as otel_shutdown
+from helperium_sdk.tracing import (
+    setup_opentelemetry,
+    instrument_fastapi,
+    add_span_attributes,
+    shutdown as otel_shutdown,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -240,11 +245,13 @@ async def add_correlation_id(
     tenant_id = request.headers.get("X-Tenant-ID", "")
     if tenant_id:
         add_span_attributes({"tenant.id": tenant_id})
-    add_span_attributes({
-        "correlation_id": correlation_id,
-        "http.method": request.method,
-        "http.target": request.url.path,
-    })
+    add_span_attributes(
+        {
+            "correlation_id": correlation_id,
+            "http.method": request.method,
+            "http.target": request.url.path,
+        }
+    )
 
     response = await call_next(request)
     response.headers["X-Correlation-ID"] = correlation_id

@@ -202,9 +202,7 @@ class TestAsyncClient:
     @respx.mock
     async def test_async_list_all_empty(self, async_client):
         """list_all(entity) → пустой список."""
-        route = respx.get(f"{BASE_URL}/empty").mock(
-            return_value=Response(200, json=[])
-        )
+        route = respx.get(f"{BASE_URL}/empty").mock(return_value=Response(200, json=[]))
 
         entities = await async_client.list_all("empty")
 
@@ -265,7 +263,7 @@ class TestAsyncClient:
     # ── _parse_many static ──
 
     def test_async_parse_many_empty(self):
-        """_parse_many([]) → []. """
+        """_parse_many([]) → []."""
         resp = _resp(200, json_data=[])
         result = AsyncDataServiceClient._parse_many(resp)
         assert result == []
@@ -432,9 +430,7 @@ class TestSyncClient:
     @respx.mock
     def test_sync_list_all_empty(self, sync_client):
         """list_all(entity) → пустой список."""
-        route = respx.get(f"{BASE_URL}/empty").mock(
-            return_value=Response(200, json=[])
-        )
+        route = respx.get(f"{BASE_URL}/empty").mock(return_value=Response(200, json=[]))
 
         entities = sync_client.list_all("empty")
 

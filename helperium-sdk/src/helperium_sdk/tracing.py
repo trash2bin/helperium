@@ -68,8 +68,13 @@ def setup_opentelemetry(service_name: str) -> bool:
         if current_provider and not isinstance(current_provider, type(None)):
             try:
                 # Attempt to detect if TracerProvider is already ours
-                if _tracer_provider is not None and _tracer_provider is current_provider:
-                    logger.debug("OTel already initialized for %s, skipping", service_name)
+                if (
+                    _tracer_provider is not None
+                    and _tracer_provider is current_provider
+                ):
+                    logger.debug(
+                        "OTel already initialized for %s, skipping", service_name
+                    )
                     return True
             except Exception:
                 pass

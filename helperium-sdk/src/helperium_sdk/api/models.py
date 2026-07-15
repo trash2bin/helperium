@@ -119,9 +119,18 @@ class STTProviderConfig(BaseModel):
     """STT provider configuration — one entry in the priority list."""
 
     name: str = Field(..., description="Display name for this provider")
-    provider: str = Field(..., pattern=r"^(litellm|local)$", description="Engine type: litellm (OpenAI/Azure/Nvidia Riva API) or local (faster-whisper/whisper.cpp)")
-    model: str = Field(default="whisper-1", description="Model name: whisper-1, base, small, medium, large-v3, nvidia_riva/stt_en_streaming")
-    api_key: str | None = Field(default=None, description="API key for cloud STT (OpenAI, Azure, etc.)")
+    provider: str = Field(
+        ...,
+        pattern=r"^(litellm|local)$",
+        description="Engine type: litellm (OpenAI/Azure/Nvidia Riva API) or local (faster-whisper/whisper.cpp)",
+    )
+    model: str = Field(
+        default="whisper-1",
+        description="Model name: whisper-1, base, small, medium, large-v3, nvidia_riva/stt_en_streaming",
+    )
+    api_key: str | None = Field(
+        default=None, description="API key for cloud STT (OpenAI, Azure, etc.)"
+    )
     api_base: str | None = Field(default=None, description="Custom API base URL")
     enabled: bool = Field(default=True, description="Whether this provider is active")
 
@@ -130,10 +139,22 @@ class TTSProviderConfig(BaseModel):
     """TTS provider configuration — one entry in the priority list."""
 
     name: str = Field(..., description="Display name for this provider")
-    provider: str = Field(..., pattern=r"^(litellm|local)$", description="Engine type: litellm (OpenAI/Azure TTS API) or local (piper-tts, coqui, OOT)")
-    model: str = Field(default="tts-1", description="Model name: tts-1, tts-1-hd, piper, coqui-xtts")
-    voice: str = Field(default="alloy", description="Voice name: alloy, echo, fable, onyx, nova, shimmer (OpenAI); or local voice pack name")
-    api_key: str | None = Field(default=None, description="API key for cloud TTS (OpenAI, Azure, ElevenLabs, etc.)")
+    provider: str = Field(
+        ...,
+        pattern=r"^(litellm|local)$",
+        description="Engine type: litellm (OpenAI/Azure TTS API) or local (piper-tts, coqui, OOT)",
+    )
+    model: str = Field(
+        default="tts-1", description="Model name: tts-1, tts-1-hd, piper, coqui-xtts"
+    )
+    voice: str = Field(
+        default="alloy",
+        description="Voice name: alloy, echo, fable, onyx, nova, shimmer (OpenAI); or local voice pack name",
+    )
+    api_key: str | None = Field(
+        default=None,
+        description="API key for cloud TTS (OpenAI, Azure, ElevenLabs, etc.)",
+    )
     api_base: str | None = Field(default=None, description="Custom API base URL")
     enabled: bool = Field(default=True, description="Whether this provider is active")
 
