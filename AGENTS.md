@@ -723,6 +723,26 @@ go test ./data-service/... ./mcp-gateway/...  # ~585 тестов в 16 паке
 - `uv run agent-db e2e-data` — изоляция данных между tenant'ами (8 тестов, дублируется pytest)
 - `uv run agent-db e2e-mcp` — динамические MCP-инструменты (3 теста, дублируется pytest)
 
+### 4. Mutation testing (api-service, Python)
+
+Оценка реального качества тестов: мутация кода → проверка, ловит ли тест изменения.
+
+**Python (mutmut, только api-service):**
+```bash
+./scripts/run_mutmut.sh --build   # сборка Docker образа (1 раз)
+./scripts/run_mutmut.sh --docker  # запуск (~30 мин, 12 052 мутанта)
+```
+
+> **⚠️ Время:** ~30-40 минут на полный прогон. macOS fork-crash — только Docker/Linux.
+> **Текущий score:** ~65% (8100+ KILLED / 2681 SURVIVED / 12052 total).
+> **Лимит на CI:** ~12К мутантов, 194 теста на каждый.
+> Для daily run: `bash .nightly_mutmut.sh` (опционально).
+
+**Go (go-mutesting, Avito fork):**
+```bash
+./scripts/run_mutmut.sh --go  # data-service + mcp-gateway (~5 мин)
+```
+
 ---
 
 ## 🧠 5. Использование Knowledge Graph (Graphify)
@@ -985,6 +1005,7 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 1. [ ] `make ci` — зелёный (если не уверен — `make ci-test-py` быстрее: ~10 сек)
 2. [ ] Pre-commit hooks — все Passed
 3. [ ] `uv run pytest tests/e2e/ -v` — 44 e2e теста (без LLM), либо `uv run agent-db e2e-full` (если нужны legacy команды)
+4. [ ] Mutation score не упал: `./scripts/run_mutmut.sh --docker` (30 мин, не для каждого коммита — опционально)
 
 ---
 
