@@ -160,15 +160,12 @@ func TestEnvsubst_Unterminated(t *testing.T) {
 	}
 }
 
-// TestValidate_InvalidConfig — пустой JSON без version — ошибка.
+// TestValidate_InvalidConfig — пустой JSON без version — валиден (version по умолчанию 1).
 func TestValidate_InvalidConfig(t *testing.T) {
-	raw := []byte(`{"data_source": {"driver": "sqlite", "dsn": "x"}}`) // нет version
+	raw := []byte(`{"data_source": {"driver": "sqlite", "dsn": "x"}}`) // нет version — ок, default 1
 	err := config.Validate(raw)
-	if err == nil {
-		t.Fatalf("expected validation error, got nil")
-	}
-	if !strings.Contains(err.Error(), "version") {
-		t.Errorf("error = %q, want substring %q", err.Error(), "version")
+	if err != nil {
+		t.Errorf("Validate(simple config): %v", err)
 	}
 }
 
@@ -350,7 +347,7 @@ func TestLoad_BadJSON(t *testing.T) {
 	}
 }
 
-// TestLoad_MissingRequired — загрузка пустого объекта ловится валидацией.
+// TestLoad_MissingRequired — загрузка пустого объекта ловится валидацией (требует data_source).
 func TestLoad_MissingRequired(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "empty.json")
@@ -361,7 +358,8 @@ func TestLoad_MissingRequired(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "version") {
-		t.Errorf("error = %q, want substring mentioning 'version'", err.Error())
+	// version по умолчанию 1 — ошибка должна быть на data_source
+	if !strings.Contains(err.Error(), "data_source.driver") {
+		t.Errorf("error = %q, want substring 'data_source.driver'", err.Error())
 	}
 }

@@ -230,6 +230,15 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Merge DSN from stored config if incoming doesn't have it
+	// (GET /admin/config redacts DSN for security — PUT should preserve it)
+	if newCfg.DataSource.DSN == "" && inst.Config.DataSource.DSN != "" {
+		newCfg.DataSource.DSN = inst.Config.DataSource.DSN
+		// Re-marshal raw with merged DSN for Validate()
+		merged, _ := json.Marshal(newCfg)
+		raw = json.RawMessage(merged)
+	}
+
 	// Validate via Go types
 	if err := config.Validate(raw); err != nil {
 		handlers.RespondError(w, http.StatusBadRequest, "validation_error", err.Error())
@@ -371,11 +380,24 @@ func (ts *TenantStore) adminRewriteHandler(_ datasource.Adapter, _ string) http.
 		// Cache schema for /mcp/schema endpoint
 		inst.IntrospectedSchema = schema
 
-		dsConfig := config.DataSourceConfig{
-			Driver: inst.Config.DataSource.Driver,
-			DSN:    inst.Config.DataSource.DSN,
+		// Cache schema for /mcp/schema endpoint
+		inst.IntrospectedSchema = schema
+
+		genCfg := &config.Config{
+			DataSource:          inst.Config.DataSource,
+			SkipRules:           inst.Config.SkipRules,
+			DisplayPrefixes:     inst.Config.DisplayPrefixes,
+			CustomPlurals:       inst.Config.CustomPlurals,
+			DisabledDefaultRules: inst.Config.DisabledDefaultRules,
 		}
-		newCfg := configgen.Generate(schema, dsConfig, nil)
+		newCfg := configgen.Generate(schema, genCfg)
+
+		// Preserve custom configgen fields on the generated config
+		newCfg.SkipRules = genCfg.SkipRules
+		newCfg.DisplayPrefixes = genCfg.DisplayPrefixes
+		newCfg.CustomPlurals = genCfg.CustomPlurals
+		newCfg.DisabledDefaultRules = genCfg.DisabledDefaultRules
+		newCfg.ApprovedTools = inst.Config.ApprovedTools
 
 		// Save tenant config to canonical location (TenantsDir/{id}.json)
 		persistedPath := ts.SaveTenantConfig(inst.ID, newCfg)
@@ -436,11 +458,14 @@ func (ts *TenantStore) adminDiscoverHandler(_ datasource.Adapter) http.HandlerFu
 			return
 		}
 
-		dsConfig := config.DataSourceConfig{
-			Driver: inst.Config.DataSource.Driver,
-			DSN:    inst.Config.DataSource.DSN,
+		genCfg := &config.Config{
+			DataSource:          inst.Config.DataSource,
+			SkipRules:           inst.Config.SkipRules,
+			DisplayPrefixes:     inst.Config.DisplayPrefixes,
+			CustomPlurals:       inst.Config.CustomPlurals,
+			DisabledDefaultRules: inst.Config.DisabledDefaultRules,
 		}
-		cfg := configgen.Generate(schema, dsConfig, nil)
+		cfg := configgen.Generate(schema, genCfg)
 
 		slog.Info("config generated via /admin/discover",
 			"entities", len(cfg.Entities),
@@ -465,16 +490,21 @@ func (ts *TenantStore) adminDiscoverHandler(_ datasource.Adapter) http.HandlerFu
 // adminConfigResponseFromConfig converts config.Config to admin-safe DTO.
 func adminConfigResponseFromConfig(cfg *config.Config) adminConfigResponse {
 	return adminConfigResponse{
-		Version:       cfg.Version,
-		Driver:        cfg.DataSource.Driver,
-		DataSource:    responseFromDataSource(cfg.DataSource),
-		Entities:      cfg.Entities,
-		Endpoints:     cfg.Endpoints,
-		CustomQueries: cfg.CustomQueries,
-		Stats:         cfg.Stats,
-		Auth:          cfg.Auth,
-		MCPTools:      cfg.MCPTools,
-		Introspection: cfg.Introspection,
+		Version:        cfg.Version,
+		Driver:         cfg.DataSource.Driver,
+		DataSource:     responseFromDataSource(cfg.DataSource),
+		Entities:       cfg.Entities,
+		Endpoints:      cfg.Endpoints,
+		CustomQueries:  cfg.CustomQueries,
+		Stats:          cfg.Stats,
+		Auth:           cfg.Auth,
+		MCPTools:       cfg.MCPTools,
+		Introspection:  cfg.Introspection,
+		SkipRules:      cfg.SkipRules,
+		DisplayPrefixes: cfg.DisplayPrefixes,
+		CustomPlurals:  cfg.CustomPlurals,
+		ApprovedTools:  cfg.ApprovedTools,
+		DisabledDefaultRules: cfg.DisabledDefaultRules,
 	}
 }
 

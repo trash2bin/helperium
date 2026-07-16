@@ -153,12 +153,12 @@ func TestAutoparts_Generate(t *testing.T) {
 		t.Fatalf("introspect: %v", err)
 	}
 
-	ds := config.DataSourceConfig{
-		Driver: "postgres",
-		DSN:    autopartsDSN(t),
-	}
-
-	cfg := Generate(schema, ds, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{
+			Driver: "postgres",
+			DSN:    autopartsDSN(t),
+		},
+	})
 
 	// Write config to temp file for inspection
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -402,10 +402,12 @@ func TestAutoparts_ToolCount(t *testing.T) {
 		t.Fatalf("introspect: %v", err)
 	}
 
-	cfg := Generate(schema, config.DataSourceConfig{
-		Driver: "postgres",
-		DSN:    autopartsDSN(t),
-	}, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{
+			Driver: "postgres",
+			DSN:    autopartsDSN(t),
+		},
+	})
 
 	t.Logf("entities=%d endpoints=%d tools=%d custom_queries=%d",
 		len(cfg.Entities), len(cfg.Endpoints), len(cfg.MCPTools), len(cfg.CustomQueries))

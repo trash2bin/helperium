@@ -50,7 +50,9 @@ func TestGenerate(t *testing.T) {
 		DSN:    "file.db",
 	}
 
-	cfg := Generate(schema, ds, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: ds,
+	})
 
 	if cfg.Version != 1 {
 		t.Errorf("expected version 1, got %d", cfg.Version)
@@ -177,7 +179,9 @@ func TestGenerate_FullSchema(t *testing.T) {
 	}
 
 	ds := config.DataSourceConfig{Driver: "sqlite", DSN: "university.db"}
-	cfg := Generate(schema, ds, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: ds,
+	})
 
 	if len(cfg.Entities) != 6 {
 		t.Fatalf("expected 6 entities, got %d", len(cfg.Entities))
@@ -227,7 +231,9 @@ func TestGenerate_ListEndpoint(t *testing.T) {
 		},
 	}
 
-	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	})
 
 	// grades не имеет name-поля → должен получить list endpoint
 	var hasList bool
@@ -338,7 +344,9 @@ func TestGenerate_RelationsFromFK(t *testing.T) {
 		},
 	}
 
-	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	})
 
 	// Находим order_items — у него 2 FK
 	var orderItems *config.Entity
@@ -445,7 +453,9 @@ func TestGenerate_FindWithFilters(t *testing.T) {
 		},
 	}
 
-	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	})
 
 	// customers имеет name-поле → должен получить find endpoint с фильтрами
 	var findEp *config.Endpoint
@@ -515,7 +525,9 @@ func TestGenerate_BoolFilterParams(t *testing.T) {
 		}},
 	}
 
-	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	})
 
 	var findEp *config.Endpoint
 	for i, ep := range cfg.Endpoints {
@@ -577,7 +589,9 @@ func TestGenerate_DualFKCollision(t *testing.T) {
 		},
 	}
 
-	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	})
 
 	// Two FKs to same parent → only ONE nav endpoint (same path),
 	// but TWO custom queries with different queryIDs.
@@ -627,7 +641,9 @@ func TestGenerate_CustomQueryToolNameCollapse(t *testing.T) {
 		},
 	}
 
-	cfg := Generate(schema, config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"}, nil)
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	})
 
 	for _, tool := range cfg.MCPTools {
 		if tool.Endpoint == "/brands/{id}/products" {
@@ -643,4 +659,51 @@ func TestGenerate_CustomQueryToolNameCollapse(t *testing.T) {
 		}
 	}
 	t.Error("expected custom query MCP tool for /brands/{id}/products")
+}
+
+// TestGenerate_WithSkipRules проверяет, что кастомные SkipRules работают вместе с дефолтными.
+func TestGenerate_WithSkipRules(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{Name: "students", PrimaryKey: []string{"id"}, Columns: []datasource.Column{
+				{Name: "id", Type: "string"},
+				{Name: "name", Type: "string"},
+			}},
+			{Name: "django_auth", PrimaryKey: []string{"id"}, Columns: []datasource.Column{
+				{Name: "id", Type: "string"},
+			}},
+			{Name: "wp_posts", PrimaryKey: []string{"id"}, Columns: []datasource.Column{
+				{Name: "id", Type: "string"},
+				{Name: "post_title", Type: "string"},
+			}},
+			{Name: "sessions", PrimaryKey: []string{"id"}, Columns: []datasource.Column{
+				{Name: "id", Type: "string"},
+			}},
+		},
+	}
+
+	// Default rules: django_ + session должны быть отфильтрованы
+	// Custom rule: wp_ тоже должен быть отфильтрован
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
+		SkipRules: []config.SkipRule{
+			{Prefix: "wp_", Reason: "WordPress"},
+		},
+	})
+
+	if len(cfg.Entities) != 1 {
+		t.Fatalf("expected 1 entity (students), got %d: %+v", len(cfg.Entities), entityNames(cfg.Entities))
+	}
+	if cfg.Entities[0].Name != "students" {
+		t.Errorf("expected students, got %s", cfg.Entities[0].Name)
+	}
+}
+
+func entityNames(entities []config.Entity) []string {
+	names := make([]string, len(entities))
+	for i, e := range entities {
+		names[i] = e.Name
+	}
+	return names
 }

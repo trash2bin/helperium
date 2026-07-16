@@ -58,6 +58,11 @@ type adminConfigResponse struct {
 	Auth          *config.AuthConfig            `json:"auth,omitempty"`
 	MCPTools      []config.MCPTool              `json:"mcp_tools,omitempty"`
 	Introspection *config.IntrospectionConfig   `json:"introspection,omitempty"`
+	SkipRules           []config.SkipRule             `json:"skip_rules,omitempty"`
+	DisplayPrefixes     []string                    `json:"display_prefixes,omitempty"`
+	CustomPlurals       map[string]string             `json:"custom_plurals,omitempty"`
+	ApprovedTools       []string                     `json:"approved_tools,omitempty"`
+	DisabledDefaultRules []string                     `json:"disabled_default_rules,omitempty"`
 }
 
 // adminDataSourceResponse — часть конфига без DSN.

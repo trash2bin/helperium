@@ -24,59 +24,36 @@ import (
 
 // ── Skip rules ──
 
-// SkipRule defines a pattern for tables to exclude from tool generation.
-// Matching is done against the table name; multiple fields are AND-ed.
-type SkipRule struct {
-	Prefix   string // Match table name prefix (e.g., "auth_", "django_")
-	Suffix   string // Match table name suffix
-	Contains string // Match substring
-	Reason   string // Human-readable reason for skipping
-}
-
-// matches returns true if the table name satisfies this rule.
-func (r SkipRule) matches(name string) bool {
-	if r.Prefix != "" && !strings.HasPrefix(name, r.Prefix) {
-		return false
-	}
-	if r.Suffix != "" && !strings.HasSuffix(name, r.Suffix) {
-		return false
-	}
-	if r.Contains != "" && !strings.Contains(name, r.Contains) {
-		return false
-	}
-	return true
-}
-
 // DefaultSkipRules returns framework-agnostic rules for system tables.
 // Used by Generate to filter out Django, Laravel, Rails, and DB-internal tables.
-func DefaultSkipRules() []SkipRule {
-	return []SkipRule{
+func DefaultSkipRules() []config.SkipRule {
+	return []config.SkipRule{
 		// SQLite internals
-		{Prefix: "sqlite_", Reason: "SQLite system table"},
+		{Prefix: "sqlite_", Reason: "SQLite: internal schema tables (sqlite_sequence, sqlite_stat1, etc.) — not user data"},
 		// PostgreSQL internals
-		{Prefix: "pg_", Reason: "PostgreSQL system table"},
-		{Prefix: "pg_catalog", Reason: "PostgreSQL catalog"},
-		{Prefix: "information_schema", Reason: "SQL information schema"},
+		{Prefix: "pg_", Reason: "PostgreSQL: internal system catalogs (pg_type, pg_class, pg_attribute) — not user tables"},
+		{Prefix: "pg_catalog", Reason: "PostgreSQL: system catalog schema with all internal types, functions, and meta"},
+		{Prefix: "information_schema", Reason: "SQL standard: read-only system views describing database structure"},
 		// Django framework
-		{Prefix: "auth_", Reason: "Django auth system (not business data)"},
-		{Prefix: "django_", Reason: "Django framework internals"},
-		{Prefix: "session", Reason: "Django session storage"},
+		{Prefix: "auth_", Reason: "Django: built-in auth tables (auth_user, auth_group, auth_permission) — not business data"},
+		{Prefix: "django_", Reason: "Django: framework metadata (django_migrations, django_content_type, django_admin_log)"},
+		{Prefix: "session", Reason: "Django: server-side session storage — temporary, no business value"},
 		// RAG internal
-		{Prefix: "documents", Reason: "RAG internal table"},
+		{Prefix: "documents", Reason: "Helperium RAG: internal document chunks and embeddings"},
 		// Laravel (future)
-		{Prefix: "migrations", Reason: "Framework migration tracking"},
-		{Prefix: "jobs", Reason: "Queue internals"},
-		{Prefix: "failed_jobs", Reason: "Queue internals"},
+		{Prefix: "migrations", Reason: "Laravel: framework migration tracking, not user data"},
+		{Prefix: "jobs", Reason: "Laravel: queue job storage (horizon, failed_jobs) — operational, not business"},
+		{Prefix: "failed_jobs", Reason: "Laravel: queue failure log — operational, not business"},
 		// Rails (future)
-		{Prefix: "schema_migrations", Reason: "Rails migration tracking"},
-		{Prefix: "ar_internal_metadata", Reason: "Rails internals"},
+		{Prefix: "schema_migrations", Reason: "Rails: migration version tracking — framework internals"},
+		{Prefix: "ar_internal_metadata", Reason: "Rails: ActiveRecord internal environment and schema metadata"},
 	}
 }
 
 // shouldSkip checks if a table name matches any skip rule.
 // If skipRules is provided, uses structured SkipRule matching.
 // Otherwise falls back to legacy prefix-only matching.
-func shouldSkip(name string, skipRules []SkipRule, legacyPrefixes []string) bool {
+func shouldSkip(name string, skipRules []config.SkipRule, legacyPrefixes []string) bool {
 	// For schema-qualified names (e.g. "public.auth_group"),
 	// match against both the full name and the short name (after last dot).
 	shortName := name
@@ -85,7 +62,7 @@ func shouldSkip(name string, skipRules []SkipRule, legacyPrefixes []string) bool
 	}
 
 	for _, rule := range skipRules {
-		if rule.matches(name) || rule.matches(shortName) {
+		if rule.Matches(name) || rule.Matches(shortName) {
 			return true
 		}
 	}
@@ -101,20 +78,46 @@ func shouldSkip(name string, skipRules []SkipRule, legacyPrefixes []string) bool
 //
 // Параметры:
 //   - schema — результат Introspect адаптера
-//   - ds — data_source часть конфига (driver + dsn)
-//   - skipPrefixes — дополнительные префиксы для исключения таблиц (nil = только дефолтные)
-func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixes []string) *config.Config {
+//   - cfg — конфиг с DataSource, SkipRules, DisplayPrefixes, CustomPlurals настройками
+func Generate(schema *datasource.Schema, cfg *config.Config) *config.Config {
 	skipRules := DefaultSkipRules()
+	// Фильтруем отключённые дефолтные правила
+	if len(cfg.DisabledDefaultRules) > 0 {
+		disabled := make(map[string]bool, len(cfg.DisabledDefaultRules))
+		for _, prefix := range cfg.DisabledDefaultRules {
+			disabled[prefix] = true
+		}
+		var filtered []config.SkipRule
+		for _, rule := range skipRules {
+			if !disabled[rule.Prefix] {
+				filtered = append(filtered, rule)
+			}
+		}
+		skipRules = filtered
+	}
+	skipRules = append(skipRules, cfg.SkipRules...)
+
+	// DisplayPrefixes — override если заданы
+	displayPrefixes := DefaultDisplayPrefixes()
+	if len(cfg.DisplayPrefixes) > 0 {
+		displayPrefixes = cfg.DisplayPrefixes
+	}
+
+	// CustomPlurals from config
+	customPlurals := cfg.CustomPlurals
+	if customPlurals == nil {
+		customPlurals = make(map[string]string)
+	}
 
 	// Read-only by default
 	readOnly := true
-	if ds.ReadOnly == nil {
-		ds.ReadOnly = &readOnly
+	if cfg.DataSource.ReadOnly == nil {
+		cfg.DataSource.ReadOnly = &readOnly
 	}
 
-	cfg := &config.Config{
+	result := &config.Config{
 		Version:    1,
-		DataSource: ds,
+		DataSource: cfg.DataSource,
 	}
 
 	// Сортируем таблицы для детерминизма
@@ -125,10 +128,10 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 
 	var entities []config.Entity
 	for _, tbl := range tables {
-		if shouldSkip(tbl.Name, skipRules, skipPrefixes) {
+		if shouldSkip(tbl.Name, skipRules, nil) {
 			continue
 		}
-		entities = append(entities, tableToEntity(tbl))
+		entities = append(entities, tableToEntity(tbl, displayPrefixes))
 	}
 
 	endpoints := buildCRUDEndpoints(entities)
@@ -147,17 +150,17 @@ func Generate(schema *datasource.Schema, ds config.DataSourceConfig, skipPrefixe
 		Op:     config.OpBuiltinStats,
 	})
 
-	cfg.Entities = entities
-	cfg.Endpoints = endpoints
-	cfg.Stats = &config.StatsConfig{Counters: buildCounters(entities)}
+	result.Entities = entities
+	result.Endpoints = endpoints
+	result.Stats = &config.StatsConfig{Counters: buildCounters(entities)}
 
 	if len(customQueries) > 0 {
-		cfg.CustomQueries = customQueries
+		result.CustomQueries = customQueries
 	}
 
-	cfg.MCPTools = GenerateMCPTools(endpoints, entities)
+	result.MCPTools = GenerateMCPTools(endpoints, entities, displayPrefixes, customPlurals)
 
-	return cfg
+	return result
 }
 
 // ── CRUD endpoint generation ──

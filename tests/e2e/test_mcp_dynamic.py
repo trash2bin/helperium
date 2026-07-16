@@ -85,12 +85,12 @@ def setup_module(module):
         "mcp_tools": [
             {
                 "name": "list_student",
-                "endpoint": "list /students",
+                "endpoint": "/students",
                 "description": "List all students",
             },
             {
                 "name": "get_student",
-                "endpoint": "get_by_id /students/{id}",
+                "endpoint": "/students/{id}",
                 "description": "Get student by ID",
             },
         ],
@@ -115,7 +115,7 @@ def setup_module(module):
         "mcp_tools": [
             {
                 "name": "list_product",
-                "endpoint": "list /products",
+                "endpoint": "/products",
                 "description": "List all products",
             },
         ],

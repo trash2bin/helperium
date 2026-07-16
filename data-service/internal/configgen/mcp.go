@@ -8,7 +8,7 @@ import (
 )
 
 // GenerateMCPTools creates compact MCP tools from endpoints with LLM-friendly descriptions.
-func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity) []config.MCPTool {
+func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, displayPrefixes []string, customPlurals map[string]string) []config.MCPTool {
 	entityMap := make(map[string]*config.Entity, len(entities))
 	for i := range entities {
 		entityMap[entities[i].Name] = &entities[i]
@@ -30,7 +30,7 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity) []c
 				"Get a single %s by its ID. "+
 					"Use after find_%s when you have a specific ID.",
 				ep.Entity, ep.Entity)
-			displayName = toolDisplayName(string(config.OpGetByID), ep.Entity)
+			displayName = toolDisplayName(string(config.OpGetByID), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpFind:
 			toolName = fmt.Sprintf("find_%s", ep.Entity)
@@ -40,36 +40,36 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity) []c
 					"Search %s by name (partial match). Filters: %s. "+
 						"If user asks about a type (e.g. 'muffler', 'brake pads'), "+
 						"search categories first, then navigate to products.",
-					pluralizeEntity(ep.Entity), filters)
+					pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), filters)
 			} else {
 				desc = fmt.Sprintf(
 					"Search %s by text query. Example: find_%s(name='query')",
-					pluralizeEntity(ep.Entity), ep.Entity)
+					pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), ep.Entity)
 			}
-			displayName = toolDisplayName(string(config.OpFind), ep.Entity)
+			displayName = toolDisplayName(string(config.OpFind), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpList:
 			toolName = fmt.Sprintf("list_%s", ep.Entity)
 			desc = fmt.Sprintf(
 				"List all %s. Supports filters and pagination. "+
 					"Use when find_%s returns no results or you need all records.",
-				pluralizeEntity(ep.Entity), ep.Entity)
-			displayName = toolDisplayName(string(config.OpList), ep.Entity)
+				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), ep.Entity)
+			displayName = toolDisplayName(string(config.OpList), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpDistinct:
 			toolName = fmt.Sprintf("distinct_%s", ep.Entity)
 			desc = fmt.Sprintf(
 				"Get unique values for enum columns in %s. "+
 					"Use to discover valid filter values.",
-				pluralizeEntity(ep.Entity))
-			displayName = toolDisplayName(string(config.OpDistinct), ep.Entity)
+				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
+			displayName = toolDisplayName(string(config.OpDistinct), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpCount:
 			toolName = fmt.Sprintf("count_%s", ep.Entity)
 			desc = fmt.Sprintf(
 				"Count %s matching filters. Returns {entity, count}.",
-				pluralizeEntity(ep.Entity))
-			displayName = toolDisplayName(string(config.OpCount), ep.Entity)
+				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
+			displayName = toolDisplayName(string(config.OpCount), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpCustomQuery:
 			// Short name: {child_plural}_by_{parent} (e.g. "products_by_brand")
@@ -85,23 +85,23 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity) []c
 				}
 			}
 			childShort := ep.Entity
-			for _, pfx := range DisplayPrefixes {
+			for _, pfx := range displayPrefixes {
 				childShort = strings.TrimPrefix(childShort, pfx)
 			}
 			parentShort := parentName
-			for _, pfx := range DisplayPrefixes {
+			for _, pfx := range displayPrefixes {
 				parentShort = strings.TrimPrefix(parentShort, pfx)
 			}
-			toolName = fmt.Sprintf("%s_by_%s", pluralizeEntity(ep.Entity), parentShort)
-			displayName = fmt.Sprintf("%s by %s", pluralizeEntity(ep.Entity), parentShort)
+			toolName = fmt.Sprintf("%s_by_%s", pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), parentShort)
+			displayName = fmt.Sprintf("%s by %s", pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), parentShort)
 
 			// Strategic description: guides LLM workflow
 			desc = fmt.Sprintf(
 				"Get all %s for a given %s. "+
 					"Use after find_%s to get the ID, then call this to list related %s. "+
 					"Supports filters and pagination.",
-				pluralizeEntity(ep.Entity), parentShort,
-				parentName, pluralizeEntity(ep.Entity))
+				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), parentShort,
+				parentName, pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
 		}
 
 		if toolName != "" {

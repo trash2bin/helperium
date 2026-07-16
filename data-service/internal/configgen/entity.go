@@ -15,7 +15,7 @@ import (
 // хранит полное имя — QueryBuilder использует его для SQL.
 // Если у таблицы нет PRIMARY KEY (миграционные таблицы реальной prod-БД),
 // id_column берётся как первая колонка — иначе JSON-Schema реджектит пустую.
-func tableToEntity(tbl datasource.Table) config.Entity {
+func tableToEntity(tbl datasource.Table, displayPrefixes []string) config.Entity {
 	shortName := tbl.Name
 	if idx := strings.LastIndex(shortName, "."); idx >= 0 {
 		shortName = shortName[idx+1:]

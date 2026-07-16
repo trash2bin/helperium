@@ -200,6 +200,21 @@ type Config struct {
 	// в read-only режиме. Каждый элемент — path из endpoints[].
 	// Если пустой или nil — write-доступ запрещён для всех эндпоинтов.
 	ApprovedTools []string `json:"approved_tools,omitempty"`
+
+	// SkipRules — таблицы для исключения при генерации. Дополняет DefaultSkipRules.
+	SkipRules []SkipRule `json:"skip_rules,omitempty"`
+
+	// DisabledDefaultRules — список prefix дефолтных skip rules, которые нужно отключить.
+	// Если пустой — все дефолтные правила активны.
+	DisabledDefaultRules []string `json:"disabled_default_rules,omitempty"`
+
+	// DisplayPrefixes — префиксы имён таблиц, отрезаемые от display_name.
+	// Переопределяет DefaultDisplayPrefixes полностью (не дополняет).
+	DisplayPrefixes []string `json:"display_prefixes,omitempty"`
+
+	// CustomPlurals — кастомные plural-формы для tool display names.
+	// Ключ = singular имя entity, значение = plural. Дополняет default map.
+	CustomPlurals map[string]string `json:"custom_plurals,omitempty"`
 }
 
 // DataSourceConfig — подключение к клиентской БД.
@@ -432,6 +447,33 @@ type RowFilter struct {
 	Where string `json:"where"`
 }
 
+// SkipRule defines a pattern for tables to exclude from tool generation.
+// Multiple fields are AND-ed — all non-empty fields must match.
+type SkipRule struct {
+	Prefix   string `json:"prefix,omitempty"`
+	Suffix   string `json:"suffix,omitempty"`
+	Contains string `json:"contains,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// Matches returns true if the table name satisfies this rule (AND logic).
+func (r SkipRule) Matches(name string) bool {
+	// Empty rule matches nothing — protects against accidentally skipping all tables
+	if r.Prefix == "" && r.Suffix == "" && r.Contains == "" {
+		return false
+	}
+	if r.Prefix != "" && !strings.HasPrefix(name, r.Prefix) {
+		return false
+	}
+	if r.Suffix != "" && !strings.HasSuffix(name, r.Suffix) {
+		return false
+	}
+	if r.Contains != "" && !strings.Contains(name, r.Contains) {
+		return false
+	}
+	return true
+}
+
 // ServerConfig — настройки HTTP-сервера data-service.
 type ServerConfig struct {
 	// RequestTimeoutSeconds — таймаут обработки запроса в секундах.
@@ -457,7 +499,7 @@ func (c *Config) Validate() error {
 
 	// ── Version ───────────────────────────────────────────────────────
 	if c.Version == 0 {
-		errs = append(errs, "version: required")
+		c.Version = 1 // default to 1 when not set
 	} else if c.Version != 1 {
 		errs = append(errs, fmt.Sprintf("version: unsupported value %d, expected 1", c.Version))
 	}

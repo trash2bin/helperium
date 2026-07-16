@@ -123,6 +123,15 @@ func compactFilterSummary(ent *config.Entity) string {
 //
 // cfg — сгенерированный config.Config (нужен для entities, endpoints, FK).
 func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *SchemaForLLM {
+	// Resolve the display and plural config
+	displayPrefixes := cfg.DisplayPrefixes
+	if len(displayPrefixes) == 0 {
+		displayPrefixes = DefaultDisplayPrefixes()
+	}
+	customPlurals := cfg.CustomPlurals
+	if customPlurals == nil {
+		customPlurals = make(map[string]string)
+	}
 	if schema == nil {
 		return &SchemaForLLM{Entities: []LLMEntity{}}
 	}
@@ -185,7 +194,7 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 		}
 
 		// Build name and description
-		businessName := shortBusinessName(e.Name)
+		businessName := shortBusinessName(e.Name, displayPrefixes)
 		displayName := fmt.Sprintf("%s (%s)", businessName, e.Name)
 
 		desc := e.Description
@@ -230,13 +239,13 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			fkEntity := ""
 			if fkRef != "" {
 				if refShort := tableToEntity[fkRef]; refShort != "" {
-					fkEntity = shortBusinessName(refShort)
+					fkEntity = shortBusinessName(refShort, displayPrefixes)
 				} else {
 					short := fkRef
 					if idx := strings.LastIndex(short, "."); idx >= 0 {
 						short = short[idx+1:]
 					}
-					fkEntity = shortBusinessName(short)
+					fkEntity = shortBusinessName(short, displayPrefixes)
 				}
 			}
 
@@ -288,7 +297,7 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			}
 			relations = append(relations, LLMRelation{
 				Field:            rel.LocalFK,
-				ReferencedEntity: shortBusinessName(targetName),
+				ReferencedEntity: shortBusinessName(targetName, displayPrefixes),
 			})
 		}
 

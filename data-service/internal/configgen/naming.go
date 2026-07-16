@@ -7,16 +7,16 @@ import (
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
-// DisplayPrefixes are common table name prefixes to strip when generating
+// DefaultDisplayPrefixes returns common table name prefixes to strip when generating
 // human-readable display names for entities and tools.
-// Change these when recompiling for a project that uses different prefixes
-// (e.g. "wp_" for WordPress, "ce_" for Concrete5).
-var DisplayPrefixes = []string{"catalog_", "auth_", "django_"}
+func DefaultDisplayPrefixes() []string {
+	return []string{"catalog_", "auth_", "django_"}
+}
 
 // shortBusinessName отрезает префикс (catalog_, auth_, django_) и
 // возвращает читаемое имя.
-func shortBusinessName(name string) string {
-	for _, pfx := range DisplayPrefixes {
+func shortBusinessName(name string, displayPrefixes []string) string {
+	for _, pfx := range displayPrefixes {
 		if strings.HasPrefix(name, pfx) {
 			result := strings.TrimPrefix(name, pfx)
 			if result == "cartitem" {
@@ -51,7 +51,11 @@ func shortColumnName(name string) string {
 }
 
 // pluralizeEntity returns the English plural form of an entity name.
-func pluralizeEntity(name string) string {
+func pluralizeEntity(name string, displayPrefixes []string, customPlurals map[string]string) string {
+	// сначала проверяем customPlurals из конфига
+	if p, ok := customPlurals[name]; ok {
+		return p
+	}
 	special := map[string]string{
 		"product":      "products",
 		"brand":        "brands",
@@ -66,8 +70,9 @@ func pluralizeEntity(name string) string {
 	if p, ok := special[name]; ok {
 		return p
 	}
+	// Check by short name (after stripping prefix)
 	short := name
-	for _, prefix := range DisplayPrefixes {
+	for _, prefix := range displayPrefixes {
 		if strings.HasPrefix(short, prefix) {
 			short = strings.TrimPrefix(short, prefix)
 			break
@@ -86,15 +91,15 @@ func pluralizeEntity(name string) string {
 }
 
 // toolDisplayName generates a human-readable English display name for a tool.
-func toolDisplayName(op, entityName string) string {
+func toolDisplayName(op, entityName string, displayPrefixes []string, customPlurals map[string]string) string {
 	short := entityName
-	for _, prefix := range DisplayPrefixes {
+	for _, prefix := range displayPrefixes {
 		if strings.HasPrefix(short, prefix) {
 			short = strings.TrimPrefix(short, prefix)
 			break
 		}
 	}
-	plural := pluralizeEntity(entityName)
+	plural := pluralizeEntity(entityName, displayPrefixes, customPlurals)
 	switch op {
 	case string(config.OpGetByID):
 		return fmt.Sprintf("%s by ID", short)

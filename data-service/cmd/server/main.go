@@ -280,8 +280,12 @@ func runDiscover() error {
 		return fmt.Errorf("introspect: %w", err)
 	}
 
-	ds := config.DataSourceConfig{Driver: config.Driver(driver), DSN: dsn}
-	cfg := configgen.Generate(schema, ds, nil)
+	cfg := configgen.Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{
+			Driver: config.Driver(driver),
+			DSN:    dsn,
+		},
+	})
 
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
