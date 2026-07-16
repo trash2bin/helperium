@@ -51,6 +51,16 @@ mcp-gateway/report.json
 specs/fixtures/seed.json
 specs/test_tenants/
 .pi-subagents/
+.agents/
+
+# Compiled test binaries
+handlers.test
+
+# Temp planning docs
+plan-refactor-*.md
+
+# Skill lock
+skills-lock.json
 
 # Backup files
 *.bak
