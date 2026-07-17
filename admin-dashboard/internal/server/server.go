@@ -16,15 +16,19 @@ import (
 	"embed"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
@@ -109,8 +113,10 @@ func (s *Server) Router() chi.Router {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(corsMiddleware)
-	r.Use(authMiddleware(s.opts.AdminToken, s.opts.ViewerToken))
+	// Audit middleware — логирует ВСЕ запросы к /api/* (включая 401/403)
+	// Должен быть ДО authMiddleware, чтобы видеть неудачные попытки авторизации
 	r.Use(s.auditMiddleware())
+	r.Use(authMiddleware(s.opts.AdminToken, s.opts.ViewerToken))
 
 	// Prometheus metrics (no auth needed)
 	r.Handle("/metrics", promhttp.Handler())
@@ -481,15 +487,16 @@ func (s *Server) i18nHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	role := RoleFromContext(r.Context())
 
-	// Получаем список тенантов из data-service (возвращает {"tenants": [...]})
+	// Пытаемся получить список тенантов из data-service
 	body, status, err := s.proxyGetToDataService("/admin/tenants")
-	if err != nil {
-		respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
-		return
-	}
-	if status != http.StatusOK {
-		w.WriteHeader(status)
-		w.Write(body)
+	if err != nil || status != http.StatusOK {
+		// Upstream недоступен — возвращаем пустой список, но с ролью
+		respondJSON(w, http.StatusOK, map[string]any{
+			"tenants":      []any{},
+			"tenant_count": 0,
+			"data_service": s.opts.DataSvcURL,
+			"role":         role,
+		})
 		return
 	}
 
@@ -499,6 +506,7 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 			"tenants":      json.RawMessage(body),
 			"tenant_count": 0,
 			"data_service": s.opts.DataSvcURL,
+			"role":         role,
 		})
 		return
 	}
@@ -855,10 +863,45 @@ func ragUnavailableJSON() ([]byte, int) {
 	return body, http.StatusOK
 }
 
+// isConnectionError checks if the error is a connection-level error (RAG not running)
+// vs an application-level error (4xx, 5xx from RAG).
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Unwrap the error chain to find the underlying connection error
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		// Check for common connection errors
+		if errors.Is(urlErr.Err, syscall.ECONNREFUSED) ||
+			errors.Is(urlErr.Err, syscall.ETIMEDOUT) ||
+			errors.Is(urlErr.Err, syscall.ENETUNREACH) ||
+			errors.Is(urlErr.Err, syscall.EHOSTUNREACH) {
+			return true
+		}
+	}
+	// Also check for net.OpError with connection refused
+	var netOpErr *net.OpError
+	if errors.As(err, &netOpErr) {
+		if errors.Is(netOpErr.Err, syscall.ECONNREFUSED) ||
+			errors.Is(netOpErr.Err, syscall.ETIMEDOUT) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) ragHealthHandler(w http.ResponseWriter, r *http.Request) {
 	body, status, err := s.ragClient.Do(r.Method, "/health", nil)
 	if err != nil {
-		body, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			body, status = ragUnavailableJSON()
+		} else {
+			// Application-level error from RAG (4xx, 5xx) - return as-is
+			// The body already contains the error response from RAG
+			status = http.StatusBadGateway
+			body = []byte(fmt.Sprintf(`{"error":"rag_upstream_error","detail":%q}`, err.Error()))
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -874,7 +917,12 @@ func (s *Server) ragDocListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do("POST", "/documents/list", json.RawMessage(body))
 	if err != nil {
-		respBody, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			respBody, status = ragUnavailableJSON()
+		} else {
+			status = http.StatusBadGateway
+			respBody = []byte(fmt.Sprintf(`{"error":"rag_upstream_error","detail":%q}`, err.Error()))
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -890,7 +938,12 @@ func (s *Server) ragDocImportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do("POST", "/documents/import", json.RawMessage(body))
 	if err != nil {
-		respBody, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			respBody, status = ragUnavailableJSON()
+		} else {
+			status = http.StatusBadGateway
+			respBody = []byte(fmt.Sprintf(`{"error":"rag_upstream_error","detail":%q}`, err.Error()))
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -906,7 +959,12 @@ func (s *Server) ragDocDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do("POST", "/documents/delete", json.RawMessage(body))
 	if err != nil {
-		respBody, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			respBody, status = ragUnavailableJSON()
+		} else {
+			status = http.StatusBadGateway
+			respBody = []byte(fmt.Sprintf(`{"error":"rag_upstream_error","detail":%q}`, err.Error()))
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -944,7 +1002,12 @@ func (s *Server) ragDocUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	respBody, status, err := s.ragClient.Upload("/documents/upload", header.Filename, "file", fileContent, formFields)
 	if err != nil {
-		respBody, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			respBody, status = ragUnavailableJSON()
+		} else {
+			respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
+			return
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -957,7 +1020,12 @@ func (s *Server) ragDocUploadHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ragConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	body, status, err := s.ragClient.Do(http.MethodGet, "/admin/config", nil)
 	if err != nil {
-		body, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			body, status = ragUnavailableJSON()
+		} else {
+			respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
+			return
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -973,7 +1041,12 @@ func (s *Server) ragConfigPutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do(http.MethodPut, "/admin/config", json.RawMessage(body))
 	if err != nil {
-		respBody, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			respBody, status = ragUnavailableJSON()
+		} else {
+			respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
+			return
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -984,7 +1057,12 @@ func (s *Server) ragConfigPutHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ragStatsHandler(w http.ResponseWriter, r *http.Request) {
 	body, status, err := s.ragClient.Do(http.MethodGet, "/admin/stats", nil)
 	if err != nil {
-		body, status = ragUnavailableJSON()
+		if isConnectionError(err) {
+			body, status = ragUnavailableJSON()
+		} else {
+			respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
+			return
+		}
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}

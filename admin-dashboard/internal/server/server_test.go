@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -360,5 +361,144 @@ func TestViewerCanAccessHealthAndStatic(t *testing.T) {
 				t.Errorf("viewer public path %s returned %d, should bypass auth", p, w.Code)
 			}
 		})
+	}
+}
+
+// ── Dashboard Role Tests (P1.9) ──
+
+func TestViewerDashboardReturnsViewerRole(t *testing.T) {
+	s := New(Options{Addr: ":0", AdminToken: "admin-secret", ViewerToken: "viewer-secret"})
+	router := s.Router()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	req.Header.Set("Authorization", "Bearer viewer-secret")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("viewer dashboard = %d, want 200", w.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["role"] != "viewer" {
+		t.Errorf("role = %v, want viewer", body["role"])
+	}
+}
+
+func TestAdminDashboardReturnsAdminRole(t *testing.T) {
+	s := New(Options{Addr: ":0", AdminToken: "admin-secret", ViewerToken: "viewer-secret"})
+	router := s.Router()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("admin dashboard = %d, want 200", w.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["role"] != "admin" {
+		t.Errorf("role = %v, want admin", body["role"])
+	}
+}
+
+// ── Audit Function Tests (P1.10) ──
+
+func TestIsIDLike_SlugTenant(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected bool
+	}{
+		{"client-name", true},
+		{"my_prod", true},
+		{"tenant-123", true},
+		{"prod_env", true},
+		{"a-b-c", true},
+		{"x", false},           // too short
+		{"a", false},            // too short
+		{"ab", false},           // too short
+		{"abc", true},           // min length
+		{strings.Repeat("a", 65), false}, // too long
+		{"uuid-with-dashes", true},
+		{"UPPERCASE", true},
+		{"Mixed-Case_123", true},
+	}
+	for _, tc := range cases {
+		if got := isIDLike(tc.input); got != tc.expected {
+			t.Errorf("isIDLike(%q) = %v, want %v", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestAuditResource_SlugTenant(t *testing.T) {
+	cases := []struct {
+		path     string
+		expected string
+	}{
+		{"/api/tenants/client-name/config", "tenant:client-name"},
+		{"/api/tenants/my_prod/tools/foo/approve", "tenant:my_prod"},
+		{"/api/tenants/tenant-123/introspect", "tenant:tenant-123"},
+		{"/api/agents/my-agent/abuse", "agent:my-agent"},
+		{"/api/llm-providers/my-provider/toggle", "llm-provider:my-provider"},
+	}
+	for _, tc := range cases {
+		if got := auditResource(tc.path); got != tc.expected {
+			t.Errorf("auditResource(%q) = %q, want %q", tc.path, got, tc.expected)
+		}
+	}
+}
+
+func TestAuditResource_UnknownPath(t *testing.T) {
+	cases := []struct {
+		path     string
+		expected string
+	}{
+		{"/api/new-endpoint", "path:new-endpoint"},
+		{"/api/foo/bar/baz", "path:foo"},
+		{"/api/unknown", "path:unknown"},
+	}
+	for _, tc := range cases {
+		if got := auditResource(tc.path); got != tc.expected {
+			t.Errorf("auditResource(%q) = %q, want %q", tc.path, got, tc.expected)
+		}
+	}
+}
+
+func TestAuditAuthFailureLogged(t *testing.T) {
+	s := New(Options{Addr: ":0", AdminToken: "admin-secret", ViewerToken: "viewer-secret"})
+	router := s.Router()
+
+	// Viewer trying to DELETE should be logged as auth.failed
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/tenants/test", nil)
+	req.Header.Set("Authorization", "Bearer viewer-secret")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+
+	// Check audit log contains auth.failed
+	entries := s.auditStore.Recent(10)
+	found := false
+	for _, e := range entries {
+		if e.Action == "auth.failed" && e.Resource == "tenant:test" {
+			found = true
+			if !strings.Contains(e.Details, "-> 403") {
+				t.Errorf("details should contain '-> 403', got %q", e.Details)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("audit log should contain auth.failed for tenant:test, got: %v", entries)
 	}
 }

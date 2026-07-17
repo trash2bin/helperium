@@ -4,11 +4,11 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +57,9 @@ func (a *AuditStore) rotateFile() {
 		return
 	}
 	if a.file != nil {
-		a.file.Close()
+		if err := a.file.Close(); err != nil {
+			slog.Warn("audit: failed to close old log file", "path", a.file.Name(), "error", err)
+		}
 	}
 	a.file = f
 }
@@ -106,6 +108,7 @@ func (a *AuditStore) Log(actorRole, action, resource, details string) {
 
 // Recent возвращает последние N записей (из файла + in-memory буфер).
 // Thread-safe.
+// Читает файл с конца, строкой за строкой, чтобы не грузить весь JSONL в память.
 func (a *AuditStore) Recent(limit int) []AuditEntry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -122,49 +125,67 @@ func (a *AuditStore) Recent(limit int) []AuditEntry {
 	combined := make([]AuditEntry, n)
 	copy(combined, a.buffer)
 
-	// Добавляем из файла
+	// Добавляем из файла — читаем с конца, пока не наберем limit
 	if a.file != nil {
-		data, err := os.ReadFile(a.file.Name())
-		if err == nil && len(data) > 0 {
-			lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-			for _, line := range lines {
-				if line == "" {
-					continue
-				}
-				var entry AuditEntry
-				if json.Unmarshal([]byte(line), &entry) == nil {
-					combined = append(combined, entry)
+		filePath := a.file.Name()
+		file, err := os.Open(filePath)
+		if err == nil {
+			defer file.Close()
+
+			stat, err := file.Stat()
+			if err == nil && stat.Size() > 0 {
+				// Use a buffer to read chunks from the end
+				const chunkSize = 64 * 1024 // 64KB chunks
+				var leftover string
+
+				for offset := stat.Size(); offset > 0 && len(combined) < limit; {
+					readSize := chunkSize
+					if offset < int64(chunkSize) {
+						readSize = int(offset)
+					}
+					offset -= int64(readSize)
+
+					chunk := make([]byte, readSize)
+					_, err := file.ReadAt(chunk, offset)
+					if err != nil && err != io.EOF {
+						break
+					}
+
+					// Prepend leftover from previous chunk
+					content := string(chunk) + leftover
+					lines := strings.Split(content, "\n")
+
+					// Last element might be incomplete, save as leftover
+					leftover = lines[0]
+
+					// Process lines in reverse order (newest first)
+					for i := len(lines) - 1; i >= 0 && len(combined) < limit; i-- {
+						line := strings.TrimSpace(lines[i])
+						if line == "" {
+							continue
+						}
+						var entry AuditEntry
+						if json.Unmarshal([]byte(line), &entry) == nil {
+							combined = append(combined, entry)
+						}
+					}
 				}
 			}
 		}
 	}
 
-	// Дедупликация по ключу (timestamp+action+resource+details)
+	// No deduplication needed — file is append-only, buffer has unique entries
 	if len(combined) > limit {
-		sort.Slice(combined, func(i, j int) bool {
-			return combined[i].Timestamp.After(combined[j].Timestamp)
-		})
-		seen := make(map[string]bool)
-		unique := make([]AuditEntry, 0, limit)
-		for _, e := range combined {
-			key := fmt.Sprintf("%d|%s|%s", e.Timestamp.UnixNano(), e.Action, e.Resource)
-			if !seen[key] {
-				seen[key] = true
-				unique = append(unique, e)
-			}
-			if len(unique) >= limit {
-				break
-			}
-		}
-		return unique
+		combined = combined[:limit]
 	}
 
 	return combined
 }
 
-// ── auditMiddleware — логирует все успешные мутирующие запросы ──
+// ── auditMiddleware — логирует мутирующие запросы + auth failures ──
 
-// auditMiddleware возвращает middleware, которая логирует POST/PUT/DELETE на /api/*.
+// auditMiddleware возвращает middleware, которая логирует POST/PUT/DELETE на /api/*,
+// а также логирует 401/403 ошибки авторизации для compliance.
 func (s *Server) auditMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +194,17 @@ func (s *Server) auditMiddleware() func(http.Handler) http.Handler {
 
 			// Пропускаем запрос "как есть", audit — после хендлера
 			next.ServeHTTP(wr, r)
+
+			// Логируем auth failures (401/403) на /api/* для compliance
+			if (wr.statusCode == http.StatusUnauthorized || wr.statusCode == http.StatusForbidden) &&
+				strings.HasPrefix(r.URL.Path, "/api/") {
+				role := RoleFromContext(r.Context())
+				action := "auth.failed"
+				resource := auditResource(r.URL.Path)
+				details := fmt.Sprintf("[%s] %s %s -> %d", role, r.Method, r.URL.Path, wr.statusCode)
+				s.auditStore.Log(role, action, resource, details)
+				return
+			}
 
 			// Логируем только успешные мутирующие запросы к /api/
 			if wr.statusCode < 200 || wr.statusCode >= 300 {
@@ -244,6 +276,12 @@ func auditResource(path string) string {
 			return "llm-provider:" + segments[i+1]
 		}
 	}
+	// Fallback: return first non-api path segment as resource type
+	for _, seg := range segments {
+		if seg != "api" && seg != "" {
+			return "path:" + seg
+		}
+	}
 	return ""
 }
 
@@ -305,16 +343,16 @@ func cleanPath(path string) string {
 }
 
 func isIDLike(s string) bool {
-	// UUID, числовой ID, короткие хеши
-	if len(s) > 30 || len(s) < 8 {
+	// UUID, numeric ID, short hashes, OR slug identifiers (tenant IDs like client-name, my_prod)
+	if len(s) > 64 || len(s) < 3 {
 		return false
 	}
 	for _, c := range s {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && c != '-' {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '-' && c != '_' {
 			return false
 		}
 	}
-	return strings.Count(s, "-") <= 5 && strings.Count(s, "-") >= 0
+	return true
 }
 
 func matchAuditPattern(path, pattern string) bool {

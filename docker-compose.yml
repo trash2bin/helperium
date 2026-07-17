@@ -66,6 +66,8 @@ services:
     build:
       context: .
       dockerfile: rag/Dockerfile
+    profiles:
+      - rag
     ports:
       - "127.0.0.1:8082:8082"
     volumes:

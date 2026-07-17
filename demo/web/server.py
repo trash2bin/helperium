@@ -366,10 +366,19 @@ async def _proxy_to_rag(
                 "Content-Type": response.headers.get("Content-Type", "application/json")
             },
         )
-    except Exception:
+    except httpx.ConnectError:
+        # Only connection refused / service not running → graceful 200 fallback
         return Response(
             content=RAG_UNAVAILABLE_BODY,
             status_code=200,
+            headers={"Content-Type": "application/json"},
+        )
+    except httpx.TimeoutException:
+        # Timeout → propagate as 504 Gateway Timeout
+        logger.warning("RAG proxy timeout", extra={"path": rag_path})
+        return Response(
+            content=json.dumps({"error": "RAG service timeout"}).encode(),
+            status_code=504,
             headers={"Content-Type": "application/json"},
         )
 
