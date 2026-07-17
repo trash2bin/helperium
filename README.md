@@ -115,7 +115,7 @@ Composite mode allows a single SSE session to route across N tenants with prefix
 ### Docker Compose (recommended for production)
 
 ```bash
-docker compose up -d                              # dev (6 services)
+docker compose up -d                              # dev (7 services)
 docker compose --profile prod up -d               # + Caddy HTTPS termination
 docker compose --profile monitoring up -d         # + Prometheus + Grafana
 ```

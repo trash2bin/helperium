@@ -23,6 +23,7 @@ Stage 0.4: Translated from Starlette to FastAPI + /api/* reverse proxy + SSE-pro
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Callable, Awaitable
 from uuid import uuid4
@@ -335,29 +336,42 @@ async def proxy_data_entity(request: Request, entity_name: str) -> Response:
 RAG_SERVICE_URL = settings.rag_service_url
 
 
+RAG_UNAVAILABLE_BODY = json.dumps({
+    "available": False,
+    "warning": "RAG service is not running.",
+}).encode()
+
+
 async def _proxy_to_rag(
     request: Request,
     rag_path: str,
     method: str = "GET",
     json_body: dict | None = None,
 ) -> Response:
-    """Proxy к RAG-сервису напрямую."""
+    """Proxy to RAG service with graceful fallback."""
     http_client = request.app.state.http_client
     url = f"{RAG_SERVICE_URL}{rag_path}"
     headers = await _get_proxy_headers(request)
-    if json_body is not None:
-        response = await getattr(http_client, method.lower())(
-            url, json=json_body, headers=headers
+    try:
+        if json_body is not None:
+            response = await getattr(http_client, method.lower())(
+                url, json=json_body, headers=headers
+            )
+        else:
+            response = await getattr(http_client, method.lower())(url, headers=headers)
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers={
+                "Content-Type": response.headers.get("Content-Type", "application/json")
+            },
         )
-    else:
-        response = await getattr(http_client, method.lower())(url, headers=headers)
-    return Response(
-        content=response.content,
-        status_code=response.status_code,
-        headers={
-            "Content-Type": response.headers.get("Content-Type", "application/json")
-        },
-    )
+    except Exception:
+        return Response(
+            content=RAG_UNAVAILABLE_BODY,
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+        )
 
 
 @app.get("/api/rag/documents")

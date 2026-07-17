@@ -623,7 +623,7 @@ uv run agent-db e2e-full               # полный e2e пайплайн
 
 ### 🐳 Docker-запуск
 Если нативная среда недоступна или требуется изоляция:
-- `docker compose up -d` — запуск всех 6 сервисов в Dev-режиме.
+- `docker compose up -d` — запуск всех 7 core-сервисов в Dev-режиме.
 - `docker compose --profile prod up -d` — запуск с Caddy (HTTPS через Let's Encrypt) для Production.
 - `docker compose build` — пересборка образов после изменений в Dockerfile.
 - **Тома**: Данные хранятся в `./.data/` (БД, индексы ChromaDB, кэш моделей).

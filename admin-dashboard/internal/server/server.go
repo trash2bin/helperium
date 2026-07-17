@@ -62,6 +62,7 @@ type Server struct {
 	dataClient *DataServiceClient
 	ragClient  *RagClient
 	abuseStore *AbuseStore
+	auditStore *AuditStore
 	mu         sync.RWMutex
 }
 
@@ -75,6 +76,7 @@ func New(opts Options) *Server {
 		dataClient: NewDataServiceClient(opts.DataSvcURL, opts.AdminToken),
 		ragClient:  NewRagClient(opts.RagSvcURL, opts.AdminToken),
 		abuseStore: NewAbuseStore(opts.DataDir),
+		auditStore: NewAuditStore(filepath.Join(opts.DataDir, "..", "audit")),
 	}
 }
 
@@ -108,6 +110,7 @@ func (s *Server) Router() chi.Router {
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(corsMiddleware)
 	r.Use(authMiddleware(s.opts.AdminToken, s.opts.ViewerToken))
+	r.Use(s.auditMiddleware())
 
 	// Prometheus metrics (no auth needed)
 	r.Handle("/metrics", promhttp.Handler())
@@ -181,6 +184,9 @@ func (s *Server) Router() chi.Router {
 		r.Get("/voice-config", s.voiceConfigGetHandler)
 		r.Put("/voice-config", s.voiceConfigPutHandler)
 		r.Post("/chat/voice", s.voiceChatHandler)
+
+		// Audit log
+		r.Get("/audit", s.auditListHandler)
 
 		// Anti-abuse / rate limit settings
 		r.Get("/abuse-settings", s.abuseSettingsGetHandler)
@@ -839,13 +845,23 @@ func (s *Server) toolsApproveHandler(w http.ResponseWriter, r *http.Request) {
 
 // ── RAG proxy ──
 
+// ragUnavailableJSON returns a 200 response with available=false
+// so the UI shows a friendly message instead of 502 when RAG is not running.
+func ragUnavailableJSON() ([]byte, int) {
+	body, _ := json.Marshal(map[string]any{
+		"available": false,
+		"warning":   "RAG service is not running. Start it with 'docker compose up rag' or check RAG_SERVICE_URL.",
+	})
+	return body, http.StatusOK
+}
+
 func (s *Server) ragHealthHandler(w http.ResponseWriter, r *http.Request) {
 	body, status, err := s.ragClient.Do(r.Method, "/health", nil)
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		body, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(body)
 }
@@ -858,10 +874,10 @@ func (s *Server) ragDocListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do("POST", "/documents/list", json.RawMessage(body))
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		respBody, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(respBody)
 }
@@ -874,10 +890,10 @@ func (s *Server) ragDocImportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do("POST", "/documents/import", json.RawMessage(body))
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		respBody, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(respBody)
 }
@@ -890,10 +906,10 @@ func (s *Server) ragDocDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do("POST", "/documents/delete", json.RawMessage(body))
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		respBody, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(respBody)
 }
@@ -928,10 +944,10 @@ func (s *Server) ragDocUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	respBody, status, err := s.ragClient.Upload("/documents/upload", header.Filename, "file", fileContent, formFields)
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		respBody, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(respBody)
 }
@@ -941,10 +957,10 @@ func (s *Server) ragDocUploadHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ragConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	body, status, err := s.ragClient.Do(http.MethodGet, "/admin/config", nil)
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		body, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(body)
 }
@@ -957,10 +973,10 @@ func (s *Server) ragConfigPutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	respBody, status, err := s.ragClient.Do(http.MethodPut, "/admin/config", json.RawMessage(body))
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		respBody, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(respBody)
 }
@@ -968,10 +984,10 @@ func (s *Server) ragConfigPutHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ragStatsHandler(w http.ResponseWriter, r *http.Request) {
 	body, status, err := s.ragClient.Do(http.MethodGet, "/admin/stats", nil)
 	if err != nil {
-		respondError(w, http.StatusBadGateway, "rag_unreachable", err.Error())
-		return
+		body, status = ragUnavailableJSON()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(body)
 }
@@ -1164,4 +1180,22 @@ func (s *Server) voiceChatHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+}
+
+// ── Audit log handler ──
+
+func (s *Server) auditListHandler(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 && n <= 1000 {
+			limit = n
+		}
+	}
+
+	entries := s.auditStore.Recent(limit)
+	respondJSON(w, http.StatusOK, map[string]any{
+		"entries": entries,
+		"count":   len(entries),
+	})
 }

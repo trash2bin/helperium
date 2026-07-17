@@ -13,5 +13,6 @@
   "GET /api/tenants/{id}/manifest": "MCP манифест",
   "GET /api/emergency-status": "Статус emergency",
   "POST /api/abuse-preset/{preset}": "Применить preset (normal/cautious/lockdown)",
-  "POST /api/abuse-config/reload": "Перезагрузить abuse конфиг"
+  "POST /api/abuse-config/reload": "Перезагрузить abuse конфиг",
+  "GET /api/audit": "Лог аудита изменений"
 }

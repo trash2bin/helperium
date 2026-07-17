@@ -1,6 +1,6 @@
-# docker compose with 4 long-running services + optional profiles
-# Dev:   docker compose up -d
-# Prod:  docker compose --profile prod up -d
+# docker compose — core services + optional profiles
+# Dev:   docker compose up -d (запускает 7 core-сервисов)
+# Prod:  docker compose --profile prod up -d (с Caddy HTTPS)
 
 x-restart: &restart
   restart: unless-stopped
@@ -62,7 +62,6 @@ services:
     <<: *restart
 
   rag:
-    profiles: ["full", "rag"]
     image: helperium-rag:latest
     build:
       context: .

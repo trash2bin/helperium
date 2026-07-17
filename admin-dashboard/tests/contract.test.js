@@ -75,6 +75,9 @@ RAW_FETCH_ENDPOINTS.forEach(function (ep) {
 // /api/tenants/{id}/tools/{toolName}/approve → parser sees /api/tenants/{id}/tools
 ALLOWED_PATHS['POST /api/tenants/{id}/tools'] = 'admin-endpoints';
 ALLOWED_PATHS['GET /api/tenants/{id}/tools'] = 'admin-endpoints';
+ALLOWED_PATHS['GET /api/audit'] = 'admin-endpoints';
+ALLOWED_PATHS['GET /api/audit'] = 'admin-endpoints';
+ALLOWED_PATHS['GET /api/audit?limit=/{id}'] = 'admin-endpoints';
 
 // ── Parse JS files for API calls ──
 function extractApiCalls(content, filename) {
