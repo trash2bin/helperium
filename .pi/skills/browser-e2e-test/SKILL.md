@@ -1,6 +1,7 @@
 ---
 name: browser-e2e-test
 description: "E2E тестирование Helperium через живой браузер (Playwright): admin dashboard, tenant persistence, write-tool approval, demo web UI."
+disable-model-invocation: true
 ---
 
 # Browser E2E Testing — Helperium
