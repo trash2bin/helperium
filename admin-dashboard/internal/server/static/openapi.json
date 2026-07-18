@@ -1,0 +1,3334 @@
+{
+  "components": {
+    "schemas": {
+      "AbuseConfig": {
+        "properties": {
+          "block_empty_user_agent": {
+            "type": "boolean"
+          },
+          "blocked_user_agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "burst": {
+            "type": "integer"
+          },
+          "emergency_mode": {
+            "type": "boolean"
+          },
+          "emergency_preset": {
+            "type": "string"
+          },
+          "max_message_length": {
+            "type": "integer"
+          },
+          "max_messages_per_session": {
+            "type": "integer"
+          },
+          "min_interval_ms": {
+            "type": "integer"
+          },
+          "rps": {
+            "description": "Requests per second",
+            "type": "number"
+          },
+          "token_budget": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AgentAbuseOverride": {
+        "properties": {
+          "block_empty_user_agent": {
+            "type": "boolean"
+          },
+          "blocked_user_agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "burst": {
+            "type": "integer"
+          },
+          "max_message_length": {
+            "type": "integer"
+          },
+          "max_messages_per_session": {
+            "type": "integer"
+          },
+          "min_interval_ms": {
+            "type": "integer"
+          },
+          "rps": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "AgentAbuseResponse": {
+        "properties": {
+          "abuse_config": {
+            "$ref": "#/components/schemas/AgentAbuseOverride"
+          },
+          "agent": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "AgentListResponse": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentResponse"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AgentResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider_priority": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "system_prompt": {
+            "type": "string"
+          },
+          "tenant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "voice_config": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "AuditListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "actor_role": {
+                  "type": "string"
+                },
+                "details": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ConfigObject": {
+        "properties": {
+          "data_source": {
+            "properties": {
+              "driver": {
+                "type": "string"
+              },
+              "dsn": {
+                "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "endpoints": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "entities": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "mcp_tools": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CreateAgentRequest": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "type": "string"
+          },
+          "provider_priority": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "system_prompt": {
+            "type": "string"
+          },
+          "tenant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateTenantRequest": {
+        "properties": {
+          "driver": {
+            "default": "sqlite",
+            "description": "sqlite | sqlite3 | postgres",
+            "type": "string"
+          },
+          "dsn": {
+            "description": "Connection string или путь к SQLite",
+            "type": "string"
+          },
+          "tenant_id": {
+            "description": "Уникальный ID тенанта",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id"
+        ],
+        "type": "object"
+      },
+      "DashboardResponse": {
+        "properties": {
+          "data_service": {
+            "type": "string"
+          },
+          "role": {
+            "description": "admin | viewer",
+            "type": "string"
+          },
+          "tenant_count": {
+            "type": "integer"
+          },
+          "tenants": {
+            "items": {
+              "$ref": "#/components/schemas/TenantInfo"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "DbTestRequest": {
+        "properties": {
+          "driver": {
+            "description": "sqlite | postgres",
+            "type": "string"
+          },
+          "dsn": {
+            "description": "Data source name / connection string",
+            "type": "string"
+          }
+        },
+        "required": [
+          "driver",
+          "dsn"
+        ],
+        "type": "object"
+      },
+      "DbTestResponse": {
+        "properties": {
+          "driver": {
+            "type": "string"
+          },
+          "dsn": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EmergencyStatus": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "burst": {
+            "type": "integer"
+          },
+          "emergency_mode": {
+            "type": "boolean"
+          },
+          "emergency_preset": {
+            "type": "string"
+          },
+          "max_messages": {
+            "type": "integer"
+          },
+          "min_interval_ms": {
+            "type": "integer"
+          },
+          "rps": {
+            "type": "number"
+          },
+          "token_budget": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "description": "Код ошибки",
+            "type": "string"
+          },
+          "message": {
+            "description": "Описание ошибки",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "example": "ok",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LlmConfig": {
+        "properties": {
+          "fallback_enabled": {
+            "type": "boolean"
+          },
+          "num_models": {
+            "type": "integer"
+          },
+          "providers": {
+            "items": {
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LlmProvider": {
+        "properties": {
+          "api_base": {
+            "type": "string"
+          },
+          "api_key_masked": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "has_api_key": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LlmProviderAddRequest": {
+        "properties": {
+          "api_base": {
+            "type": "string"
+          },
+          "api_key": {
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "model"
+        ],
+        "type": "object"
+      },
+      "LlmProviderList": {
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/LlmProvider"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LlmProviderUpdateRequest": {
+        "properties": {
+          "api_base": {
+            "type": "string"
+          },
+          "api_key": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ManifestResponse": {
+        "properties": {
+          "endpoints": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "mcp_tools": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OpenAPISpec": {
+        "description": "OpenAPI 3.1.0 спецификация admin-dashboard",
+        "properties": {
+          "info": {
+            "type": "object"
+          },
+          "openapi": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "PendingToolsResponse": {
+        "properties": {
+          "mode": {
+            "description": "read_only | read_write",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "properties": {
+                "approved": {
+                  "type": "boolean"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderListResponse": {
+        "properties": {
+          "providers": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RagConfig": {
+        "properties": {
+          "cache_enabled": {
+            "type": "boolean"
+          },
+          "cache_ttl": {
+            "type": "integer"
+          },
+          "chunk_overlap": {
+            "type": "integer"
+          },
+          "chunk_size": {
+            "type": "integer"
+          },
+          "embedding_model": {
+            "type": "string"
+          },
+          "embedding_provider": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagDocDeleteRequest": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagDocImportRequest": {
+        "properties": {
+          "discipline_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagDocImportResponse": {
+        "properties": {
+          "doc_id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagDocList": {
+        "properties": {
+          "documents": {
+            "items": {
+              "properties": {
+                "chunks_count": {
+                  "type": "integer"
+                },
+                "filename": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RagDocListRequest": {
+        "properties": {
+          "discipline_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagHealthResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "embedding": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "warning": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagStats": {
+        "properties": {
+          "chroma_size_mb": {
+            "type": "number"
+          },
+          "chunk_count": {
+            "type": "integer"
+          },
+          "document_count": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ReloadResponse": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "example": "reload_triggered",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RewriteResponse": {
+        "properties": {
+          "endpoints": {
+            "type": "integer"
+          },
+          "entities": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StatusResponse": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TenantCreateResponse": {
+        "properties": {
+          "config": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TenantInfo": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TenantListResponse": {
+        "properties": {
+          "tenants": {
+            "items": {
+              "$ref": "#/components/schemas/TenantInfo"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "TenantResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "driver": {
+            "type": "string"
+          },
+          "endpoints": {
+            "type": "integer"
+          },
+          "entities": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateAgentRequest": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "provider_priority": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "system_prompt": {
+            "type": "string"
+          },
+          "tenant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "voice_config": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "VoiceConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_voice_duration_seconds": {
+            "type": "integer"
+          },
+          "max_voice_message_size": {
+            "type": "integer"
+          },
+          "min_voice_interval_seconds": {
+            "type": "integer"
+          },
+          "stt_fallback_enabled": {
+            "type": "boolean"
+          },
+          "stt_providers": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "tts_fallback_enabled": {
+            "type": "boolean"
+          },
+          "tts_providers": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "ADMIN_TOKEN или VIEWER_TOKEN из .env. Reader/viewer — только GET на /api/*.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Прокси-API для администрирования платформы Helperium. Большинство эндпоинтов — pass-through к upstream сервисам (data-service, api-service, rag-service).\n\nАутентификация: Bearer токен через Authorization header (ADMIN_TOKEN или VIEWER_TOKEN). Viewer-level доступ только на GET /api/*.",
+    "title": "Admin Dashboard API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/abuse-preset/{preset}": {
+      "post": {
+        "operationId": "abuse_preset_apply",
+        "parameters": [
+          {
+            "description": "Preset name: normal, cautious, lockdown",
+            "in": "path",
+            "name": "preset",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbuseConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Apply emergency preset (normal/cautious/lockdown)",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/abuse-settings": {
+      "get": {
+        "operationId": "abuse_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbuseConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get global abuse config",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      },
+      "put": {
+        "operationId": "abuse_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbuseConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbuseConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update global abuse config",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/admin/abuse-config/reload": {
+      "post": {
+        "operationId": "abuse_config_reload",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReloadResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Reload abuse config on api-service",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "operationId": "agents_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentListResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "List all agents",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      },
+      "post": {
+        "operationId": "agents_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            },
+            "description": "Создано"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Create a new agent",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/api/agents/{name}": {
+      "delete": {
+        "operationId": "agents_delete",
+        "parameters": [
+          {
+            "description": "Agent name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "Delete agent",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      },
+      "get": {
+        "operationId": "agents_get",
+        "parameters": [
+          {
+            "description": "Agent name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get agent by name",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      },
+      "put": {
+        "operationId": "agents_update",
+        "parameters": [
+          {
+            "description": "Agent name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update agent",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/api/agents/{name}/abuse": {
+      "get": {
+        "operationId": "agent_abuse_get",
+        "parameters": [
+          {
+            "description": "Agent name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAbuseResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get per-agent abuse overrides",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      },
+      "put": {
+        "operationId": "agent_abuse_put",
+        "parameters": [
+          {
+            "description": "Agent name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAbuseOverride"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAbuseResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update per-agent abuse overrides",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "operationId": "audit_list",
+        "parameters": [
+          {
+            "description": "Max entries (1-1000, default 50)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditListResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Audit log entries",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/chat/voice": {
+      "post": {
+        "operationId": "chat_voice",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  },
+                  "audio": {
+                    "type": "string"
+                  },
+                  "lang": {
+                    "type": "string"
+                  },
+                  "session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "audio"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "Server-Sent Events поток с событиями: token, tool_call, tool_result, final, done, error, audio",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "SSE stream (text/event-stream)"
+          }
+        },
+        "summary": "Voice chat (multipart audio → SSE stream)",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service",
+        "x-streaming": true
+      }
+    },
+    "/api/dashboard": {
+      "get": {
+        "operationId": "dashboard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Dashboard summary (tenant count, data-service status)",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/db/test": {
+      "post": {
+        "operationId": "db_test",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DbTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbTestResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Test DB connection by DSN",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/emergency-status": {
+      "get": {
+        "operationId": "emergency_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyStatus"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get current emergency status",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": true,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "api_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "security": [],
+        "summary": "API health check",
+        "tags": [
+          "Local"
+        ],
+        "x-auth-required": false,
+        "x-route-group": "Local"
+      }
+    },
+    "/api/llm-config": {
+      "get": {
+        "operationId": "llm_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get LLM fallback configuration",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/api/llm-provider-list": {
+      "get": {
+        "operationId": "llm_provider_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderListResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "List available providers from LiteLLM",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/api/llm-providers": {
+      "get": {
+        "operationId": "llm_providers_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderList"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "List all LLM providers (detailed)",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      },
+      "post": {
+        "operationId": "llm_providers_add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProvider"
+                }
+              }
+            },
+            "description": "Создано"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Add a new LLM provider",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/api/llm-providers/{name}": {
+      "delete": {
+        "operationId": "llm_providers_delete",
+        "parameters": [
+          {
+            "description": "Provider name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Delete LLM provider",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      },
+      "get": {
+        "operationId": "llm_providers_get",
+        "parameters": [
+          {
+            "description": "Provider name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProvider"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get LLM provider by name",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      },
+      "put": {
+        "operationId": "llm_providers_update",
+        "parameters": [
+          {
+            "description": "Provider name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProvider"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update LLM provider",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/api/llm-providers/{name}/toggle": {
+      "post": {
+        "operationId": "llm_providers_toggle",
+        "parameters": [
+          {
+            "description": "Provider name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProvider"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Toggle LLM provider on/off",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/api/rag/config": {
+      "get": {
+        "operationId": "rag_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get RAG configuration",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      },
+      "put": {
+        "operationId": "rag_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update RAG configuration",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      }
+    },
+    "/api/rag/documents/delete": {
+      "post": {
+        "operationId": "rag_documents_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagDocDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Delete RAG document",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      }
+    },
+    "/api/rag/documents/import": {
+      "post": {
+        "operationId": "rag_documents_import",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagDocImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocImportResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Import document from file path",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      }
+    },
+    "/api/rag/documents/list": {
+      "post": {
+        "operationId": "rag_documents_list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagDocListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocList"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "List RAG documents",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      }
+    },
+    "/api/rag/documents/upload": {
+      "post": {
+        "operationId": "rag_documents_upload",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "discipline_id": {
+                    "type": "string"
+                  },
+                  "file": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocImportResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Upload document (multipart)",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      }
+    },
+    "/api/rag/health": {
+      "get": {
+        "operationId": "rag_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagHealthResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "RAG service health check",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      }
+    },
+    "/api/rag/stats": {
+      "get": {
+        "operationId": "rag_stats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagStats"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get RAG statistics",
+        "tags": [
+          "RAG"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "rag-service",
+        "x-route-group": "rag-service"
+      }
+    },
+    "/api/tenants": {
+      "get": {
+        "operationId": "tenants_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantListResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "List all tenants",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      },
+      "post": {
+        "operationId": "tenants_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTenantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantCreateResponse"
+                }
+              }
+            },
+            "description": "Создано"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Create a new tenant (+ start introspection)",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/tenants/upload-sqlite": {
+      "post": {
+        "operationId": "tenants_upload_sqlite",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "driver": {
+                    "type": "string"
+                  },
+                  "file": {
+                    "type": "string"
+                  },
+                  "tenant_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file",
+                  "tenant_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantCreateResponse"
+                }
+              }
+            },
+            "description": "Создано"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Upload SQLite file and register tenant",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/tenants/{id}": {
+      "delete": {
+        "operationId": "tenants_delete",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Delete a tenant",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      },
+      "get": {
+        "operationId": "tenants_get",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get tenant info",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/tenants/{id}/config": {
+      "get": {
+        "operationId": "tenants_config_get",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigObject"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get tenant config",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      },
+      "put": {
+        "operationId": "tenants_config_put",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigObject"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update tenant config",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/tenants/{id}/introspect": {
+      "post": {
+        "operationId": "tenants_introspect",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewriteResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Run introspection (rewrite config from DB schema)",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/tenants/{id}/manifest": {
+      "get": {
+        "operationId": "tenants_manifest",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get MCP manifest for tenant",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/tenants/{id}/tools/pending": {
+      "get": {
+        "operationId": "tenants_tools_pending",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingToolsResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "List pending tools for approval",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/tenants/{id}/tools/{toolName}/approve": {
+      "post": {
+        "operationId": "tenants_tools_approve",
+        "parameters": [
+          {
+            "description": "Tenant ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Tool name to approve",
+            "in": "path",
+            "name": "toolName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Approve a write tool",
+        "tags": [
+          "Data-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "data-service",
+        "x-route-group": "data-service"
+      }
+    },
+    "/api/voice-config": {
+      "get": {
+        "operationId": "voice_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Get STT/TTS voice configuration",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      },
+      "put": {
+        "operationId": "voice_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceConfig"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update STT/TTS voice configuration",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_check",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "security": [],
+        "summary": "Health check",
+        "tags": [
+          "System"
+        ],
+        "x-auth-required": false,
+        "x-route-group": "System"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "openapi_spec",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAPISpec"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "security": [],
+        "summary": "OpenAPI спецификация",
+        "tags": [
+          "System"
+        ],
+        "x-auth-required": false,
+        "x-route-group": "System"
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "admin-dashboard (dev)",
+      "url": "http://localhost:8085"
+    }
+  ]
+}

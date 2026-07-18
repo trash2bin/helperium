@@ -38,6 +38,12 @@ echo "  index.html  $(wc -c < internal/server/static/index.html) bytes"
 echo "=== Lint HTML: html-validate index.html ==="
 npx html-validate internal/server/static/index.html
 
+echo "=== Generate: openapi.json (Go) ==="
+# Generate runtime + build-time OpenAPI spec
+mkdir -p internal/server/static
+go run ./cmd/gen-openapi/
+echo "  openapi.json  $(wc -c < internal/server/static/openapi.json) bytes"
+
 echo "=== Bundle: esbuild → internal/server/static/dist/app.js ==="
 npx esbuild src/index.ts \
   --bundle \

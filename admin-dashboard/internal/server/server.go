@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/trash2bin/helperium/admin-dashboard/internal/openapi"
 	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
 	"github.com/trash2bin/helperium/helperium-go/pkg/tracing"
 	"github.com/go-chi/chi/v5"
@@ -75,13 +76,16 @@ var staticFS embed.FS
 
 // New создаёт новый Server.
 func New(opts Options) *Server {
-	return &Server{
+	s := &Server{
 		opts:       opts,
 		dataClient: NewDataServiceClient(opts.DataSvcURL, opts.AdminToken),
 		ragClient:  NewRagClient(opts.RagSvcURL, opts.AdminToken),
 		abuseStore: NewAbuseStore(opts.DataDir),
 		auditStore: NewAuditStore(filepath.Join(opts.DataDir, "..", "audit")),
 	}
+	// OpenAPI spec генерится в build.sh → internal/server/static/openapi.json
+	// и вкомпиливается через //go:embed static. runtime — через openAPIHandler.
+	return s
 }
 
 // Router собирает chi роутер.
@@ -121,14 +125,17 @@ func (s *Server) Router() chi.Router {
 	// Prometheus metrics (no auth needed)
 	r.Handle("/metrics", promhttp.Handler())
 
-	// Static frontend
-	r.Handle("/*", s.staticHandler())
-
 	// Health check (no auth)
 	r.Get("/health", s.healthHandler)
 
 	// i18n translations (no auth — loaded before login)
 	r.Get("/i18n.json", s.i18nHandler)
+
+	// OpenAPI spec (no auth)
+	r.Get("/openapi.json", s.openAPIHandler)
+
+	// Static frontend (catch-all — должен быть последним)
+	r.Handle("/*", s.staticHandler())
 
 	// API
 	r.Route("/api", func(r chi.Router) {
@@ -244,7 +251,7 @@ func RoleFromContext(ctx context.Context) string {
 // isPublicPath возвращает true для путей, не требующих авторизации.
 func isPublicPath(path string) bool {
 	switch path {
-	case "/", "/index.html", "/styles.css", "/admin.css", "/app.js", "/i18n.js", "/i18n.json", "/metrics":
+	case "/", "/index.html", "/styles.css", "/admin.css", "/app.js", "/i18n.js", "/i18n.json", "/metrics", "/openapi.json":
 		return true
 	}
 	if strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/js/") || strings.HasPrefix(path, "/dist/") {
@@ -353,6 +360,14 @@ func (s *Server) staticHandler() http.HandlerFunc {
 		}
 		w.Write(data)
 	}
+}
+
+// ── OpenAPI Spec Handler ──
+
+func (s *Server) openAPIHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	json.NewEncoder(w).Encode(openapi.GenerateSpec())
 }
 
 // ── Helpers ──
