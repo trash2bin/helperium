@@ -21,7 +21,12 @@ from helperium_sdk.settings import settings
 from .conversation import ConversationManager
 from .event_stream import format_sse_event, unstreamed_suffix
 from .fallback_handler import FallbackHandler
-from .llm_client import LLMClient, LLMClientProtocol, create_client
+from .llm_client import (
+    LLMClient,
+    LLMClientProtocol,
+    create_client,
+    create_fallback_client,
+)
 from .llm_handler import LLMHandler
 from .mcp_client import MCPClient
 from .prompts import SYSTEM_PROMPT
@@ -57,7 +62,9 @@ class LLMAgent:
         conversation_manager: ConversationManager | None = None,
     ) -> None:
         # ── Core components ─────────────────────────────────────────────
-        self.llm_client: LLMClientProtocol = llm_client or create_client()
+        # Default: create_fallback_client() which builds Router from ProviderStore
+        # for cross-provider failover. Falls back to create_client() if store empty.
+        self.llm_client: LLMClientProtocol = llm_client or create_fallback_client()
         self.mcp_client = mcp_client or MCPClient()
         self.conversation_manager = conversation_manager or ConversationManager()
         self.tool_parser = ToolCallParser()

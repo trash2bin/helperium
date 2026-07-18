@@ -80,6 +80,9 @@ class TestCreateFallbackClient:
             client = create_fallback_client()
             assert isinstance(client, LLMClient)
             assert client.router is not None
+            assert client.router_group == "fallback_group", (
+                f"router_group должен быть 'fallback_group', получено {client.router_group!r}"
+            )
 
     def test_fallback_multiple_providers(self):
         """Multiple providers in store -> Router with several models."""
@@ -102,6 +105,13 @@ class TestCreateFallbackClient:
             assert isinstance(client, LLMClient)
             assert client.router is not None
             assert client.model == "openai/gpt-4o-mini"
+            assert client.router_group == "fallback_group"
+
+            # Все entries в Router должны иметь одинаковый model_name
+            model_names = [m["model_name"] for m in client.router.model_list]
+            assert all(n == "fallback_group" for n in model_names), (
+                f"Не все model_name = 'fallback_group': {model_names}"
+            )
 
     def test_fallback_router_in_llmclient(self):
         """LLMClient with router stores it for later use."""
@@ -121,3 +131,4 @@ class TestCreateFallbackClient:
 
             client = create_fallback_client()
             assert client.router is not None
+            assert client.router_group == "fallback_group"

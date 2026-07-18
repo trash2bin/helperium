@@ -1251,6 +1251,28 @@ async def chat_voice_endpoint(
     # Resolve lang
     request_lang = lang or _get_lang(request)
 
+    # Resolve LLM client from agent config (same as chat_agent_handler)
+    if agent_data:
+        llm_config_agent = agent_data.get("llm_config")
+        provider_priority = agent_data.get("provider_priority", [])
+        system_prompt = agent_data.get("system_prompt") or (
+            llm_config_agent.get("system_prompt") if llm_config_agent else None
+        )
+    else:
+        llm_config_agent = None
+        provider_priority = []
+        system_prompt = None
+
+    request_llm = None
+    if provider_priority:
+        from api_service.agent.llm_client import create_prioritized_client
+
+        request_llm = create_prioritized_client(provider_priority)
+    elif llm_config_agent:
+        from api_service.agent.llm_client import create_client
+
+        request_llm = create_client(llm_config_agent)
+
     # Build TTS engine if configured
     tts_enabled = (
         len(resolved_config.tts_providers) > 0 and resolved_config.tts_fallback_enabled
@@ -1260,11 +1282,19 @@ async def chat_voice_endpoint(
     async def events():
         final_text = ""
         try:
-            async for event in get_agent().stream_events(
-                text,
+            kwargs: dict = dict(
+                user_message=text,
                 session_id=effective_session_id,
                 tenant_ids=tenant_ids,
+                system_prompt=system_prompt,
                 lang=request_lang,
+            )
+            if request_llm:
+                kwargs["llm_client"] = request_llm
+            elif llm_config_agent:
+                kwargs["llm_config"] = llm_config_agent
+            async for event in get_agent().stream_events(
+                **kwargs,
             ):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:

@@ -2,16 +2,19 @@
 	"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
 	"files": {
 		"includes": [
-			"admin-dashboard/internal/server/static/**/*.js",
-			"api-service/embed/src/**/*.js",
-			"api-service/embed/tests/**/*.js",
-			"demo/web/static/**/*.js",
-			"admin-dashboard/tests/**/*.js"
+			"admin-dashboard/src/**/*.ts",
+			"admin-dashboard/tests/**/*.ts",
+			"api-service/embed/src/**/*.ts",
+			"api-service/embed/tests/**/*.ts",
+			"admin-dashboard/tests/*.js",
+			"demo/web/static/app.js"
 		]
 	},
 	"javascript": {
 		"globals": [
 			"Alpine",
+			"__",
+			"AppRegistry",
 			"fetch",
 			"EventSource",
 			"XMLHttpRequest",
