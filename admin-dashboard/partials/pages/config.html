@@ -1,0 +1,269 @@
+      <div x-show="page === 'config'" x-cloak x-key="selectedTenant">
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2><span x-text="__('page.config.title')"></span>: <span class="highlight" x-text="selectedTenant"></span></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="refreshConfig()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+            <button @click="saveConfig()" class="btn btn-primary btn-sm" :disabled="saving">
+              <span x-show="saving">⏳</span>
+              <span x-show="!saving" x-text="__('btn.save')"></span>
+            </button>
+            <button @click="introspectTenant()" class="btn btn-sm" :disabled="introspecting" x-text="__('btn.introspect')"></button>
+          </div>
+        </div>
+
+        <!-- Config Summary -->
+        <div class="card">
+          <h3 x-text="__('config.summary')"></h3>
+          <div class="config-summary-grid">
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.driver')"></span><span class="cfg-val" x-text="computed.driver"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.mode')"></span><span class="cfg-val" x-text="computed.readonly ? __('config.readOnly') : __('config.readWrite')"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.entities')"></span><span class="cfg-val" x-text="computed.entities"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.endpoints')"></span><span class="cfg-val" x-text="computed.endpoints"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.mcpTools')"></span><span class="cfg-val" x-text="computed.mcpTools"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.customQueries')"></span><span class="cfg-val" x-text="computed.customQueries"></span></div>
+            <div class="cfg-stat cfg-stat-full" x-show="computed.skipRules > 0 || computed.displayPrefixes != '—' || computed.customPlurals > 0">
+              <span class="cfg-label">ConfigGen</span>
+              <span class="cfg-val">
+                <template x-if="computed.skipRules > 0"><span class="badge" x-text="computed.skipRules + ' skip rules'"></span></template>
+                <template x-if="computed.displayPrefixes != '—'"><span class="badge" x-text="'prefixes: ' + computed.displayPrefixes"></span></template>
+                <template x-if="computed.customPlurals > 0"><span class="badge" x-text="computed.customPlurals + ' plurals'"></span></template>
+              </span>
+            </div>
+            <div class="cfg-stat" x-show="computed.approvedTools > 0"><span class="cfg-label" x-text="__('config.approvedTools')"></span><span class="cfg-val" x-text="computed.approvedTools"></span></div>
+          </div>
+        </div>
+
+        <!-- Read Only Toggle with save indicator -->
+        <div class="card">
+          <h3 x-text="__('config.accessMode')"></h3>
+          <div class="toggle-with-label">
+            <label class="toggle">
+              <input type="checkbox"
+                :checked="config.data_source?.read_only !== false"
+                @change="toggleReadOnly($event.target.checked)">
+              <span></span>
+            </label>
+            <div>
+              <span class="text" x-text="config.data_source?.read_only !== false ? __('config.readOnly') : __('config.readWrite')"></span>
+              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only !== false" x-text="__('config.readOnlyDesc')"></span>
+              <span class="text-muted" style="font-size:11px;display:block;" x-show="config.data_source?.read_only === false" x-text="__('config.readWriteDesc')"></span>
+            </div>
+            <span class="save-indicator" x-show="saveIndicator === 'readonly'" x-text="saveIndicatorText" x-transition.opacity.duration.200ms></span>
+          </div>
+        </div>
+
+        <!-- Config Generation (tabs) -->
+        <div class="card">
+          <h3 x-text="__('configgen.title')"></h3>
+
+          <!-- How it works hint -->
+          <div class="configgen-workflow">
+            <span class="text-muted" x-text="__('configgen.workflow')"></span>
+          </div>
+
+          <div class="tabs">
+            <button @click="configgenTab = 'skip'" :class="{'tab-active': configgenTab === 'skip'}" class="tab" x-text="__('configgen.skip')"></button>
+            <button @click="configgenTab = 'prefix'" :class="{'tab-active': configgenTab === 'prefix'}" class="tab" x-text="__('configgen.prefixTab')"></button>
+            <button @click="configgenTab = 'plural'" :class="{'tab-active': configgenTab === 'plural'}" class="tab" x-text="__('configgen.pluralTab')"></button>
+          </div>
+
+          <!-- Tab: Skip Rules -->
+          <div x-show="configgenTab === 'skip'" class="tab-content">
+            <p class="text-muted card-desc" x-text="__('configgen.skipRulesDesc')"></p>
+            <div class="configgen-step">
+              <span class="step-num">1</span>
+              <span class="text-muted" x-text="__('configgen.skipStep1')"></span>
+            </div>
+            <details class="configgen-details">
+              <summary class="text-muted" style="cursor:pointer;font-size:13px;margin-bottom:8px;">
+                <span x-text="__('configgen.defaultRules') + ' (' + defaultSkipRules.length + ')'"></span>
+              </summary>
+              <div class="default-rules-grid">
+                <template x-for="rule in defaultSkipRules" :key="rule.prefix">
+                  <div class="default-rule-row">
+                    <input type="checkbox" class="default-rule-toggle"
+                      :checked="!isDefaultRuleDisabled(rule.prefix)"
+                      @change="toggleDefaultRule(rule.prefix)"
+                      :title="isDefaultRuleDisabled(rule.prefix) ? 'Включить' : 'Отключить'" />
+                    <code style="color:var(--text);white-space:nowrap;" x-text="rule.prefix"></code>
+                    <span class="text-muted" style="font-size:12px;" x-text="rule.reason"></span>
+                  </div>
+                </template>
+              </div>
+            </details>
+            <table class="table configgen-table" x-show="config.skip_rules && config.skip_rules.length">
+              <thead>
+                <tr>
+                  <th x-text="__('configgen.prefix')"></th>
+                  <th x-text="__('configgen.suffix')"></th>
+                  <th x-text="__('configgen.contains')"></th>
+                  <th x-text="__('configgen.reason')"></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(rule, i) in config.skip_rules" :key="i">
+                  <tr>
+                    <td><input type="text" x-model="config.skip_rules[i].prefix" @input="_configgenChanged()" style="width:100%;" placeholder="wp_" /></td>
+                    <td><input type="text" x-model="config.skip_rules[i].suffix" @input="_configgenChanged()" style="width:100%;" placeholder="_cache" /></td>
+                    <td><input type="text" x-model="config.skip_rules[i].contains" @input="_configgenChanged()" style="width:100%;" placeholder="session" /></td>
+                    <td><input type="text" x-model="config.skip_rules[i].reason" @input="_configgenChanged()" style="width:100%;" placeholder="WordPress" /></td>
+                    <td><button @click="removeSkipRule(i)" class="btn btn-sm btn-danger" x-text="__('btn.remove')"></button></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <button @click="addSkipRule()" class="btn btn-sm" x-text="__('configgen.addRule')"></button>
+            <p class="text-muted" style="margin-top:4px;font-size:11px;" x-text="__('configgen.skipRulesNote')"></p>
+            <div class="configgen-step final">
+              <span class="step-num">2</span>
+              <span class="text-muted" x-text="__('configgen.rewriteStep')"></span>
+            </div>
+          </div>
+
+          <!-- Tab: Display Prefixes -->
+          <div x-show="configgenTab === 'prefix'" class="tab-content">
+            <p class="text-muted card-desc" x-text="__('configgen.displayPrefixesDesc')"></p>
+            <div class="configgen-step">
+              <span class="step-num">1</span>
+              <span class="text-muted" x-text="__('configgen.prefixStep1')"></span>
+            </div>
+            <div class="chip-list">
+              <template x-for="(pfx, i) in config.display_prefixes" :key="i">
+                <div class="chip">
+                  <input type="text" x-model="config.display_prefixes[i]" @input="_configgenChanged()" placeholder="catalog_" style="width:120px;border:none;background:transparent;font-size:16px;" />
+                  <button @click="removeDisplayPrefix(i)" class="chip-remove" x-text="'×'"></button>
+                </div>
+              </template>
+              <button @click="addDisplayPrefix()" class="btn btn-sm" x-text="__('configgen.addPrefix')"></button>
+            </div>
+
+            <!-- Live preview: before / after -->
+            <div class="prefix-preview" x-show="config.entities && config.entities.length" x-data="{ previewOpen: false }">
+              <details>
+                <summary style="cursor:pointer;font-size:13px;" x-text="__('configgen.previewPrefixes')"></summary>
+                <div class="prefix-preview-grid">
+                  <template x-for="entity in (config.entities || []).slice(0, 10)" :key="entity.name">
+                    <div class="prefix-preview-row">
+                      <span class="prefix-preview-before" x-text="entity.name"></span>
+                      <span class="prefix-preview-arrow">→</span>
+                      <span class="prefix-preview-after" x-text="_stripPrefix(entity.name)"></span>
+                    </div>
+                  </template>
+                  <div class="text-muted" style="font-size:11px;margin-top:4px;" x-show="(config.entities || []).length > 10" x-text="'… и еще ' + ((config.entities || []).length - 10) + ' сущностей'"></div>
+                </div>
+              </details>
+            </div>
+            <div class="configgen-step final">
+              <span class="step-num">2</span>
+              <span class="text-muted" x-text="__('configgen.rewriteStep')"></span>
+            </div>
+          </div>
+
+          <!-- Tab: Custom Plurals -->
+          <div x-show="configgenTab === 'plural'" class="tab-content">
+            <p class="text-muted card-desc" x-text="__('configgen.customPluralsDesc')"></p>
+            <div class="configgen-step">
+              <span class="step-num">1</span>
+              <span class="text-muted" x-text="__('configgen.pluralStep1')"></span>
+            </div>
+            <table class="table configgen-table" x-show="config.custom_plurals && Object.keys(config.custom_plurals).length">
+              <thead>
+                <tr>
+                  <th x-text="__('configgen.singular')"></th>
+                  <th x-text="__('configgen.plural')"></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(val, key) in config.custom_plurals" :key="key">
+                  <tr>
+                    <td><input type="text" :value="key" disabled style="width:100%;background:#eee;" /></td>
+                    <td><input type="text" :value="val" @input="config.custom_plurals[key] = $event.target.value; _configgenChanged()" style="width:100%;" /></td>
+                    <td><button @click="removeCustomPlural(key)" class="btn btn-sm btn-danger" x-text="__('btn.remove')"></button></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <button @click="addCustomPlural()" class="btn btn-sm" x-text="__('configgen.addPlural')"></button>
+            <div class="configgen-step final">
+              <span class="step-num">2</span>
+              <span class="text-muted" x-text="__('configgen.rewriteStep')"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Entities -->
+        <div class="card" x-show="config.entities && config.entities.length">
+          <h3 x-text="__('config.entities')"></h3>
+          <p class="text-muted card-desc">
+            <span x-text="__('config.entitiesDesc')"></span>
+            <span class="text-muted" style="font-size:11px;display:block;margin-top:4px;">
+              <span x-text="__('config.entitiesHint')"></span>
+            </span>
+          </p>
+          <template x-for="(entity, i) in config.entities" :key="entity.name">
+            <div class="entity-block">
+              <div class="entity-header">
+                <span class="entity-name" style="cursor:default;">
+                  <span x-text="entity.name" x-tooltip="entity.table_name || entity.name"></span>
+                  <span class="badge" x-text="entity.table_name || entity.name"></span>
+                </span>
+                <div class="entity-actions">
+                  <button @click="hideEntity(i)" class="btn btn-sm btn-outline" style="font-size:12px;" x-text="__('configgen.hideEntity')"></button>
+                </div>
+              </div>
+              <div class="entity-fields" x-show="entity.fields">
+                <template x-for="field in entity.fields" :key="field.name">
+                  <div class="field-row">
+                    <span class="field-name" x-text="field.name"></span>
+                    <span class="field-type" x-text="field.type"></span>
+                    <span class="field-desc" x-text="field.description || ''"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+          </template>
+        </div>
+
+        <!-- Endpoints / Tools -->
+        <div class="card" x-show="config.endpoints && config.endpoints.length">
+          <h3 x-text="__('config.endpoints')"></h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th x-text="__('label.method')"></th>
+                <th x-text="__('label.path')"></th>
+                <th x-text="__('label.operation')"></th>
+                <th x-text="__('label.description')"></th>
+                <th x-text="__('label.enabled')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(ep, i) in config.endpoints" :key="ep.path + ep.method">
+                <tr>
+                  <td><span class="method-badge" :class="'method-' + (ep.method || '').toLowerCase()" x-text="ep.method"></span></td>
+                  <td x-text="ep.path"></td>
+                  <td x-text="ep.op || ''"></td>
+                  <td>
+                    <input type="text" x-model="ep.description" class="input-sm" :placeholder="__('placeholder.description')" @input="configDirty = true">
+                  </td>
+                  <td>
+                    <label class="toggle toggle-sm">
+                      <input type="checkbox"
+                        :checked="ep.enabled !== false"
+                        @change="ep.enabled = $event.target.checked; configDirty = true">
+                      <span></span>
+                    </label>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+      </div>
+
+      <!-- Tools Page -->

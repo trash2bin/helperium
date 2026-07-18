@@ -1,0 +1,246 @@
+    <!-- ── Create Agent Modal ── -->
+    <div x-show="showNewAgentForm" class="modal-overlay" x-cloak>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 x-text="__('modal.createAgentTitle')"></h3>
+          <button @click="showNewAgentForm = false" class="modal-close">✕</button>
+        </div>
+        <form @submit.prevent="createAgent()" class="form">
+          <div class="form-group">
+            <label x-text="__('agent.labelName')"></label>
+            <input type="text" x-model="newAgent.name" :placeholder="__('agent.placeholderName')" pattern="^[a-z][a-z0-9_-]*$" required autofocus>
+            <small class="text-muted" style="font-size:11px;" x-text="__('agent.namePatternHint')"></small>
+          </div>
+          <div class="form-group">
+            <label x-text="__('agent.labelDescription')"></label>
+            <input type="text" x-model="newAgent.description" :placeholder="__('agent.placeholderDescription')">
+          </div>
+          <div class="form-group">
+            <label x-text="__('agent.labelTenants')"></label>
+            <div x-show="availableTenants.length === 0" class="text-muted" style="font-size:12px;" x-text="__('agent.noTenantsHint')"></div>
+            <div class="tenant-checkbox-list">
+              <template x-for="t in availableTenants" :key="t.id">
+                <label class="checkbox-row">
+                  <input type="checkbox" :value="t.id" x-model="newAgent.tenant_ids_selected">
+                  <span x-text="t.id" style="font-family:monospace;"></span>
+                </label>
+              </template>
+            </div>
+          </div>
+          <!-- ── Provider priority (Create) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelProviderPriority')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:6px;font-size:11px;" x-text="__('agent.providerPriorityHint')"></small>
+            <div x-show="llmProviderStoreList.length === 0" class="text-muted" style="font-size:12px;" x-text="__('agent.noProvidersHint')"></div>
+            <div class="priority-list">
+              <template x-for="(name, idx) in newAgent.provider_priority" :key="name">
+                <div class="priority-item">
+                  <span x-text="name"></span>
+                  <button type="button" @click="moveProviderPriority(idx, -1)" :disabled="idx===0" x-text="'\u25B2'"></button>
+                  <button type="button" @click="moveProviderPriority(idx, 1)" :disabled="idx===newAgent.provider_priority.length-1" x-text="'\u25BC'"></button>
+                  <button type="button" @click="toggleProviderPriority(name)" class="btn-remove" x-text="'\u2716'"></button>
+                </div>
+              </template>
+            </div>
+            <div x-show="llmProviderStoreList.length" style="margin-top:8px;">
+              <div style="margin-bottom:6px;font-size:12px;color:var(--text-muted);" x-text="__('agent.addProvider')"></div>
+              <div class="tenant-checkbox-list">
+                <template x-for="p in llmProviderStoreList" :key="p.name">
+                  <label class="checkbox-row" x-show="!newAgent.provider_priority.includes(p.name)">
+                    <input type="checkbox" :checked="false" @change="toggleProviderPriority(p.name)">
+                    <span x-text="p.name" style="font-family:monospace;"></span>
+                    <small style="color:var(--text-muted);font-size:10px;margin-left:4px;" x-text="'('+p.model+')'"></small>
+                  </label>
+                </template>
+              </div>
+            </div>
+          </div>
+          <!-- ── System prompt (Create) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelSystemPrompt')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:4px;font-size:11px;" x-text="__('agent.systemPromptHint')"></small>
+            <textarea x-model="newAgent.system_prompt" :placeholder="__('agent.systemPromptPlaceholder')" style="width:100%;min-height:60px;font-family:monospace;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);resize:vertical;"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" :disabled="creatingAgent">
+              <span x-show="creatingAgent">⏳</span>
+              <span x-show="!creatingAgent" x-text="__('btn.createAgent')"></span>
+            </button>
+            <button type="button" @click="showNewAgentForm = false" class="btn" x-text="__('btn.cancel')"></button>
+          </div>
+        </form>
+        <div x-show="agentCreateResult" class="mt-1">
+          <pre x-text="JSON.stringify(agentCreateResult, null, 2)" class="code-block"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Edit Agent Modal ── -->
+    <div x-show="editingAgent" class="modal-overlay" x-cloak>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3><span x-text="__('modal.editAgentTitle')"></span>: <span class="highlight" x-text="editAgentData.name"></span></h3>
+          <button @click="editingAgent = false" class="modal-close">✕</button>
+        </div>
+        <form @submit.prevent="updateAgent()" class="form">
+          <div class="form-group">
+            <label x-text="__('agent.labelDescription')"></label>
+            <input type="text" x-model="editAgentData.description" :placeholder="__('agent.placeholderDescription')">
+          </div>
+          <div class="form-group">
+            <label x-text="__('agent.labelTenants')"></label>
+            <div class="tenant-checkbox-list">
+              <template x-for="t in availableTenants" :key="t.id">
+                <label class="checkbox-row">
+                  <input type="checkbox" :value="t.id" x-model="editAgentData.tenant_ids">
+                  <span x-text="t.id" style="font-family:monospace;"></span>
+                </label>
+              </template>
+            </div>
+          </div>
+          <!-- ── Provider priority (Edit) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelProviderPriority')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:6px;font-size:11px;" x-text="__('agent.providerPriorityHint')"></small>
+            <div x-show="llmProviderStoreList.length === 0" class="text-muted" style="font-size:12px;" x-text="__('agent.noProvidersHint')"></div>
+            <div class="priority-list">
+              <template x-for="(name, idx) in editAgentData.provider_priority" :key="name">
+                <div class="priority-item">
+                  <span x-text="name"></span>
+                  <button type="button" @click="moveEditProviderPriority(idx, -1)" :disabled="idx===0" x-text="'\u25B2'"></button>
+                  <button type="button" @click="moveEditProviderPriority(idx, 1)" :disabled="idx===editAgentData.provider_priority.length-1" x-text="'\u25BC'"></button>
+                  <button type="button" @click="toggleEditProviderPriority(name)" class="btn-remove" x-text="'\u2716'"></button>
+                </div>
+              </template>
+            </div>
+            <div x-show="llmProviderStoreList.length" style="margin-top:8px;">
+              <div style="margin-bottom:6px;font-size:12px;color:var(--text-muted);" x-text="__('agent.addProvider')"></div>
+              <div class="tenant-checkbox-list">
+                <template x-for="p in llmProviderStoreList" :key="p.name">
+                  <label class="checkbox-row" x-show="!editAgentData.provider_priority.includes(p.name)">
+                    <input type="checkbox" :checked="false" @change="toggleEditProviderPriority(p.name)">
+                    <span x-text="p.name" style="font-family:monospace;"></span>
+                    <small style="color:var(--text-muted);font-size:10px;margin-left:4px;" x-text="'('+p.model+')'"></small>
+                  </label>
+                </template>
+              </div>
+            </div>
+          </div>
+          <!-- ── System prompt (Edit) ── -->
+          <div class="form-group">
+            <label x-text="__('agent.labelSystemPrompt')"></label>
+            <small class="text-muted" style="display:block;margin-bottom:4px;font-size:11px;" x-text="__('agent.systemPromptEditHint')"></small>
+            <textarea x-model="editAgentData.system_prompt" :placeholder="__('agent.systemPromptPlaceholder')" style="width:100%;min-height:60px;font-family:monospace;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);resize:vertical;"></textarea>
+          </div>
+          <!-- ── Voice overrides (Edit) ── -->
+          <div class="card" style="margin:16px 0;">
+            <h4 x-text="__('voice.agentSectionTitle')"></h4>
+            <small class="text-muted" style="display:block;margin-bottom:10px;font-size:11px;" x-text="__('voice.agentSectionDesc')"></small>
+            <div class="form-group">
+              <label class="checkbox-row">
+                <input type="checkbox" x-model="editAgentData.voice_config_enabled">
+                <span x-text="__('voice.enabled')"></span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-row">
+                <input type="checkbox" x-model="editAgentData.voice_input_disabled">
+                <span x-text="__('voice.voiceInputDisabled')"></span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-row">
+                <input type="checkbox" x-model="editAgentData.voice_output_disabled">
+                <span x-text="__('voice.voiceOutputDisabled')"></span>
+              </label>
+            </div>
+            <div x-show="editAgentData._sttProviders && editAgentData._sttProviders.length">
+              <div class="form-group">
+                <label x-text="__('voice.sttProvider')"></label>
+                <select x-model="editAgentData.voice_stt_provider">
+                  <option value="" x-text="__('abuse.selectAgent')"></option>
+                  <template x-for="prov in editAgentData._sttProviders" :key="prov.name">
+                    <option :value="prov.name" x-text="prov.name"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+            <div x-show="editAgentData._ttsProviders && editAgentData._ttsProviders.length">
+              <div class="form-group">
+                <label x-text="__('voice.ttsProvider')"></label>
+                <select x-model="editAgentData.voice_tts_provider">
+                  <option value="" x-text="__('abuse.selectAgent')"></option>
+                  <template x-for="prov in editAgentData._ttsProviders" :key="prov.name">
+                    <option :value="prov.name" x-text="prov.name"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" :disabled="savingAgent">
+              <span x-show="savingAgent">⏳</span>
+              <span x-show="!savingAgent" x-text="__('btn.save')"></span>
+            </button>
+            <button type="button" @click="editingAgent = false" class="btn" x-text="__('btn.cancel')"></button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── API Toast Container ── -->
+  <div x-data class="api-toast-container">
+    <template x-for="t in $store.apiLogger.apiToasts" :key="t.id">
+      <div class="api-toast" :class="t.class" @click.prevent="$store.apiLogger.dismissToast(t.id); $store.apiLogger.selectEntry(t.entryId)">
+        <span x-text="t.text"></span>
+        <span class="api-toast-close" @click.stop="$store.apiLogger.dismissToast(t.id)">✕</span>
+      </div>
+    </template>
+  </div>
+
+  <!-- ── API Debug Panel ── -->
+  <div x-data class="api-debug-panel-overlay" x-show="$store.apiLogger.showPanel" x-cloak @click="$store.apiLogger.showPanel=false">
+    <div class="api-debug-panel" @click.stop>
+      <div class="api-debug-header">
+        <h3>🐛 API Log</h3>
+        <button @click="$store.apiLogger.showPanel=false" class="api-debug-close">✕</button>
+      </div>
+      <div class="api-debug-body">
+        <template x-if="!$store.apiLogger.selectedEntry">
+          <div>
+            <div class="api-log-empty" x-show="$store.apiLogger.entries.length === 0" x-text="'No requests yet'"></div>
+            <template x-for="e in $store.apiLogger.entries" :key="e.id">
+              <div class="api-log-row" :class="{'api-log-err': e.status >= 400}" @click="$store.apiLogger.selectEntry(e.id)">
+                <span class="api-log-status" :class="'api-status-' + Math.floor(e.status / 100) + 'xx'">[<span x-text="e.status"></span>]</span>
+                <span class="api-log-method" x-text="e.method"></span>
+                <span class="api-log-path" x-text="e.path"></span>
+                <span class="api-log-duration" x-text="e.durationMs + 'ms'"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+        <template x-if="$store.apiLogger.selectedEntry">
+          <div class="api-log-detail">
+            <button @click="$store.apiLogger.closeDetail()" class="btn btn-sm">← Back</button>
+            <div class="api-log-detail-row">
+              <strong><span x-text="$store.apiLogger.selectedEntry.method"></span> <span x-text="$store.apiLogger.selectedEntry.path"></span></strong>
+              <span>Status: <span x-text="$store.apiLogger.selectedEntry.status"></span></span>
+              <span>Duration: <span x-text="$store.apiLogger.selectedEntry.durationMs + 'ms'"></span></span>
+              <span>Time: <span x-text="$store.apiLogger.selectedEntry.ts"></span></span>
+            </div>
+            <div class="api-log-detail-section">
+              <h4>Request Body</h4>
+              <pre x-show="$store.apiLogger.selectedEntry.reqBody" x-text="$store.apiLogger.selectedEntry.reqBody"></pre>
+              <span x-show="!$store.apiLogger.selectedEntry.reqBody" class="text-muted">(no body)</span>
+            </div>
+            <div class="api-log-detail-section">
+              <h4>Response</h4>
+              <pre x-text="$store.apiLogger.selectedEntry.resBody"></pre>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>

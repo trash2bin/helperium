@@ -70,7 +70,7 @@ type Server struct {
 	mu         sync.RWMutex
 }
 
-//go:embed static/*
+//go:embed static
 var staticFS embed.FS
 
 // New создаёт новый Server.
@@ -247,7 +247,7 @@ func isPublicPath(path string) bool {
 	case "/", "/index.html", "/styles.css", "/app.js", "/i18n.js", "/i18n.json", "/metrics":
 		return true
 	}
-	if strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/js/") {
+	if strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/js/") || strings.HasPrefix(path, "/dist/") {
 		return true
 	}
 	return false

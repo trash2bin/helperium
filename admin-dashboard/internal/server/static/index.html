@@ -5,22 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard — Helperium</title>
   <script src="/i18n.js"></script>
-  <script src="/js/apiClient.js"></script>
-  <script src="/js/core/eventBus.js"></script>
-  <script src="/js/core/notify.js"></script>
-  <script src="/js/core/apiLogger.js"></script>
-  <script src="/js/store.js"></script>
-  <script src="/js/domains/auth.js"></script>
-  <script src="/js/domains/tenants.js"></script>
-  <script src="/js/domains/config.js"></script>
-  <script src="/js/domains/tools.js"></script>
-  <script src="/js/domains/rag.js"></script>
-  <script src="/js/domains/agents.js"></script>
-  <script src="/js/domains/abuse.js"></script>
-  <script src="/js/domains/emergency.js"></script>
-  <script src="/js/domains/llm.js"></script>
-  <script src="/js/domains/voice.js"></script>
-  <script src="/js/domains/audit.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <link rel="stylesheet" href="/styles.css?v=1">
   <style>
@@ -756,7 +740,6 @@
               </template>
             </tbody>
           </table>
-        </div>
       </div>
 
       <!-- Tools Page -->
@@ -1888,8 +1871,64 @@
           </template>
         </div>
       </div>
-    </main>
+  <div x-show="page === 'audit'" x-cloak>
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2 class="page-title"><span x-text="__('nav.audit')"></span></h2>
+        <p class="page-subtitle" x-text="__('audit.subtitle')"></p>
+      </div>
+      <div class="page-header-right">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8b949e;">
+          <span x-text="__('audit.show')"></span>
+          <select x-model="auditLimit" @change="loadAudit()" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:4px 8px;">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+          </select>
+        </label>
+        <button @click="loadAudit()" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:6px 12px;border-radius:6px;cursor:pointer;">
+          <span x-text="__('audit.refresh')"></span>
+        </button>
+      </div>
+    </div>
 
+    <div x-show="auditLoading" style="text-align:center;padding:40px;color:#8b949e;" x-text="__('audit.loading')"></div>
+    <div x-show="auditError" style="padding:12px;background:#3d1f1f;border:1px solid #6b3030;border-radius:6px;margin:16px;color:#f0c6c6;" x-text="auditError"></div>
+
+    <div x-show="!auditLoading && !auditError && auditEntries.length === 0" style="text-align:center;padding:40px;color:#8b949e;" x-text="__('audit.empty')"></div>
+
+    <div x-show="!auditLoading && auditEntries.length > 0" style="margin:16px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="border-bottom:2px solid #21262d;">
+            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.time')"></th>
+            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.role')"></th>
+            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.action')"></th>
+            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.resource')"></th>
+            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.details')"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(entry, i) in auditEntries" :key="i">
+            <tr style="border-bottom:1px solid #21262d;" :style="{background: i % 2 === 0 ? 'transparent' : '#0d1117'}">
+              <td style="padding:8px 12px;white-space:nowrap;font-size:12px;color:#8b949e;" x-text="auditTimestamp(entry.timestamp)"></td>
+              <td style="padding:8px 12px;">
+                <span :style="{color: entry.actor_role === 'admin' ? '#58a6ff' : '#8b949e'}" x-text="entry.actor_role || '—'"></span>
+              </td>
+              <td style="padding:8px 12px;" x-text="auditActionLabel(entry.action)"></td>
+              <td style="padding:8px 12px;color:#7ee787;font-family:monospace;font-size:12px;" x-text="entry.resource || '—'"></td>
+              <td style="padding:8px 12px;color:#8b949e;font-size:12px;word-break:break-all;max-width:400px;" x-text="entry.details || ''"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+    </main>
+  </div>
+</div>
     <!-- ── Create Agent Modal ── -->
     <div x-show="showNewAgentForm" class="modal-overlay" x-cloak>
       <div class="modal-card">
@@ -2137,62 +2176,65 @@
     </div>
   </div>
 
-  <!-- Audit Log Panel -->
-  <div x-show="page === 'audit'" x-cloak>
-    <div class="page-header">
-      <div class="page-header-left">
-        <h2 class="page-title"><span x-text="__('nav.audit')"></span></h2>
-        <p class="page-subtitle" x-text="__('audit.subtitle')"></p>
+
+  <!-- ── API Toast Container ── -->
+  <!-- ── API Toast Container ── -->
+  <div x-data class="api-toast-container">
+    <template x-for="t in $store.apiLogger.apiToasts" :key="t.id">
+      <div class="api-toast" :class="t.class" @click.prevent="$store.apiLogger.dismissToast(t.id); $store.apiLogger.selectEntry(t.entryId)">
+        <span x-text="t.text"></span>
+        <span class="api-toast-close" @click.stop="$store.apiLogger.dismissToast(t.id)">✕</span>
       </div>
-      <div class="page-header-right">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8b949e;">
-          <span x-text="__('audit.show')"></span>
-          <select x-model="auditLimit" @change="loadAudit()" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:4px 8px;">
-            <option value="50">50</option>
-            <option value="100" selected>100</option>
-            <option value="200">200</option>
-            <option value="500">500</option>
-          </select>
-        </label>
-        <button @click="loadAudit()" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:6px 12px;border-radius:6px;cursor:pointer;">
-          <span x-text="__('audit.refresh')"></span>
-        </button>
+    </template>
+  </div>
+
+  <!-- ── API Debug Panel ── -->
+  <!-- ── API Debug Panel ── -->
+  <div x-data class="api-debug-panel-overlay" x-show="$store.apiLogger.showPanel" x-cloak @click="$store.apiLogger.showPanel=false">
+    <div class="api-debug-panel" @click.stop>
+      <div class="api-debug-header">
+        <h3>🐛 API Log</h3>
+        <button @click="$store.apiLogger.showPanel=false" class="api-debug-close">✕</button>
       </div>
-    </div>
-
-    <div x-show="auditLoading" style="text-align:center;padding:40px;color:#8b949e;" x-text="__('audit.loading')"></div>
-    <div x-show="auditError" style="padding:12px;background:#3d1f1f;border:1px solid #6b3030;border-radius:6px;margin:16px;color:#f0c6c6;" x-text="auditError"></div>
-
-    <div x-show="!auditLoading && !auditError && auditEntries.length === 0" style="text-align:center;padding:40px;color:#8b949e;" x-text="__('audit.empty')"></div>
-
-    <div x-show="!auditLoading && auditEntries.length > 0" style="margin:16px;">
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead>
-          <tr style="border-bottom:2px solid #21262d;">
-            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.time')"></th>
-            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.role')"></th>
-            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.action')"></th>
-            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.resource')"></th>
-            <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('audit.details')"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <template x-for="(entry, i) in auditEntries" :key="i">
-            <tr style="border-bottom:1px solid #21262d;" :style="{background: i % 2 === 0 ? 'transparent' : '#0d1117'}">
-              <td style="padding:8px 12px;white-space:nowrap;font-size:12px;color:#8b949e;" x-text="auditTimestamp(entry.timestamp)"></td>
-              <td style="padding:8px 12px;">
-                <span :style="{color: entry.actor_role === 'admin' ? '#58a6ff' : '#8b949e'}" x-text="entry.actor_role || '—'"></span>
-              </td>
-              <td style="padding:8px 12px;" x-text="auditActionLabel(entry.action)"></td>
-              <td style="padding:8px 12px;color:#7ee787;font-family:monospace;font-size:12px;" x-text="entry.resource || '—'"></td>
-              <td style="padding:8px 12px;color:#8b949e;font-size:12px;word-break:break-all;max-width:400px;" x-text="entry.details || ''"></td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+      <div class="api-debug-body">
+        <template x-if="!$store.apiLogger.selectedEntry">
+          <div>
+            <div class="api-log-empty" x-show="$store.apiLogger.entries.length === 0" x-text="'No requests yet'"></div>
+            <template x-for="e in $store.apiLogger.entries" :key="e.id">
+              <div class="api-log-row" :class="{'api-log-err': e.status >= 400}" @click="$store.apiLogger.selectEntry(e.id)">
+                <span class="api-log-status" :class="'api-status-' + Math.floor(e.status / 100) + 'xx'">[<span x-text="e.status"></span>]</span>
+                <span class="api-log-method" x-text="e.method"></span>
+                <span class="api-log-path" x-text="e.path"></span>
+                <span class="api-log-duration" x-text="e.durationMs + 'ms'"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+        <template x-if="$store.apiLogger.selectedEntry">
+          <div class="api-log-detail">
+            <button @click="$store.apiLogger.closeDetail()" class="btn btn-sm">← Back</button>
+            <div class="api-log-detail-row">
+              <strong><span x-text="$store.apiLogger.selectedEntry.method"></span> <span x-text="$store.apiLogger.selectedEntry.path"></span></strong>
+              <span>Status: <span x-text="$store.apiLogger.selectedEntry.status"></span></span>
+              <span>Duration: <span x-text="$store.apiLogger.selectedEntry.durationMs + 'ms'"></span></span>
+              <span>Time: <span x-text="$store.apiLogger.selectedEntry.ts"></span></span>
+            </div>
+            <div class="api-log-detail-section">
+              <h4>Request Body</h4>
+              <pre x-show="$store.apiLogger.selectedEntry.reqBody" x-text="$store.apiLogger.selectedEntry.reqBody"></pre>
+              <span x-show="!$store.apiLogger.selectedEntry.reqBody" class="text-muted">(no body)</span>
+            </div>
+            <div class="api-log-detail-section">
+              <h4>Response</h4>
+              <pre x-text="$store.apiLogger.selectedEntry.resBody"></pre>
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 
-  <script src="/app.js"></script>
+
+  <script src="/dist/app.js"></script>
 </body>
 </html>

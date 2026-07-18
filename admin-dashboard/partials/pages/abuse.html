@@ -1,0 +1,282 @@
+      <div x-show="page === 'abuse'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 x-text="__('page.abuse.title')"></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="loadAbuseSettings(); loadAgents()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+          </div>
+        </div>
+
+        <!-- ═══ EMERGENCY PANEL ═══ -->
+        <div class="card emergency-panel" :class="emergencyPresetClass">
+          <div class="emergency-header">
+            <div>
+              <h3 x-text="__('emergency.title')"></h3>
+              <p class="text-muted" x-text="__('emergency.desc')"></p>
+            </div>
+            <div class="emergency-indicator" x-text="emergencyPresetLabel"></div>
+          </div>
+
+          <p class="emergency-desc" x-text="emergencyPresetDescription"></p>
+
+          <div class="emergency-controls">
+            <button @click="toggleEmergencyMode()"
+                    :disabled="emergencyApplying"
+                    :class="emergencyCurrentPreset === 'lockdown' ? 'btn-emergency-off' : 'btn-emergency-on'">
+              <span x-show="!emergencyApplying && emergencyCurrentPreset !== 'lockdown'" x-text="__('btn.activateLockdown')"></span>
+              <span x-show="!emergencyApplying && emergencyCurrentPreset === 'lockdown'" x-text="__('btn.deactivateLockdown')"></span>
+              <span x-show="emergencyApplying"><span x-text="__('text.applying')"></span></span>
+            </button>
+
+            <div class="emergency-presets">
+              <button @click="applyEmergencyPreset('normal')"
+                      :disabled="emergencyApplying || emergencyCurrentPreset === 'normal'"
+                      class="btn-preset btn-preset-normal"
+                      :class="{ active: emergencyCurrentPreset === 'normal' }">
+                🟢 <span x-text="__('emergency.presetNormal')"></span>
+              </button>
+              <button @click="applyEmergencyPreset('cautious')"
+                      :disabled="emergencyApplying || emergencyCurrentPreset === 'cautious'"
+                      class="btn-preset btn-preset-cautious"
+                      :class="{ active: emergencyCurrentPreset === 'cautious' }">
+                🟡 <span x-text="__('emergency.presetCautious')"></span>
+              </button>
+              <button @click="applyEmergencyPreset('lockdown')"
+                      :disabled="emergencyApplying || emergencyCurrentPreset === 'lockdown'"
+                      class="btn-preset btn-preset-lockdown"
+                      :class="{ active: emergencyCurrentPreset === 'lockdown' }">
+                🔴 <span x-text="__('emergency.presetLockdown')"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="emergency-metrics" x-show="emergencyStatus">
+            <div class="metric">
+              <span class="metric-label" x-text="__('abuse.rpsLabel')"></span>
+              <span class="metric-value" x-text="emergencyStatus.rps"></span>
+            </div>
+            <div class="metric">
+              <span class="metric-label" x-text="__('abuse.burstLabel')"></span>
+              <span class="metric-value" x-text="emergencyStatus.burst"></span>
+            </div>
+            <div class="metric">
+              <span class="metric-label" x-text="__('abuse.tokenBudgetLabel')"></span>
+              <span class="metric-value" x-text="emergencyStatus.token_budget || '∞'"></span>
+            </div>
+            <div class="metric">
+              <span class="metric-label" x-text="__('abuse.maxMsgLabel')"></span>
+              <span class="metric-value" x-text="emergencyStatus.max_messages"></span>
+            </div>
+            <div class="metric">
+              <span class="metric-label" x-text="__('abuse.minIntervalLabel')"></span>
+              <span class="metric-value" x-text="emergencyStatus.min_interval_ms + 'ms'"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ EXISTING ABUSE SETTINGS ═══ -->
+        <div class="tabs" style="display:flex;gap:8px;margin-bottom:16px;margin-top:16px;">
+          <button @click="abuseTab='global'" class="btn" :class="{'btn-primary': abuseTab==='global'}" :style="abuseTab==='global'?'':'background:var(--bg-secondary)'"><span x-text="__('tab.globalDefaults')"></span></button>
+          <button @click="abuseTab='agent'" class="btn" :class="{'btn-primary': abuseTab==='agent'}" :style="abuseTab==='agent'?'':'background:var(--bg-secondary)'"><span x-text="__('tab.perAgent')"></span></button>
+        </div>
+
+        <!-- ── Global Settings ── -->
+        <div x-show="abuseTab === 'global'" x-cloak>
+          <div class="card" x-show="!abuseGlobal">
+            <p x-text="__('text.loading')"></p>
+          </div>
+          <div class="card" x-show="abuseGlobal" x-cloak>
+            <h3 x-text="__('abuse.globalDefaultsTitle')"></h3>
+            <form @submit.prevent="saveAbuseGlobal()" class="form">
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.rpsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.rps" step="0.1" min="0.1" :placeholder="__('abuse.rpsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.rpsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.burstLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.burst" min="1" :placeholder="__('abuse.burstPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.burstDesc')"></small>
+                </div>
+              </div>
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.maxMsgLengthLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_message_length" min="1" :placeholder="__('abuse.maxMsgLengthPlaceholder')">
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.minIntervalLabel')"></label>
+                  <                  <input type="number" x-model.number="abuseGlobal.min_interval_ms" min="0" :placeholder="__('abuse.minIntervalPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.minIntervalDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.maxMsgsPerSessionLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_messages_per_session" min="1" :placeholder="__('abuse.maxMsgsPerSessionPlaceholder')">
+                </div>
+              </div>
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.tokenBudgetLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.token_budget" min="0" :placeholder="__('abuse.tokenBudgetPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.tokenBudgetDesc')"></small>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="checkbox-row">
+                  <input type="checkbox" x-model="abuseGlobal.block_empty_user_agent">
+                  <span x-text="__('abuse.blockEmptyUALabel')"></span>
+                </label>
+              </div>
+              <div class="form-group">
+                <label x-text="__('abuse.blockedUALabel')"></label>
+                <textarea x-model="abuseGlobal._ua_text" style="width:100%;min-height:80px;font-family:monospace;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--ink);" :placeholder="__('abuse.blockedUAPlaceholder')"
+                  @input="abuseGlobal.blocked_user_agents = $event.target.value.split('\n').filter(s => s.trim())"></textarea>
+                <small class="text-muted" x-text="__('abuse.blockedUADesc')"></small>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" :disabled="abuseSaving">
+                  <span x-show="abuseSaving">⏳</span>
+                  <span x-show="!abuseSaving" x-text="__('btn.saveGlobal')"></span>
+                </button>
+                <span x-show="abuseSaveMsg" style="color:var(--accent);font-size:13px;" x-text="abuseSaveMsg"></span>
+              </div>
+            </form>
+          </div>
+
+          <!-- ── Runtime Settings ── -->
+          <div class="card" x-show="abuseGlobal" x-cloak>
+            <h3><span x-text="__('abuse.runtimeTitle')"></span></h3>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px;" x-text="__('abuse.runtimeDesc')"></p>
+            <form @submit.prevent="saveAbuseGlobal()" class="form">
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.historyTurnsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.history_turns" min="1" :placeholder="__('abuse.historyTurnsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.historyTurnsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.historyContentCharsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.history_content_chars" min="100" :placeholder="__('abuse.historyContentCharsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.historyContentCharsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.sessionTtlLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.session_ttl_hours" min="0" :placeholder="__('abuse.sessionTtlPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.sessionTtlDesc')"></small>
+                </div>
+              </div>
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.maxIterationsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_iterations" min="1" :placeholder="__('abuse.maxIterationsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.maxIterationsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.maxEmptyRoundsLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_empty_rounds" min="0" :placeholder="__('abuse.maxEmptyRoundsPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.maxEmptyRoundsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.maxTurnTokensLabel')"></label>
+                  <input type="number" x-model.number="abuseGlobal.max_turn_tokens" min="100" :placeholder="__('abuse.maxTurnTokensPlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.maxTurnTokensDesc')"></small>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" :disabled="abuseSaving">
+                  <span x-show="abuseSaving">⏳</span>
+                  <span x-show="!abuseSaving" x-text="__('btn.saveRuntime')"></span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- ── Reload button ── -->
+          <div class="card" x-show="abuseGlobal" x-cloak>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <div>
+                <strong x-text="__('abuse.reloadTitle')"></strong>
+                <p class="text-muted" style="font-size:12px;" x-text="__('abuse.reloadDesc')"></p>
+              </div>
+              <button @click="reloadAbuseOnApi()" class="btn" :disabled="abuseReloading" style="white-space:nowrap;">
+                <span x-show="!abuseReloading">🔄 <span x-text="__('abuse.reloadBtn')"></span></span>
+                <span x-show="abuseReloading">⏳</span>
+              </button>
+            </div>
+            <div x-show="abuseReloadMsg" style="margin-top:8px;font-size:13px;" x-text="abuseReloadMsg"></div>
+          </div>
+          <div class="card" x-show="abuseGlobal" x-cloak>
+            <h3 x-text="__('abuse.currentConfigTitle')"></h3>
+            <pre x-text="JSON.stringify(abuseGlobal, null, 2)" class="code-block" style="max-height:300px;overflow-y:auto;"></pre>
+          </div>
+        </div>
+
+        <!-- ── Per-Agent Overrides ── -->
+        <div x-show="abuseTab === 'agent'" x-cloak>
+          <div class="card">
+            <h3 x-text="__('abuse.selectAgentTitle')"></h3>
+            <div class="form-group">
+              <select x-model="abuseAgentName" @change="selectAbuseAgent(abuseAgentName)" style="width:100%;">
+                <option value="" x-text="__('select.agent')"></option>
+                <template x-for="a in agents" :key="a.name">
+                  <option :value="a.name" x-text="a.name + (a.description ? ' (' + a.description + ')' : '')"></option>
+                </template>
+              </select>
+            </div>
+          </div>
+
+          <div x-show="abuseAgentName" class="card" x-cloak>
+            <h3><span x-text="__('abuse.overrideTitle')"></span>: <span class="highlight" x-text="abuseAgentName"></span></h3>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px;" x-text="__('abuse.overrideDesc')"></p>
+            <form @submit.prevent="saveAbuseAgent()" class="form">
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.overrideRps')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.rps" step="0.1" min="0.1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideRpsDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.overrideBurst')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.burst" min="1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideBurstDesc')"></small>
+                </div>
+              </div>
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.overrideTokenBudget')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.token_budget" min="0" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideTokenBudgetDesc')"></small>
+                </div>
+              </div>
+              <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div class="form-group">
+                  <label x-text="__('abuse.overrideMaxMsgLen')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.max_message_length" min="1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideMaxMsgLenDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.overrideMinInterval')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.min_interval_ms" min="0" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideMinIntervalDesc')"></small>
+                </div>
+                <div class="form-group">
+                  <label x-text="__('abuse.overrideMaxMsgSession')"></label>
+                  <input type="number" x-model.number="abuseAgentOverrides.max_messages_per_session" min="1" :placeholder="__('abuse.overridePlaceholder')">
+                  <small class="text-muted" x-text="__('abuse.overrideMaxMsgSessionDesc')"></small>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" :disabled="abuseSaving || !abuseAgentName">
+                  <span x-show="abuseSaving">⏳</span>
+                  <span x-show="!abuseSaving" x-text="__('btn.saveAgent')"></span>
+                </button>
+                <span x-show="abuseSaveMsg" style="color:var(--accent);font-size:13px;" x-text="abuseSaveMsg"></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Voice Config Page ── -->

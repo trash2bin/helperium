@@ -1,0 +1,237 @@
+      <div x-show="page === 'rag'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 x-text="__('page.rag.title')"></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="refreshRag()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+          </div>
+        </div>
+
+        <!-- RAG Stats -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" x-text="ragHealth.status || '...'"></div>
+            <div class="stat-label" x-text="__('rag.status')"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="font-size:18px" x-text="ragHealth.embedding?.model || '—'"></div>
+            <div class="stat-label" x-text="__('rag.embeddingModel')"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" x-text="ragDocsCount"></div>
+            <div class="stat-label" x-text="__('rag.documents')"></div>
+          </div>
+        </div>
+
+        <!-- RAG Tabs: Docs / Settings -->
+        <div style="display:flex;gap:8px;margin:16px 0;">
+          <button @click="ragTab='docs'" :class="{'btn-primary': ragTab==='docs'}" class="btn btn-sm" x-text="__('rag.tabDocs')"></button>
+          <button @click="ragTab='settings'; loadRagSettings(); loadRagStats();" :class="{'btn-primary': ragTab==='settings'}" class="btn btn-sm" x-text="__('rag.tabSettings')"></button>
+        </div>
+
+        <!-- Documents Tab -->
+        <div x-show="ragTab === 'docs'">
+          <!-- Import Form -->
+          <div class="card">
+            <h3 x-text="__('rag.importTitle')"></h3>
+            <form @submit.prevent="uploadRagDoc()" class="form">
+              <div class="upload-zone"
+                @dragover.prevent="$el.classList.add('dragover')"
+                @dragleave.prevent="$el.classList.remove('dragover')"
+                @drop.prevent="$el.classList.remove('dragover'); ragDropFile($event)"
+                @click="$refs.fileInput.click()">
+                <div x-show="!ragUploadFile">
+                  <div style="font-size:32px;margin-bottom:8px;">📁</div>
+                  <div style="font-weight:600;" x-text="__('rag.uploadZone')"></div>
+                  <div style="font-size:11px;color:#8b949e;margin-top:4px;" x-text="__('rag.fileTypes')"></div>
+                </div>
+                <div x-show="ragUploadFile" style="display:flex;align-items:center;gap:10px;">
+                  <div style="font-size:24px;">📄</div>
+                  <div style="text-align:left;">
+                    <div x-text="ragUploadFile?.name || ''" style="font-weight:600;"></div>
+                    <div style="font-size:11px;color:#8b949e;" x-text="ragUploadFile ? (ragUploadFile.size / 1024).toFixed(1) + ' KB' : ''"></div>
+                  </div>
+                  <button type="button" @click="ragUploadFile = null" class="btn btn-sm" style="margin-left:auto;">✕</button>
+                </div>
+                <input type="file" x-ref="fileInput" accept=".pdf,.docx,.txt,.md,.html"
+                  @change="ragUploadFile = $event.target.files[0]" style="display:none">
+              </div>
+              <div class="form-group" style="margin-top:12px;">
+                <label x-text="__('rag.labelTitle')"></label>
+                <input type="text" x-model="ragImport.title" :placeholder="__('rag.placeholderTitle')">
+              </div>
+              <div class="form-group">
+                <label x-text="__('rag.labelDiscipline')"></label>
+                <input type="text" x-model="ragImport.discipline_id" :placeholder="__('rag.placeholderDiscipline')">
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" :disabled="ragImporting || !ragUploadFile">
+                  <span x-show="ragImporting">⏳</span>
+                  <span x-show="!ragImporting" x-text="__('btn.import')"></span>
+                </button>
+              </div>
+            </form>
+            <div x-show="ragImportResult" class="mt-1">
+              <pre x-text="JSON.stringify(ragImportResult, null, 2)" class="code-block"></pre>
+            </div>
+          </div>
+
+          <!-- Documents List -->
+          <div class="card">
+            <h3 x-text="__('rag.documentsTitle')"></h3>
+            <div x-show="!ragDocs.length" class="text-muted" style="padding:12px 0;" x-text="__('rag.noDocuments')"></div>
+            <table class="table" x-show="ragDocs.length > 0">
+              <thead>
+                <tr>
+                  <th x-text="__('label.name')"></th>
+                  <th x-text="__('label.id')"></th>
+                  <th x-text="__('label.path')"></th>
+                  <th x-text="__('rag.chunks')"></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="doc in ragDocs" :key="doc.id">
+                  <tr>
+                    <td x-text="doc.title || doc.filename || '—'"></td>
+                    <td style="font-family:monospace;font-size:11px;" x-text="doc.id"></td>
+                    <td style="font-size:11px;" x-text="doc.source_path || doc.path || '—'"></td>
+                    <td x-text="doc.chunks_count ?? '?'"></td>
+                    <td>
+                      <button @click="deleteRagDoc(doc)" class="btn btn-sm btn-danger">🗑️</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div x-show="ragTab === 'settings'">
+          <div x-show="ragSettingsLoading" class="text-muted" style="padding:24px;" x-text="__('loading')"></div>
+
+          <template x-if="!ragSettingsLoading && ragSettings">
+          <div>
+            <!-- Stats -->
+            <div class="stats-grid" style="margin-bottom:16px;">
+              <div class="stat-card">
+                <div class="stat-value" x-text="ragStats?.document_count ?? '...'"></div>
+                <div class="stat-label" x-text="__('rag.documents')"></div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" x-text="ragStats?.chunk_count ?? '...'"></div>
+                <div class="stat-label" x-text="__('rag.chunks')"></div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" x-text="ragStats?.chroma_size_mb ? ragStats.chroma_size_mb + ' MB' : '—'"></div>
+                <div class="stat-label" x-text="__('rag.storeSize')"></div>
+              </div>
+            </div>
+
+            <!-- Settings Form -->
+            <div class="card">
+              <h3 x-text="__('rag.settingsTitle')"></h3>
+              <div class="form">
+                <!-- Embedding Provider -->
+                <div class="form-group">
+                  <label x-text="__('rag.embeddingProvider')"></label>
+                  <select x-model="ragSettings.embedding_provider">
+                    <option value="local">local (sentence-transformers)</option>
+                    <option value="litellm">litellm (OpenAI-compatible API)</option>
+                  </select>
+                </div>
+                <div x-show="ragSettings.embedding_provider === 'litellm'" style="padding-left:16px;border-left:2px solid #30363d;margin-bottom:12px;">
+                  <div class="form-group">
+                    <label x-text="__('rag.embeddingModel')"></label>
+                    <input type="text" x-model="ragSettings.embedding_model" placeholder="text-embedding-3-small">
+                  </div>
+                  <div class="form-group">
+                    <label x-text="__('rag.embeddingApiKey')"></label>
+                    <input type="password" x-model="ragSettings.embedding_api_key" placeholder="sk-...">
+                    <small class="text-muted" x-text="__('rag.embeddingApiKeyDesc')"></small>
+                  </div>
+                  <div class="form-group">
+                    <label x-text="__('rag.embeddingApiBase')"></label>
+                    <input type="text" x-model="ragSettings.embedding_api_base" placeholder="https://api.openai.com/v1">
+                  </div>
+                  <div class="form-group">
+                    <label x-text="__('rag.embeddingDimensions')"></label>
+                    <input type="number" x-model="ragSettings.embedding_dimensions" placeholder="1536">
+                  </div>
+                </div>
+
+                <!-- Chunking -->
+                <div class="form-group">
+                  <label x-text="__('rag.chunkerType')"></label>
+                  <select x-model="ragSettings.chunker_type">
+                    <option value="semantic">semantic (chonkie)</option>
+                    <option value="recursive">recursive</option>
+                    <option value="sentence">sentence</option>
+                  </select>
+                </div>
+                <div class="form-row" style="display:flex;gap:12px;">
+                  <div class="form-group" style="flex:1;">
+                    <label x-text="__('rag.chunkSize')"></label>
+                    <input type="number" x-model="ragSettings.chunk_size" placeholder="768">
+                  </div>
+                  <div class="form-group" style="flex:1;">
+                    <label x-text="__('rag.chunkOverlap')"></label>
+                    <input type="number" x-model="ragSettings.chunk_overlap" placeholder="160">
+                  </div>
+                </div>
+
+                <!-- Reranker -->
+                <div class="form-group">
+                  <label style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" x-model="ragSettings.reranker_enabled">
+                    <span x-text="__('rag.rerankerEnabled')"></span>
+                  </label>
+                </div>
+                <div class="form-row" style="display:flex;gap:12px;" x-show="ragSettings.reranker_enabled">
+                  <div class="form-group" style="flex:1;">
+                    <label>BM25 K1</label>
+                    <input type="number" step="0.1" x-model="ragSettings.reranker_k1" placeholder="1.5">
+                  </div>
+                  <div class="form-group" style="flex:1;">
+                    <label>BM25 B</label>
+                    <input type="number" step="0.05" x-model="ragSettings.reranker_b" placeholder="0.75">
+                  </div>
+                </div>
+
+                <!-- Cache -->
+                <div class="form-group">
+                  <label style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" x-model="ragSettings.cache_enabled">
+                    <span x-text="__('rag.cacheEnabled')"></span>
+                  </label>
+                </div>
+                <div class="form-row" style="display:flex;gap:12px;" x-show="ragSettings.cache_enabled">
+                  <div class="form-group" style="flex:1;">
+                    <label x-text="__('rag.cacheTtl')"></label>
+                    <input type="number" x-model="ragSettings.cache_ttl" placeholder="300">
+                  </div>
+                  <div class="form-group" style="flex:1;">
+                    <label x-text="__('rag.cacheMaxsize')"></label>
+                    <input type="number" x-model="ragSettings.cache_maxsize" placeholder="256">
+                  </div>
+                </div>
+
+                <!-- Save -->
+                <div class="form-actions" style="margin-top:16px;">
+                  <button @click="saveRagSettings()" class="btn btn-primary" :disabled="ragSettingsSaving">
+                    <span x-show="ragSettingsSaving">⏳</span>
+                    <span x-show="!ragSettingsSaving" x-text="__('btn.save')"></span>
+                  </button>
+                  <span x-show="ragSettingsSaveMsg === 'saved'" style="color:#3fb950;margin-left:8px;" x-text="__('rag.saved')"></span>
+                  <span x-show="ragSettingsSaveMsg === 'error'" style="color:#f85149;margin-left:8px;" x-text="__('rag.saveError')"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Agents Page -->

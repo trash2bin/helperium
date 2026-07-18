@@ -1,0 +1,113 @@
+      <div x-show="page === 'tools'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2><span x-text="__('page.tools.title')"></span>: <span class="highlight" x-text="selectedTenant"></span></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="loadManifest(); refreshPendingTools()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+          </div>
+        </div>
+
+        <div x-show="!manifest && !pendingTools" class="card">
+          <p x-text="__('tool.noTenantSelected')"></p>
+        </div>
+
+        <!-- All tools from manifest -->
+        <template x-if="manifest && manifest.mcp_tools && manifest.mcp_tools.length">
+        <div class="card" x-cloak>
+          <h3><span x-text="__('tool.mcpTools')"></span> (<span x-text="manifest?.mcp_tools?.length ?? 0"></span>) <button @click="saveToolDisplayNames()" class="btn btn-primary btn-sm" :disabled="savingDisplayNames" style="float:right;" x-text="__('tool.saveDisplayNames')"></button></h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th x-text="__('label.name')"></th>
+                <th x-text="__('tool.displayName')"></th>
+                <th x-text="__('label.method')"></th>
+                <th x-text="__('label.path')"></th>
+                <th x-text="__('label.description')"></th>
+                <th x-text="__('label.params')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="tool in manifest.mcp_tools" :key="tool.name">
+                <tr>
+                  <td style="font-weight:600;font-family:monospace;" x-text="tool.name"></td>
+                  <td>
+                    <input type="text" x-model="tool.display_name" class="input-sm" :placeholder="__('tool.noDisplayName')" style="min-width:180px;" @input="configDirty = true">
+                  </td>
+                  <td>
+                    <span class="method-badge" :class="'method-' + ((findEndpoint(tool.endpoint)?.method || '').toLowerCase())" x-text="findEndpoint(tool.endpoint)?.method || '—'"></span>
+                  </td>
+                  <td style="font-size:11px;font-family:monospace;" x-text="tool.endpoint"></td>
+                  <td style="font-size:12px;max-width:300px;" x-text="tool.description"></td>
+                  <td style="font-size:11px;">
+                    <template x-for="p in tool.params" :key="p.name">
+                      <span class="param-badge" :title="p.description || p.name">
+                        <span x-text="p.name"></span>
+                        <span x-show="p.required" style="color:#f85149;">*</span>
+                        <span class="text-muted" x-text="':' + (p.type || 'string')"></span>
+                      </span>
+                    </template>
+                    <span x-show="!tool.params?.length" class="text-muted" x-text="__('tool.noParams')"></span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        </template>
+
+        <!-- Read-only status + pending tools -->
+        <div x-show="manifest" class="card" x-cloak>
+          <h3 x-text="__('tool.accessMode')"></h3>
+          <p>
+            <span x-show="manifest?.data_source?.read_only !== false" style="color:#d29922;" x-text="__('config.readOnly')"></span>
+            <span x-show="manifest?.data_source?.read_only === false" style="color:#3fb950;" x-text="__('config.readWrite')"></span>
+            —
+            <span x-show="pendingTools && pendingTools.mode === 'read_write'" x-text="__('tool.allWritesAllowed')"></span>
+            <span x-show="pendingTools && pendingTools.mode !== 'read_write'" x-text="__('tool.writesBlocked')"></span>
+          </p>
+        </div>
+
+        <!-- Pending tools (read-only mode) -->
+        <div x-show="pendingTools && pendingTools.mode !== 'read_write' && pendingTools.tools && pendingTools.tools.length" class="card" x-cloak>
+          <h3 x-text="__('tool.pendingTitle')"></h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th x-text="__('label.tool')"></th>
+                <th x-text="__('label.method')"></th>
+                <th x-text="__('label.path')"></th>
+                <th x-text="__('label.status')"></th>
+                <th x-text="__('label.action')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="tool in pendingTools.tools" :key="tool.name">
+                <tr>
+                  <td x-text="tool.name"></td>
+                  <td><span class="method-badge" :class="'method-' + (tool.method || '').toLowerCase()" x-text="tool.method"></span></td>
+                  <td x-text="tool.path"></td>
+                  <td>
+                    <span x-show="tool.approved" class="badge badge-green" x-text="__('tool.approved')"></span>
+                    <span x-show="!tool.approved" class="badge badge-yellow" x-text="__('tool.pending')"></span>
+                  </td>
+                  <td>
+                    <button x-show="!tool.approved"
+                      @click="approveTool(tool.name)"
+                      class="btn btn-sm btn-primary" x-text="__('btn.approve')">
+                    </button>
+                    <span x-show="tool.approved" style="color:#8b949e;font-size:12px;">—</span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- No pending tools -->
+        <div x-show="pendingTools && pendingTools.mode !== 'read_write' && (!pendingTools.tools || pendingTools.tools.length === 0)" class="card" x-cloak>
+          <p x-text="__('tool.noPending')"></p>
+        </div>
+      </div>
+
+      <!-- RAG Page -->

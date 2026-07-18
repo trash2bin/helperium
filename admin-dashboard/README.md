@@ -39,6 +39,8 @@ Admin Dashboard (:8085)
 | **🤖 Агенты** | Agents sidebar | CRUD AI-агентов, привязка tenant'ов, чат с агентом |
 | **🛡️ Anti-Abuse** | Anti-Abuse sidebar | Настройка anti-abuse engine (глобально + per-agent), Emergency Presets (Normal/Cautious/Lockdown) |
 | **🤖 LLM Fallback** | LLM Fallback sidebar | Статус провайдеров LLM: активная модель, failover цепочка (primary → fallback → tertiary) |
+| **🎤 Voice** | Voice sidebar | STT/TTS провайдеры, настройки голоса |
+| **📋 Аудит** | Audit sidebar | История изменений конфигурации |
 | **🌐 Language** | В хедере | Переключатель языка RU/EN (i18n, 309 ключей) |
 
 ---
@@ -116,27 +118,57 @@ admin-dashboard/
 │   ├── server.go                — chi роутер, middleware, все хендлеры, proxy-helper'ы
 │   ├── client.go                — HTTP-клиенты к data-service и RAG
 │   └── static/
-│       ├── index.html           — SPA на Alpine.js (встроен в бинар через embed)
-│       ├── app.js                — точка входа, Alpine.start()
+│       ├── index.html           — SPA на Alpine.js (собирается из partials/ билдом)
+│       ├── dist/app.js          — esbuild-бандл (TypeScript → IIFE)
 │       ├── styles.css           — тёмная тема + toast/debug-panel стили
-│       └── js/
-│           ├── apiClient.js     — обёртка fetch → Alpine.store('api')
-│           ├── store.js         — Alpine.store() — глобальное состояние
-│           ├── core/
-│           │   ├── apiLogger.js — логирование API-вызовов + debug-панель
-│           │   ├── eventBus.js  — pub/sub между модулями
-│           │   └── notify.js    — toast-уведомления (ok/err)
-│           └── domains/
-│               ├── auth.js      — авторизация, токен
-│               ├── tenants.js   — CRUD tenant'ов
-│               ├── config.js    — конфиги tenant'ов
-│               ├── tools.js     — MCP-инструменты, approval
-│               ├── rag.js       — RAG-документы
-│               ├── agents.js    — CRUD агентов
-│               ├── abuse.js     — anti-abuse настройки
-│               ├── emergency.js — Big Red Button (Lockdown)
-│               ├── llm.js       — LLM-провайдеры, модели
-│               └── voice.js     — STT/TTS провайдеры
+│       └── i18n.json            — переводы RU/EN (309 ключей)
+├── partials/                    — HTML-компоненты (собираются в index.html)
+│   ├── head.html                — doctype, meta, стили
+│   ├── login.html               — логин-оверлей
+│   ├── app-open.html            — сайдбар + открытие <main>
+│   ├── pages/                   — 10 страниц-компонентов
+│   │   ├── dashboard.html
+│   │   ├── tenants.html
+│   │   ├── config.html
+│   │   ├── tools.html
+│   │   ├── rag.html
+│   │   ├── agents.html
+│   │   ├── abuse.html
+│   │   ├── voice.html
+│   │   ├── llm.html
+│   │   └── audit.html
+│   ├── app-close.html           — закрытие </main> + </div.app>
+│   ├── modals.html              — модальные окна (Create/Edit Agent)
+│   └── tail.html                — toast-container, debug-panel, <script>
+├── src/                         — TypeScript-исходники
+│   ├── index.ts                 — точка входа, Alpine.start()
+│   ├── types.ts                 — типы
+│   ├── i18n.ts                  — i18n-хелпер
+│   ├── core/                    — ядро приложения
+│   │   ├── registry.ts          — AppRegistry: регистрация доменных модулей
+│   │   ├── apiClient.ts         — обёртка fetch → Alpine.store('api')
+│   │   ├── store.ts             — Alpine.store() — глобальное состояние
+│   │   ├── eventBus.ts          — pub/sub между модулями
+│   │   ├── notify.ts            — toast-уведомления (ok/err)
+│   │   └── apiLogger.ts         — логирование API-вызовов + debug-панель
+│   └── domains/                 — доменные модули
+│       ├── auth.ts              — авторизация, токен
+│       ├── tenants.ts           — CRUD tenant'ов
+│       ├── config.ts            — конфиги tenant'ов
+│       ├── tools.ts             — MCP-инструменты, approval
+│       ├── rag.ts               — RAG-документы
+│       ├── agents.ts            — CRUD агентов
+│       ├── abuse.ts             — anti-abuse настройки
+│       ├── emergency.ts         — Big Red Button (Lockdown)
+│       ├── llm.ts               — LLM-провайдеры, модели
+│       ├── voice.ts             — STT/TTS провайдеры
+│       └── audit.ts             — история изменений конфигурации
+├── build.sh                     — сборочный скрипт:
+│                                  1) tsc --noEmit (typecheck)
+│                                  2) esbuild src/index.ts → dist/app.js
+│                                  3) cat partials/* → index.html
+├── package.json                 — npm-зависимости (esbuild, typescript)
+├── tsconfig.json                — настройки TypeScript
 ├── tests/
 │   ├── api.test.js              — unit-тесты api() функции (mock)
 │   ├── contract.test.js         — contract scan по domain-модулям
@@ -149,9 +181,10 @@ admin-dashboard/
 └── README.md
 ```
 
-Статика вкомпиливается в бинар через `//go:embed static/*` — сервис не требует внешних файлов при запуске.
+**Сборка:** `build.sh` собирает HTML из partials/ (конкатенация cat) и JS из TypeScript (esbuild).
+Статика вкомпиливается в бинар через `//go:embed static` — сервис не требует внешних файлов при запуске.
 
-**Auth bypass:** `server.go` пропускает авторизацию для `/static/` и `/js/` (domain-модули загружаются без токена).
+**Auth bypass:** `server.go` пропускает авторизацию для `/`, `/static/`, `/js/`, `/dist/` и файловых путей (стили, метрики).
 
 ---
 
@@ -213,8 +246,8 @@ curl -s -H "Authorization: Bearer secret" http://localhost:8085/api/health
 ### Публичные пути (без auth)
 
 - `/health`, `/api/health`
-- `/`, `/index.html`, `/styles.css`, `/app.js`, `/i18n.json`, `/i18n.js`
-- `/static/*`, `/js/*`
+- `/`, `/index.html`, `/styles.css`, `/i18n.json`, `/i18n.js`
+- `/static/*`, `/js/*`, `/dist/*`
 - `/metrics`
 
 ### CORS
@@ -310,7 +343,16 @@ npm run test:coverage # с coverage
 Что тестируется:
 - `api()` — парсинг ответов сервера (200, 204, 422, 401, network errors)
 - Обработка Pydantic validation errors (человеческий текст, а не "Unprocessable Entity")
-- **Contract scan** — все domain-модули (`js/domains/*.js`) сверяются с 3 контрактными JSON (`tests/contracts/`). Поддерживаются паттерны: `api()`, `Alpine.store('api')`, `fetch()`.
+- **Contract scan** — все domain-модули (`src/domains/*.ts`) сверяются с 3 контрактными JSON (`tests/contracts/`). Поддерживаются паттерны: `api()`, `Alpine.store('api')`, `fetch()`.
+
+### Сборка
+
+```bash
+cd admin-dashboard && bash build.sh
+# 1. tsc --noEmit (typecheck)
+# 2. esbuild src/index.ts → static/dist/app.js
+# 3. cat partials/* → static/index.html
+```
 
 ### E2E (Playwright)
 

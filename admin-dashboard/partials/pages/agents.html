@@ -1,0 +1,53 @@
+      <div x-show="page === 'agents'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 x-text="__('page.agents.title')"></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="openNewAgentModal()" class="btn" x-text="__('agent.btnCreate')"></button>
+            <button @click="loadAgents()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+          </div>
+        </div>
+
+        <!-- Agent Table -->
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th x-text="__('label.name')"></th>
+                <th x-text="__('label.description')"></th>
+                <th x-text="__('label.tenants')"></th>
+                <th x-text="__('label.actions')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="agent in agents" :key="agent.name">
+                <tr>
+                  <td><strong x-text="agent.name"></strong></td>
+                  <td style="color:var(--text-muted);font-size:13px;" x-text="agent.description || '—'"></td>
+                  <td>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                      <template x-for="tid in (agent.tenant_ids || [])" :key="tid">
+                        <span style="display:inline-block;padding:2px 8px;background:var(--accent-muted);color:var(--accent);border-radius:4px;font-size:11px;font-weight:600;" x-text="tid"></span>
+                      </template>
+                      <span x-show="!(agent.tenant_ids && agent.tenant_ids.length)" style="color:var(--text-disabled);font-size:12px;">—</span>
+                    </div>
+                  </td>
+                  <td class="actions">
+                    <button @click="editAgent(agent)" class="btn btn-sm" :title="__('tooltip.edit')">✏️</button>
+                    <button @click="deleteAgent(agent.name)" class="btn btn-sm btn-danger" :title="__('tooltip.delete')">🗑️</button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="agents.length === 0">
+                <td colspan="4" style="text-align:center;padding:40px 20px;color:var(--text-muted);">
+                  <div style="font-size:48px;margin-bottom:12px;">🤖</div>
+                  <p x-text="__('agent.noAgents')"></p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Anti-Abuse Page ── -->

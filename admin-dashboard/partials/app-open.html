@@ -1,0 +1,68 @@
+  <div class="app" x-show="tokenSet">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1 x-text="__('nav.admin')"></h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" @click.prevent="page='dashboard'; if (typeof refreshDashboard==='function') refreshDashboard(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='dashboard'}">
+          <span x-text="__('nav.dashboard')"></span>
+        </a>
+        <a href="#" @click.prevent="page='tenants'; if (typeof loadTenants==='function') loadTenants(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tenants'}">
+          <span x-text="__('nav.tenants')"></span>
+          <span x-show="$store.ui.isViewer()" style="font-size:10px;color:#8b949e;margin-left:4px;">👁️</span>
+        </a>
+        <a href="#" @click.prevent="page='config'; if (typeof refreshConfig==='function') refreshConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='config'}" x-show="selectedTenant">
+          <span x-text="__('nav.config')"></span>
+        </a>
+        <a href="#" @click.prevent="page='tools'; if (typeof refreshPendingTools==='function') refreshPendingTools(); if (typeof loadManifest==='function') loadManifest(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tools'}" x-show="selectedTenant">
+          <span x-text="__('nav.tools')"></span>
+        </a>
+        <a href="#" @click.prevent="page='rag'; if (typeof refreshRag==='function') refreshRag(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='rag'}">
+          <span x-text="__('nav.rag')"></span>
+        </a>
+        <a href="#" @click.prevent="page='agents'; if (typeof loadAgents==='function') loadAgents(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='agents'}">
+          <span x-text="__('nav.agents')"></span>
+        </a>
+        <a href="#" @click.prevent="page='abuse'; if (typeof loadAbuseSettings==='function') loadAbuseSettings(); if (typeof loadAgents==='function') loadAgents(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='abuse'}">
+          <span x-text="__('nav.abuse')"></span>
+        </a>
+        <a href="#" @click.prevent="page='llm'; if (typeof loadLlmConfig==='function') loadLlmConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='llm'}">
+          <span x-text="__('nav.llm')"></span>
+        </a>
+        <a href="#" @click.prevent="page='voice'; if (typeof loadVoiceConfig==='function') loadVoiceConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='voice'}">
+          <span x-text="__('nav.voice')"></span>
+        </a>
+        <a href="#" @click.prevent="page='audit'; if (typeof loadAudit==='function') loadAudit(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='audit'}">
+          <span x-text="__('nav.audit')"></span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="version" x-text="__('sidebar.version')">v0.1.0</span>
+        <small x-text="`${__('sidebar.ds')} ${dataService}`"></small>
+        <div class="lang-switcher" style="margin-top:6px;display:flex;gap:4px;">
+          <button @click="$store.i18n.setLocale('ru'); window.location.reload()"
+                  :class="{active: $store.i18n.locale === 'ru'}"
+                  style="padding:2px 8px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-size:11px;">🇷🇺 RU</button>
+          <button @click="$store.i18n.setLocale('en'); window.location.reload()"
+                  :class="{active: $store.i18n.locale === 'en'}"
+                  style="padding:2px 8px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-size:11px;">🇬🇧 EN</button>
+          <button @click.prevent="Alpine.store('apiLogger').togglePanel()" style="padding:2px 8px;margin-top:2px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-size:11px;">
+            🐛 API Log</button>
+        </div>
+        <a href="#" @click.prevent="logout()" style="font-size:11px;color:#8b949e;text-decoration:none;" x-text="__('nav.logout')"></a>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <!-- Loading -->
+      <div x-show="loading" class="loading">
+        <div class="spinner"></div>
+        <span x-text="__('text.loading')"></span>
+      </div>
+
+      <!-- Error -->
+      <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+      <!-- Dashboard Page -->

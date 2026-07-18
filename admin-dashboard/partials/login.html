@@ -1,0 +1,19 @@
+  <!-- ── Login Overlay ── -->
+  <div x-show="!tokenSet" class="login-overlay" x-cloak>
+    <div class="login-card">
+      <div class="login-logo">
+        <h1>⚙️ Admin Dashboard</h1>
+        <p>Helperium — управление платформой</p>
+      </div>
+      <form @submit.prevent="login()">
+        <div class="form-group">
+          <label x-text="__('login.tokenLabel')"></label>
+          <input type="password" x-model="tokenInput" :placeholder="__('login.tokenPlaceholder')" autofocus>
+        </div>
+        <button type="submit" class="btn-primary" x-text="__('btn.login')"></button>
+        <div x-show="error" class="login-error" x-text="error"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Main App ── -->

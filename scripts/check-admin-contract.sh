@@ -19,6 +19,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$ROOT/admin-dashboard/internal/server"
 APP="$SERVER_DIR/static/app.js"
+SRC_DIR="$ROOT/admin-dashboard/src"
 EXTRACTOR="$ROOT/scripts/extract-frontend-endpoints.js"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -59,10 +60,13 @@ if [ ! -f "$EXTRACTOR" ]; then
   exit 2
 fi
 
-DOMAINS_DIR="$SERVER_DIR/static/js/domains"
-JS_FILES=("$APP")
+DOMAINS_DIR="$SRC_DIR/domains"
+JS_FILES=()
+if [ -f "$APP" ]; then
+  JS_FILES+=("$APP")
+fi
 if [ -d "$DOMAINS_DIR" ]; then
-  for f in "$DOMAINS_DIR"/*.js; do
+  for f in "$DOMAINS_DIR"/*.ts; do
     [ -f "$f" ] && JS_FILES+=("$f")
   done
 fi
