@@ -29,12 +29,18 @@ pi install npm:pi-subagents
 pi install npm:pi-intercom
 Межсессионная координация
 
-### graphify
-pi install npm:@gaodes/pi-graphify
-github.com/gaodes/pi-graphify
-Граф знаний /graphify .
+### codebase-memory (MCP сервер)
+Предустановлен — кодстатистический граф через MCP (codebase-memory).
+Построен: 5234 nodes, 24614 edges.
 
-#### Проиндексировать граф что очень важно для качества работы агента
-``` bash
-/skill:ctx-index ./graphify-out/GRAPH_REPORT.md
+#### Использование
+```
+codebase_memory_search_graph({ query: "...", project: "helperium" })
+codebase_memory_trace_path({ function_name: "...", project: "helperium", direction: "both", mode: "calls", depth: 3 })
+codebase_memory_get_architecture({ project: "helperium", aspects: ["all"] })
+```
+
+#### Переиндексировать
+```
+codebase_memory_index_repository({ repo_path: ".", name: "helperium", mode: "moderate" })
 ```

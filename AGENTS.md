@@ -760,15 +760,15 @@ make ci-test-embed
 
 ---
 
-## 🧠 5. Использование Knowledge Graph (Graphify)
+## 🧠 5. Использование Knowledge Graph (codebase-memory MCP)
 
-Проект содержит граф зависимостей (`graphify-out/`). **Не читай код вслепую — используй граф.**
+Проект использует **codebase-memory** MCP сервер для графа зависимостей (5234 узла, 24614 рёбер). **Не читай код вслепую — используй граф.**
 
 **Алгоритм работы для агента:**
-1. **Ориентирование**: Вместо `grep` используй `graphify_explain({ concept: "ClassName" })`, чтобы увидеть всех, кто вызывает этот класс и от кого он зависит.
-2. **Трассировка**: Чтобы понять, как данные текут от API до БД, используй `graphify_path({ from: "APIHandler", to: "DatabaseAdapter" })`.
-3. **Поиск**: Используй `graphify_query({ question: "...", mode: "bfs" })` для поиска взаимосвязей в архитектуре.
-4. **Обновление**: После внесения правок в код выполни `graphify_update({ path: "." })`, чтобы граф оставался актуальным.
+1. **Ориентирование**: Вместо `grep` используй `codebase_memory_search_graph({ query: "ClassName", project: "helperium" })`, чтобы увидеть все связи.
+2. **Трассировка**: Чтобы понять, как данные текут от API до БД, используй `codebase_memory_trace_path({ function_name: "APIHandler", project: "helperium", direction: "both", mode: "calls", depth: 3 })`.
+3. **Поиск**: Используй `codebase_memory_search_code({ pattern: "...", project: "helperium" })` для текстового поиска по коду.
+4. **Обновление**: После внесения правок в код выполни `codebase_memory_index_repository({ repo_path: ".", name: "helperium", mode: "moderate" })`, чтобы граф оставался актуальным.
 
 ---
 
@@ -894,7 +894,7 @@ uv run ruff format api-service/src/          # apply formatting
 npx pyright                                  # проверить всё
 ```
 
-Конфиг Pyright: `pyrightconfig.json` (excludes: `tests/`, `node_modules/`, `.venv/`, `.data/`, `graphify-out/`).
+Конфиг Pyright: `pyrightconfig.json` (excludes: `tests/`, `node_modules/`, `.venv/`, `.data/`).
 
 #### Go (golangci-lint v2)
 

@@ -22,134 +22,132 @@ Received a task
 
 ---
 
-## 2. Graph-first workflow (codebase questions)
+## 2. Knowledge-graph-first workflow (codebase questions)
 
-**The graph covers 4890 nodes, 9035 edges across the entire project.
-Never read source files first. The graph answers faster and costs zero tokens.**
+**The codebase-memory graph indexes 5234 nodes, 24614 edges (AST + cross-file calls).
+Never read source files first — search the graph instead.**
 
 **Limitations the agent must know:**
-- Graph built via static AST analysis (tree-sitter) — **does NOT see HTTP calls** between services
-- `httpx.get()`, `http.Get()`, `sse_client()` are invisible to the graph
-- For cross-service HTTP queries, check `doc/api-flow.md` or the annotated docstrings in client files
+- Graph **partially** sees HTTP calls (54 `HTTP_CALLS` edges via Cypher: `MATCH (n)-[:HTTP_CALLS]->(m) RETURN ...`). **Misses:** `sse_client()`, dynamic URLs, some `httpx.get()`
+- For full cross-service HTTP matrix, use `doc/api-flow.md`
 - 12 client files have docstring annotations like: `FetchConfigWithTenant() -> data-service:GET /mcp/manifest`
-- These are: mcp-gateway httpclient/tools/ragclient, admin-dashboard server/abuse/client, api-service server/mcp_client, helperium-sdk data_client/rag_client, demo-web server
-- ~65 isolated nodes (files with 0 edges) — mostly normal: go.mod, package-main utils, READMEs
 
-### Step 1 — Orient via index
-Always start with ctx_search to locate relevant terms in the indexed GRAPH_REPORT.md:
+### Step 1 — Search the graph
 ```
-ctx_search "ClassName dependency injection"
-ctx_search "module import flow"
+# BM25 full-text search (camelCase-aware, structural boosting)
+codebase_memory_search_graph({ query: "MCPClient tenant", project: "helperium" })
+
+# Exact name pattern search
+codebase_memory_search_graph({ name_pattern: ".*createCompositeServer.*", project: "helperium" })
 ```
 
-### Step 2 — Traverse via graphify tools
-Use the result from Step 1 to pick the right graphify call. See §3 for the cookbook.
+### Step 2 — Trace data flow (always get qualified_name from search_graph first)
+```
+# 2a. Find exact symbol
+codebase_memory_search_graph({ query: "createCompositeServer", project: "helperium" })
+# → qualified_name: "helperium.mcp-gateway.cmd.createCompositeServer"
 
-### Step 3 — Read files only if graph has no answer
-If graphify tools return "node not found" or coverage is missing (see §3, Weak areas),
-only then fall back to ctx_execute to read specific files.
+# 2b. Trace with exact function_name
+codebase_memory_trace_path({ function_name: "helperium.mcp-gateway.cmd.createCompositeServer",
+  project: "helperium", direction: "both", mode: "calls", depth: 3 })
+```
 
-### Step 4 — Never use raw Bash/Read for output >1 KB
+### Step 3 — Run Cypher queries for complex questions
+```
+codebase_memory_query_graph({ query: "MATCH (n)-[r]->(m) WHERE n.name CONTAINS 'MCP' RETURN n, r, m", project: "helperium" })
+```
+
+### Step 4 — Read files only if graph has no answer
+Fall back to ctx_execute or read to inspect specific files.
+
+### Step 5 — Never use raw Bash/Read for output >1 KB
 Any shell command that produces significant output must go through ctx_execute or ctx_batch_execute.
 Direct Bash/Read for large outputs burns context. ctx_batch_execute combines multiple calls in one.
 
 ---
 
-## 3. Graphify cookbook — concrete examples
+## 3. Codebase-memory cookbook — concrete examples
 
 ### "What depends on class X? Who calls it?"
-Pi's instinct: open files, grep for imports.
-**Do this instead:**
 ```
-graphify_explain({ concept: "ClassName" })
-// Returns: all nodes pointing TO it (callers/importers) and FROM it (dependencies)
+# Step 1: find exact qualified_name
+codebase_memory_search_graph({ query: "ClassName", project: "helperium" })
 
-graphify_query({
-  question: "What calls ClassName and what does it depend on?",
-  mode: "bfs"
-})
+# Step 2: pass qualified_name to trace_path (trace_path only finds Functions/Methods, not Classes)
+codebase_memory_trace_path({ function_name: "helperium.project.path.ClassName",
+  project: "helperium", direction: "inbound", mode: "calls", depth: 3 })
 ```
 
 ### "How does data flow from A to B?"
-Pi's instinct: trace imports manually across files.
-**Do this instead:**
 ```
-graphify_path({ from: "UserRequest", to: "ChromaDBVectorStore" })
-// Returns: shortest dependency path between two concepts
+# Step 1: find exact qualified names
+codebase_memory_search_graph({ query: "function_or_struct", project: "helperium" })
 
-graphify_query({
-  question: "How does a user request reach ChromaDB?",
-  mode: "dfs"   // dfs = follows the flow direction
-})
+# Step 2: trace calls in either direction
+codebase_memory_trace_path({ function_name: "qualified_name", project: "helperium", direction: "both", mode: "calls", depth: 4 })
 ```
 
-### "What does module X import / what are its direct deps?"
+### "What does module X export?"
 ```
-graphify_explain({ concept: "mcp_client.py" })
-// Returns: all edges — imports, calls, inherits
+# First find the qualified_name:
+codebase_memory_search_graph({ query: "mcp_client", project: "helperium" })
+
+# Then get code:
+codebase_memory_get_code_snippet({ qualified_name: "helperium.api-service.src...MCPClient", project: "helperium", include_neighbors: true })
 ```
 
 ### "What breaks if I change class X?"
 ```
-graphify_path({ from: "X", to: "entry_point_or_api_handler" })
-// Shows the ripple path upward
-
-graphify_explain({ concept: "X" })
-// Shows all nodes that reference X — these are the risk surface
+codebase_memory_search_graph({ query: "X", project: "helperium" })
+// Then pass exact qualified_name from result:
+codebase_memory_trace_path({ function_name: "helperium.path.X", project: "helperium", direction: "inbound", depth: 2 })
 ```
 
 ### "Where is feature Y implemented across the codebase?"
 ```
-ctx_search "feature Y keyword"          // locate by text
-graphify_query({
-  question: "Where is Y implemented?",
-  mode: "bfs"
-})
+codebase_memory_search_code({ pattern: "feature Y keyword", project: "helperium" })
+codebase_memory_search_graph({ query: "feature Y", project: "helperium" })
 ```
 
 ### "What changed and what could break?" (after edits)
 ```
-// 1. Update the graph first (free, no API cost)
-graphify_update({ path: "." })
-
-// 2. Check ripple effect from the changed node
-graphify_explain({ concept: "changed_file_or_class" })
-graphify_path({ from: "changed_file_or_class", to: "api_handler" })
+codebase_memory_detect_changes({ scope: ".", project: "helperium" })
+codebase_memory_search_graph({ query: "changed_file", project: "helperium" })
 ```
 
-### "Give me an architecture diagram"
+### "Give me an architecture overview"
 ```
-graphify_export_callflow({})
-// Outputs Mermaid diagram to graphify-out/callflow.html
-// Open the file — don't read it into context
+codebase_memory_get_architecture({ project: "helperium", aspects: ["all"] })
+// Returns: packages, services, routes, hotspots, layers, clusters, file tree
+```
+
+### "Search code by regex"
+```
+codebase_memory_search_code({ pattern: "tenant", project: "helperium", file_pattern: "*.go", limit: 10, regex: false })
 ```
 
 ### "How do services talk to each other?" (cross-service HTTP)
 ```
-// Graph does NOT see HTTP calls directly.
-// Use the annotated docstring files + doc/api-flow.md instead:
-graphify_explain({ concept: "doc/api-flow.md" })
-// Or check specific client files:
-graphify_explain({ concept: "demo/web/server.py" })     // proxy_manifest, proxy_chat, etc.
-graphify_explain({ concept: "mcp_client.py" })           // SSE → mcp-gateway
-graphify_explain({ concept: "ragclient/client.go" })      // → rag:POST /search, /context
-graphify_explain({ concept: "httpclient/client.go" })     // → data-service:GET /mcp/manifest
+# Graph HAS HTTP_CALLS edges.
+codebase_memory_query_graph({ query: "MATCH (n)-[:HTTP_CALLS]->(m) RETURN n.name, m.name", project: "helperium" })
+
+# Or search code:
+codebase_memory_search_code({ pattern: "httpx", project: "helperium", file_pattern: "*.py" })
+codebase_memory_search_code({ pattern: "http.Get", project: "helperium", file_pattern: "*.go", regex: true })  # regex:true for pipes
 ```
 
-### Known weak areas (use ctx_execute + doc/api-flow.md instead)
+### Known weak areas
 - `.env` files and environment variables
 - `scripts/dev.sh` and shell scripts
-- **HTTP calls between services** — graph is AST-only, use `doc/api-flow.md`
+- **Dynamic HTTP calls** (`requests.post(url, data=json.dumps)`) — graph sees static-path HTTP calls, but misses runtime-constructed URLs and SSE/JSON-RPC flows, use `doc/api-flow.md` for full matrix
 - Runtime config (not in the graph's static analysis)
 
 ---
 
 ## 4. Community hubs — fast navigation
 
-When you know which subsystem you're in, use these as entry points for graphify queries:
+When you know which subsystem you're in, use these as entry points for graph queries:
 
-| Community | Entry concept | What it covers |
-|---|---|---|
 | Community | Entry concept | What it covers |
 |---|---|---|
 | `API Service Proxy` | `demo/web/server.py` | All reverse proxy routes (→ data, rag, api) |
@@ -184,10 +182,9 @@ When you know which subsystem you're in, use these as entry points for graphify 
 | `Admin Dashboard` | `server.go`, `app.js` | Admin UI, Alpine.js frontend |
 | `AGENTS.md` | `AGENTS.md` | Technical passport, data flow diagrams |
 
-**Graph freshness:** built from commit `988523f2`. Check:
+**Refresh:**
 ```
-ctx_execute("shell", `echo "HEAD: $(git rev-parse HEAD)"`)
-// If diverged → graphify_update({ path: "." })  (AST-only, 0 tokens)
+codebase_memory_index_repository({ repo_path: ".", name: "helperium", mode: "moderate" })
 ```
 
 ---
@@ -202,7 +199,7 @@ ctx_execute("shell", `echo "HEAD: $(git rev-parse HEAD)"`)
 
 ### Do NOT delegate:
 - Single-file edits
-- Quick lookups (use ctx_search / graphify instead)
+- Quick lookups (use codebase-memory / ctx_search instead)
 - Tasks under ~5 tool calls
 - Anything where shared context is critical (mid-refactor state)
 
@@ -260,7 +257,7 @@ browser-debugger task="Open http://localhost:5173, check console for errors, che
 
 ### Default flow for non-trivial tasks:
 ```
-1. ctx_search + graphify_explain → understand scope
+1. codebase_memory_search_graph / trace_path → understand scope
 2. If scope is large → /parallel-research to map unknowns
 3. Build plan → /parallel-handoff-plan to implement
 4. After implementation → /parallel-review to verify
@@ -277,7 +274,7 @@ Use `ask_user_ext` (not a Bash prompt, not a comment in code) when:
 - You found two valid approaches with real tradeoffs the user should decide
 - The original request conflicts with something discovered in the graph
 
-**Do not ask** for information you can find via ctx_search or graphify.
+**Do not ask** for information you can find via codebase-memory or ctx_search.
 **Do not ask** to confirm obvious steps — only ask when a real decision is needed.
 
 Use **pi-intercom** to pass structured context between sessions or subagents
@@ -298,26 +295,7 @@ library APIs change and your training data may be stale.
 
 ---
 
-## 8. Saving useful answers to the graph
-
-After a correct or insightful answer about the codebase:
-```
-graphify_save_result({ question: "...", answer: "...", correct: true })
-```
-
-Periodically aggregate saved results into lessons:
-```
-graphify_reflect({})
-// Writes LESSONS.md — accumulated best practices for this project
-```
-
-This creates a feedback loop: the graph gets smarter with each session.
-
----
-
 ## Constraints
 
-- **Never read `graphify-out/graph.json` or `graphify-out/GRAPH_REPORT.md` directly** — ~5MB / ~95KB, use tools
-- **Never delete `graphify-out/`** — rebuilding costs API tokens
 - **Never use raw Bash for output >1KB** — use ctx_execute or ctx_batch_execute
-- **Never grep/glob for class references** — graphify_explain is faster and token-free
+- **Never grep/glob for class references** — use codebase-memory instead
