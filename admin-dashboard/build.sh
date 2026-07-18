@@ -35,6 +35,9 @@ cat \
   > internal/server/static/index.html
 echo "  index.html  $(wc -c < internal/server/static/index.html) bytes"
 
+echo "=== Lint HTML: html-validate index.html ==="
+npx html-validate internal/server/static/index.html
+
 echo "=== Bundle: esbuild → internal/server/static/dist/app.js ==="
 npx esbuild src/index.ts \
   --bundle \

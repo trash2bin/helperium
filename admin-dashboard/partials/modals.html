@@ -188,9 +188,7 @@
       </div>
     </div>
 
-  </div>
-
-  <!-- ── API Toast Container ── -->
+    <!-- ── API Toast Container ── -->
   <div x-data class="api-toast-container">
     <template x-for="t in $store.apiLogger.apiToasts" :key="t.id">
       <div class="api-toast" :class="t.class" @click.prevent="$store.apiLogger.dismissToast(t.id); $store.apiLogger.selectEntry(t.entryId)">
