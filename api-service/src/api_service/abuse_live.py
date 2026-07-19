@@ -318,9 +318,5 @@ def get_live_abuse_provider() -> LiveAbuseProvider:
     return LiveAbuseProvider.get_instance()
 
 
-def get_abuse_checker() -> AntiAbuseChecker:
-    return get_live_abuse_provider().get_anti_abuse_checker()
-
-
 def get_token_bucket() -> TokenBucket:
     return get_live_abuse_provider().get_token_bucket()

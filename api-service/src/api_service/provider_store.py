@@ -379,11 +379,3 @@ def get_provider_store() -> ProviderStore:
             if _provider_store is None:
                 _provider_store = ProviderStore()
     return _provider_store
-
-
-def reset_provider_store(path: str | Path | None = None) -> ProviderStore:
-    """Сбрасывает ProviderStore (для тестов)."""
-    global _provider_store
-    store = ProviderStore(path)
-    _provider_store = store
-    return store
