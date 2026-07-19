@@ -43,6 +43,7 @@ dev = [
     "ruff>=0.7.0",
     "pyyaml>=6.0",  # тесты OpenAPI-спецификаций (test_openapi_api.py, test_openapi_spec.py)
     "fakeredis>=2.36.2",
+    "pre-commit>=4.6.0",
 ]
 
 [tool.pytest.ini_options]
