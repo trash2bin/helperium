@@ -122,17 +122,18 @@ def materialize(scenario: str, force: bool):
         else PROJECT_ROOT / "specs" / "fixtures" / "seed.json"
     )
 
-    # Run Go seed-cli
-    cmd = ["go", "run", "./cmd/seed-cli/", "--seed-path", str(seed_path)]
-    env = {"DB_PATH": str(db_path)}
+    # Use Python seedgen instead of old Go seed-cli
+    from agent_db.seedgen import materialize as py_materialize
+
     click.echo(f"🔨 Materializing {scenario} → {db_path}")
-    result = run(
-        cmd,
-        cwd=PROJECT_ROOT / "data-service",
-        env={**dict(subprocess.os.environ), **env},
-    )
-    if result.returncode != 0:
-        click.echo(f"❌ Failed:\n{result.stderr}", err=True)
+    try:
+        py_materialize(
+            scenario_dir=str(SCENARIOS_DIR / scenario),
+            output_dsn=str(db_path),
+            force=force,
+        )
+    except Exception as exc:
+        click.echo(f"❌ Failed:\n{exc}", err=True)
         sys.exit(1)
 
     # Run bootstrap script if it exists (e.g. for 'shop' scenario)
@@ -467,7 +468,11 @@ def _run_sse_chat_tests(tenants: list[str]):
             r = requests.post(
                 f"{base}/api/chat",
                 json={"message": prompt, "session_id": session_id, "tenant_id": tid},
-                headers={"X-Tenant-ID": tid, "Content-Type": "application/json"},
+                headers={
+                    "X-Tenant-ID": tid,
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (compatible; E2ETest)",
+                },
                 timeout=60,
                 stream=True,
             )

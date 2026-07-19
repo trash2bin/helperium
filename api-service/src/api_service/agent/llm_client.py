@@ -175,9 +175,11 @@ class LLMClient:
         _start_time = time.monotonic()
         if self.router is not None:
             if self.router_group:
-                # Use model_group so Router tries providers in priority order
                 kwargs["model_group"] = self.router_group
-                kwargs.pop("model", None)
+                # Router ignores 'model' when 'model_group' is set,
+                # but **kwargs must still have the key otherwise
+                # Python raises "missing 1 required positional arg: 'model'".
+                # Keep self.model as fallback so signature validation passes.
             response = await self.router.acompletion(  # type: ignore[arg-type, call-overload]
                 **kwargs
             )
@@ -273,6 +275,7 @@ class LLMClient:
 
         if self.router is not None:
             kwargs_router: dict[str, Any] = {
+                "model": self.model,
                 "messages": messages,
                 "stream": True,
                 "timeout": self.timeout,
@@ -280,8 +283,6 @@ class LLMClient:
             }
             if self.router_group:
                 kwargs_router["model_group"] = self.router_group
-            else:
-                kwargs_router["model"] = self.model
             response = await self.router.acompletion(  # type: ignore[call-overload, reportArgumentType]
                 **kwargs_router
             )
@@ -509,37 +510,66 @@ def _prefix_model(provider: str | None, model_name: str, api_base: str | None) -
     return model_name
 
 
-def create_prioritized_client(provider_names: list[str]) -> LLMClient:
+def _build_router_client(
+    model_list: list[dict[str, Any]],
+    group_name: str,
+    log_prefix: str = "FALLBACK",
+) -> LLMClient:
+    """Create an LLMClient backed by a litellm.Router from a prepared model_list.
+
+    All entries share the same model_name (= group_name) so the Router tries
+    them in order when the first one fails (cross-provider failover).
     """
-    Create an LLM client with LiteLLM Router for per-agent prioritized providers.
+    for entry in model_list:
+        entry["model_name"] = group_name
 
-    All provider entries share a single ``model_group`` so the Router falls
-    back to the next provider when the first one fails (cross-provider
-    failover).
+    router = Router(
+        model_list=model_list,
+        num_retries=1,
+        set_verbose=False,
+    )
 
-    Looks up each provider name from the global ProviderStore.
-    Only enabled providers with a non-empty model are included,
-    in the order specified by ``provider_names``.
+    logger.info(
+        "[%s] Created Router group='%s' with %d providers: %s",
+        log_prefix,
+        group_name,
+        len(model_list),
+        [m["litellm_params"]["model"] for m in model_list],
+    )
 
-    No heuristics for any provider — model names, api keys and api bases
-    are passed through as-is.
+    primary_model = model_list[0]["litellm_params"]["model"]
+    primary_api_base = model_list[0]["litellm_params"].get("api_base")
 
-    When none of the named providers are valid, falls back to ``create_client()``.
+    return LLMClient(
+        model=primary_model,
+        api_base=primary_api_base,
+        router=router,
+        router_group=group_name,
+        timeout=settings.request_timeout,
+        temperature=settings.agent_temperature,
+        max_tokens_thinking=settings.agent_max_tokens_thinking,
+        enable_thinking=settings.think_mode,
+    )
+
+
+def create_prioritized_client(provider_names: list[str]) -> LLMClient:
+    """Create an LLM client with Router for per-agent prioritized provider failover.
+
+    All enabled providers in *provider_names* (in order) share one Router group so
+    LiteLLM falls back to the next on failure.
+
+    When none are valid, falls back to ``create_client()``.
     """
     from api_service.provider_store import get_provider_store
 
     store = get_provider_store()
     model_list: list[dict[str, Any]] = []
-
-    # All providers share one group name so Router tries them in priority order.
     GROUP_NAME = "agent_priority_group"
 
     for name in provider_names:
         provider_data = store.get_provider(name)
         if not provider_data:
-            logger.warning(
-                "[PRIORITY] Provider '%s' not found in store — skipping", name
-            )
+            logger.warning("[PRIORITY] Provider '%s' not found — skipping", name)
             continue
         if not provider_data.get("enabled", True):
             logger.info("[PRIORITY] Provider '%s' is disabled — skipping", name)
@@ -549,15 +579,12 @@ def create_prioritized_client(provider_names: list[str]) -> LLMClient:
             logger.warning("[PRIORITY] Provider '%s' has no model — skipping", name)
             continue
 
-        # Get full provider data (not masked) from internal dict
         raw = store.all_providers_raw.get(name, {})
         api_key = raw.get("api_key", "")
         if not api_key:
             logger.info("[PRIORITY] Provider '%s' has no api_key — skipping", name)
             continue
 
-        # LiteLLM Router requires a provider prefix in the model name
-        # (e.g. "mistral/mistral-medium", "ollama_chat/...", "deepseek/...").
         from api_service.provider_store import KNOWN_PROVIDERS
 
         known_prefixes = (
@@ -567,8 +594,6 @@ def create_prioritized_client(provider_names: list[str]) -> LLMClient:
         if not model.startswith(known_prefixes) and raw_provider:
             model = f"{raw_provider}/{model}"
 
-        # All entries share the same model_name (= group name)
-        # so Router can fall through providers in priority order.
         entry: dict[str, Any] = {
             "model_name": GROUP_NAME,
             "litellm_params": {
@@ -586,51 +611,20 @@ def create_prioritized_client(provider_names: list[str]) -> LLMClient:
         model_list.append(entry)
 
     if not model_list:
-        logger.info(
-            "[PRIORITY] No valid providers in priority list — using default client"
-        )
+        logger.info("[PRIORITY] No valid providers — using default client")
         return create_client()
 
-    router = Router(
-        model_list=model_list,
-        # num_retries per provider before trying the next in the group
-        num_retries=1,
-        set_verbose=False,
-    )
-
-    logger.info(
-        "[PRIORITY] Created Router group='%s' with %d providers (priority order): %s",
-        GROUP_NAME,
-        len(model_list),
-        [m["litellm_params"]["model"] for m in model_list],
-    )
-
-    primary_model = model_list[0]["litellm_params"]["model"]
-    primary_api_base = model_list[0]["litellm_params"].get("api_base")
-
-    return LLMClient(
-        model=primary_model,
-        api_base=primary_api_base,
-        router=router,
-        router_group=GROUP_NAME,
-        timeout=settings.request_timeout,
-        temperature=settings.agent_temperature,
-        max_tokens_thinking=settings.agent_max_tokens_thinking,
-        enable_thinking=settings.think_mode,
-    )
+    return _build_router_client(model_list, GROUP_NAME, log_prefix="PRIORITY")
 
 
 def create_fallback_client() -> LLMClient:
-    """
-    Create an LLM client with LiteLLM Router for provider failover.
+    """Create an LLM client with Router for global provider failover.
 
-    All enabled providers share a single ``model_group`` so the Router
-    falls back to the next provider when the first one fails.
+    Reads all enabled providers from ProviderStore and creates a ``litellm.Router``
+    so subsequent providers are tried when the first one fails.
 
-    Builds a ``litellm.Router`` from the ProviderStore (``.data/providers.json``).
-    Only enabled providers with non-empty model and api_key are added to the router.
-
-    When the store has no active providers, falls back to ``create_client()``.
+    Unlike the old behaviour (one Router at startup), this can be called on every
+    request so the Router always reflects the current ProviderStore state.
     """
     from api_service.provider_store import get_provider_store
 
@@ -641,35 +635,5 @@ def create_fallback_client() -> LLMClient:
         logger.info("[FALLBACK] No active providers in store — using default client")
         return create_client()
 
-    # Rewrite all model_names to a shared group so Router
-    # tries providers in list order on failure.
     GROUP_NAME = "fallback_group"
-    for entry in model_list:
-        entry["model_name"] = GROUP_NAME
-
-    router = Router(
-        model_list=model_list,
-        num_retries=1,
-        set_verbose=False,
-    )
-
-    logger.info(
-        "[FALLBACK] Created Router group='%s' with %d providers (failover order): %s",
-        GROUP_NAME,
-        len(model_list),
-        [m["litellm_params"]["model"] for m in model_list],
-    )
-
-    primary_model = model_list[0]["litellm_params"]["model"]
-    primary_api_base = model_list[0]["litellm_params"].get("api_base")
-
-    return LLMClient(
-        model=primary_model,
-        api_base=primary_api_base,
-        router=router,
-        router_group=GROUP_NAME,
-        timeout=settings.request_timeout,
-        temperature=settings.agent_temperature,
-        max_tokens_thinking=settings.agent_max_tokens_thinking,
-        enable_thinking=settings.think_mode,
-    )
+    return _build_router_client(model_list, GROUP_NAME, log_prefix="FALLBACK")

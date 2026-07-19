@@ -1,35 +1,52 @@
 """Token estimation utilities for LLM context window management.
 
-Fast heuristic token counting (chars / 3.5 ≈ average for mixed
-Cyrillic/Latin text) and message trimming for fallback scenarios.
-
-These are pure functions — no dependencies on the agent runtime.
+Fast approximate (tiktoken via LiteLLM) token counting and message trimming
+for fallback scenarios.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
+
+import litellm
 
 logger = logging.getLogger("api_service.agent.token_estimator")
 
 
-def estimate_tokens(messages: list[dict[str, Any]]) -> int:
-    """Fast heuristic token estimate: chars / 3.5 (≈ рус/eng average).
+def estimate_tokens(messages: list[dict[str, Any]], model: str = "") -> int:
+    """Token count via LiteLLM/tiktoken, with per-model tokenizer.
 
-    This is NOT a precise tokenizer — it's a guard against blowing past
-    the model's context window.  8000 tokens ≈ 28000 chars.
+    Uses ``litellm.token_counter()`` which selects the right tiktoken
+    encoder for the given model.  Falls back to a safe default when
+    ``model`` is unknown or empty (cl100k_base, same as GPT-4/Claude).
 
-    The system prompt is embedded in messages, so its cost is included.
+    Args:
+        messages: List of message dicts (system + user + assistant + tool).
+        model: Model identifier (e.g. ``"gpt-4o"``, ``"anthropic/claude-..."``).
+               Empty string uses the default tokenizer (cl100k_base).
+
+    Returns:
+        Token count (int).  0 for empty input.
     """
     if not messages:
         return 0
 
-    total_chars = sum(
-        len(json.dumps(m, ensure_ascii=False, default=str)) for m in messages
-    )
-    return int(total_chars / 3.5)
+    try:
+        return litellm.token_counter(model=model, messages=messages)
+    except Exception as exc:
+        logger.warning(
+            "token_counter failed for model=%r: %s — using chars/3.5 fallback",
+            model,
+            exc,
+        )
+        total_chars = sum(
+            len(str(m.get("content", "")))
+            + len(str(m.get("tool_calls", "")))
+            + len(str(m.get("name", "")))
+            for m in messages
+        )
+        return int(total_chars / 3.5)
 
 
 def trim_for_fallback(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

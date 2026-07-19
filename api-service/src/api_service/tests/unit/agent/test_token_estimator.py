@@ -1,6 +1,7 @@
-"""Tests for token_estimator — pure functions for token estimation & trimming."""
+"""Tests for token_estimator — token counting (via LiteLLM/tiktoken) & trimming."""
 
 from __future__ import annotations
+
 
 from api_service.agent.token_estimator import estimate_tokens, trim_for_fallback
 
@@ -9,7 +10,7 @@ from api_service.agent.token_estimator import estimate_tokens, trim_for_fallback
 
 
 class TestEstimateTokens:
-    """Tests for the estimate_tokens() function."""
+    """Tests for the estimate_tokens() function (LiteLLM/tiktoken)."""
 
     def test_empty_list(self):
         """estimate_tokens([]) should return 0."""
@@ -20,14 +21,14 @@ class TestEstimateTokens:
         msgs = [{"role": "user", "content": "hello"}]
         result = estimate_tokens(msgs)
         assert isinstance(result, int)
-        assert result > 0
+        assert result >= 1
 
     def test_multiple_messages(self):
         """estimate_tokens with multiple messages is larger than single."""
-        one = [{"role": "user", "content": "hello"}]
+        one = [{"role": "user", "content": "hello world foo bar"}]
         two = [
             {"role": "system", "content": "you are a bot"},
-            {"role": "user", "content": "hello"},
+            {"role": "user", "content": "hello world foo bar"},
         ]
         assert estimate_tokens(two) > estimate_tokens(one)
 
@@ -36,7 +37,7 @@ class TestEstimateTokens:
         msgs = [{"role": "user", "content": "Привет, как дела?"}]
         result = estimate_tokens(msgs)
         assert isinstance(result, int)
-        assert result > 0
+        assert result >= 1
 
     def test_long_content_scales(self):
         """estimate_tokens grows with content length."""
@@ -54,7 +55,25 @@ class TestEstimateTokens:
             }
         ]
         result = estimate_tokens(msgs)
-        assert result > 0
+        assert result >= 1
+
+    def test_model_parameter_used(self):
+        """estimate_tokens accepts model parameter."""
+        msgs = [{"role": "user", "content": "hello world"}]
+        result = estimate_tokens(msgs, model="gpt-4o")
+        assert isinstance(result, int)
+        assert result >= 1
+
+    def test_empty_model_fallback(self):
+        """estimate_tokens with empty model uses default tokenizer."""
+        msgs = [{"role": "user", "content": "hello world"}]
+        result_empty = estimate_tokens(msgs, model="")
+        result_gpt4o = estimate_tokens(msgs, model="gpt-4o")
+        # Both should be valid but may differ (different tokenizers)
+        assert isinstance(result_empty, int)
+        assert result_empty >= 1
+        assert isinstance(result_gpt4o, int)
+        assert result_gpt4o >= 1
 
 
 # ── trim_for_fallback ────────────────────────────────────────────────────────
