@@ -1,18 +1,19 @@
-"""Main agent orchestrator — thin coordinator that wires handlers together.
+"""Main agent orchestrator — coordinator that wires Pipeline + adapters.
 
 Responsibility
 --------------
-Drive a single conversation turn: build context, loop through LLM →
-possible tool calls → LLM again, emit events, handle fallback.
+Drive a single conversation turn: build context, run the pipeline,
+yield events.  Pipeline orchestration goes to ``pipeline.py``,
+stage logic to ``stages.py``, middleware to ``middlewares.py``,
+legacy adapters to ``legacy_adapters.py``.
 
-It delegates every specialised concern to dedicated modules (handlers)
-and only owns the *sequence* of steps and the loop termination logic.
+Backward-compatible: ``stream_answer()``, ``stream_sse()``, ``stream_events()``
+keep the same signatures.  ``health()`` stays.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -20,44 +21,58 @@ from helperium_sdk.settings import settings
 
 from .conversation import ConversationManager
 from .event_stream import format_sse_event, unstreamed_suffix
-from .fallback_handler import FallbackHandler
 from .llm_client import (
     LLMClient,
-    LLMClientProtocol,
     create_client,
     create_fallback_client,
 )
-from .llm_handler import LLMHandler
 from .mcp_client import MCPClient
+from .middlewares import (
+    BacklogMiddleware,
+    SpendingMiddleware,
+    TokenBudgetMiddleware,
+)
+from .pipeline import Pipeline, PipelineContext
 from .prompts import SYSTEM_PROMPT
-from .tool_handler import ToolHandler
-from .tool_parser import ToolCallParser
-from .token_estimator import estimate_tokens
+from .stages import (
+    FallbackStage,
+    GuardInputStage,
+    GuardOutputStage,
+    LLMStage,
+    SaveHistoryStage,
+    ToolDiscoveryStage,
+    ToolExecutionStage,
+)
 from .turn_context import TurnContext
 from .types import (
     AgentEvent,
-    ErrorEventData,
     SessionId,
+)
+from .legacy_adapters import (
+    _AsyncSpendingTracker,
+    _OldStyleLLMAdapter,
+    _AsyncBacklogWriter,
 )
 
 from api_service.backlog import backlog
-from api_service.guardrails import get_guard_checker
 from api_service.error_messages import classify_error
-from api_service.spending import get_spending_checker
+from api_service.guardrails import get_guard_checker
 
 logger = logging.getLogger("api_service.agent.orchestrator")
 
 
+# ── Legacy adapters ──────────────────────────────────────
+# Defined in legacy_adapters.py — imported above.
+
+
 class LLMAgent:
-    """Thin orchestrator that wires handlers into a conversation turn loop.
+    """Thin orchestrator — creates Pipeline and runs it for each request.
 
     Components are injected in ``__init__`` (with defaults for production)
     so tests can substitute mocks freely.
 
-    Key design: no stale ``self.llm_client`` or shared handlers. Every
-    request gets a *fresh* ``create_fallback_client()`` from the current
-    ProviderStore state, so provider changes take effect immediately
-    without a service restart.
+    The Pipeline is assembled once in ``__init__`` and reused across
+    requests.  Per-request state lives in ``PipelineContext``.
     """
 
     def __init__(
@@ -73,11 +88,26 @@ class LLMAgent:
         self._test_llm_client: LLMClient | None = llm_client
         self.mcp_client = mcp_client or MCPClient()
         self.conversation_manager = conversation_manager or ConversationManager()
-        self.tool_parser = ToolCallParser()
-        self._tool_handler = ToolHandler(self.mcp_client, self.conversation_manager)
 
-        # ── Schema cache (per tenant, survives requests) ────────────────
-        self._schema_cache: dict[str, str] = {}
+        # ── Pipeline — assembled once ───────────────────────────────────
+        self._pipeline = Pipeline(
+            stages=[
+                GuardInputStage(),
+                ToolDiscoveryStage(),
+                LLMStage(),
+                ToolExecutionStage(),
+            ],
+            finalizer_stages=[
+                GuardOutputStage(),
+                FallbackStage(),
+                SaveHistoryStage(),
+            ],
+            middlewares=[
+                SpendingMiddleware(),
+                BacklogMiddleware(),
+                TokenBudgetMiddleware(),
+            ],
+        )
 
         # ── Settings ────────────────────────────────────────────────────
         self.max_iterations = settings.agent_max_iterations
@@ -119,6 +149,7 @@ class LLMAgent:
         tenant_ids: list[str] | None = None,
         llm_config: dict | None = None,
         llm_client: LLMClient | None = None,
+        provider_priority: list[str] | None = None,
         system_prompt: str | None = None,
         lang: str = "ru",
     ) -> AsyncIterator[AgentEvent]:
@@ -126,11 +157,12 @@ class LLMAgent:
 
         This is the main entry point for new code.
 
-        **Real-time provider update** — when neither ``llm_client`` nor
-        ``llm_config`` is provided, a fresh ``create_fallback_client()``
-        is built from the current ProviderStore on every call. This means
-        adding/changing/deleting providers via the admin dashboard takes
-        effect immediately without restarting the service.
+        **Real-time provider update** — when neither ``llm_client``,
+        ``provider_priority`` nor ``llm_config`` is provided, a fresh
+        ``create_fallback_client()`` is built from the current ProviderStore
+        on every call. This means adding/changing/deleting providers via
+        the admin dashboard takes effect immediately without restarting
+        the service.
 
         Args:
             user_message:   Raw text from the user.
@@ -138,6 +170,7 @@ class LLMAgent:
             tenant_ids:     Scopes the MCP session to one or more tenants.
             llm_config:     Overrides the global LLM config for this request.
             llm_client:     Overrides the LLM client for this request (e.g. prioritized).
+            provider_priority:  Ordered list of provider names to try (first valid wins).
             system_prompt:  Overrides the global system prompt.
         """
         session_id = self.conversation_manager.normalize_session_id(session_id)
@@ -150,31 +183,112 @@ class LLMAgent:
 
         # Use per-request LLM client if explicitly provided, or build from config.
         if llm_client:
-            request_llm = llm_client
+            request_llm: Any = llm_client
         elif llm_config:
+            # If llm_config is a single provider config
             request_llm = create_client(llm_config)
+        elif provider_priority:
+            # Resolve first valid provider from priority list (sync operation)
+            from api_service.provider_store import (
+                KNOWN_PROVIDERS as _KNOWN,
+                get_provider_store,
+            )
+
+            store = get_provider_store()
+            raw_providers = store.all_providers_raw
+            found = None
+            for name in provider_priority:
+                provider_data = raw_providers.get(name)
+                if not provider_data:
+                    continue
+                if not provider_data.get("enabled", True):
+                    continue
+                model = provider_data.get("model", "")
+                if not model:
+                    continue
+                if not provider_data.get("api_key"):
+                    continue
+                found = (name, provider_data)
+                break
+
+            if found:
+                name, data = found
+                model = data["model"]
+                provider = data.get("provider", "")
+                if not model.startswith(tuple(p + "/" for p in _KNOWN)) and provider:
+                    model = f"{provider}/{model}"
+                api_base = data.get("api_base", "") or ""
+                from .litellm_provider import LiteLLMProvider
+
+                request_llm = LiteLLMProvider(
+                    model=model,
+                    api_base=api_base or None,
+                    timeout=120.0,
+                )
+            else:
+                request_llm = self._test_llm_client or create_fallback_client()
         else:
             # FRESH client every request — reflects current ProviderStore state.
             # Falls back to self._test_llm_client when set (tests only).
             request_llm = self._test_llm_client or create_fallback_client()
 
+        # ── Wrap old-style client if needed ────────────────────────────────
+        # New pipeline expects the ``complete() → CompletionResponse`` contract.
+        # Old clients expose ``stream_completion()`` — wrap with adapter.
+        if not hasattr(request_llm, "complete"):
+            request_llm = _OldStyleLLMAdapter(request_llm)
+
+        # ── Async adapters ──────────────────────────────────────────────
+        async_spending = _AsyncSpendingTracker()
+        async_backlog = _AsyncBacklogWriter()
+
         lock = await self.conversation_manager.get_session_lock(session_id)
         async with lock:
-            async for event in self._run_turn(
-                user_message,
-                session_id,
-                tenant_ids,
-                request_llm=request_llm,
-                system_prompt=system_prompt,
-                lang=lang,
-            ):
-                yield event
+            # Build turn context
+            effective_prompt = system_prompt or SYSTEM_PROMPT
+
+            ctx = await TurnContext.build(
+                user_message=user_message,
+                session_id=session_id,
+                system_prompt=effective_prompt,
+                conversation_manager=self.conversation_manager,
+                tenant_ids=tenant_ids,
+            )
+            ctx.turn_id = backlog.turn_start(session_id, user_message)
+
+            # Build PipelineContext and run
+            try:
+                async with self.mcp_client.get_session(
+                    tenant_ids=tenant_ids
+                ) as mcp_session:
+                    pipeline_ctx = PipelineContext(
+                        turn=ctx,
+                        llm_provider=request_llm,
+                        mcp_session=mcp_session,
+                        store=self.conversation_manager,
+                        spending=async_spending,
+                        backlog=async_backlog,
+                        guard_checker=get_guard_checker(),
+                        max_iterations=self.max_iterations,
+                        max_empty_rounds=self.max_empty_rounds,
+                        max_turn_tokens=self.max_turn_tokens,
+                    )
+
+                    async for event in self._pipeline.run(pipeline_ctx):
+                        yield event
+
+            except Exception as exc:
+                logger.exception("[AGENT] Turn failed: %s", exc)
+                backlog.error(session_id, ctx.turn_id, ctx.iteration, str(exc))
+                yield AgentEvent(
+                    "error",
+                    {"message": classify_error(exc, lang)},
+                )
 
     # ── Health ───────────────────────────────────────────────────────────
 
     async def health(self) -> dict[str, Any]:
         """Get agent health status."""
-        # Quick live check: create a throwaway client to report the primary model
         import warnings
 
         try:
@@ -193,243 +307,6 @@ class LLMAgent:
                 "api_base": None,
                 "thinking_enabled": False,
             }
-
-    # ── Internal: turn loop ──────────────────────────────────────────────
-
-    async def _run_turn(
-        self,
-        user_message: str,
-        session_id: SessionId,
-        tenant_ids: list[str] | None = None,
-        request_llm: LLMClientProtocol | None = None,
-        system_prompt: str | None = None,
-        lang: str = "ru",
-    ) -> AsyncIterator[AgentEvent]:
-        """Execute a single conversation turn with multiple iterations.
-
-        Builds local handlers for the given ``request_llm`` — no shared
-        mutable handler state, safe under concurrent requests.
-        """
-        # ── 0. Guard: check input for prompt injection ───────────────
-        guard_result = get_guard_checker().check_input(user_message)
-        if guard_result.blocked:
-            logger.warning("[GUARD] Blocked message: %s", guard_result.reason)
-            backlog.error(session_id, "guard-block", 0, guard_result.reason)
-            yield AgentEvent(
-                "error",
-                ErrorEventData(
-                    message="Ваше сообщение заблокировано системой безопасности."
-                ),
-            )
-            return
-
-        # ── 1. Build initial context ─────────────────────────────────
-        effective_prompt = system_prompt or SYSTEM_PROMPT
-
-        ctx = await TurnContext.build(
-            user_message=user_message,
-            session_id=session_id,
-            system_prompt=effective_prompt,
-            conversation_manager=self.conversation_manager,
-            tenant_ids=tenant_ids,
-        )
-        ctx.turn_id = backlog.turn_start(session_id, user_message)
-
-        # Build LOCAL handlers for this request — no shared state.
-        # request_llm may be None (tests, fallback), but then _run_turn
-        # would not have been called from stream_events without it.
-        llm_client = request_llm or create_client()
-        llm_handler = LLMHandler(llm_client, self.tool_parser)
-        fallback_handler = FallbackHandler(llm_client, self.conversation_manager)
-
-        try:
-            async with self.mcp_client.get_session(tenant_ids=tenant_ids) as session:
-                # ── 2. Discover tools ──────────────────────────────────
-                ctx.tools = await self.mcp_client.list_tools(session)
-                logger.info(
-                    "[AGENT] Available tools: %s",
-                    [t.get("function", {}).get("name") for t in ctx.tools],
-                )
-
-                # ── 2b. Inject schema into context (if available) ────────
-                schema = await session.get_schema()
-                if schema and schema.get("entities"):
-                    cache_key = "-".join(tenant_ids or ["default"])
-                    if cache_key not in self._schema_cache:
-                        self._schema_cache[cache_key] = _build_schema_message(schema)
-                    schema_note = self._schema_cache[cache_key]
-                    ctx.messages.append({"role": "system", "content": schema_note})
-                    logger.info(
-                        "[AGENT] Injected schema with %d entities and %d hints into prompt",
-                        len(schema["entities"]),
-                        len(schema.get("workflow_hints", [])),
-                    )
-
-                # ── 3. Agent loop ──────────────────────────────────────
-                for iteration in range(self.max_iterations):
-                    ctx.iteration = iteration
-
-                    # 3a. Call LLM → stream tokens + determine outcome
-                    _llm_start = time.monotonic()
-                    async for event in llm_handler.stream_and_parse(ctx):
-                        yield event
-                    _llm_duration = (time.monotonic() - _llm_start) * 1000
-
-                    # Guard: check output for leaks
-                    if ctx.outcome == "final" and ctx.turn_messages:
-                        last_msg = ctx.turn_messages[-1]
-                        if last_msg.get("role") == "assistant":
-                            content = last_msg.get("content", "")
-                            output_check = get_guard_checker().check_output(content)
-                            if output_check.blocked:
-                                logger.warning(
-                                    "[GUARD] Blocked output: %s (session %s)",
-                                    output_check.reason,
-                                    session_id,
-                                )
-                                last_msg["content"] = (
-                                    "[Ответ заблокирован системой безопасности]"
-                                )
-
-                    # Record spending for tenant
-                    _cost = (
-                        llm_client.last_cost
-                        if hasattr(llm_client, "last_cost")
-                        else 0.0
-                    )
-                    if _cost > 0 and tenant_ids:
-                        for tid in tenant_ids:
-                            get_spending_checker().record_spending(tid, _cost)
-
-                    # Check spending limit
-                    if tenant_ids:
-                        for tid in tenant_ids:
-                            _allowed, _reason = get_spending_checker().check_limits(tid)
-                            if not _allowed:
-                                logger.warning("[SPENDING] %s", _reason)
-                                yield AgentEvent(
-                                    "error",
-                                    ErrorEventData(
-                                        message="Лимит расходов исчерпан для этого тенанта."
-                                    ),
-                                )
-                                return
-
-                    # Record LLM call in backlog
-                    if hasattr(llm_client, "last_usage") and llm_client.last_usage:
-                        usage = llm_client.last_usage
-                        backlog.record_llm_call(
-                            session_id=session_id,
-                            model=getattr(llm_client, "model", "unknown"),
-                            provider=getattr(llm_client, "model", "unknown").split("/")[
-                                0
-                            ]
-                            if "/" in getattr(llm_client, "model", "")
-                            else "unknown",
-                            duration_ms=_llm_duration,
-                            prompt_tokens=usage.get("prompt_tokens", 0),
-                            completion_tokens=usage.get("completion_tokens", 0),
-                            total_tokens=usage.get("total_tokens", 0),
-                            cost=llm_client.last_cost,
-                            status="success",
-                            tenant_ids=tenant_ids or [],
-                            turn_id=ctx.turn_id,
-                            iteration=ctx.iteration,
-                        )
-
-                    # 3b. Dispatch based on outcome
-                    if ctx.outcome == "final" or ctx.is_finished:
-                        await self.conversation_manager.aremember_turn(
-                            ctx.session_id,
-                            ctx.turn_messages,  # type: ignore[arg-type]
-                        )
-                        return  # success
-
-                    if ctx.outcome == "tool_calls":
-                        async for event in self._tool_handler.execute(
-                            ctx.pending_tool_calls,
-                            session,
-                            ctx,
-                        ):
-                            yield event
-                        continue  # next iteration
-
-                    # 3c. Empty-round check
-                    if ctx.empty_rounds >= self.max_empty_rounds:
-                        logger.info(
-                            "[AGENT] Empty rounds limit hit (%d) — stopping",
-                            ctx.empty_rounds,
-                        )
-                        break
-
-                    # 3d. Token budget check
-                    token_count = estimate_tokens(ctx.messages, model=llm_client.model)
-                    if token_count >= self.max_turn_tokens:
-                        logger.warning(
-                            "[AGENT] Turn token budget exceeded (%d ≥ %d) for model %s",
-                            token_count,
-                            self.max_turn_tokens,
-                            llm_client.model,
-                        )
-                        break
-
-                # ── 4. Fallback (no final answer) ───────────────────────
-                if not ctx.is_finished:
-                    async for event in fallback_handler.run(ctx, was_finished=False):
-                        yield event
-        except Exception as exc:
-            logger.exception("[AGENT] Turn failed: %s", exc)
-            backlog.error(session_id, ctx.turn_id, ctx.iteration, str(exc))
-            yield AgentEvent("error", ErrorEventData(message=classify_error(exc, lang)))
-
-
-def _build_schema_message(schema: dict) -> str:
-    """Build a system-prompt block from the LLM-friendly schema.
-
-    Compact format — no raw SQL, only semantic information the LLM
-    needs to make effective tool calls.
-    """
-    lines = ["=== СТРУКТУРА ДАННЫХ (автоматически загружена из БД) ==="]
-
-    for ent in schema.get("entities", []):
-        name = ent.get("name", "?")
-        lines.append(f"\n📦 {name}")
-
-        desc = ent.get("description", "")
-        if desc:
-            lines.append(f"   Описание: {desc}")
-
-        sf = ent.get("search_fields", "")
-        if sf:
-            lines.append(f"   Поиск: по полю '{sf}' (ILIKE, нечёткий)")
-
-        for fg in ent.get("filter_fields", []):
-            label = fg.get("label", "")
-            fields = fg.get("fields", [])
-            if not fields:
-                continue
-            parts = []
-            for f in fields:
-                desc = f.get("description", "")
-                col = f.get("column", f.get("name", "?"))
-                if desc:
-                    parts.append(f"{col} ({desc})")
-                else:
-                    parts.append(col)
-            lines.append(f"   Фильтр ({label}): {', '.join(parts)}")
-
-        for rel in ent.get("relations", []):
-            field = rel.get("field", "?")
-            ref = rel.get("referenced_entity", "?")
-            lines.append(f"   Связь: {field} → {ref}")
-
-    hints = schema.get("workflow_hints", [])
-    if hints:
-        lines.append("\n📌 Стратегические подсказки:")
-        for h in hints:
-            lines.append(f"   • {h}")
-
-    return "\n".join(lines)
 
 
 # ── Default singleton ─────────────────────────────────────────────────────

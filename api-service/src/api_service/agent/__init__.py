@@ -2,41 +2,100 @@
 
 Modules
 -------
-orchestrator      — Thin coordinator (LLMAgent, agent singleton)
-turn_context       — Turn-level state container
-prompts            — System prompt constants
-token_estimator    — Token estimation & fallback trimming
-event_stream       — SSE formatting utilities
-llm_handler        — LLM call → outcome (tool_calls / final / empty)
-tool_handler       — MCP tool execution
-fallback_handler   — Graceful degradation when no answer is produced
-llm_client         — LiteLLM wrapper (+ LLMClientProtocol)
-mcp_client         — MCP SSE client
-tool_parser        — Tool call extraction from LLM output
-conversation       — Conversation history manager
-types              — Shared type definitions
+orchestrator       — Thin coordinator (LLMAgent, agent singleton)
+pipeline            — Pipeline orchestration (Pipeline, PipelineContext, Stage, Middleware)
+stages              — Pipeline stages (LLMStage, ToolExecutionStage, GuardInputStage, …)
+middlewares          — Pipeline middleware (SpendingMiddleware, BacklogMiddleware, …)
+turn_context        — Turn-level state container
+prompts             — System prompt constants
+token_estimator     — Token estimation & fallback trimming
+event_stream        — SSE formatting utilities
+llm_client          — LiteLLM wrapper (+ LLMClientProtocol) [DEPRECATED]
+litellm_provider    — Clean LiteLLM adapter under LLMProvider protocol [NEW]
+provider_pool       — Health-checked LLM provider pool with failover [NEW]
+mcp_client          — MCP SSE client
+tool_parser         — Tool call extraction from LLM output
+conversation        — Conversation history manager
+types               — Shared type definitions
+models              — Pydantic domain models [NEW]
+protocols           — Structural subtyping contracts [NEW]
 """
 
 from __future__ import annotations
 
 from .conversation import ConversationManager
+from .litellm_provider import LiteLLMProvider
 from .llm_client import LLMClient, LLMClientProtocol
-from .mcp_client import MCPClient
+from .mcp_client import MCPClient, ToolResult
+from .models import (
+    CompletionRequest,
+    CompletionResponse,
+    ProviderConfig,
+    UsageInfo,
+)
+from .middlewares import BacklogMiddleware, SpendingMiddleware, TokenBudgetMiddleware
 from .orchestrator import LLMAgent, agent
+from .pipeline import Pipeline, PipelineContext, Stage, Middleware
+from .provider_pool import ProviderPool, ProviderWorker
+from .stages import (
+    FallbackStage,
+    GuardInputStage,
+    GuardOutputStage,
+    LLMStage,
+    SaveHistoryStage,
+    ToolDiscoveryStage,
+    ToolExecutionStage,
+)
+from .protocols import (
+    BacklogWriter,
+    ConversationStore,
+    LLMProvider,
+    MCPToolProvider,
+    SpendingTracker,
+)
 from .tool_parser import ToolCallParser
 from .types import AgentEvent, EventType, Message, ParsedToolCall, SessionId, TurnId
+from .turn_context import TurnContext
 
 __all__ = [
     "AgentEvent",
+    "BacklogMiddleware",
+    "BacklogWriter",
+    "CompletionRequest",
+    "CompletionResponse",
     "ConversationManager",
+    "ConversationStore",
     "EventType",
+    "FallbackStage",
+    "GuardInputStage",
+    "GuardOutputStage",
     "LLMAgent",
     "LLMClient",
     "LLMClientProtocol",
+    "LLMProvider",
+    "LLMStage",
+    "LiteLLMProvider",
     "MCPClient",
-    "agent",
+    "MCPToolProvider",
+    "Middleware",
+    "Pipeline",
+    "PipelineContext",
+    "ProviderConfig",
+    "ProviderPool",
+    "ProviderWorker",
+    "SaveHistoryStage",
+    "SpendingMiddleware",
+    "SpendingTracker",
+    "Stage",
+    "TokenBudgetMiddleware",
     "ToolCallParser",
-    # Types
+    "ToolDiscoveryStage",
+    "ToolExecutionStage",
+    "ToolResult",
+    "TurnContext",
+    "UsageInfo",
+    "agent",
+    # Legacy types
     "Message",
     "ParsedToolCall",
     "SessionId",

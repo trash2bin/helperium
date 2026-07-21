@@ -111,18 +111,6 @@ class TestTurnContextDefaults:
         ctx = TurnContext()
         assert ctx.empty_rounds == 0
 
-    def test_default_is_finished(self):
-        ctx = TurnContext()
-        assert ctx.is_finished is False
-
-    def test_default_outcome(self):
-        ctx = TurnContext()
-        assert ctx.outcome is None
-
-    def test_default_pending_tool_calls(self):
-        ctx = TurnContext()
-        assert ctx.pending_tool_calls == []
-
     def test_default_messages(self):
         ctx = TurnContext()
         assert ctx.messages == []

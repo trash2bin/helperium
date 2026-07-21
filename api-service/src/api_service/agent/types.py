@@ -6,6 +6,12 @@ import enum
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, NotRequired
 
+# Pydantic model re-exports — available for consumers alongside the
+# legacy TypedDict variants.  ``UsageInfo`` is not re-exported here
+# because ``types`` already defines a TypedDict variant with the same
+# name that is used internally; import ``PydanticUsageInfo`` explicitly
+# from ``models`` when the Pydantic version is needed.
+
 # Event types for AgentEvent
 EventType = Literal[
     "status",

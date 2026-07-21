@@ -2,17 +2,23 @@
 
 Хранит провайдеров в JSON-файле (.data/providers.json).
 API-ключи маскируются при чтении для API: только первые 4 символа + "****".
-В памяти ключи хранятся полностью, на диске — тоже полностью (файл защищён правами ОС).
+В памяти ключи хранятся через ``SecretStr``, на диске — полностью
+(файл защищён правами ОС).
+
+Внутреннее хранение — ``dict[str, ProviderConfig]`` (Pydantic).
+Потокобезопасность — ``asyncio.Lock``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
-import threading
 from pathlib import Path
 from typing import Any
+
+from api_service.agent.models import ProviderConfig
 
 logger = logging.getLogger("api_service.provider_store")
 
@@ -51,16 +57,17 @@ def mask_api_key(key: str | None) -> str | None:
 
 
 class ProviderStore:
-    """Thread-safe хранилище LLM-провайдеров.
+    """Async-safe хранилище LLM-провайдеров на основе Pydantic.
 
     Провайдеры хранятся в JSON-файле на диске.
     Каждый провайдер имеет уникальное имя и содержит model, api_key, api_base, enabled.
+    Внутреннее представление — ``ProviderConfig`` (Pydantic).
     """
 
     def __init__(self, path: str | Path | None = None) -> None:
         self._path = Path(path or DEFAULT_PROVIDERS_PATH)
-        self._lock = threading.Lock()
-        self._providers: dict[str, dict[str, Any]] = {}
+        self._lock = asyncio.Lock()
+        self._providers: dict[str, ProviderConfig] = {}
         self._load()
         self._import_from_env_if_empty()
 
@@ -82,7 +89,7 @@ class ProviderStore:
 
         import os as _os
 
-        providers: list[dict[str, Any]] = []
+        providers: list[tuple[str, str, str, str]] = []  # name, model, key, api_base
         seen_prefixes: set[str] = set()
 
         for key, val in _os.environ.items():
@@ -95,41 +102,36 @@ class ProviderStore:
             if not model:
                 continue
             api_base = _os.environ.get(f"{prefix}_API_BASE", "")
-            providers.append(
-                {
-                    "name": prefix.lower(),
-                    "model": model,
-                    "api_key": val,
-                    "api_base": api_base,
-                    "enabled": True,
-                    "source": "env",
-                    "label": prefix.lower(),
-                    "provider": "",
-                }
-            )
+            providers.append((prefix.lower(), model, val, api_base))
             seen_prefixes.add(prefix.upper())
 
         if not providers:
             return
 
-        for ep in providers:
-            if not ep["model"]:
-                continue
-            self._providers[ep["name"]] = {
-                "model": ep["model"],
-                "api_key": ep["api_key"] or "",
-                "api_base": ep["api_base"] or "",
-                "enabled": ep["enabled"],
-                "source": "env",
-                "label": ep["label"],
-                "provider": ep["provider"],
-            }
+        for name, model, api_key, api_base in providers:
+            # Determine provider prefix from common patterns
+            provider = ""
+            for pfx in ("openai", "anthropic", "mistral"):
+                if name.startswith(pfx):
+                    provider = pfx
+                    break
+
+            self._providers[name] = ProviderConfig(
+                name=name,
+                model=model,
+                api_key=api_key,
+                api_base=api_base,
+                enabled=True,
+                source="env",
+                label=name,
+                provider=provider,
+            )
 
         self._save()
         logger.info(
             "[ENV] Imported %d providers from environment variables: %s",
             len(providers),
-            [p["name"] for p in providers],
+            [p[0] for p in providers],
         )
 
     # ── File I/O ──────────────────────────────────────────────────────
@@ -145,7 +147,20 @@ class ProviderStore:
         try:
             with open(self._path, encoding="utf-8") as f:
                 data = json.load(f)
-            self._providers = data.get("providers", {})
+            raw = data.get("providers", {})
+            self._providers = {}
+            for name, p in raw.items():
+                self._providers[name] = ProviderConfig(
+                    name=name,
+                    model=p.get("model", ""),
+                    api_key=p.get("api_key", ""),
+                    api_base=p.get("api_base", ""),
+                    enabled=p.get("enabled", True),
+                    source=p.get("source", "store"),
+                    label=p.get("label", name),
+                    provider=p.get("provider", ""),
+                    priority=p.get("priority", 0),
+                )
             logger.info("Loaded %d providers from %s", len(self._providers), self._path)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Failed to load provider store: %s — starting empty", exc)
@@ -154,58 +169,72 @@ class ProviderStore:
     def _save(self) -> None:
         """Сохраняет провайдеров в JSON-файл."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        raw: dict[str, dict[str, Any]] = {}
+        for name, cfg in self._providers.items():
+            raw[name] = {
+                "model": cfg.model,
+                "api_key": cfg.api_key.get_secret_value() if cfg.api_key else "",
+                "api_base": cfg.api_base,
+                "enabled": cfg.enabled,
+                "source": cfg.source,
+                "label": cfg.label,
+                "provider": cfg.provider,
+                "priority": cfg.priority,
+            }
         with open(self._path, "w", encoding="utf-8") as f:
-            json.dump({"providers": self._providers}, f, indent=2, ensure_ascii=False)
+            json.dump({"providers": raw}, f, indent=2, ensure_ascii=False)
         # Restrict file permissions (Unix only)
         try:
             os.chmod(self._path, 0o600)
         except OSError:
             pass
 
-    def reload(self) -> None:
+    async def reload(self) -> None:
         """Перезагружает провайдеров с диска (hot-reload)."""
-        with self._lock:
+        async with self._lock:
             self._load()
 
-    # ── CRUD ──────────��───────────────────────────────────────────────
+    # ── CRUD ──────────────────────────────────────────────────────────
 
-    def list_providers(self) -> list[dict[str, Any]]:
+    async def list_providers(self) -> list[dict[str, Any]]:
         """Возвращает список всех провайдеров с замаскированными ключами."""
-        with self._lock:
+        async with self._lock:
             result = []
-            for name, p in self._providers.items():
-                entry = {
+            for name, cfg in self._providers.items():
+                api_key_str = cfg.api_key.get_secret_value() if cfg.api_key else ""
+                entry: dict[str, Any] = {
                     "name": name,
-                    "model": p.get("model", ""),
-                    "api_base": p.get("api_base", ""),
-                    "enabled": p.get("enabled", True),
-                    "api_key_masked": mask_api_key(p.get("api_key")),
-                    "provider": p.get("provider", ""),
-                    "has_api_key": bool(p.get("api_key")),
-                    "source": p.get("source", "store"),
+                    "model": cfg.model,
+                    "api_base": cfg.api_base,
+                    "enabled": cfg.enabled,
+                    "api_key_masked": mask_api_key(api_key_str),
+                    "provider": cfg.provider,
+                    "has_api_key": bool(api_key_str),
+                    "source": cfg.source,
                 }
                 result.append(entry)
             return sorted(result, key=lambda x: x["name"])
 
-    def get_provider(self, name: str) -> dict[str, Any] | None:
+    async def get_provider(self, name: str) -> dict[str, Any] | None:
         """Возвращает одного провайдера с маскированным ключом."""
-        with self._lock:
-            p = self._providers.get(name)
-            if not p:
+        async with self._lock:
+            cfg = self._providers.get(name)
+            if not cfg:
                 return None
+            api_key_str = cfg.api_key.get_secret_value() if cfg.api_key else ""
             return {
                 "name": name,
-                "model": p.get("model", ""),
-                "api_base": p.get("api_base", ""),
-                "enabled": p.get("enabled", True),
-                "api_key_masked": mask_api_key(p.get("api_key")),
-                "provider": p.get("provider", ""),
-                "has_api_key": bool(p.get("api_key")),
-                "label": p.get("label", name),
-                "source": p.get("source", "store"),
+                "model": cfg.model,
+                "api_base": cfg.api_base,
+                "enabled": cfg.enabled,
+                "api_key_masked": mask_api_key(api_key_str),
+                "provider": cfg.provider,
+                "has_api_key": bool(api_key_str),
+                "label": cfg.label,
+                "source": cfg.source,
             }
 
-    def add_provider(
+    async def add_provider(
         self,
         name: str,
         model: str,
@@ -219,23 +248,23 @@ class ProviderStore:
         Returns:
             dict с маскированными данными
         """
-        with self._lock:
+        async with self._lock:
             if name in self._providers:
                 raise ValueError(f"Provider '{name}' already exists")
 
             if not model:
                 raise ValueError("model is required")
 
-            entry: dict[str, Any] = {
-                "model": model,
-                "api_key": api_key or "",
-                "api_base": api_base or "",
-                "enabled": enabled,
-                "provider": provider or "",
-                "label": name,
-                "source": "store",
-            }
-            self._providers[name] = entry
+            self._providers[name] = ProviderConfig(
+                name=name,
+                model=model,
+                api_key=api_key or "",
+                api_base=api_base or "",
+                enabled=enabled,
+                provider=provider or "",
+                label=name,
+                source="store",
+            )
             self._save()
 
             return {
@@ -248,7 +277,7 @@ class ProviderStore:
                 "has_api_key": bool(api_key),
             }
 
-    def update_provider(
+    async def update_provider(
         self,
         name: str,
         model: str | None = None,
@@ -267,61 +296,62 @@ class ProviderStore:
         Returns:
             dict с маскированными данными или None если не найден
         """
-        with self._lock:
-            p = self._providers.get(name)
-            if not p:
+        async with self._lock:
+            cfg = self._providers.get(name)
+            if not cfg:
                 return None
 
             if model is not None:
-                p["model"] = model
+                cfg.model = model
             if provider is not None:
-                p["provider"] = provider
+                cfg.provider = provider
             if api_base is not None:
-                p["api_base"] = api_base
+                cfg.api_base = api_base
             if enabled is not None:
-                p["enabled"] = enabled
+                cfg.enabled = enabled
             if label is not None:
-                p["label"] = label
+                cfg.label = label
 
             # При ручном редактировании через админку — снимаем маркер "env"
-            p["source"] = "store"
+            cfg.source = "store"
 
             # Специальное значение __clear__ для очистки ключа
             if api_key == "__clear__":
-                p["api_key"] = ""
+                cfg.api_key = ""  # type: ignore[assignment]
             elif api_key is not None and api_key != "":
-                p["api_key"] = api_key
+                cfg.api_key = api_key  # type: ignore[assignment]
 
             self._save()
 
+            api_key_str = cfg.api_key.get_secret_value() if cfg.api_key else ""
             return {
                 "name": name,
-                "model": p.get("model", ""),
-                "api_base": p.get("api_base", ""),
-                "enabled": p.get("enabled", True),
-                "api_key_masked": mask_api_key(p.get("api_key")),
-                "provider": p.get("provider", ""),
-                "has_api_key": bool(p.get("api_key")),
-                "label": p.get("label", name),
-                "source": p.get("source", "store"),
+                "model": cfg.model,
+                "api_base": cfg.api_base,
+                "enabled": cfg.enabled,
+                "api_key_masked": mask_api_key(api_key_str),
+                "provider": cfg.provider,
+                "has_api_key": bool(api_key_str),
+                "label": cfg.label,
+                "source": cfg.source,
             }
 
-    def delete_provider(self, name: str) -> bool:
+    async def delete_provider(self, name: str) -> bool:
         """Удаляет провайдера.
 
         Returns:
             True если удалён, False если не найден
         """
-        with self._lock:
+        async with self._lock:
             if name not in self._providers:
                 return False
             del self._providers[name]
             self._save()
             return True
 
-    def set_enabled(self, name: str, enabled: bool) -> dict[str, Any] | None:
+    async def set_enabled(self, name: str, enabled: bool) -> dict[str, Any] | None:
         """Включает/выключает провайдера."""
-        return self.update_provider(name, enabled=enabled)
+        return await self.update_provider(name, enabled=enabled)
 
     # ── Получение данных для LiteLLM Router ───────────────────────────
 
@@ -330,30 +360,35 @@ class ProviderStore:
 
         Только enabled провайдеры с model и api_key.
         Ключи возвращаются полностью (для использования в коде).
+        **Synchronous** — вызывается из ``create_fallback_client()``
+        который может работать без event loop.
+
+        Note: uses the internal dict directly (no lock) since it's
+        read-only and the GIL / single-threaded nature of the store
+        makes this safe in practice.
         """
-        with self._lock:
-            model_list: list[dict[str, Any]] = []
-            for name, p in self._providers.items():
-                if not p.get("enabled", True):
-                    continue
-                model = p.get("model", "")
-                api_key = p.get("api_key", "")
-                if not model or not api_key:
-                    continue
-                entry: dict[str, Any] = {
-                    "model_name": name,
-                    "litellm_params": {
-                        "model": model,
-                        "api_key": api_key,
-                        "timeout": 600,
-                        "temperature": 0.5,
-                    },
-                }
-                api_base = p.get("api_base", "")
-                if api_base:
-                    entry["litellm_params"]["api_base"] = api_base
-                model_list.append(entry)
-            return model_list
+        model_list: list[dict[str, Any]] = []
+        for name, cfg in self._providers.items():
+            if not cfg.enabled:
+                continue
+            if not cfg.model:
+                continue
+            api_key_str = cfg.api_key.get_secret_value() if cfg.api_key else ""
+            if not api_key_str:
+                continue
+            entry: dict[str, Any] = {
+                "model_name": name,
+                "litellm_params": {
+                    "model": cfg.model,
+                    "api_key": api_key_str,
+                    "timeout": 600,
+                    "temperature": 0.5,
+                },
+            }
+            if cfg.api_base:
+                entry["litellm_params"]["api_base"] = cfg.api_base
+            model_list.append(entry)
+        return model_list
 
     def get_fallback_enabled(self) -> bool:
         """Возвращает, включён ли fallback (есть ли хотя бы один активный провайдер)."""
@@ -361,21 +396,45 @@ class ProviderStore:
 
     @property
     def all_providers_raw(self) -> dict[str, dict[str, Any]]:
-        """Возвращает сырые данные (только для внутреннего использования)."""
-        return self._providers
+        """Возвращает сырые данные (только для внутреннего использования).
+
+        **Synchronous** — вызывается из ``orchestrator.stream_events()``
+        для доступа к unmasked api_key.
+        """
+        result: dict[str, dict[str, Any]] = {}
+        for name, cfg in self._providers.items():
+            result[name] = {
+                "model": cfg.model,
+                "api_key": cfg.api_key.get_secret_value() if cfg.api_key else "",
+                "api_base": cfg.api_base,
+                "enabled": cfg.enabled,
+                "provider": cfg.provider,
+            }
+        return result
 
 
 # ── Глобальный синглтон ──────────────────────────────────────────────
 
 _provider_store: ProviderStore | None = None
-_provider_store_lock = threading.Lock()
+_provider_store_lock = asyncio.Lock()
 
 
 def get_provider_store() -> ProviderStore:
-    """Возвращает глобальный ProviderStore (singleton)."""
+    """Возвращает глобальный ProviderStore (singleton).
+
+    Note: uses ``asyncio.Lock`` so must be called from an async context
+    or when the event loop is running.  For synchronous startup code,
+    the store is initialised lazily on first access.
+    """
     global _provider_store
     if _provider_store is None:
-        with _provider_store_lock:
+        # Since this is called from async endpoints and sync contexts,
+        # we use a simple init-once pattern.  The lock is reentrant-safe
+        # because only the first caller creates the instance.
+        import threading
+
+        _init_lock = threading.Lock()
+        with _init_lock:
             if _provider_store is None:
                 _provider_store = ProviderStore()
     return _provider_store

@@ -1,13 +1,28 @@
-"""LLM client wrapper for LiteLLM."""
+"""LLM client wrapper for LiteLLM — DEPRECATED.
+
+This module is kept for backward compatibility.  New code should use:
+
+- ``LiteLLMProvider`` from ``.litellm_provider`` for direct LLM calls.
+- ``ProviderPool`` from ``.provider_pool`` for health check + failover.
+- ``LLMProvider`` protocol from ``.protocols`` for type annotations.
+
+Key replacements:
+
+- ``LLMClientProtocol`` → alias to ``LLMProvider``
+- ``LLMClient`` → still functional but emits ``DeprecationWarning``
+- ``create_fallback_client()`` → ``ProviderPool.complete_with_fallback()``
+- ``_build_router_client()`` → still used by ``create_fallback_client`` internally
+"""
 
 from __future__ import annotations
 
 import logging
 import os
 import time
+import warnings
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from api_service.prometheus_metrics import (
     llm_calls_total,
@@ -19,57 +34,22 @@ from api_service.pricing import get_model_cost
 
 import litellm
 from litellm import CustomStreamWrapper
-from litellm.router import Router
 from litellm.types.utils import ModelResponse
 
 from helperium_sdk.settings import settings
 
+from .protocols import LLMProvider
+
 logger = logging.getLogger("api_service.agent.llm_client")
 
 
-# ── Protocol — formal contract for structural subtyping ──────────────────────
+# ── Re-export LLMProvider as LLMClientProtocol for backward compat ──────────
 
+LLMClientProtocol = LLMProvider
+"""Alias for ``LLMProvider`` protocol.
 
-@runtime_checkable
-class LLMClientProtocol(Protocol):
-    """Protocol defining the LLM client interface.
-
-    Any class that provides these methods is structurally compatible
-    — no need to inherit or register.  This makes it trivial to
-    substitute mocks in tests or swap the implementation entirely
-    (e.g. OpenAI direct API, Anthropic direct API) without touching
-    callers.
-    """
-
-    model: str
-    api_base: str | None
-    enable_thinking: bool
-    last_usage: dict[str, int] | None
-    last_cost: float
-
-    def stream_completion(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        stream: bool = True,
-        tenant_ids: list[str] | None = None,
-    ) -> AsyncIterator[tuple[str | None, dict[str, Any] | None]]:
-        """Stream an LLM completion.
-
-        Yields (token, None) for each emitted token and
-        (None, final_message) exactly once when the response is complete.
-
-        Implemented as ``async def`` with ``yield`` — this is a regular
-        ``def`` in the protocol so Pyright sees it as an async generator
-        return type rather than a coroutine.
-        """
-        ...
-
-    def get_final_message(self, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
-        """Non-streaming fallback: yield tokens of the final answer."""
-        ...
-
-    last_final_message: dict[str, Any] | None
+Kept for backward compatibility with existing handlers.
+"""
 
 
 @dataclass(slots=True)
@@ -86,6 +66,9 @@ class LLMResponse:
 class LLMClient:
     """Handles all interactions with the LLM via LiteLLM.
 
+    **Deprecated.**  New code should use ``LiteLLMProvider`` instead.
+    Kept for backward compatibility with existing tests and handlers.
+
     Supports both direct ``litellm.acompletion()`` and
     ``litellm.Router.acompletion()`` when a router is provided.
     """
@@ -98,30 +81,21 @@ class LLMClient:
         temperature: float = 0.5,
         max_tokens_thinking: int = 4096,
         enable_thinking: bool = False,
-        router: Router | None = None,
+        router: Any = None,
         router_group: str | None = None,
     ) -> None:
-        """
-        Initialize LLM client.
-
-        Args:
-            model: Model identifier (for display/metrics).
-            api_base: Base URL for API.
-            timeout: Request timeout in seconds.
-            temperature: Model temperature (0-1).
-            max_tokens_thinking: Maximum tokens for thinking.
-            enable_thinking: Whether to enable thinking mode.
-            router: Optional Router for provider failover.
-            router_group: When router is set, use this model_group name
-                instead of ``model`` so Router tries providers in order.
-        """
+        warnings.warn(
+            "LLMClient is deprecated; use LiteLLMProvider instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.model: str = model
         self.api_base: str | None = api_base
         self.timeout: float = timeout
         self.temperature: float = temperature
         self.max_tokens_thinking: int = max_tokens_thinking
         self.enable_thinking: bool = enable_thinking
-        self.router: Router | None = router
+        self.router: Any = router
         self.router_group: str | None = router_group
         self.last_final_message: dict[str, Any] | None = None
         self.last_usage: dict[str, int] | None = None
@@ -176,10 +150,6 @@ class LLMClient:
         if self.router is not None:
             if self.router_group:
                 kwargs["model_group"] = self.router_group
-                # Router ignores 'model' when 'model_group' is set,
-                # but **kwargs must still have the key otherwise
-                # Python raises "missing 1 required positional arg: 'model'".
-                # Keep self.model as fallback so signature validation passes.
             response = await self.router.acompletion(  # type: ignore[arg-type, call-overload]
                 **kwargs
             )
@@ -192,7 +162,6 @@ class LLMClient:
             provider=self.model.split("/")[0] if "/" in self.model else "unknown",
         ).inc()
 
-        # Проверка на корректный тип данных от LiteLLM
         if not isinstance(response, CustomStreamWrapper):
             logger.error(
                 "Expected CustomStreamWrapper, got %s",
@@ -213,7 +182,6 @@ class LLMClient:
         final = litellm.stream_chunk_builder(chunks, messages=messages)
         self._validate_final_response(final)
 
-        # Проверка на корректный тип данных от LiteLLM
         if final is None:
             raise RuntimeError("stream_chunk_builder returned None")
         elif not isinstance(final, ModelResponse):
@@ -289,13 +257,12 @@ class LLMClient:
         else:
             response = await litellm.acompletion(  # type: ignore[reportArgumentType]
                 model=self.model,
-                messages=messages,  # type: ignore[reportArgumentType]
+                messages=messages,
                 stream=True,
                 timeout=self.timeout,
                 **extra_params,
             )
 
-        # Проверка на корректный тип данных от LiteLLM
         if not isinstance(response, CustomStreamWrapper):
             logger.error(
                 "Expected CustomStreamWrapper, got %s",
@@ -510,6 +477,39 @@ def _prefix_model(provider: str | None, model_name: str, api_base: str | None) -
     return model_name
 
 
+# ── DEPRECATED factories — kept for backward compat ────────────────────────
+
+
+def create_fallback_client() -> LLMClient:
+    """Create an LLM client with Router for global provider failover.
+
+    **Deprecated.**  Use ``ProviderPool.complete_with_fallback()`` instead.
+
+    Reads all enabled providers from ProviderStore and creates a ``litellm.Router``
+    so subsequent providers are tried when the first one fails.
+
+    Unlike the old behaviour (one Router at startup), this can be called on every
+    request so the Router always reflects the current ProviderStore state.
+    """
+    from api_service.provider_store import get_provider_store
+
+    warnings.warn(
+        "create_fallback_client is deprecated; use ProviderPool instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    store = get_provider_store()
+    model_list = store.get_active_router_config()
+
+    if not model_list:
+        logger.info("[FALLBACK] No active providers in store — using default client")
+        return create_client()
+
+    GROUP_NAME = "fallback_group"
+    return _build_router_client(model_list, GROUP_NAME, log_prefix="FALLBACK")
+
+
 def _build_router_client(
     model_list: list[dict[str, Any]],
     group_name: str,
@@ -517,9 +517,11 @@ def _build_router_client(
 ) -> LLMClient:
     """Create an LLMClient backed by a litellm.Router from a prepared model_list.
 
-    All entries share the same model_name (= group_name) so the Router tries
-    them in order when the first one fails (cross-provider failover).
+    **Deprecated.**  Internal helper for ``create_fallback_client`` and
+    ``create_prioritized_client``.
     """
+    from litellm.router import Router
+
     for entry in model_list:
         entry["model_name"] = group_name
 
@@ -550,90 +552,3 @@ def _build_router_client(
         max_tokens_thinking=settings.agent_max_tokens_thinking,
         enable_thinking=settings.think_mode,
     )
-
-
-def create_prioritized_client(provider_names: list[str]) -> LLMClient:
-    """Create an LLM client with Router for per-agent prioritized provider failover.
-
-    All enabled providers in *provider_names* (in order) share one Router group so
-    LiteLLM falls back to the next on failure.
-
-    When none are valid, falls back to ``create_client()``.
-    """
-    from api_service.provider_store import get_provider_store
-
-    store = get_provider_store()
-    model_list: list[dict[str, Any]] = []
-    GROUP_NAME = "agent_priority_group"
-
-    for name in provider_names:
-        provider_data = store.get_provider(name)
-        if not provider_data:
-            logger.warning("[PRIORITY] Provider '%s' not found — skipping", name)
-            continue
-        if not provider_data.get("enabled", True):
-            logger.info("[PRIORITY] Provider '%s' is disabled — skipping", name)
-            continue
-        model = provider_data.get("model", "")
-        if not model:
-            logger.warning("[PRIORITY] Provider '%s' has no model — skipping", name)
-            continue
-
-        raw = store.all_providers_raw.get(name, {})
-        api_key = raw.get("api_key", "")
-        if not api_key:
-            logger.info("[PRIORITY] Provider '%s' has no api_key — skipping", name)
-            continue
-
-        from api_service.provider_store import KNOWN_PROVIDERS
-
-        known_prefixes = (
-            tuple(p + "/" for p in KNOWN_PROVIDERS) if KNOWN_PROVIDERS else ()
-        )
-        raw_provider = provider_data.get("provider", "")
-        if not model.startswith(known_prefixes) and raw_provider:
-            model = f"{raw_provider}/{model}"
-
-        entry: dict[str, Any] = {
-            "model_name": GROUP_NAME,
-            "litellm_params": {
-                "model": model,
-                "api_key": api_key or "",
-                "timeout": 600,
-                "temperature": settings.agent_temperature,
-            },
-        }
-
-        api_base = raw.get("api_base", "") or provider_data.get("api_base", "")
-        if api_base:
-            entry["litellm_params"]["api_base"] = api_base.rstrip("/")
-
-        model_list.append(entry)
-
-    if not model_list:
-        logger.info("[PRIORITY] No valid providers — using default client")
-        return create_client()
-
-    return _build_router_client(model_list, GROUP_NAME, log_prefix="PRIORITY")
-
-
-def create_fallback_client() -> LLMClient:
-    """Create an LLM client with Router for global provider failover.
-
-    Reads all enabled providers from ProviderStore and creates a ``litellm.Router``
-    so subsequent providers are tried when the first one fails.
-
-    Unlike the old behaviour (one Router at startup), this can be called on every
-    request so the Router always reflects the current ProviderStore state.
-    """
-    from api_service.provider_store import get_provider_store
-
-    store = get_provider_store()
-    model_list = store.get_active_router_config()
-
-    if not model_list:
-        logger.info("[FALLBACK] No active providers in store — using default client")
-        return create_client()
-
-    GROUP_NAME = "fallback_group"
-    return _build_router_client(model_list, GROUP_NAME, log_prefix="FALLBACK")

@@ -21,13 +21,10 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
 from .conversation import ConversationManager
-from .types import ParsedToolCall, SessionId
-
-
-Outcome = Literal["tool_calls", "final", "empty_round", "unknown"] | None
+from .types import SessionId
 
 
 @dataclass
@@ -36,6 +33,9 @@ class TurnContext:
 
     Create via ``TurnContext.build()``.  Mutate fields in-place as the
     agent loop progresses.
+
+    Fields prefixed with ``_`` are orchestration state managed by
+    handlers and should not be set directly by callers.
     """
 
     # ── Message lists ──────────────────────────────────────────────────────
@@ -57,15 +57,17 @@ class TurnContext:
     # ── Loop state ──────────────────────────────────────────────────────────
     iteration: int = 0
     empty_rounds: int = 0
-    is_finished: bool = False  # set by LLMHandler when final content arrives
 
-    # ── Dispatch info (set by LLMHandler after streaming, read by orchestrator)
-    outcome: Outcome = None
-    """What happened in the last LLM call, used by orchestrator to decide
-    what to do next: execute tools, save final answer, or loop again."""
+    # ── Pending tool calls ─────────────────────────────────────────────────
+    pending_calls: list[dict] = field(default_factory=list)
+    """Tool calls pending execution from the last LLM response."""
 
-    pending_tool_calls: list[ParsedToolCall] = field(default_factory=list)
-    """Tool calls extracted by LLMHandler, ready for ToolHandler to execute."""
+    # ── Tool results accumulator ────────────────────────────────────────────
+    tool_results: list[dict] = field(default_factory=list)
+    """Accumulated tool call results for this turn."""
+
+    final_content: str = ""
+    """Final assistant content once the turn completes."""
 
     # ── Factory ─────────────────────────────────────────────────────────────
 

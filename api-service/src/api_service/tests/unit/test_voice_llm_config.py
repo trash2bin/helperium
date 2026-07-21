@@ -50,16 +50,6 @@ async def test_voice_passes_provider_priority():
     mock_agent = MagicMock()
     mock_agent.stream_events = mock_stream
 
-    mock_prioritized = MagicMock()
-    mock_prioritized.return_value = MagicMock(
-        model="mistral/mistral-small",
-        router=None,
-        router_group=None,
-        enable_thinking=False,
-        last_usage=None,
-        last_cost=0.0,
-    )
-
     mock_store = MagicMock()
     mock_store.get_agent.return_value = {
         "name": "test-agent",
@@ -73,9 +63,6 @@ async def test_voice_passes_provider_priority():
     with (
         patch("api_service.server.get_agent_store", return_value=mock_store),
         patch("api_service.server.get_agent", return_value=mock_agent),
-        patch(
-            "api_service.agent.llm_client.create_prioritized_client", mock_prioritized
-        ),
         patch("api_service.server.load_voice_config", return_value=_make_vc()),
         patch("api_service.server.resolve_voice_config", return_value=_make_vc()),
         patch("api_service.server.STTEngine.from_config") as mock_stt_factory,
@@ -97,10 +84,12 @@ async def test_voice_passes_provider_priority():
         await _drain(result)
 
     assert result.status_code == 200
-    mock_prioritized.assert_called_once_with(["mistral", "ollama"])
     call_kwargs = mock_stream.call_args.kwargs or {}
-    assert "llm_client" in call_kwargs, (
-        f"Нет llm_client, есть: {list(call_kwargs.keys())}"
+    assert "llm_client" not in call_kwargs, (
+        f"llm_client больше не должен передаваться, есть: {list(call_kwargs.keys())}"
+    )
+    assert call_kwargs.get("provider_priority") == ["mistral", "ollama"], (
+        f"Ожидался provider_priority=['mistral', 'ollama'], получено: {call_kwargs.get('provider_priority')}"
     )
 
 

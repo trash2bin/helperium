@@ -45,7 +45,24 @@ Admin Dashboard (:8085) → proxyToApiService()
 **Типы SSE-событий:** `token`, `tool_call`, `tool_result`, `final`, `error`, `done`, `audio` (для TTS).
 
 **⚠️ Важно про data-service:** Не semantic search. Поддерживает только точное совпадение (WHERE с LIKE/равенством) по полям entities + custom_queries (заранее утверждённые SELECT-запросы). Не строит JOIN'ы на лету — только то, что описано в конфиге tenant'а. LLM сама решает, какой инструмент вызвать.
-**Ключевые файлы:** `api-service/src/api_service/` — `server.py`, `agent/orchestrator.py`, `agent/event_stream.py`, `agent/types.py`, `agent/mcp_client.py`
+
+**Архитектура api-service/agent/ (Pipeline + Protocol-based DI):**
+```
+LLMAgent (orchestrator) — тонкий координатор (~268 строк)
+  └── Pipeline (pipeline.py)
+        ├── Фаза 1 — цикл (stages):
+        │     GuardInputStage → ToolDiscoveryStage
+        │   → LLMStage → ToolExecutionStage (повтор)
+        └── Фаза 2 — финализация (finalizer_stages):
+              FallbackStage → GuardOutputStage → SaveHistoryStage
+        каждое событие проходит через Middleware:
+          SpendingMiddleware → BacklogMiddleware → TokenBudgetMiddleware
+```
+**Protocol'ы (contracts):** `agent/protocols.py` — LLMProvider, ConversationStore, SpendingTracker, BacklogWriter (sync), GuardChecker, MCPToolProvider.
+**PipelineContext** — типизирован через Protocol'ы (store, spending, backlog, guard_checker), кроме mcp_session (внутренний _SessionProxy).
+**Адаптеры:** `LiteLLMProvider` (чистый LLM вызов), `ProviderPool` (health check + failover), `legacy_adapters.py` (backward compat).
+
+**Ключевые файлы:** `api-service/src/api_service/` — `server.py`, `agent/orchestrator.py`, `agent/pipeline.py`, `agent/stages.py`, `agent/middlewares.py`, `agent/protocols.py`, `agent/models.py`, `agent/event_stream.py`, `agent/types.py`, `agent/mcp_client.py`
 **Embed-виджет:** `api-service/embed/src/` — `index.ts`, `dom.ts`, `sse.ts`, `voice.ts`, `storage.ts`, `types.ts`
 
 ## 🏗️ 2a. MCP — Архитектура
@@ -151,9 +168,9 @@ Admin Dashboard (:8085) → proxyToApiService()
 
 ### Критерий готовности перед коммитом
 
-1. [ ] `make ci` — зелёный
+1. [ ] `make ci` — зелёный (Go + Python + agent pipeline unit tests)
 2. [ ] Pre-commit hooks — все Passed
-3. [ ] `uv run pytest tests/e2e/ -v` — 44 e2e теста
+3. [ ] `uv run pytest src/api_service/tests/unit/agent/ -v` — 159 agent-тестов (58 pipeline unit + 101 legacy)
 
 ## 📊 10. Monitoring & Observability
 

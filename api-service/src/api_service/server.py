@@ -1123,16 +1123,13 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
 
     # Resolve provider priority -> prioritized LLM client
     provider_priority = agent.get("provider_priority", [])
+    request_llm = None
     if provider_priority:
-        from api_service.agent.llm_client import create_prioritized_client
-
-        request_llm = create_prioritized_client(provider_priority)
+        pass  # handled inside stream_events via provider_priority param
     elif llm_config:
         from api_service.agent.llm_client import create_client
 
         request_llm = create_client(llm_config)
-    else:
-        request_llm = None
 
     if not message:
         return StreamingResponse(
@@ -1158,7 +1155,9 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
                 system_prompt=system_prompt,
                 lang=lang,
             )
-            if request_llm:
+            if provider_priority:
+                kwargs["provider_priority"] = provider_priority
+            elif request_llm:
                 kwargs["llm_client"] = request_llm
             elif llm_config:
                 kwargs["llm_config"] = llm_config
@@ -1323,9 +1322,7 @@ async def chat_voice_endpoint(
 
     request_llm = None
     if provider_priority:
-        from api_service.agent.llm_client import create_prioritized_client
-
-        request_llm = create_prioritized_client(provider_priority)
+        pass  # handled inside stream_events via provider_priority param
     elif llm_config_agent:
         from api_service.agent.llm_client import create_client
 
@@ -1347,7 +1344,9 @@ async def chat_voice_endpoint(
                 system_prompt=system_prompt,
                 lang=request_lang,
             )
-            if request_llm:
+            if provider_priority:
+                kwargs["provider_priority"] = provider_priority
+            elif request_llm:
                 kwargs["llm_client"] = request_llm
             elif llm_config_agent:
                 kwargs["llm_config"] = llm_config_agent
