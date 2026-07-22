@@ -196,10 +196,10 @@ async def test_build_schema_cached_per_tenant(conv_manager):
     original = stages_mod._build_schema_message
     call_count = 0
 
-    def counting_build_schema_message(schema: dict) -> str:
+    def counting_build_schema_message(schema: dict, tools: list | None = None) -> str:
         nonlocal call_count
         call_count += 1
-        return original(schema)
+        return original(schema, tools)
 
     stages_mod._build_schema_message = counting_build_schema_message
 
@@ -255,10 +255,10 @@ async def test_schema_cache_different_tenants_not_shared(conv_manager):
     original = stages_mod._build_schema_message
     call_count = 0
 
-    def counting_build_schema_message(schema: dict) -> str:
+    def counting_build_schema_message(schema: dict, tools: list | None = None) -> str:
         nonlocal call_count
         call_count += 1
-        return original(schema)
+        return original(schema, tools)
 
     stages_mod._build_schema_message = counting_build_schema_message
 

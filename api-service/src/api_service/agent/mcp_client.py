@@ -513,15 +513,31 @@ class MCPClient:
             parsed = json.loads(raw_text)
             flat = json.dumps(parsed, ensure_ascii=False)
         except (json.JSONDecodeError, TypeError):
+            parsed = None
             flat = raw_text
 
-        preview = flat[:200]
+        # If result has empty_hint, append it to the reminder
+        reminder_text = f"Инструмент {name} вернул данные: {flat[:200]}. "
+        if (
+            isinstance(parsed, dict)
+            and parsed.get("total", 0) == 0
+            and parsed.get("empty_hint")
+        ):
+            hint = parsed["empty_hint"]
+            action = hint.get("suggested_action", "")
+            values = hint.get("available_values", {})
+            if action:
+                reminder_text += f"\n\nWARNING: No results found. {action}"
+            if values:
+                reminder_text += (
+                    f"\nAvailable values: {json.dumps(values, ensure_ascii=False)}"
+                )
+        else:
+            reminder_text += "ОБЯЗАТЕЛЬНО покажи эти данные пользователю."
+
         return ToolResult(
             tool_content=flat,
-            reminder=(
-                f"Инструмент {name} вернул данные: {preview}. "
-                "ОБЯЗАТЕЛЬНО покажи эти данные пользователю."
-            ),
+            reminder=reminder_text,
             ok=True,
         )
 

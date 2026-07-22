@@ -1,12 +1,13 @@
-"""E2E тесты для новых search strategies (search) с авто-генерированным конфигом.
+"""E2E тесты для новой архитектуры search strategies (v4).
 
 Проверяет:
 1. Создание tenant'ов через интроспекцию (DB → introspect → Generate → rewrite)
-2. SearchStrategy — поиск по тексту с нечётким интентом
-3. SearchStrategy — фильтрация по полям с операторами
-4. Count эндпоинты
-5. MCP инструменты grep_ / filter_ доступны через manifest
-6. (Опционально) LLM чат с неявным интентом
+2. GrepStrategy — текстовый поиск (grep_{entity})
+3. FilterStrategy — фильтрация по полям (filter_{entity})
+4. SchemaStrategy — discovery (schema_{entity})
+5. Count/Distinct эндпоинты
+6. MCP инструменты grep_ / filter_ / schema_ доступны через manifest
+7. (Опционально) LLM чат с неявным интентом
 """
 
 from __future__ import annotations
@@ -244,12 +245,12 @@ def _parse_sse_stream(response, idle_timeout: int = 12) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TESTS: Auto-shop — search стратегии
+# TESTS: Auto-shop — grep + filter + schema стратегии
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestAutoShopStrategies:
-    """Проверка search стратегий на авто-магазине."""
+    """Проверка grep/filter/schema стратегий на авто-магазине."""
 
     def test_rewrite_generated_entities(self, auto_shop_tenant):
         """После rewrite: есть сущности и эндпоинты."""
@@ -257,14 +258,43 @@ class TestAutoShopStrategies:
         assert result.get("entities", 0) > 0, "No entities generated"
         assert result.get("endpoints", 0) > 0, "No endpoints generated"
 
-    def test_grep_glushiteli(self, auto_shop_tenant):
-        """Search 'глушители' — находит запчасти выхлопной системы.
+    def test_schema_auto_parts(self, auto_shop_tenant):
+        """schema_{entity} — мета-информация о сущности.
 
-        Неявный запрос: 'глушители' → search_auto_parts(pattern="глушители")
+        Первый шаг discovery: узнать какие есть поля, distinct values, count.
         """
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/schema",
+            headers={"X-Tenant-ID": tid},
+            timeout=10,
+        )
+        assert resp.status_code == 200, f"schema: {resp.status_code} {resp.text[:200]}"
+
+        data = resp.json()
+        assert data.get("total", 0) > 0, "No total count in schema"
+        assert "fields" in data, f"No fields in schema: {list(data.keys())}"
+
+        fields = data["fields"]
+        assert "category" in fields, f"Expected category field, got: {list(fields.keys())}"
+        assert "price" in fields, f"Expected price field, got: {list(fields.keys())}"
+
+        print(f"\n  ✅ schema_auto_parts → total={data['total']}, fields={list(fields.keys())}")
+
+        # Проверка что category содержит distinct значения
+        cat = fields["category"]
+        assert "distinct" in cat or "values" in cat, f"No distinct values for category: {list(cat.keys())}"
+        values = cat.get("distinct", cat.get("values", []))
+        assert len(values) > 1, f"Expected multiple category values, got: {values}"
+
+    def test_grep_glushiteli(self, auto_shop_tenant):
+        """Grep 'глушители' — находит запчасти выхлопной системы.
+
+        Неявный запрос: 'глушители' → grep_auto_parts(pattern="глушители")
+        """
+        tid, _ = auto_shop_tenant
+        resp = requests.get(
+            f"{data_service_url()}/auto_parts/grep",
             params={"pattern": "Глушитель"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -274,7 +304,6 @@ class TestAutoShopStrategies:
         data = resp.json()
         assert data.get("total", 0) > 0, "No mufflers found"
 
-        # Должны найти глушители разных типов
         items = data.get("items", data.get("results", data.get("preview", [])))
         item_text = json.dumps(items, ensure_ascii=False)
         assert "Глушитель" in item_text, f"No 'Глушитель' in results: {item_text}"
@@ -282,11 +311,11 @@ class TestAutoShopStrategies:
     def test_grep_multi_token(self, auto_shop_tenant):
         """Grep 'глушитель универсальный' — AND токенов.
 
-        Неявный запрос: 'универсальный глушитель' → найдёт только универсальные глушители.
+        Multi-token AND: оба слова должны быть в результатах.
         """
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/grep",
             params={"pattern": "Глушитель универсальный"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -302,10 +331,10 @@ class TestAutoShopStrategies:
         assert "универсальный" in item_text
 
     def test_grep_not_found(self, auto_shop_tenant):
-        """Grep с тем, чего нет — пустой результат."""
+        """Grep с тем, чего нет — пустой результат с empty_hint."""
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/grep",
             params={"pattern": "Снегоход Буран"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -313,15 +342,32 @@ class TestAutoShopStrategies:
         assert resp.status_code == 200
         data = resp.json()
         assert data.get("total", 0) == 0, f"Expected 0, got {data}"
+        # При total=0 должен быть empty_hint
+        assert "empty_hint" in data, f"No empty_hint in response: {list(data.keys())}"
+        hint = data["empty_hint"]
+        assert "suggested_action" in hint, f"No suggested_action in empty_hint: {hint}"
+        print(f"\n  ✅ grep empty → empty_hint: {hint['suggested_action'][:80]}")
+
+    def test_grep_empty_pattern_error(self, auto_shop_tenant):
+        """Grep без pattern — 400 ошибка."""
+        tid, _ = auto_shop_tenant
+        resp = requests.get(
+            f"{data_service_url()}/auto_parts/grep",
+            headers={"X-Tenant-ID": tid},
+            timeout=10,
+        )
+        assert resp.status_code in (400, 422), (
+            f"Expected 400 for empty pattern, got {resp.status_code}: {resp.text[:200]}"
+        )
 
     def test_filter_by_category(self, auto_shop_tenant):
-        """Search 'категория=Тормозная система'.
+        """Filter 'категория=Тормозная система'.
 
-        Неявный запрос: 'тормоза на BMW X5' → search_auto_parts(category="Тормозная система")
+        Неявный запрос: 'тормоза на BMW X5' → filter_auto_parts(category="Тормозная система")
         """
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/filter",
             params={"category": "Тормозная система"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -333,30 +379,28 @@ class TestAutoShopStrategies:
     def test_filter_price_gt(self, auto_shop_tenant):
         """Filter 'цена__gt=10000' — дорогие запчасти.
 
-        Неявный запрос: 'самые дорогие запчасти' → search_auto_parts(price__gt=10000)
+        Неявный запрос: 'самые дорогие запчасти' → filter_auto_parts(price__gt=10000)
         """
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/filter",
             params={"price__gt": "10000"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
         )
         assert resp.status_code == 200
         data = resp.json()
-        # Должны быть: глушитель BMW (28500), Mercedes (12500), катализатор (18500),
-        # Audi (32000), радиатор (12500), комплект BMW (45000), глушитель средний (12500)
         total = data.get("total", 0)
         assert total >= 6, f"Expected >=6 expensive parts, got {total}: {data}"
 
     def test_filter_price_lte(self, auto_shop_tenant):
         """Filter 'цена__lte=500' — бюджетные запчасти.
 
-        Неявный запрос: 'подбери дешёвые запчасти' → search_auto_parts(price__lte=500)
+        Неявный запрос: 'подбери дешёвые запчасти' → filter_auto_parts(price__lte=500)
         """
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/filter",
             params={"price__lte": "500"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -369,7 +413,7 @@ class TestAutoShopStrategies:
         """Filter 'stock__gt=0' — товары в наличии."""
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/filter",
             params={"stock__gt": "0"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -385,7 +429,7 @@ class TestAutoShopStrategies:
         """
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
+            f"{data_service_url()}/auto_parts/grep",
             params={"pattern": "Фильтр", "limit": "3", "format": "full"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -393,23 +437,23 @@ class TestAutoShopStrategies:
         assert resp.status_code == 200
         data = resp.json()
         assert data.get("total", 0) > 0
+        returned = data.get("returned", data.get("count", 0))
+        assert returned <= 3, f"Expected <=3 items, got {returned}"
 
-    def test_search_combined_pattern_and_filter(self, auto_shop_tenant):
-        """grep 'глушитель' + category filter — combined path (RawWhere + Conditions)."""
+    def test_distinct_brands_country(self, auto_shop_tenant):
+        """distinct_{entity} — уникальные значения колонки (brands.country — string enum)."""
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/auto_parts/search",
-            params={"pattern": "Глушитель", "category": "Выхлопная система"},
+            f"{data_service_url()}/brands/distinct",
+            params={"column": "country"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data.get("total", 0) > 0, f"Expected results, got {data}"
-        # All results should be mufflers from exhaust system
-        items = data.get("items", data.get("results", data.get("preview", [])))
-        item_text = json.dumps(items, ensure_ascii=False)
-        assert "Глушитель" in item_text
+        values = data.get("values", data.get("distinct", []))
+        assert len(values) > 1, f"Expected multiple country values, got: {values}"
+        print(f"\n  ✅ distinct_brands(column='country') → {values}")
 
     def test_auto_parts_count(self, auto_shop_tenant):
         """count запчастей должен быть 35."""
@@ -423,8 +467,8 @@ class TestAutoShopStrategies:
         data = resp.json()
         assert data.get("count", 0) == 35, f"Expected 35 parts, got {data}"
 
-    def test_manifest_has_search_tools(self, auto_shop_tenant):
-        """MCP manifest содержит search_auto_parts и search_customers."""
+    def test_manifest_has_correct_tools(self, auto_shop_tenant):
+        """MCP manifest содержит grep_*, filter_*, schema_*, НЕ search_*."""
         tid, _ = auto_shop_tenant
         resp = requests.get(
             f"{data_service_url()}/mcp/manifest",
@@ -436,18 +480,29 @@ class TestAutoShopStrategies:
         tools = data.get("mcp_tools", data.get("tools", []))
         tool_names = [t.get("name") for t in tools]
 
-        assert "search_auto_parts" in tool_names, (
-            f"search_auto_parts not found in tools: {tool_names}"
+        # Должны быть новые тулы
+        assert "grep_auto_parts" in tool_names, (
+            f"grep_auto_parts not found in tools: {[n for n in tool_names if 'grep' in n or 'filter' in n]}"
         )
-        assert "search_customers" in tool_names, (
-            f"search_customers not found in tools: {tool_names}"
+        assert "filter_auto_parts" in tool_names, (
+            f"filter_auto_parts not found"
         )
+        assert "schema_auto_parts" in tool_names, (
+            f"schema_auto_parts not found in tools: {[n for n in tool_names if 'schema' in n]}"
+        )
+
+        # Не должно быть устаревших тулов search_*/simple_*
+        # find_* и list_* — легитимны (backward compat для не-strategy entity)
+        bad_search = [n for n in tool_names if n.startswith(("search_", "simple_"))]
+        assert len(bad_search) == 0, f"Old search_*/simple_* tools still present: {bad_search}"
+
+        print(f"\n  ✅ Manifest: grep, filter, schema — правильные тулы (find_* OK как legacy)")
 
     def test_orders_filter_by_status(self, auto_shop_tenant):
         """Filter заказов по статусу."""
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/orders/search",
+            f"{data_service_url()}/orders/filter",
             params={"status": "delivered"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -459,11 +514,11 @@ class TestAutoShopStrategies:
     def test_customers_grep_by_name(self, auto_shop_tenant):
         """grep клиентов по имени.
 
-        Неявный запрос: 'найди клиента Сергей' → search_customers("Сергей")
+        Неявный запрос: 'найди клиента Сергей' → grep_customers("Сергей")
         """
         tid, _ = auto_shop_tenant
         resp = requests.get(
-            f"{data_service_url()}/customers/search",
+            f"{data_service_url()}/customers/grep",
             params={"pattern": "Сергей"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -479,21 +534,43 @@ class TestAutoShopStrategies:
 
 
 class TestClinicStrategies:
-    """Проверка search на клинике (более сложные сценарии)."""
+    """Проверка grep/filter/schema на клинике."""
 
     def test_rewrite_generated(self, clinic_tenant):
         """Rewrite сработал."""
         tid, result = clinic_tenant
         assert result.get("entities", 0) > 0
 
-    def test_grep_doctor_by_specialization(self, clinic_tenant):
-        """grep врачей по имени.
-
-        Неявный запрос: 'какие у нас кардиологи?' → search_doctors("кардиолог")
-        """
+    def test_schema_doctors(self, clinic_tenant):
+        """schema_{entity} для врачей."""
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/doctors/search",
+            f"{data_service_url()}/doctors/schema",
+            headers={"X-Tenant-ID": tid},
+            timeout=10,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("total", 0) > 0
+        assert "fields" in data
+
+        # Должны быть key-поля
+        fields = data["fields"]
+        for field_name in ("specialization", "experience", "rating"):
+            assert field_name in fields, f"Expected '{field_name}' in schema fields: {list(fields.keys())}"
+
+        print(f"\n  ✅ schema_doctors → total={data['total']}, fields={list(fields.keys())}")
+        # Вывести distinct specialization
+        spec = fields.get("specialization", {})
+        values = spec.get("distinct", spec.get("values", []))
+        if values:
+            print(f"     specializations: {values}")
+
+    def test_grep_doctor_by_name(self, clinic_tenant):
+        """grep врачей по имени."""
+        tid, _ = clinic_tenant
+        resp = requests.get(
+            f"{data_service_url()}/doctors/grep",
             params={"pattern": "Смирнов"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -505,11 +582,11 @@ class TestClinicStrategies:
     def test_filter_appointments_by_status(self, clinic_tenant):
         """filter приёмов: только запланированные.
 
-        Неявный запрос: 'какие приёмы на сегодня' → search_appointments(status=scheduled)
+        Неявный запрос: 'какие приёмы на сегодня' → filter_appointments(status=scheduled)
         """
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/appointments/search",
+            f"{data_service_url()}/appointments/filter",
             params={"status": "scheduled"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -520,13 +597,10 @@ class TestClinicStrategies:
         assert total >= 7, f"Expected >=7 scheduled appointments, got {total}"
 
     def test_filter_appointments_by_reason_like(self, clinic_tenant):
-        """filter приёмов: причина содержит 'голов'.
-
-        Неявный запрос: 'у кого головные боли?' → search_appointments(reason__like="голов")
-        """
+        """filter приёмов: причина содержит 'голов'."""
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/appointments/search",
+            f"{data_service_url()}/appointments/filter",
             params={"reason__like": "%Голов%"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -538,11 +612,11 @@ class TestClinicStrategies:
     def test_filter_doctors_by_experience_gt(self, clinic_tenant):
         """filter врачей: стаж > 15 лет.
 
-        Неявный запрос: 'самые опытные врачи' → search_doctors(experience__gt=15)
+        Неявный запрос: 'самые опытные врачи' → filter_doctors(experience__gt=15)
         """
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/doctors/search",
+            f"{data_service_url()}/doctors/filter",
             params={"experience__gt": "15"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -555,11 +629,11 @@ class TestClinicStrategies:
     def test_filter_doctors_by_rating_gte(self, clinic_tenant):
         """filter врачей: рейтинг >= 4.8.
 
-        Неявный запрос: 'топ врачи по рейтингу' → search_doctors(rating__gte=4.8)
+        Неявный запрос: 'топ врачи по рейтингу' → filter_doctors(rating__gte=4.8)
         """
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/doctors/search",
+            f"{data_service_url()}/doctors/filter",
             params={"rating__gte": "4.8"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -570,13 +644,10 @@ class TestClinicStrategies:
         assert total >= 3, f"Expected >=3 top-rated doctors, got {total}: {data}"
 
     def test_filter_patients_by_city(self, clinic_tenant):
-        """filter пациентов: из Москвы.
-
-        Неявный запрос: 'пациенты из Москвы' → search_patients(city="Москва")
-        """
+        """filter пациентов: из Москвы."""
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/patients/search",
+            f"{data_service_url()}/patients/filter",
             params={"city": "Москва"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -609,14 +680,11 @@ class TestClinicStrategies:
         data = resp.json()
         assert data.get("count", 0) == 42, f"Expected 42 appointments, got {data}"
 
-    def test_grep_appointments_by_medication_in_notes(self, clinic_tenant):
-        """grep приёмов: поиск по причине обращения 'давление'.
-
-        Неявный запрос: 'у кого давление?' → search_appointments("давление")
-        """
+    def test_grep_appointments_by_medication(self, clinic_tenant):
+        """grep приёмов: поиск по полю 'reason'."""
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/appointments/search",
+            f"{data_service_url()}/appointments/grep",
             params={"pattern": "Давление"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -624,16 +692,16 @@ class TestClinicStrategies:
         assert resp.status_code == 200
         data = resp.json()
         total = data.get("total", 0)
-        assert total >= 1, f"Expected appointments, got {total}"
+        assert total >= 1, f"Expected appointments about pressure, got {total}"
 
     def test_filter_appointments_date_range(self, clinic_tenant):
         """filter приёмов: после 2025-02-01.
 
-        Неявный запрос: 'приёмы за февраль' → search_appointments(appointment_date__gte="2025-02-01")
+        Неявный запрос: 'приёмы за февраль' → filter_appointments(appointment_date__gte="2025-02-01")
         """
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/appointments/search",
+            f"{data_service_url()}/appointments/filter",
             params={"appointment_date__gte": "2025-02-01"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -644,7 +712,7 @@ class TestClinicStrategies:
         assert total >= 15, f"Expected >=15 appointments in Feb, got {total}"
 
     def test_manifest_has_clinic_tools(self, clinic_tenant):
-        """MCP manifest имеет search инструменты для клиники."""
+        """MCP manifest имеет правильные инструменты для клиники."""
         tid, _ = clinic_tenant
         resp = requests.get(
             f"{data_service_url()}/mcp/manifest",
@@ -656,20 +724,22 @@ class TestClinicStrategies:
         tools = data.get("mcp_tools", data.get("tools", []))
         tool_names = [t.get("name") for t in tools]
 
-        for tool in ["search_doctors", "search_appointments",
-                      "search_patients", "search_prescriptions"]:
-            assert tool in tool_names, (
-                f"{tool} not found in tools: {[n for n in tool_names if n.startswith('grep') or n.startswith('filter')]}"
-            )
+        # Проверка наличия grep_* и filter_* — без search_*
+        assert "grep_doctors" in tool_names, (
+            f"grep_doctors not found: {[n for n in tool_names if 'grep' in n or 'filter' in n]}"
+        )
+        assert "filter_doctors" in tool_names
+        assert "schema_doctors" in tool_names
+
+        # Никаких search_*
+        bad = [n for n in tool_names if n.startswith("search_")]
+        assert len(bad) == 0, f"Old search_* tools still present: {bad}"
 
     def test_grep_prescriptions_by_medication(self, clinic_tenant):
-        """grep назначений: поиск лекарства.
-
-        Неявный запрос: 'кому выписывали амоксициллин?' → search_prescriptions("амоксициллин")
-        """
+        """grep назначений: поиск лекарства."""
         tid, _ = clinic_tenant
         resp = requests.get(
-            f"{data_service_url()}/prescriptions/search",
+            f"{data_service_url()}/prescriptions/grep",
             params={"pattern": "Амоксициллин"},
             headers={"X-Tenant-ID": tid},
             timeout=10,
@@ -679,15 +749,41 @@ class TestClinicStrategies:
         total = data.get("total", 0)
         assert total >= 2, f"Expected >=2 amoxicillin prescriptions, got {total}"
 
+    def test_filter_grep_combo(self, clinic_tenant):
+        """LLM типично вызывает filter потом grep — раздельно.
+
+        Сценарий: "найди кардиологов с опытом > 10 лет в Москве"
+        1. filter_doctors(city="Москва", experience__gt=10)
+        2. grep_doctors(pattern="кардиолог") если нужно сузить
+        """
+        tid, _ = clinic_tenant
+
+        # Шаг 1: filter
+        resp = requests.get(
+            f"{data_service_url()}/doctors/filter",
+            params={"city": "Москва", "experience__gt": "10"},
+            headers={"X-Tenant-ID": tid},
+            timeout=10,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        print(f"\n  ✅ Filter by city+experience → total={data.get('total', 0)}")
+
+        # Шаг 2: grep если filter результатов много
+        resp2 = requests.get(
+            f"{data_service_url()}/doctors/grep",
+            params={"pattern": "кардиолог", "limit": "5"},
+            headers={"X-Tenant-ID": tid},
+            timeout=10,
+        )
+        assert resp2.status_code == 200
+        data2 = resp2.json()
+        print(f"  ✅ Grep 'кардиолог' → total={data2.get('total', 0)}")
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TESTS: LLM чат с неявным интентом (требует API ключ)
 # ═══════════════════════════════════════════════════════════════════════════
-
-pytestmark_llm = pytest.mark.skipif(
-    not (os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")),
-    reason="LLM API key not set — set OPENAI_API_KEY or LLM_API_KEY",
-)
 
 
 @pytest.mark.skipif(
@@ -695,20 +791,15 @@ pytestmark_llm = pytest.mark.skipif(
     reason="LLM API key not set",
 )
 class TestLLMImplicitIntent:
-    """LLM чат с неявным интентом — пользователь не знает про search.
+    """LLM чат с неявным интентом — пользователь не знает про тулы.
 
     Проверяет, что LLM сама догадывается вызвать правильный инструмент
-    по неявному запросу.
+    (grep_*, filter_*, schema_*) по неявному запросу.
     """
-
-    AGENT_NAME = None  # set in setup
 
     @pytest.fixture(scope="class")
     def auto_shop_agent(self, auto_shop_tenant):
-        """Create LLM agent for auto-shop.
-
-        Использует Polza AI (OpenAI-compatible) через LiteLLM.
-        """
+        """Create LLM agent for auto-shop."""
         tid, _ = auto_shop_tenant
         llm_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")
         llm_model = os.environ.get("OPENAI_MODEL", "openai/deepseek-v4-flash")
@@ -726,7 +817,7 @@ class TestLLMImplicitIntent:
         except Exception:
             pass
 
-        # Create agent with appropriate system prompt
+        # Create agent with v4 tool names in system prompt
         payload = {
             "name": agent_name,
             "provider_priority": ["polza"],
@@ -739,14 +830,15 @@ class TestLLMImplicitIntent:
                 "system_prompt": (
                     "Ты — консультант магазина автозапчастей. У тебя есть доступ к каталогу "
                     "автозапчастей через MCP-инструменты:\n"
-                    "- search_auto_parts — текстовый поиск (pattern, fields, regex, ignore_case)\n"
-                    "- search_auto_parts — фильтрация по полям (category, price__gt, price__lt, stock__gt)\n"
+                    "- grep_auto_parts — текстовый поиск (pattern, regex, ignore_case)\n"
+                    "- filter_auto_parts — фильтрация по полям (category, price__gt, price__lt, stock__gt)\n"
                     "- get_auto_parts — получить запчасть по ID\n"
-                    "- search_customers — поиск клиентов по имени\n"
-                    "- search_orders — фильтрация заказов по статусу\n\n"
-                    "Когда клиент спрашивает — используй search_ для поиска. "
+                    "- distinct_auto_parts(column) — уникальные значения колонки\n"
+                    "- schema_auto_parts() — мета-информация о каталоге\n"
+                    "- grep_customers — поиск клиентов по имени\n"
+                    "- filter_orders — фильтрация заказов по статусу\n\n"
+                    "Когда клиент спрашивает — сразу используй grep_ или filter_. "
                     "Не говори 'я могу поискать', просто ищи сразу. "
-                    "Твоя задача — помочь клиенту найти нужные запчасти. "
                     "Отвечай на русском языке."
                 ),
             },
@@ -778,23 +870,23 @@ class TestLLMImplicitIntent:
             pass
 
     def test_ask_for_muffler(self, auto_shop_agent):
-        """'Мне нужен глушитель на BMW X5' → должен вызвать search_auto_parts('глушитель BMW X5')."""
+        """'Мне нужен глушитель на BMW X5' → должен вызвать grep_ или filter_."""
         agent_name, tid = auto_shop_agent
         result = self._chat(agent_name, tid,
             "Мне нужен глушитель на BMW X5, подскажи что есть?"
         )
-        self._check_result(result, expected_tool="search_auto_parts")
+        self._check_result(result)
 
     def test_ask_for_cheap_brakes(self, auto_shop_agent):
-        """'Какие есть недорогие тормозные колодки?' → search_auto_parts(category='Тормозная система', price__lte=5000)."""
+        """'Какие есть недорогие тормозные колодки?' → filter_ или grep_."""
         agent_name, tid = auto_shop_agent
         result = self._chat(agent_name, tid,
             "Какие есть недорогие тормозные колодки, до 5000 рублей?"
         )
-        self._check_result(result, expected_tool="search_auto_parts")
+        self._check_result(result)
 
     def test_ask_for_all_available(self, auto_shop_agent):
-        """'Что есть в наличии дешёвого для Vesta?' → grep c 'Vesta' или filter по цене."""
+        """'Что есть в наличии дешёвого для Vesta?'"""
         agent_name, tid = auto_shop_agent
         result = self._chat(agent_name, tid,
             "Что есть в наличии для Лады Весты недорогое?"
@@ -802,7 +894,7 @@ class TestLLMImplicitIntent:
         self._check_result(result)
 
     def test_ask_for_bmw_parts(self, auto_shop_agent):
-        """'Покажи запчасти для BMW X5' → search_auto_parts('BMW X5')."""
+        """'Покажи запчасти для BMW X5'"""
         agent_name, tid = auto_shop_agent
         result = self._chat(agent_name, tid,
             "Покажи запчасти которые подходят на BMW X5"
@@ -810,7 +902,7 @@ class TestLLMImplicitIntent:
         self._check_result(result)
 
     def test_ask_for_engine_oil(self, auto_shop_agent):
-        """'Масло для Тойоты надо' → search_auto_parts('масло Toyota')."""
+        """'Масло для Тойоты надо'"""
         agent_name, tid = auto_shop_agent
         result = self._chat(agent_name, tid,
             "Масло моторное для Тойоты Камри нужно, что есть?"
@@ -836,7 +928,7 @@ class TestLLMImplicitIntent:
 
         return _parse_sse_stream(resp, idle_timeout=15)
 
-    def _check_result(self, result: dict, expected_tool: str | None = None):
+    def _check_result(self, result: dict):
         """Check that LLM produced useful output."""
         print(f"\n  📊 Tool calls: {len(result['tool_calls'])}")
         if result["tool_calls"]:
@@ -850,25 +942,21 @@ class TestLLMImplicitIntent:
         else:
             print("  💬 (no text response)")
 
-        # Check for errors
-        errors = result.get("errors", [])
-        if errors:
-            print(f"  ⚠️  Errors during chat: {errors}")
-
         # At minimum: tool was called OR text response was produced
         has_tool_call = len(result["tool_calls"]) > 0
         has_response = bool(result["final_text"].strip())
 
         if has_tool_call:
             tool_name = result["tool_calls"][0].get("name", "")
-            if expected_tool and tool_name != expected_tool:
-                print(f"  ⚠️  Expected tool '{expected_tool}', got '{tool_name}'")
-            print(f"  ✅ LLM called tool '{tool_name}' — pipeline OK")
-            assert not errors, f"Tool called but errors: {errors}"
+            assert "grep_" in tool_name or "filter_" in tool_name, (
+                f"Expected grep_ or filter_ tool, got '{tool_name}'"
+            )
+            print(f"  ✅ LLM used '{tool_name}' — pipeline OK")
+            assert not result.get("errors"), f"Tool called but errors: {result['errors']}"
         elif has_response:
             print("  ⚠️  LLM answered without calling tools — check system prompt")
-            assert not errors, f"Response but errors: {errors}"
+            assert not result.get("errors"), f"Response but errors: {result['errors']}"
         else:
-            if errors:
-                pytest.fail(f"Pipeline failed: {errors}")
+            if result.get("errors"):
+                pytest.fail(f"Pipeline failed: {result['errors']}")
             pytest.fail("No output from LLM")

@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
 )
 
@@ -13,6 +14,10 @@ import (
 // Пример: GET /orders/distinct?column=status → ["new", "processing", "shipped"]
 func DistinctHandler(c *Context, entityName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		qCtx, qCancel := c.queryCtx(r)
+		if qCancel != nil {
+			defer qCancel()
+		}
 		entity, ok := c.Resolver.Resolve(entityName)
 		if !ok {
 			RespondError(w, http.StatusInternalServerError, "config_error", "entity not found")
@@ -27,13 +32,7 @@ func DistinctHandler(c *Context, entityName string) http.HandlerFunc {
 		}
 
 		// Проверяем что колонка существует в entity
-		var foundCol string
-		for _, f := range entity.Fields {
-			if f.Name == column || f.Column == column {
-				foundCol = f.Column
-				break
-			}
-		}
+		foundCol := entity.FindColumn(column)
 		if foundCol == "" {
 			RespondError(w, http.StatusBadRequest, "invalid_column",
 				fmt.Sprintf("column %q not found in entity %q", column, entityName))
@@ -56,9 +55,11 @@ func DistinctHandler(c *Context, entityName string) http.HandlerFunc {
 			query += " AND " + tenantWhere
 		}
 
-		rows, err := c.DB.QueryContext(r.Context(), query, tenantArgs...)
+		rows, err := c.DB.QueryContext(qCtx, query, tenantArgs...)
 		if err != nil {
-			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
+			slog.Error("DB error in distinct", "err", err, "tenant", c.tenantID(r), "entity", entityName)
+			RespondError(w, http.StatusInternalServerError, "db_error",
+				"Query execution failed. Check field names via schema tool.")
 			return
 		}
 		defer rows.Close() //nolint:errcheck

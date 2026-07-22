@@ -205,7 +205,10 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	if readonlyConn != nil {
 		adapterSubConn = readonlyConn
 	}
-	adapterSub := &runtime.InstrumentedAdapter{Conn: adapterSubConn, Adp: adapter}
+	// ReadOnlyConn обёртка — блокирует ExecContext на уровне Go.
+	// Все data-запросы идут через неё; admin/introspection — через оригинальную conn.
+	queryConn := datasource.NewReadOnlyConn(adapterSubConn)
+	adapterSub := &runtime.InstrumentedAdapter{Conn: queryConn, Adp: adapter}
 
 	// Build router (no admin endpoints — those are on TenantStore)
 	// Build approved tools map from config

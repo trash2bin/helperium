@@ -501,7 +501,11 @@ class TestToolDiscoveryStage:
         schema_msgs = [
             m
             for m in ctx.turn.messages
-            if m.get("role") == "system" and "СТРУКТУРА ДАННЫХ" in m.get("content", "")
+            if m.get("role") == "system"
+            and (
+                "Database Schema" in m.get("content", "")
+                or "СТРУКТУРА ДАННЫХ" in m.get("content", "")
+            )
         ]
         assert len(schema_msgs) >= 1
 
@@ -531,7 +535,11 @@ class TestToolDiscoveryStage:
             [
                 m
                 for m in ctx.turn.messages
-                if m.get("content") and "СТРУКТУРА ДАННЫХ" in m.get("content", "")
+                if m.get("content")
+                and (
+                    "Database Schema" in m.get("content", "")
+                    or "СТРУКТУРА ДАННЫХ" in m.get("content", "")
+                )
             ]
         )
 
@@ -541,7 +549,11 @@ class TestToolDiscoveryStage:
             [
                 m
                 for m in ctx.turn.messages
-                if m.get("content") and "СТРУКТУРА ДАННЫХ" in m.get("content", "")
+                if m.get("content")
+                and (
+                    "Database Schema" in m.get("content", "")
+                    or "СТРУКТУРА ДАННЫХ" in m.get("content", "")
+                )
             ]
         )
         assert schema_count2 == schema_count, "Schema injected twice!"

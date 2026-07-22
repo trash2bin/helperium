@@ -338,13 +338,13 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 	}
 
 	if hasCategory && hasBrand {
-		h := "Categories = part type (brake pads, shock absorbers). Brands = manufacturer (Bosch, KYB, TRW). Use search_{entity}(pattern='oil filter') to find products by text, or search_{entity}(category='Brakes') to filter by category."
+		h := "Categories = part type (brake pads, shock absorbers). Brands = manufacturer (Bosch, KYB, TRW). Use grep_{entity}(pattern='oil filter') to find products by text, or filter_{entity}(category='Brakes') to filter by category."
 		if !hintSet[hintKey(h)] {
 			hints = append(hints, h)
 			hintSet[hintKey(h)] = true
 		}
 	} else if hasCategory {
-		h := "Categories = part type. Use search_{entity}(pattern='brake pads') to find products by text, or search_{entity}(category='Brakes') to filter by category."
+		h := "Categories = part type. Use grep_{entity}(pattern='brake pads') to find products by text, or filter_{entity}(category='Brakes') to filter by category."
 		if !hintSet[hintKey(h)] {
 			hints = append(hints, h)
 			hintSet[hintKey(h)] = true
@@ -352,14 +352,14 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 	}
 
 	// Efficient workflow hint
-	h := "EFFICIENT WORKFLOW: First use distinct_{entity}(column='brand') or distinct_{entity}(column='category') to discover available values. Then count_{entity}(category='Brakes') to see how many items match. Then search_{entity}(pattern='Brembo', category='Brakes', limit=10) to get specific data."
+	h := "EFFICIENT WORKFLOW: Start with schema_{entity}() to see available values. Use distinct_{entity}(column='brand') to explore further. Then grep_{entity}(pattern='Brembo', limit=10) to search text, or filter_{entity}(category='Brakes') for exact field filtering."
 	if !hintSet[hintKey(h)] {
 		hints = append(hints, h)
 		hintSet[hintKey(h)] = true
 	}
 
 	// Self-correction hint
-	h2 := "SELF-CORRECTION: If a tool returns 'at least one parameter required', do NOT switch to a different tool blindly. Add the missing parameter — specific search terms or field filters."
+	h2 := "SELF-CORRECTION: If grep_{entity}() returns empty results, use schema_{entity}() to discover valid values first. If filter_{entity}() returns nothing, check field names via schema or adjust ranges. Never call a tool without parameters — always specify search terms or field filters."
 	if !hintSet[hintKey(h2)] {
 		hints = append(hints, h2)
 		hintSet[hintKey(h2)] = true

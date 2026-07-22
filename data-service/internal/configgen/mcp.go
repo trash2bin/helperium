@@ -15,14 +15,6 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 		entityMap[entities[i].Name] = &entities[i]
 	}
 
-	// Build set of entities that have strategy-based endpoints
-	hasStrategy := make(map[string]bool)
-	for _, ep := range endpoints {
-		if ep.Strategy != "" && ep.Entity != "" {
-			hasStrategy[ep.Entity] = true
-		}
-	}
-
 	tools := make([]config.MCPTool, 0, len(endpoints))
 	for _, ep := range endpoints {
 		if ep.Op == config.OpBuiltinHealth || ep.Op == config.OpBuiltinStats {
@@ -58,36 +50,33 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 			toolName = fmt.Sprintf("get_%s", ep.Entity)
 			desc = fmt.Sprintf(
 				"Get a single %s by its ID. "+
-					"Use after search_%s when you have a specific ID.",
+					"Use after grep_%s when you have a specific ID.",
 				ep.Entity, ep.Entity)
 			displayName = toolDisplayName(string(config.OpGetByID), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpFind:
-			if hasStrategy[ep.Entity] {
-				continue // search strategy handles text search
-			}
+			// LEGACY: find_* — будет удалён в следующем коммите.
+			// LLM должна использовать grep_{entity}(pattern=...) вместо find_{entity}.
 			toolName = fmt.Sprintf("find_%s", ep.Entity)
 			filters := compactFilterSummary(ent)
 			if filters != "" {
 				desc = fmt.Sprintf(
-					"Search %s by name (partial match). Filters: %s.",
+					"[LEGACY] Search %s by name (partial match). Filters: %s.",
 					pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), filters)
 			} else {
 				desc = fmt.Sprintf(
-					"Search %s by text query. Example: search_%s(pattern='query')",
+					"[LEGACY] Search %s by text query. Use grep_%s(pattern='...') instead.",
 					pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), ep.Entity)
 			}
 			displayName = toolDisplayName(string(config.OpFind), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpList:
-			if hasStrategy[ep.Entity] {
-				continue // search strategy handles listing
-			}
+			// LEGACY: list_* — будет удалён в следующем коммите.
+			// LLM должна использовать grep_{entity}(limit=...) или filter_{entity}.
 			toolName = fmt.Sprintf("list_%s", ep.Entity)
 			desc = fmt.Sprintf(
-				"List all %s. Supports filters and pagination. "+
-					"Use when search_%s returns no results or you need all records.",
-				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), ep.Entity)
+				"[LEGACY] List all %s. Use grep_%s(pattern='...') or filter_%s() instead.",
+				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), ep.Entity, ep.Entity)
 			displayName = toolDisplayName(string(config.OpList), ep.Entity, displayPrefixes, customPlurals)
 
 		case config.OpDistinct:
@@ -107,53 +96,9 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
 			displayName = toolDisplayName(string(config.OpCount), ep.Entity, displayPrefixes, customPlurals)
 
-			// Add filter params so LLM knows which fields to filter by
-			if ent != nil {
-				f := false
-				for _, field := range ent.Fields {
-					if field.PrimaryKey != nil && *field.PrimaryKey {
-						continue
-					}
-					pt := config.ParamTypeString
-					switch field.Type {
-					case config.FieldTypeInt:
-						pt = config.ParamTypeInt
-					case config.FieldTypeFloat:
-						pt = config.ParamTypeFloat
-					case config.FieldTypeBool:
-						pt = config.ParamTypeBool
-					}
-					ep.Params = append(ep.Params, config.EndpointParam{
-						Name: field.Name, In: config.ParamInQuery, Type: pt, Required: &f,
-						Description: fmt.Sprintf("Filter by exact '%s' value.", field.Name),
-					})
-					// __like for strings
-					if field.Type == config.FieldTypeString {
-						ep.Params = append(ep.Params, config.EndpointParam{
-							Name: field.Name + "__like", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
-							Description: fmt.Sprintf("LIKE pattern for '%s'. Use %% as wildcard.", field.Name),
-						})
-					}
-					// __gt/__lt for numeric
-					if field.Type == config.FieldTypeInt || field.Type == config.FieldTypeFloat {
-						for _, op := range []struct{ suffix, desc string }{
-							{"__gt", "greater than"},
-							{"__gte", "greater than or equal"},
-							{"__lt", "less than"},
-							{"__lte", "less than or equal"},
-						} {
-							ep.Params = append(ep.Params, config.EndpointParam{
-								Name: field.Name + op.suffix, In: config.ParamInQuery, Type: pt, Required: &f,
-								Description: fmt.Sprintf("Filter: %s '%s' value.", op.desc, field.Name),
-							})
-						}
-					}
-				}
-			}
-
 		case config.OpCustomQuery:
-			// Relationship tools (products_by_brand) kept for strategy entities
-			// because they have required path params ({id}) preventing empty calls.
+			// LEGACY: relationship tools (*_by_*) — будет удалён в следующем коммите.
+			// LLM должна использовать filter_{entity}({fk_field}=...) вместо _by_* тулов.
 			// Short name: {child_plural}_by_{parent} (e.g. "products_by_brand")
 			pathParts := strings.Split(strings.Trim(ep.Path, "/"), "/")
 			parentName := ""
@@ -179,11 +124,10 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 
 			// Strategic description: guides LLM workflow
 			desc = fmt.Sprintf(
-				"Get all %s for a given %s. "+
-					"Use after search_%s to get the ID, then call this to list related %s. "+
-					"Supports filters and pagination.",
+				"[LEGACY] Get all %s for a given %s. "+
+					"Use filter_%s({fk_field}=...) instead — it is more flexible.",
 				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), parentShort,
-				parentName, pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
+				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
 		}
 
 		if toolName != "" {
@@ -277,10 +221,9 @@ func strategyToMCPTool(strategyName string, entity config.Entity, epPath string)
 		strategy = search.NewGrepStrategy(idCol, nameCol)
 	case "filter":
 		strategy = search.NewFilterStrategy(idCol, nameCol)
-	case "simple":
-		strategy = search.NewSimpleStrategy(idCol, nameCol, nameCol)
-	case "search":
-		strategy = search.NewSearchStrategy(idCol, nameCol)
+	case "schema":
+		strategy = search.NewSchemaStrategy(idCol, nameCol)
+
 	default:
 		return nil
 	}

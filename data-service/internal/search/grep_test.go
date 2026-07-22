@@ -244,8 +244,8 @@ func TestGrepStrategy_LimitCapped(t *testing.T) {
 		t.Fatalf("ParseRequest: unexpected error: %v", err)
 	}
 
-	if plan.Limit != 1000 {
-		t.Errorf("Limit = %d, want 1000", plan.Limit)
+	if plan.Limit != 100 {
+		t.Errorf("Limit = %d, want 100", plan.Limit)
 	}
 }
 

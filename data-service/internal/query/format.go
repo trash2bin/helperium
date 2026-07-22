@@ -6,6 +6,9 @@ type SearchResult struct {
 	Returned int           `json:"returned"`
 	Preview  []CompactRow  `json:"preview,omitempty"`
 	Data     []map[string]any `json:"data,omitempty"`
+
+	// EmptyHint — подсказка при пустом результате (только при total==0)
+	EmptyHint *EmptyHint `json:"empty_hint,omitempty"`
 }
 
 // CompactRow — краткое представление строки (id + name).

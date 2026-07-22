@@ -46,6 +46,16 @@ type Entity struct {
 	Fields []EntityField
 }
 
+// FindColumn возвращает имя DB-колонки по публичному имени поля или имени колонки.
+func (e Entity) FindColumn(fieldName string) string {
+	for _, f := range e.Fields {
+		if f.Name == fieldName || f.Column == fieldName {
+			return f.Column
+		}
+	}
+	return ""
+}
+
 // EntityField — одно поле сущности.
 type EntityField struct {
 	// Name — публичное имя поля ("fullName").

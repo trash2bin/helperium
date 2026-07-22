@@ -274,13 +274,13 @@ func TestGenerate_ListEndpoint(t *testing.T) {
 	// (grades не имеет name-поля, search заменяет list)
 	var hasSearchTool bool
 	for _, tool := range cfg.MCPTools {
-		if tool.Name == "search_grades" {
+		if tool.Name == "grep_grades" {
 			hasSearchTool = true
 			break
 		}
 	}
 	if !hasSearchTool {
-		t.Error("expected search_grades MCP tool for grades (replaces list_grades)")
+		t.Error("expected grep_grades MCP tool for grades (replaces list_grades)")
 	}
 }
 
@@ -488,20 +488,20 @@ func TestGenerate_FindWithFilters(t *testing.T) {
 		t.Error("should not have 'id' as filter param (it's PK)")
 	}
 
-	// Проверяем, что MCP tool получает фильтры через search
-	// (customers имеет search стратегию, find_customers больше не генерируется)
+	// Проверяем, что MCP tool получает фильтры через grep
+	// (customers имеет grep стратегию, find_customers больше не генерируется)
 	var searchTool *config.MCPTool
 	for i, tool := range cfg.MCPTools {
-		if tool.Name == "search_customers" {
+		if tool.Name == "grep_customers" {
 			searchTool = &cfg.MCPTools[i]
 			break
 		}
 	}
 	if searchTool == nil {
-		t.Fatal("expected search_customers MCP tool (replaces find_customers)")
+		t.Fatal("expected grep_customers MCP tool (replaces find_customers)")
 	}
 	if len(searchTool.Params) < 3 {
-		t.Errorf("expected at least 3 params on search_customers, got %d", len(searchTool.Params))
+		t.Errorf("expected at least 3 params on grep_customers, got %d", len(searchTool.Params))
 	}
 }
 

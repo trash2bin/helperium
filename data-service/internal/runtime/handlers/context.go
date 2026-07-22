@@ -2,8 +2,10 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
@@ -28,6 +30,18 @@ type Context struct {
 	// TenantIDFunc извлекает tenant_id из HTTP request context.
 	// Устанавливается TenantIDMiddleware в endpoint_builder.
 	TenantIDFunc func(r *http.Request) string
+
+	// QueryTimeout — per-query timeout. 0 = без таймаута.
+	// Применяется ко всем QueryContext/QueryRowContext вызовам.
+	QueryTimeout time.Duration
+}
+
+// queryCtx возвращает контекст с таймаутом, если QueryTimeout > 0.
+func (c *Context) queryCtx(r *http.Request) (context.Context, context.CancelFunc) {
+	if c.QueryTimeout > 0 {
+		return context.WithTimeout(r.Context(), c.QueryTimeout)
+	}
+	return r.Context(), nil
 }
 
 // tenantID извлекает tenant_id из request с помощью TenantIDFunc.

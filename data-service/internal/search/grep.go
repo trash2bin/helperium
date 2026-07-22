@@ -22,6 +22,8 @@ type GrepStrategy struct {
 	maxTokens int
 	// maxFields — максимальное количество полей в fields параметре.
 	maxFields int
+	// maxPatternLen — максимальная длина строки pattern.
+	maxPatternLen int
 
 	// idCol — имя ID-колонки для compact format.
 	idCol string
@@ -37,9 +39,10 @@ func NewGrepStrategy(idCol, nameCol string) *GrepStrategy {
 	return &GrepStrategy{
 		idCol:      idCol,
 		nameCol:    nameCol,
-		maxRegexLen: 200,  // ReDoS защита: макс 200 символов
-		maxTokens:   10,   // макс 10 токенов
-		maxFields:   20,   // макс 20 полей
+		maxRegexLen:  200,  // ReDoS защита: макс 200 символов
+		maxTokens:    10,   // макс 10 токенов
+		maxFields:    20,   // макс 20 полей
+		maxPatternLen: 500, // макс длина pattern
 	}
 }
 
@@ -93,6 +96,9 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 	if pattern == "" {
 		return nil, fmt.Errorf("'pattern' is required. Example: pattern='muffler BMW' or pattern='oil',limit=5")
 	}
+	if len(pattern) > s.maxPatternLen {
+		return nil, fmt.Errorf("pattern too long: %d chars (max %d)", len(pattern), s.maxPatternLen)
+	}
 
 	// ── Параметры ───────────────────────────────────────────────────
 	ignoreCase := parseBoolParam(q, "ignore_case", true)
@@ -120,6 +126,10 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 		}
 		for _, f := range entity.Fields {
 			if fieldSet[f.Name] {
+				// Tenant isolation: нельзя искать по tenant_id
+				if f.Column == "tenant_id" {
+					continue
+				}
 				searchFields = append(searchFields, f)
 			}
 		}
@@ -130,6 +140,15 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 	} else {
 		searchFields = stringFields(entity)
 	}
+
+	// Tenant isolation: нельзя искать по tenant_id
+	filtered := searchFields[:0]
+	for _, f := range searchFields {
+		if f.Column != "tenant_id" {
+			filtered = append(filtered, f)
+		}
+	}
+	searchFields = filtered
 
 	if len(searchFields) == 0 {
 		// Нет строковых полей для поиска — возвращаем list всех записей.

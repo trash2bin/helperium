@@ -226,8 +226,8 @@ func TestNewStrategyHandler_TenantFilterNoConditions(t *testing.T) {
 		},
 	}
 
-	// Simple strategy with limit only = no Where conditions
-	strategy := search.NewSimpleStrategy("id", "name", "name")
+	// Filter strategy — Condition-based path (no RawWhere issues)
+	strategy := search.NewFilterStrategy("id", "name")
 
 	ctx := &Context{
 		DB:      adapter,
@@ -246,8 +246,8 @@ func TestNewStrategyHandler_TenantFilterNoConditions(t *testing.T) {
 
 	h := NewStrategyHandler(ctx, strategy, "product", cfgEntity)
 
-	// Request with limit only (no search params — produces plan with no Where)
-	req := httptest.NewRequest(http.MethodGet, "/products/simple?limit=10", nil)
+	// Request with filter matching 2 tenant-a rows
+	req := httptest.NewRequest(http.MethodGet, "/products/filter?name__like=%25TenantA%25&limit=10", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 

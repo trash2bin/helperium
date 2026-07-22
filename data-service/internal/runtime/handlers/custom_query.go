@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -17,6 +18,10 @@ import (
 // WHERE была бы ненадёжной.
 func CustomQueryHandler(c *Context, queryID string, params []config.EndpointParam) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		qCtx, qCancel := c.queryCtx(r)
+		if qCancel != nil {
+			defer qCancel()
+		}
 		cq, ok := c.CustomQueries[queryID]
 		if !ok {
 			RespondError(w, http.StatusNotFound, "query_not_found",
@@ -64,9 +69,11 @@ func CustomQueryHandler(c *Context, queryID string, params []config.EndpointPara
 			return
 		}
 
-		rows, err := c.DB.QueryContext(r.Context(), query.SQL, query.Args...)
+		rows, err := c.DB.QueryContext(qCtx, query.SQL, query.Args...)
 		if err != nil {
-			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
+			slog.Error("DB error in custom_query", "err", err, "queryID", queryID)
+			RespondError(w, http.StatusInternalServerError, "db_error",
+				"Query execution failed. Check field names via schema tool.")
 			return
 		}
 		defer rows.Close() //nolint:errcheck

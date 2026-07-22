@@ -45,6 +45,10 @@ from .types import AgentEvent
 
 logger = logging.getLogger("api_service.agent.pipeline")
 
+# Maximum number of tool calls across all iterations of a single turn.
+# When exceeded, the pipeline emits an error and stops.
+MAX_TOOL_CALLS_PER_TURN: int = 10
+
 
 @dataclass
 class PipelineContext:
@@ -68,6 +72,9 @@ class PipelineContext:
     max_iterations: int = 5
     max_empty_rounds: int = 3
     max_turn_tokens: int = 8000
+
+    # Tool call counter (per turn, across all iterations)
+    tool_call_count: int = 0
 
     # Состояние pipeline (не путать с turn)
     last_response: CompletionResponse | None = None
@@ -174,6 +181,25 @@ class Pipeline:
                         # Если финал — останавливаем pipeline
                         if processed.type == "final":
                             ctx.should_stop = True
+
+                        # Tool call limit per turn
+                        if processed.type == "tool_result":
+                            ctx.tool_call_count += 1
+                            if ctx.tool_call_count > MAX_TOOL_CALLS_PER_TURN:
+                                logger.warning(
+                                    "[PIPELINE] Tool call limit reached (%d), aborting",
+                                    MAX_TOOL_CALLS_PER_TURN,
+                                )
+                                yield AgentEvent(
+                                    type="error",
+                                    data={
+                                        "message": (
+                                            "Too many tool calls. "
+                                            "Please refine your search."
+                                        )
+                                    },
+                                )
+                                ctx.should_stop = True
 
             # ── Loop termination checks ────────────────────────────────
             if ctx.should_stop:

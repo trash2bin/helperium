@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -15,6 +16,10 @@ import (
 // а не сами данные — это быстрее и дешевле по токенам.
 func CountHandler(c *Context, entityName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		qCtx, qCancel := c.queryCtx(r)
+		if qCancel != nil {
+			defer qCancel()
+		}
 		entity, ok := c.Resolver.Resolve(entityName)
 		if !ok {
 			RespondError(w, http.StatusInternalServerError, "config_error", "entity not found")
@@ -115,9 +120,11 @@ func CountHandler(c *Context, entityName string) http.HandlerFunc {
 		}
 
 		// Выполняем COUNT запрос
-		rows, err := c.DB.QueryContext(r.Context(), countSQL, args...)
+		rows, err := c.DB.QueryContext(qCtx, countSQL, args...)
 		if err != nil {
-			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
+			slog.Error("DB error in count", "err", err, "tenant", c.tenantID(r), "entity", entityName)
+			RespondError(w, http.StatusInternalServerError, "db_error",
+				"Query execution failed. Check field names via schema tool.")
 			return
 		}
 		defer rows.Close() //nolint:errcheck
@@ -125,8 +132,9 @@ func CountHandler(c *Context, entityName string) http.HandlerFunc {
 		var count int
 		if rows.Next() {
 			if err := rows.Scan(&count); err != nil {
+			slog.Error("Scan error in count", "err", err, "tenant", c.tenantID(r), "entity", entityName)
 			RespondError(w, http.StatusInternalServerError, "scan_error",
-				fmt.Sprintf("failed to scan count for %q: %v", entityName, err))
+				"Query execution failed.")
 			return
 		}
 		}

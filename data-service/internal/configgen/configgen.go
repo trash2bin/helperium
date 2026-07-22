@@ -246,14 +246,34 @@ func buildCRUDEndpoints(entities []config.Entity) []config.Endpoint {
 			Description: fmt.Sprintf("Counts %s records matching filters", entity.Name),
 		})
 
-		// search endpoint (unified text search + field filtering)
+		// grep endpoint (text search)
 		endpoints = append(endpoints, config.Endpoint{
 			Method:   config.MethodGET,
-			Path:     fmt.Sprintf("/%s/search", entity.Name),
+			Path:     fmt.Sprintf("/%s/grep", entity.Name),
 			Op:       config.OpFind,
-			Strategy: "search",
+			Strategy: "grep",
 			Entity:   entity.Name,
-			Description: fmt.Sprintf("Search %s by text and/or field filters. Pass 'pattern' for text search, or field parameters for filtering.", entity.Name),
+			Description: fmt.Sprintf("Search %s by text query. Pass 'pattern' parameter for text search.", entity.Name),
+		})
+
+		// filter endpoint (field-based filtering)
+		endpoints = append(endpoints, config.Endpoint{
+			Method:   config.MethodGET,
+			Path:     fmt.Sprintf("/%s/filter", entity.Name),
+			Op:       config.OpFind,
+			Strategy: "filter",
+			Entity:   entity.Name,
+			Description: fmt.Sprintf("Filter %s by field values. Pass field__op parameters.", entity.Name),
+		})
+
+		// schema endpoint — metadata discovery
+		endpoints = append(endpoints, config.Endpoint{
+			Method:   config.MethodGET,
+			Path:     fmt.Sprintf("/%s/schema", entity.Name),
+			Op:       config.OpFind, // dummy — strategy routing заменит
+			Strategy: "schema",
+			Entity:   entity.Name,
+			Description: fmt.Sprintf("Get metadata about %s: total count, field types, distinct values, numeric ranges.", entity.Name),
 		})
 	}
 

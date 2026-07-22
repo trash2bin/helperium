@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/configgen"
+	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
 	"github.com/trash2bin/helperium/data-service/internal/search"
@@ -34,6 +37,14 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 
 	builder := runtime.NewBuilder(adapter)
 
+	// Per-query timeout: default 30s, overridable via env QUERY_TIMEOUT_SECONDS
+	queryTimeout := 30 * time.Second
+	if envTO := os.Getenv("QUERY_TIMEOUT_SECONDS"); envTO != "" {
+		if t, err := strconv.Atoi(envTO); err == nil && t > 0 {
+			queryTimeout = time.Duration(t) * time.Second
+		}
+	}
+
 	ctx := &handlers.Context{
 		DB:            adapter,
 		Adapter:       adapter,
@@ -43,6 +54,7 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 		URLParam:      chi.URLParam,
 		Auth:          cfg.Auth,
 		TenantIDFunc:  tenantIDFromContext,
+		QueryTimeout:  queryTimeout,
 	}
 
 	r := chi.NewRouter()
@@ -113,6 +125,14 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 		entityMap[cfg.Entities[i].Name] = cfg.Entities[i]
 	}
 
+	// Build DataSource for DataSource-based methods (schema).
+	// Использует runtime.AdapterSubset как Querier (QueryContext) + adapter bridge.
+	var dataSource *datasource.SQLDataSource
+	if adapter != nil {
+		dsAdapter := &runtime.AdapterToQuery{Inner: adapter}
+		dataSource = datasource.NewSQLDataSource(adapter, dsAdapter, cfg.Entities, queryTimeout)
+	}
+
 	for _, ep := range cfg.Endpoints {
 		// Read-only guard: пропускаем write-методы, если они не утверждены
 		if readOnly && isWriteMethod(ep.Method) {
@@ -128,7 +148,8 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 
 		var h http.HandlerFunc
 
-		// Strategy-based routing (search strategies: grep, filter, simple)
+		// Strategy-based routing (search strategies: grep, filter, schema)
+		// LEGACY: "search" и "simple" стратегии будут удалены в следующем коммите.
 		// Takes precedence over Op-based routing for strategy endpoints.
 		if ep.Strategy != "" {
 			entityConfig, ok := entityMap[ep.Entity]
@@ -138,24 +159,27 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 			idCol := entityConfig.IDColumnOrDefault()
 			nameCol := entityConfig.FirstStringFieldColumn()
 
-			var strategy search.Strategy
-			switch ep.Strategy {
-			case "grep":
-				strategy = search.NewGrepStrategy(idCol, nameCol)
-			case "filter":
-				strategy = search.NewFilterStrategy(idCol, nameCol)
-			case "search":
-				strategy = search.NewSearchStrategy(idCol, nameCol)
-			case "simple":
-				searchCol := ep.SearchField
-				if searchCol == "" {
-					searchCol = nameCol
+			// Schema strategy — uses DataSource directly (not the legacy Strategy pipeline).
+			if ep.Strategy == "schema" {
+				if dataSource != nil {
+					h = handlers.NewDataSourceHandler(dataSource, ep.Entity, "schema").ServeHTTP
+				} else {
+					// Fallback: legacy SchemaStrategy (без dataSource).
+					strategy := search.NewSchemaStrategy(idCol, nameCol)
+					h = handlers.NewSchemaHandler(ctx, strategy, entityConfig).ServeHTTP
 				}
-				strategy = search.NewSimpleStrategy(idCol, nameCol, searchCol)
-			default:
-				return nil, fmt.Errorf("endpoint %q: unknown strategy %q", ep.Path, ep.Strategy)
+			} else {
+				var strategy search.Strategy
+				switch ep.Strategy {
+				case "grep":
+					strategy = search.NewGrepStrategy(idCol, nameCol)
+				case "filter":
+					strategy = search.NewFilterStrategy(idCol, nameCol)
+				default:
+					return nil, fmt.Errorf("endpoint %q: unknown strategy %q", ep.Path, ep.Strategy)
+				}
+				h = handlers.NewStrategyHandler(ctx, strategy, ep.Entity, entityConfig)
 			}
-			h = handlers.NewStrategyHandler(ctx, strategy, ep.Entity, entityConfig)
 		} else {
 			switch ep.Op {
 			case "builtin_health":

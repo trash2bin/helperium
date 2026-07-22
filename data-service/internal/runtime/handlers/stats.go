@@ -29,7 +29,11 @@ func StatsHandler(c *Context, cfg *config.Config) http.HandlerFunc {
 				sql = fmt.Sprintf("%s WHERE %s", sql, counter.Filter)
 			}
 
-			rows, err := c.DB.QueryContext(r.Context(), sql)
+			qCtx, qCancel := c.queryCtx(r)
+			if qCancel != nil {
+				defer qCancel()
+			}
+			rows, err := c.DB.QueryContext(qCtx, sql)
 			if err != nil {
 				RespondError(w, http.StatusInternalServerError, "db_error", "failed to count "+counter.Entity)
 				return

@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -17,6 +18,10 @@ import (
 //   - Если несколько фильтров → массив результатов (включая пустой [])
 func FindHandler(c *Context, entityName, searchField, queryParam string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		qCtx, qCancel := c.queryCtx(r)
+		if qCancel != nil {
+			defer qCancel()
+		}
 		entity, ok := c.Resolver.Resolve(entityName)
 		if !ok {
 			RespondError(w, http.StatusInternalServerError, "config_error", "entity not found")
@@ -88,12 +93,14 @@ func FindHandler(c *Context, entityName, searchField, queryParam string) http.Ha
 			// Pagination
 			limit, offset := readPagination(r)
 			countSQL := countQuery(query.SQL)
-			total := runCountQuery(r.Context(), c.DB, countSQL, query.Args)
+			total := runCountQuery(qCtx, c.DB, countSQL, query.Args)
 			query.SQL = appendPagination(query.SQL, limit, offset)
 
-			rows, err := c.DB.QueryContext(r.Context(), query.SQL, query.Args...)
+			rows, err := c.DB.QueryContext(qCtx, query.SQL, query.Args...)
 			if err != nil {
-				RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
+				slog.Error("DB error in find", "err", err, "tenant", c.tenantID(r), "entity", entityName)
+				RespondError(w, http.StatusInternalServerError, "db_error",
+					"Query execution failed. Check field names via schema tool.")
 				return
 			}
 			defer rows.Close() //nolint:errcheck
@@ -126,12 +133,14 @@ func FindHandler(c *Context, entityName, searchField, queryParam string) http.Ha
 		// Pagination
 		limit, offset := readPagination(r)
 		countSQL := countQuery(query.SQL)
-		total := runCountQuery(r.Context(), c.DB, countSQL, query.Args)
+		total := runCountQuery(qCtx, c.DB, countSQL, query.Args)
 		query.SQL = appendPagination(query.SQL, limit, offset)
 
-		rows, err := c.DB.QueryContext(r.Context(), query.SQL, query.Args...)
+		rows, err := c.DB.QueryContext(qCtx, query.SQL, query.Args...)
 		if err != nil {
-			RespondError(w, http.StatusInternalServerError, "db_error", err.Error())
+			slog.Error("DB error in find", "err", err, "tenant", c.tenantID(r), "entity", entityName)
+			RespondError(w, http.StatusInternalServerError, "db_error",
+				"Query execution failed. Check field names via schema tool.")
 			return
 		}
 		defer rows.Close() //nolint:errcheck

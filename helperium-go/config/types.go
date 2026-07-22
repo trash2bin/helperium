@@ -67,9 +67,10 @@ func (o Op) Valid() bool {
 }
 
 // validStrategy проверяет, что имя strategy входит в whitelist.
+// LEGACY: "search" и "simple" будут удалены в следующем коммите.
 func validStrategy(s string) bool {
 	switch s {
-	case "grep", "filter", "search", "simple":
+	case "grep", "filter", "search", "simple", "schema":
 		return true
 	}
 	return false
@@ -293,6 +294,17 @@ func (e Entity) IDColumnOrDefault() string {
 		}
 	}
 	return "id"
+}
+
+// FindColumn возвращает имя DB-колонки по публичному имени поля или имени колонки.
+// Если поле не найдено — возвращает пустую строку.
+func (e Entity) FindColumn(fieldName string) string {
+	for _, f := range e.Fields {
+		if f.Name == fieldName || f.Column == fieldName {
+			return f.Column
+		}
+	}
+	return ""
 }
 
 // FirstStringFieldColumn возвращает первую не-PK строковую колонку.
@@ -642,7 +654,7 @@ func (c *Config) Validate() error {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].search_field: required for op=find", i))
 			}
 			if ep.Strategy != "" && !validStrategy(ep.Strategy) {
-				errs = append(errs, fmt.Sprintf("endpoints[%d].strategy: unknown %q, must be one of: grep, filter, search, simple", i, ep.Strategy))
+				errs = append(errs, fmt.Sprintf("endpoints[%d].strategy: unknown %q, must be one of: grep, filter, search, simple, schema", i, ep.Strategy))
 			}
 		case OpCustomQuery:
 			if ep.QueryID == "" {

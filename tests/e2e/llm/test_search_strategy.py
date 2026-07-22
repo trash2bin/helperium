@@ -1,11 +1,11 @@
-"""E2E диагностика search стратегии: MCP-level (без LLM) + LLM diagnostic.
+"""E2E диагностика search стратегий: MCP-level (без LLM) + LLM diagnostic.
 
 === Часть 1: MCP Health Check ===
-Проверяет инфраструктуру — search_* тулы на уровне MCP (без LLM).
+Проверяет инфраструктуру — grep_*/filter_*/schema_* тулы на уровне MCP (без LLM).
 Это детерминированные тесты — они всегда проходят одинаково.
 
 === Часть 2: LLM Diagnostic ===
-НЕ ТЕСТ, а диагностика — логирует поведение LLM с новыми search_* тулами.
+НЕ ТЕСТ, а диагностика — логирует поведение LLM с новыми тулами (grep/filter/schema).
 Не содержит assert'ов на поведение модели (оно недетерминированно).
 Только логи для анализа.
 
@@ -72,7 +72,7 @@ def _cfg_tools_to_mcp_schema(cfg_tools: list[dict]) -> list[dict]:
 
 @pytest.mark.skipif(not _AGENT_TENANT, reason="no tenant configured")
 class TestSearchMCP:
-    """Проверка что search_* тулы работают на уровне MCP (без LLM)."""
+    """Проверка что grep_*/filter_*/schema_* тулы работают на уровне MCP (без LLM)."""
 
     @pytest.fixture(scope="class", autouse=True)
     def _fetch_tools(self, request):
@@ -94,22 +94,29 @@ class TestSearchMCP:
             pass
         request.cls.mcp_tools = []
 
-    def test_search_tools_names_and_schema(self):
-        """search_* есть, grep_*/filter_* нет + параметры."""
+    def test_grep_tools_names_and_schema(self):
+        """grep_* и filter_* есть, search_*/simple_*/find_*/list_* нет."""
         assert len(self.mcp_tools) > 0, (
             f"No MCP tools — tenant {_AGENT_TENANT} needs config rewrite:\n"
             f"  curl -X POST -H 'Authorization: Bearer secret' -H 'X-Tenant-ID: {_AGENT_TENANT}' http://127.0.0.1:8084/admin/config/rewrite"
         )
         names = [t["name"] for t in self.mcp_tools]
 
-        search_tools = [n for n in names if n.startswith("search_")]
-        assert len(search_tools) > 0, f"No search_*! Names: {names}"
-        bad = [n for n in names if n.startswith("grep_") or n.startswith("filter_")]
-        assert len(bad) == 0, f"Old tools still present: {bad}"
-        print(f"\n  ✅ search_* tools ({len(search_tools)}): {search_tools}")
+        grep_tools = [n for n in names if n.startswith("grep_")]
+        filter_tools = [n for n in names if n.startswith("filter_")]
+        schema_tools = [n for n in names if n.startswith("schema_")]
+        assert len(grep_tools) > 0, f"No grep_*! Names: {names}"
+        assert len(filter_tools) > 0, f"No filter_*! Names: {names}"
+        assert len(schema_tools) > 0, f"No schema_*! Names: {names}"
 
-        # JSON Schema первого search тула
-        first = [t for t in self.mcp_tools if t["name"].startswith("search_")][0]
+        bad_old = [n for n in names if n.startswith(("search_", "simple_", "find_", "list_"))]
+        assert len(bad_old) == 0, f"Old tools still present: {bad_old}"
+        print(f"\n  ✅ grep_* tools ({len(grep_tools)}): {grep_tools}")
+        print(f"  ✅ filter_* tools ({len(filter_tools)}): {filter_tools}")
+        print(f"  ✅ schema_* tools ({len(schema_tools)}): {schema_tools}")
+
+        # JSON Schema первого grep тула
+        first = [t for t in self.mcp_tools if t["name"].startswith("grep_")][0]
         props = first.get("inputSchema", {}).get("properties", {})
         required = first.get("inputSchema", {}).get("required", [])
 
@@ -121,50 +128,62 @@ class TestSearchMCP:
         assert "pattern" in required, f"pattern should be REQUIRED! required={required}"
         assert "pattern" in props, f"pattern missing! props={list(props.keys())[:15]}"
         assert "limit" in props, "limit missing"
-        field_params = [k for k in props if k not in ("pattern", "limit")]
-        assert len(field_params) > 0, f"No field params! Only: {list(props.keys())}"
 
-    def test_search_catalog_product_with_pattern_returns_data(self):
-        """search_catalog_product(pattern='oil') → данные через MCP."""
+    def test_grep_catalog_product_with_pattern_returns_data(self):
+        """grep_catalog_product(pattern='oil') → данные через MCP."""
         result = mcp_call(
-            "search_catalog_product", {"pattern": "oil"},
+            "grep_catalog_product", {"pattern": "oil"},
             tenant_ids=_AGENT_TENANT, timeout=30,
         )
         assert result, f"MCP call failed: {result.error}"
         content = result.result.get("content", [])
         text = "".join(c.get("text", "") for c in content if "text" in c)
         assert len(text) > 0, "Empty result"
-        print(f"\n  ✅ search_catalog_product(pattern='oil') → {len(text)} chars")
+        print(f"\n  ✅ grep_catalog_product(pattern='oil') → {len(text)} chars")
 
-    def test_search_catalog_product_without_params_returns_error(self):
-        """search_catalog_product({}) → 400 isError с подсказкой."""
+    def test_grep_catalog_product_without_params_returns_error(self):
+        """grep_catalog_product({}) → isError с подсказкой."""
         result = mcp_call(
-            "search_catalog_product", {},
+            "grep_catalog_product", {},
             tenant_ids=_AGENT_TENANT, timeout=15,
         )
         is_error = result.result.get("isError", False)
         content = result.result.get("content", [])
         err_text = "".join(c.get("text", "") for c in content if "text" in c)
-        assert is_error or not result.success, f"Expected 400 for empty search"
-        assert "parameter" in err_text.lower() or "at least one" in err_text.lower()
-        print(f"\n  ✅ Empty search → isError with field hint")
+        assert is_error or not result.success, f"Expected 400 for empty grep"
+        assert "pattern" in err_text.lower() or "required" in err_text.lower()
+        print(f"\n  ✅ Empty grep → isError with field hint")
 
-    def test_search_catalog_category_with_filter(self):
-        """search_catalog_category(pattern='Brake') → данные."""
+    def test_filter_catalog_product(self):
+        """filter_catalog_product(category='Brake') → данные."""
         result = mcp_call(
-            "search_catalog_category", {"pattern": "Brake"},
+            "filter_catalog_product", {"category": "Brake"},
             tenant_ids=_AGENT_TENANT, timeout=30,
         )
         if not result or not result.result.get("content"):
             result = mcp_call(
-                "search_catalog_category", {"pattern": "Тормозная"},
+                "filter_catalog_product", {"category": "Тормозная система"},
                 tenant_ids=_AGENT_TENANT, timeout=30,
             )
         assert result, f"MCP call failed: {result.error}"
         content = result.result.get("content", [])
         text = "".join(c.get("text", "") for c in content if "text" in c)
         assert len(text) > 0, "Empty result"
-        print(f"\n  ✅ search_catalog_category → {len(text)} chars")
+        print(f"\n  ✅ filter_catalog_product(category=...) → {len(text)} chars")
+
+    def test_schema_catalog_product(self):
+        """schema_catalog_product() → мета-информация."""
+        result = mcp_call(
+            "schema_catalog_product", {},
+            tenant_ids=_AGENT_TENANT, timeout=30,
+        )
+        assert result, f"MCP call failed: {result.error}"
+        content = result.result.get("content", [])
+        text = "".join(c.get("text", "") for c in content if "text" in c)
+        assert len(text) > 0, "Empty result"
+        assert "total" in text or "fields" in text or "entity" in text, \
+            f"Schema response missing expected fields: {text[:200]}"
+        print(f"\n  ✅ schema_catalog_product → {len(text)} chars")
 
 
 # =============================================================================
@@ -174,7 +193,7 @@ class TestSearchMCP:
 
 @pytest.mark.skipif(not _LLM_REQUIRED, reason="LLM API key not set")
 class TestSearchLLMDiagnostic:
-    """Диагностика LLM с search стратегией.
+    """Диагностика LLM с grep/filter/schema стратегиями.
 
     НЕ содержит assert'ов на поведение модели (оно недетерминированно).
     Только логирует что модель сделала: какие тулы вызвала, с какими аргументами,
@@ -252,9 +271,9 @@ class TestSearchLLMDiagnostic:
     PROMPT_PATTERN = "Найди запчасти по слову 'масло' или 'oil' в каталоге продукта"
     PROMPT_FILTER = (
         "Покажи товары из категории тормозная система, цена до 5000. "
-        "Используй search_catalog_product с filter параметрами."
+        "Используй filter_catalog_product с параметрами."
     )
-    PROMPT_BRANDS = "Найди все бренды в каталоге. Используй search_brands."
+    PROMPT_BRANDS = "Найди все бренды в каталоге. Используй grep_brands."
 
     # ── Diagnostics ─────────────────────────────────────────────────
 
@@ -266,13 +285,13 @@ class TestSearchLLMDiagnostic:
         print(f"  📊 Events: {len(result['events'])}")
         print(f"  📊 Tool calls: {len(result['tool_calls'])}")
 
-        used_search = any("search_" in tc.get("name", "") for tc in result["tool_calls"])
         used_grep = any("grep_" in tc.get("name", "") for tc in result["tool_calls"])
         used_filter = any("filter_" in tc.get("name", "") for tc in result["tool_calls"])
+        used_schema = any("schema_" in tc.get("name", "") for tc in result["tool_calls"])
 
-        print(f"  📊 search_* used: {used_search}")
         print(f"  📊 grep_* used: {used_grep}")
         print(f"  📊 filter_* used: {used_filter}")
+        print(f"  📊 schema_* used: {used_schema}")
 
         if result["tool_calls"]:
             print(f"\n  ┌─ Tool calls ──────────────────────────────")

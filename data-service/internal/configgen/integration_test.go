@@ -332,9 +332,9 @@ func TestAutoparts_Generate(t *testing.T) {
 
 		// Key tools
 		for _, expected := range []string{
-			"search_catalog_product",
+			"grep_catalog_product",
 			"get_catalog_product",
-			"search_catalog_brand",
+			"grep_catalog_brand",
 			"get_catalog_brand",
 			"count_catalog_product",
 			"distinct_catalog_product",

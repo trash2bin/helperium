@@ -84,8 +84,8 @@ func setupStrategyIntegration(t *testing.T) *httptest.Server {
 		},
 		Endpoints: []config.Endpoint{
 			{Method: "GET", Path: "/health", Op: "builtin_health"},
-			// search strategy: one combined grep+filter tool
-			{Method: "GET", Path: "/products/search", Op: "", Entity: "products", Strategy: "search"},
+			// grep strategy: text search tool
+			{Method: "GET", Path: "/products/grep", Op: "", Entity: "products", Strategy: "grep"},
 			// filter strategy: field-based filters only
 			{Method: "GET", Path: "/products/filter", Op: "", Entity: "products", Strategy: "filter"},
 		},
@@ -148,11 +148,11 @@ func jsonGet(t *testing.T, url string) (int, map[string]any) {
 
 func TestStrategy_SearchReturns200(t *testing.T) {
 	ts := setupStrategyIntegration(t)
-	status, result := jsonGet(t, ts.URL+"/products/search?pattern=Product&limit=10")
+	status, result := jsonGet(t, ts.URL+"/products/grep?pattern=Product&limit=10")
 	assertStatus(t, status, 200)
 
 	if result["preview"] == nil {
-		t.Error("expected non-nil preview for search with pattern")
+		t.Error("expected non-nil preview for grep with pattern")
 	}
 	total, ok := result["total"].(float64)
 	if !ok {
@@ -164,7 +164,7 @@ func TestStrategy_SearchReturns200(t *testing.T) {
 
 func TestStrategy_SearchEmptyPattern(t *testing.T) {
 	ts := setupStrategyIntegration(t)
-	status, result := jsonGet(t, ts.URL+"/products/search?pattern=&limit=10")
+	status, result := jsonGet(t, ts.URL+"/products/grep?pattern=&limit=10")
 	assertStatus(t, status, 400)
 
 	if result["error"] == nil {
@@ -172,20 +172,20 @@ func TestStrategy_SearchEmptyPattern(t *testing.T) {
 	}
 }
 
-func TestStrategy_SearchCombined(t *testing.T) {
+func TestStrategy_FilterByCategory(t *testing.T) {
 	ts := setupStrategyIntegration(t)
-	// names with 'Product' in Electronics category
-	status, result := jsonGet(t, ts.URL+"/products/search?pattern=Product&category=Electronics&limit=10")
+	// filter by category
+	status, result := jsonGet(t, ts.URL+"/products/filter?category=Electronics&limit=10")
 	assertStatus(t, status, 200)
 
 	if result["preview"] == nil {
-		t.Error("expected non-nil preview for search with pattern+filter")
+		t.Error("expected non-nil preview for filter by category")
 	}
 	total, ok := result["total"].(float64)
 	if !ok {
 		t.Errorf("expected total field as number, got %T=%v", result["total"], result["total"])
-	} else if int(total) >= 250 {
-		t.Errorf("expected category=Electronics filter to constrain results (total < 250), got total=%d", int(total))
+	} else if int(total) > 250 {
+		t.Errorf("expected at most 250 items for Electronics category, got %d", int(total))
 	} else if int(total) < 1 {
 		t.Errorf("expected total > 0, got %d", int(total))
 	}

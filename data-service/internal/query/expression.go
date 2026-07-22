@@ -159,6 +159,16 @@ func Between(field string, a, b any) Condition {
 	return Condition{Field: field, Operator: OpBetween, Values: []any{a, b}}
 }
 
+// EmptyHint — подсказка LLM при пустом результате поиска.
+// Возвращается только когда Total == 0, чтобы LLM понимала что делать дальше.
+type EmptyHint struct {
+	// SuggestedAction — что LLM может сделать чтобы найти данные
+	SuggestedAction string `json:"suggested_action,omitempty"`
+
+	// AvailableValues — для каждого string-поля список distinct значений (max 5)
+	AvailableValues map[string][]string `json:"available_values,omitempty"`
+}
+
 // And — группирует условия для читаемости; просто возвращает conds как есть.
 // Использование: plan.Where = query.And(query.Eq("a", 1), query.Gt("b", 2))
 func And(conds ...Condition) []Condition {

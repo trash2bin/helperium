@@ -218,7 +218,7 @@ func TestListHandler_DBError(t *testing.T) {
 	if !strings.Contains(body, `"error":"db_error"`) {
 		t.Errorf("Response should contain db_error: %s", body)
 	}
-	if !strings.Contains(body, `"message":"database error"`) {
+	if !strings.Contains(body, `"message":"Query execution failed`) {
 		t.Errorf("Response should contain the error message: %s", body)
 	}
 }
@@ -551,7 +551,7 @@ func TestGetByIDHandler_DBError(t *testing.T) {
 	if !strings.Contains(body, `"error":"db_error"`) {
 		t.Errorf("Response should contain db_error: %s", body)
 	}
-	if !strings.Contains(body, `"message":"database error"`) {
+	if !strings.Contains(body, `"message":"Query execution failed`) {
 		t.Errorf("Response should contain the error message: %s", body)
 	}
 }

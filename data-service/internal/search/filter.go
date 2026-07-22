@@ -165,7 +165,7 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 
 		// Skip known non-filter params.
 		switch key {
-		case "limit", "offset", "sort_by", "format":
+		case "limit", "offset", "sort_by", "format", "tenant_id":
 			continue
 		}
 
@@ -180,6 +180,10 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 		f, ok := fieldMap[fieldName]
 		if !ok {
 			continue // Unknown field, skip.
+		}
+		// Tenant isolation: tenant_id не должен быть доступен LLM как filter-поле
+		if f.Column == "tenant_id" {
+			continue
 		}
 		// Skip PK fields — they are filtered via get_by_id, not filter.
 		if f.PrimaryKey != nil && *f.PrimaryKey {

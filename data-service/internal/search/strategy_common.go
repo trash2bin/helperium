@@ -24,6 +24,9 @@ func stringFields(entity config.Entity) []config.EntityField {
 		if f.PrimaryKey != nil && *f.PrimaryKey {
 			continue
 		}
+		if f.Column == "tenant_id" {
+			continue // Tenant isolation: не допускаем поиск по tenant_id
+		}
 		if f.Type == config.FieldTypeString {
 			result = append(result, f)
 		}
@@ -74,8 +77,8 @@ func parseLimitParam(q map[string][]string, defaultLimit int) int {
 	if err != nil || v <= 0 {
 		return defaultLimit
 	}
-	if v > 1000 {
-		return 1000
+	if v > 100 {
+		return 100
 	}
 	return v
 }

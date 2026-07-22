@@ -100,7 +100,7 @@ def _parse_sse_stream(response, idle_timeout: int = 20) -> dict:
 
 SCRIPT_ROUND_NORMAL = json.dumps({
     "content": "Давайте поищем запчасти.",
-    "tool_calls": [{"name": "search_auto_parts", "arguments": {"pattern": "глушитель", "limit": 5}}],
+    "tool_calls": [{"name": "grep_auto_parts", "arguments": {"pattern": "глушитель", "limit": 5}}],
     "delay_ms": 100,
 }, ensure_ascii=False) + "\n"
 
@@ -110,13 +110,13 @@ SCRIPT_ROUND_FINAL = json.dumps({
 }, ensure_ascii=False) + "\n"
 
 SCRIPT_ROUND_EMPTY_CALL = json.dumps({
-    "tool_calls": [{"name": "search_auto_parts", "arguments": {}}],
+    "tool_calls": [{"name": "grep_auto_parts", "arguments": {}}],
     "delay_ms": 50,
 }, ensure_ascii=False) + "\n"
 
 SCRIPT_ROUND_EMPTY_RETRY = json.dumps({
     "content": "Попробую точнее.",
-    "tool_calls": [{"name": "search_auto_parts", "arguments": {"pattern": "глушитель", "limit": 5}}],
+    "tool_calls": [{"name": "grep_auto_parts", "arguments": {"pattern": "глушитель", "limit": 5}}],
     "delay_ms": 50,
 }, ensure_ascii=False) + "\n"
 
@@ -285,20 +285,20 @@ class TestScriptedPipeline:
             assert tc.get("display_name", ""), f"display_name empty for {name}"
 
         names = [tc.get("name", "") for tc in result["tool_calls"]]
-        assert "search_auto_parts" in names, f"Expected search_auto_parts, got: {names}"
+        assert "grep_auto_parts" in names, f"Expected grep_auto_parts, got: {names}"
 
         print(f"\n  ✅ Tool calls: {names}")
         print(f"  ✅ Tool results: {len(result['tool_results'])}")
         print(f"  ✅ Final: {result['final_text'][:120]}")
 
     def test_empty_call_blocked(self, scripted_server):
-        """search_auto_parts({}) → validateArgs/mcp-gateway блокирует.
+        """grep_auto_parts({}) → validateArgs/mcp-gateway блокирует.
 
         Проверяем через прямой MCP call (без LLM).
         """
         _, _, tid, _ = scripted_server
 
-        result = mcp_call("search_auto_parts", arguments={}, tenant_ids=tid, timeout=15)
+        result = mcp_call("grep_auto_parts", arguments={}, tenant_ids=tid, timeout=15)
 
         if result.success:
             print(f"\n  ⚠️ Empty call NOT rejected at MCP level. Result: {result.result}")
