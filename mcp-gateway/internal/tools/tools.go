@@ -312,8 +312,6 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 		if actualTenantID == "" {
 			actualTenantID, _ = ctx.Value(httpclient.TenantIDKey).(string)
 		}
-		slog.Info("Tool call", "tool", td.Name, "tenantID", actualTenantID)
-
 		// 2. The endpoint path is already resolved at tool registration time.
 		//    (td.Endpoint is set when the tool definition is built from config.)
 		//    No need to re-fetch the manifest for endpoint resolution.
@@ -325,6 +323,7 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 				args[k] = v
 			}
 		}
+		slog.Info("Tool call", "tool", td.Name, "tenantID", actualTenantID, "args", args)
 
 		// 4. Validate tool arguments before forwarding to data-service.
 		//    Prevents DoS/OOM via negative limits, excessive values, or long strings.
@@ -649,6 +648,9 @@ func validateArgs(args map[string]any, params []config.EndpointParam) []error {
 			s, ok := v.(string)
 			if !ok {
 				continue // not a string, skip validation
+			}
+			if len(s) == 0 {
+				errs = append(errs, fmt.Errorf("param %q: value is empty, but a non-empty value is required", k))
 			}
 			if len(s) > MaxStringParamLength {
 				errs = append(errs, fmt.Errorf("param %q: string length %d exceeds maximum allowed length %d", k, len(s), MaxStringParamLength))

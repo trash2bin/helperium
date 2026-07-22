@@ -90,7 +90,7 @@ func (s *SearchStrategy) ToolDescription(entity config.Entity) string {
 			"  • Text search: 'pattern' parameter — searches across all text fields.\n"+
 			"    Multi-word = AND (pattern='brake pads' → both words required).\n"+
 			"  • Field filter: pass field=value (category='Brakes').\n"+
-			"    Operators: {field}__gt, __lt, __gte, __lte, __like, __in, __neq\n"+
+			"    Operators: {field}__gt, __lt, __like, __neq\n"+
 			"  • Combine: pattern + fields (pattern='Brembo', category='Brakes') — AND.\n"+
 			"\n"+
 			"EXAMPLES:\n"+
@@ -135,9 +135,7 @@ func (s *SearchStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 		if field.Type == config.FieldTypeInt || field.Type == config.FieldTypeFloat {
 			for _, op := range []struct{ suffix, desc string }{
 				{"__gt", "greater than"},
-				{"__gte", "greater than or equal"},
 				{"__lt", "less than"},
-				{"__lte", "less than or equal"},
 			} {
 				params = append(params, config.EndpointParam{
 					Name: field.Name + op.suffix, In: config.ParamInQuery, Type: pt, Required: &f,
@@ -160,11 +158,7 @@ func (s *SearchStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 			Description: fmt.Sprintf("Filter: not equal to '%s'. Example: status__neq=deleted", field.Name),
 		})
 
-		// IN for all
-		params = append(params, config.EndpointParam{
-			Name: field.Name + "__in", In: config.ParamInQuery, Type: pt, ArrayOf: pt, Required: &f,
-			Description: fmt.Sprintf("Comma-separated values for IN filter on '%s'.", field.Name),
-		})
+
 	}
 
 	// 3. limit (опционально)

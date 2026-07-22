@@ -326,11 +326,11 @@ func TestSearchStrategy_ToolParams(t *testing.T) {
 	}
 
 	// Field params should be present
-	expected := []string{"pattern", "name", "name__like", "name__in",
-		"description", "description__like", "description__in",
-		"price", "price__gt", "price__gte", "price__lt", "price__lte", "price__in",
-		"active", "active__in",
-		"category", "category__like", "category__in",
+	expected := []string{"pattern", "name", "name__like", "name__neq",
+		"description", "description__like", "description__neq",
+		"price", "price__gt", "price__lt", "price__neq",
+		"active", "active__neq",
+		"category", "category__like", "category__neq",
 		"limit"}
 	for _, name := range expected {
 		if !paramNames[name] {
