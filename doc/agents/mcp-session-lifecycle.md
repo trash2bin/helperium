@@ -23,3 +23,18 @@ GET /mcp (клиент)
 ```
 
 **Ключевые файлы:** `mcp-gateway/cmd/main.go` — `sseHandler()`, `mcpPostHandler()`, `createCompositeServer()`
+
+## Tool Registry & Strategy Integration
+
+При создании composite-сервера (`createCompositeServer()`) инициализируется реестр инструментов, который получает манифест от data-service по `GET /mcp/manifest`.
+
+### Генерация MCP-тулов
+
+Манифест генерируется через `configgen.GenerateMCPTools()`. Для entity, у которых есть strategy-эндпоинты (`endpoints[].strategy`):
+- **Вместо** `find_*` / `list_*` генерируется единый `search_*` инструмент
+- Имя, описание и параметры определяют сами стратегии через `Strategy.ToolName()`, `Strategy.ToolDescription()`, `Strategy.ToolParams()`
+- Стратегии: `grep` (multi-token AND, regex, multi-field), `filter` (field `__gt`/`__like`/`__in`), `simple` (backward compat), `search` (grep+filter комбо)
+- Для entity без стратегии сохраняются legacy-тулы (`find_*`, `list_*`)
+- Custom query relationship-тулы (`products_by_brand`) не генерируются, если entity входит в strategy
+
+Подробнее о стратегиях: [search-strategies.md](search-strategies.md)

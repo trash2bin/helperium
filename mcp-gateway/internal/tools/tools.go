@@ -592,7 +592,7 @@ const (
 // Returns a list of validation errors (nil/nil if valid).
 // Unknown params (not in definition) are silently ignored.
 func validateArgs(args map[string]any, params []config.EndpointParam) []error {
-	if len(args) == 0 || len(params) == 0 {
+	if len(params) == 0 {
 		return nil
 	}
 
@@ -603,6 +603,20 @@ func validateArgs(args map[string]any, params []config.EndpointParam) []error {
 	}
 
 	var errs []error
+
+	// 1. Check required fields
+	for _, p := range params {
+		if p.Required != nil && *p.Required {
+			if _, ok := args[p.Name]; !ok {
+				errs = append(errs, fmt.Errorf("param %q is required but not provided", p.Name))
+			}
+		}
+	}
+
+	if len(args) == 0 {
+		return errs
+	}
+
 	for k, v := range args {
 		def, ok := paramDefs[k]
 		if !ok {

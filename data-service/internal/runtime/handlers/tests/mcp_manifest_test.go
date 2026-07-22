@@ -40,8 +40,9 @@ func TestMCPManifestHandler_WithTools(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "list_students") {
-		t.Errorf("response should contain list_students: %s", body)
+	// При всегда-регенерации имя тула = list_student (из entity name), не list_students
+	if !strings.Contains(body, "list_student") {
+		t.Errorf("response should contain list_student: %s", body)
 	}
 	if !strings.Contains(body, `"endpoints"`) {
 		t.Errorf("response should contain endpoints: %s", body)

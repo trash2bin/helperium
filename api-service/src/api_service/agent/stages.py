@@ -400,17 +400,33 @@ class ToolExecutionStage:
                 ),
             )
 
+            logger.info(
+                "[TOOL_STAGE] Executing tool %s for iteration=%d with args=%s",
+                name,
+                ctx.turn.iteration,
+                arguments,
+            )
+
             # Execute
             try:
                 tool_result = await ctx.mcp_session.call_tool(name, arguments)
                 logger.info(
-                    "[TOOL_STAGE] Tool %s returned OK=%s, ContentLength=%d",
+                    "[TOOL_STAGE] Tool %s OK=%s, ContentLength=%d, Iteration=%d, Args=%s",
                     name,
                     tool_result.ok,
                     len(tool_result.tool_content),
+                    ctx.turn.iteration,
+                    arguments,
                 )
             except Exception as exc:
                 logger.exception("[TOOL_STAGE] Tool call '%s' failed", name)
+                logger.info(
+                    "[TOOL_STAGE] Tool %s FAILED, Iteration=%d, Args=%s, Error=%s",
+                    name,
+                    ctx.turn.iteration,
+                    arguments,
+                    str(exc),
+                )
                 from .mcp_client import ToolResult
 
                 tool_result = ToolResult(
@@ -445,15 +461,15 @@ class ToolExecutionStage:
                 duration_ms=0,
             )
 
-            yield AgentEvent(
-                "tool_result",
-                ToolResultEventData(
-                    id=tool_call_id,
-                    name=name,
-                    display_name=display_name,
-                    result=tool_result.tool_content,
-                ),
-            )
+            result_payload: dict[str, Any] = {
+                "id": tool_call_id,
+                "name": name,
+                "display_name": display_name,
+                "result": tool_result.tool_content,
+            }
+            if not tool_result.ok:
+                result_payload["isError"] = True
+            yield AgentEvent("tool_result", ToolResultEventData(**result_payload))
 
             # Store result in tool_results
             ctx.turn.tool_results.append(
@@ -465,10 +481,22 @@ class ToolExecutionStage:
             )
 
             # Append role="tool" to messages
+            # LLM-friendly content: for errors, use clear text with [TOOL_ERROR] prefix
+            # so the model knows this is a failed invocation, not data
+            llm_content = tool_result.tool_content
+            if not tool_result.ok:
+                # Extract error message from JSON if possible
+                try:
+                    err_parts = json.loads(tool_result.tool_content)
+                    err_msg = err_parts.get("error", tool_result.tool_content)
+                except (json.JSONDecodeError, TypeError):
+                    err_msg = tool_result.tool_content
+                llm_content = f"[TOOL_ERROR] Tool '{name}' returned an error: {err_msg}. Do NOT repeat the same call with the same arguments."
+
             ctx.turn.messages.append(
                 {
                     "role": "tool",
-                    "content": tool_result.tool_content,
+                    "content": llm_content,
                     "tool_call_id": tool_call_id,
                     "name": name,
                 }
@@ -476,7 +504,7 @@ class ToolExecutionStage:
             ctx.turn.turn_messages.append(
                 {
                     "role": "tool",
-                    "content": tool_result.tool_content,
+                    "content": llm_content,
                     "tool_call_id": tool_call_id,
                     "name": name,
                 }

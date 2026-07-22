@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -24,45 +23,59 @@ func CountHandler(c *Context, entityName string) http.HandlerFunc {
 
 		translate := asPlaceholderFunc(c.Adapter)
 
-		// Собираем все непустые query-параметры как фильтры
+		// Собираем query-параметры как фильтры, поддерживая field__op синтаксис
 		var filterCols []string
 		var filterVals []any
 		var filterOps []string
 
+		// Build set of filterable field names (non-PK)
+		fieldMap := make(map[string]struct{}, len(entity.Fields))
 		for _, f := range entity.Fields {
-			if f.PrimaryKey {
+			if !f.PrimaryKey {
+				fieldMap[f.Name] = struct{}{}
+			}
+		}
+
+		for key, vals := range r.URL.Query() {
+			if len(vals) == 0 || vals[0] == "" {
 				continue
 			}
-			val := r.URL.Query().Get(f.Name)
-			if val == "" {
+			val := vals[0]
+
+			// Skip system params
+			if key == "limit" || key == "offset" || key == "sort_by" || key == "format" {
 				continue
 			}
 
-			filterCols = append(filterCols, f.Name)
+			// Parse field__op syntax
+			fieldName, op, found := strings.Cut(key, "__")
+			if !found {
+				fieldName = key
+				op = "eq"
+			}
 
-			switch f.Type {
-			case "int":
-				if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
-					filterVals = append(filterVals, intVal)
-					filterOps = append(filterOps, "eq")
-				} else {
-					RespondError(w, http.StatusBadRequest, "validation_error",
-						fmt.Sprintf("param %q: expected integer, got %q", f.Name, val))
-					return
-				}
-			case "float":
-				if floatVal, err := strconv.ParseFloat(val, 64); err == nil {
-					filterVals = append(filterVals, floatVal)
-					filterOps = append(filterOps, "eq")
-				} else {
-					RespondError(w, http.StatusBadRequest, "validation_error",
-						fmt.Sprintf("param %q: expected number, got %q", f.Name, val))
-					return
-				}
+			if _, ok := fieldMap[fieldName]; !ok {
+				continue
+			}
+
+			// Map __op to filter operator
+			var filterOp string
+			switch op {
+			case "eq", "gt", "gte", "lt", "lte":
+				filterOp = op
+			case "like":
+				filterOp = "like"
+			case "neq":
+				filterOp = "neq"
+			case "in":
+				filterOp = "in"
 			default:
-				filterVals = append(filterVals, val)
-				filterOps = append(filterOps, "like")
+				continue
 			}
+
+			filterCols = append(filterCols, fieldName)
+			filterVals = append(filterVals, val)
+			filterOps = append(filterOps, filterOp)
 		}
 
 		// Строим SELECT COUNT(*) вместо SELECT ...

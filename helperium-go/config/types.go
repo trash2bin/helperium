@@ -273,6 +273,32 @@ type Entity struct {
 	Relations []Relation `json:"relations,omitempty"`
 }
 
+// IDColumnOrDefault возвращает IDColumn или первую PK-колонку или "id".
+func (e Entity) IDColumnOrDefault() string {
+	if e.IDColumn != "" {
+		return e.IDColumn
+	}
+	for _, f := range e.Fields {
+		if f.PrimaryKey != nil && *f.PrimaryKey {
+			return f.Column
+		}
+	}
+	return "id"
+}
+
+// FirstStringFieldColumn возвращает первую не-PK строковую колонку.
+func (e Entity) FirstStringFieldColumn() string {
+	for _, f := range e.Fields {
+		if f.PrimaryKey != nil && *f.PrimaryKey {
+			continue
+		}
+		if f.Type == FieldTypeString {
+			return f.Column
+		}
+	}
+	return ""
+}
+
 // EntityField — поле сущности. name — публичное имя, column — имя колонки.
 type EntityField struct {
 	// Name — публичное имя поля в API (snake_case).
@@ -337,6 +363,10 @@ type Endpoint struct {
 
 	// QueryID — ключ из custom_queries (для op=custom_query).
 	QueryID string `json:"query_id,omitempty"`
+
+	// Strategy — имя search strategy ("grep", "filter", "simple").
+	// Если пусто — используется Op-based routing (legacy).
+	Strategy string `json:"strategy,omitempty"`
 
 	// Params — описание параметров endpoint'а.
 	Params []EndpointParam `json:"params,omitempty"`
@@ -599,7 +629,7 @@ func (c *Config) Validate() error {
 			} else if !entityNames[ep.Entity] {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].entity %q not found in entities", i, ep.Entity))
 			}
-			if ep.Op == OpFind && ep.SearchField == "" {
+			if ep.Op == OpFind && ep.SearchField == "" && ep.Strategy == "" {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].search_field: required for op=find", i))
 			}
 		case OpCustomQuery:

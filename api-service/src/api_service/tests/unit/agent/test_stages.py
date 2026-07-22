@@ -250,6 +250,36 @@ class TestToolExecutionStage:
         assert len(tool_results) == 2, f"Expected 2 tool_result events, got {events}"
         # pipeline не падает — оба результата есть
 
+    @pytest.mark.asyncio
+    async def test_tool_error_emits_isError_in_sse_event(self):
+        """Ошибка tool → SSE событие содержит isError=True."""
+        mcp = TestMCPProvider()
+        mcp.add_tool("bad", {"ok": False, "error": "param id is required"}, ok=False)
+
+        ctx = await make_pipeline_ctx(mcp_provider=mcp)
+        ctx.turn.pending_calls = [{"name": "bad", "arguments": {}}]
+        ctx.turn.messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "test"},
+        ]
+
+        stage = ToolExecutionStage()
+        events = await collect_events(stage.run(ctx))
+
+        tool_results = [(t, d) for t, d in events if t == "tool_result"]
+        assert len(tool_results) == 1
+        _, data = tool_results[0]
+
+        # КРИТИЧЕСКАЯ ПРОВЕРКА: ошибка тула должна маркироваться isError=True
+        # Без этого LLM не видит что вызов был ошибочным и продолжает слать пустые аргументы
+        assert data.get("isError") is True, (
+            f"Tool error must emit isError=True in SSE event! "
+            f"Got data keys={list(data.keys())}, isError={data.get('isError')}"
+        )
+        assert "required" in data.get("result", ""), (
+            f"Error text must include 'required'. Got: {data.get('result', '')[:200]}"
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GuardOutputStage

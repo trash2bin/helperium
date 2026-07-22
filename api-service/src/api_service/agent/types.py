@@ -186,6 +186,7 @@ class ToolResultEventData(TypedDict):
     name: str
     display_name: NotRequired[str]
     result: str
+    isError: NotRequired[bool]
 
 
 class FinalEventData(TypedDict):

@@ -14,6 +14,12 @@
 - `Call(ctx, endpoint, params)` → GET `http://data-service:8084/{endpoint}?{params}` с `X-Tenant-ID`
 - Stateless `http.Client`. 30s TTL-кэш на manifest. Ошибка → JSON `{"error": "..."}`
 
+**Strategy endpoints** (search strategies):
+- МCP manifest (`/mcp/manifest`) теперь генерирует `search_*`/`grep_*`/`filter_*` тулы через `configgen.GenerateMCPTools()`.
+- Каждая strategy-тула в манифесте содержит поле `Endpoint` с путём вроде `/{entity}/search`, `/{entity}/grep`, `/{entity}/filter`.
+- mcp-gateway при выполнении тула вызывает `Call(ctx, endpoint=tool.Endpoint, params=...)` — это идёт в тот же `httpClient.GetData()`.
+- Параметры для strategy-тулов (required, types, описания) генерируют сами стратегии через `Strategy.ToolParams()` — не нужно вручную описывать `mcp_tools[]` в конфиге.
+
 ## api-service (MCPClient) → mcp-gateway
 
 `api-service/src/api_service/agent/mcp_client.py`:

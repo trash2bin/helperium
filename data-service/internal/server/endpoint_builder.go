@@ -10,6 +10,7 @@ import (
 	"github.com/trash2bin/helperium/data-service/internal/configgen"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
+	"github.com/trash2bin/helperium/data-service/internal/search"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -90,9 +91,6 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 	// /admin/* — admin endpoints are mounted EXCLUSIVELY via TenantStore.BuildAdminRouter()
 	// in main.go (rootRouter.Mount("/admin", adminRouter)). The per-tenant router from
 	// NewRouterFromConfig does NOT register /admin/* — it is served by the top-level mount.
-	// (The previous inline /admin/* registration here required adminCtx != nil, which was
-	// never true — all callers pass nil. See main.go:store.BuildAdminRouter() for the
-	// actual admin endpoint registration.)
 
 	// Read-only guard: если DataSource.ReadOnly == true (по умолчанию),
 	// мутирующие методы (POST, PUT, PATCH, DELETE) не регистрируются,
@@ -107,6 +105,12 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 		slog.Info("read-only mode enabled — write methods are blocked by default",
 			"endpoints", len(cfg.Endpoints),
 			"approved_tools", len(approvedTools))
+	}
+
+	// Build entity name map for strategy routing
+	entityMap := make(map[string]config.Entity, len(cfg.Entities))
+	for i := range cfg.Entities {
+		entityMap[cfg.Entities[i].Name] = cfg.Entities[i]
 	}
 
 	for _, ep := range cfg.Endpoints {
@@ -124,45 +128,75 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 
 		var h http.HandlerFunc
 
-		switch ep.Op {
-		case "builtin_health":
-			h = handlers.HealthHandler(ctx)
-		case "builtin_stats":
-			h = handlers.StatsHandler(ctx, cfg)
-		case "get_by_id":
-			if ep.Entity == "" {
-				return nil, fmt.Errorf("endpoint %q: op get_by_id requires entity", ep.Path)
+		// Strategy-based routing (search strategies: grep, filter, simple)
+		// Takes precedence over Op-based routing for strategy endpoints.
+		if ep.Strategy != "" {
+			entityConfig, ok := entityMap[ep.Entity]
+			if !ok {
+				return nil, fmt.Errorf("endpoint %q: entity %q not found for strategy %q", ep.Path, ep.Entity, ep.Strategy)
 			}
-			h = handlers.GetByIDHandler(ctx, ep.Entity)
-		case "find":
-			if ep.Entity == "" {
-				return nil, fmt.Errorf("endpoint %q: op find requires entity", ep.Path)
+			idCol := entityConfig.IDColumnOrDefault()
+			nameCol := entityConfig.FirstStringFieldColumn()
+
+			var strategy search.Strategy
+			switch ep.Strategy {
+			case "grep":
+				strategy = search.NewGrepStrategy(idCol, nameCol)
+			case "filter":
+				strategy = search.NewFilterStrategy(idCol, nameCol)
+			case "search":
+				strategy = search.NewSearchStrategy(idCol, nameCol)
+			case "simple":
+				searchCol := ep.SearchField
+				if searchCol == "" {
+					searchCol = nameCol
+				}
+				strategy = search.NewSimpleStrategy(idCol, nameCol, searchCol)
+			default:
+				return nil, fmt.Errorf("endpoint %q: unknown strategy %q", ep.Path, ep.Strategy)
 			}
-			h = handlers.FindHandler(ctx, ep.Entity, ep.SearchField, ep.QueryParam)
-		case "list":
-			if ep.Entity == "" {
-				return nil, fmt.Errorf("endpoint %q: op list requires entity", ep.Path)
+			h = handlers.NewStrategyHandler(ctx, strategy, ep.Entity, entityConfig)
+		} else {
+			switch ep.Op {
+			case "builtin_health":
+				h = handlers.HealthHandler(ctx)
+			case "builtin_stats":
+				h = handlers.StatsHandler(ctx, cfg)
+			case "get_by_id":
+				if ep.Entity == "" {
+					return nil, fmt.Errorf("endpoint %q: op get_by_id requires entity", ep.Path)
+				}
+				h = handlers.GetByIDHandler(ctx, ep.Entity)
+			case "find":
+				if ep.Entity == "" {
+					return nil, fmt.Errorf("endpoint %q: op find requires entity", ep.Path)
+				}
+				h = handlers.FindHandler(ctx, ep.Entity, ep.SearchField, ep.QueryParam)
+			case "list":
+				if ep.Entity == "" {
+					return nil, fmt.Errorf("endpoint %q: op list requires entity", ep.Path)
+				}
+				h = handlers.ListHandler(ctx, ep.Entity)
+			case "distinct":
+				if ep.Entity == "" {
+					return nil, fmt.Errorf("endpoint %q: op distinct requires entity", ep.Path)
+				}
+				h = handlers.DistinctHandler(ctx, ep.Entity)
+			case "count":
+				if ep.Entity == "" {
+					return nil, fmt.Errorf("endpoint %q: op count requires entity", ep.Path)
+				}
+				h = handlers.CountHandler(ctx, ep.Entity)
+			case "custom_query":
+				if ep.QueryID == "" {
+					return nil, fmt.Errorf("endpoint %q: op custom_query requires query_id", ep.Path)
+				}
+				params := make([]config.EndpointParam, 0, len(ep.Params))
+				params = append(params, ep.Params...)
+				h = handlers.CustomQueryHandler(ctx, ep.QueryID, params)
+			default:
+				return nil, fmt.Errorf("endpoint %q: unsupported op %q", ep.Path, ep.Op)
 			}
-			h = handlers.ListHandler(ctx, ep.Entity)
-		case "distinct":
-			if ep.Entity == "" {
-				return nil, fmt.Errorf("endpoint %q: op distinct requires entity", ep.Path)
-			}
-			h = handlers.DistinctHandler(ctx, ep.Entity)
-		case "count":
-			if ep.Entity == "" {
-				return nil, fmt.Errorf("endpoint %q: op count requires entity", ep.Path)
-			}
-			h = handlers.CountHandler(ctx, ep.Entity)
-		case "custom_query":
-			if ep.QueryID == "" {
-				return nil, fmt.Errorf("endpoint %q: op custom_query requires query_id", ep.Path)
-			}
-			params := make([]config.EndpointParam, 0, len(ep.Params))
-			params = append(params, ep.Params...)
-			h = handlers.CustomQueryHandler(ctx, ep.QueryID, params)
-		default:
-			return nil, fmt.Errorf("endpoint %q: unsupported op %q", ep.Path, ep.Op)
 		}
 
 		switch ep.Method {

@@ -332,7 +332,10 @@ def _sse(payload: dict[str, Any]) -> str:
 
 def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | None:
     """Convert internal agent events to the browser-facing SSE payload."""
-    logger.info(f"[SERVER] event_type: {event_type}, data: {str(data)[:200]}")
+    if event_type in ("tool_call", "tool_result", "final", "error", "done"):
+        logger.info(f"[SERVER] event_type={event_type}, data={str(data)[:200]}")
+    else:
+        logger.debug(f"[SERVER] event_type={event_type}, data={str(data)[:200]}")
     if event_type == "token":
         return {"type": "token", "text": data.get("data")}
     if event_type == "final":

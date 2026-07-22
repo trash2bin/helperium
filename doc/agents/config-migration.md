@@ -316,6 +316,65 @@ go build ./admin-dashboard/...
 
 ---
 
+## 4a. New field: `endpoints[].strategy` (version 2, no migration needed)
+
+The `strategy` field was added to `Endpoint` without bumping the config version.
+No migration step was required because:
+
+### What changed
+
+| # | Change | Rationale |
+|---|--------|-----------|
+| 1 | Added `Strategy string \`json:\"strategy,omitempty\"\`` to `Endpoint` | `omitempty` — old configs without it parse fine |
+| 2 | `Validate()` adjusted: `ep.Op == OpFind && ep.SearchField == ""` → `&& ep.Strategy == ""` | Strategy-based endpoints don't need `search_field` |
+
+### How it works
+
+```go
+type Endpoint struct {
+    // ... existing fields ...
+
+    // Strategy — имя search strategy ("grep", "filter", "search", "simple").
+    // Если пусто — используется Op-based routing (legacy).
+    Strategy string `json:"strategy,omitempty"`
+}
+```
+
+### Accepted strategy values
+
+| Value | Handler | Description |
+|-------|---------|-------------|
+| `"grep"` | `search.NewGrepStrategy()` | Multi-token AND, multi-field OR, regex, ignore_case, invert |
+| `"filter"` | `search.NewFilterStrategy()` | Field-based c компараторами `field__gt`, `field__like`, `field__in` |
+| `"search"` | `search.NewSearchStrategy()` | Unified text search + field filtering (grep+filter combo) |
+| `"simple"` | `search.NewSimpleStrategy()` | Backward compat для старых find/list |
+
+### Routing logic (endpoint_builder.go)
+
+```
+if ep.Strategy != "" {
+    // Strategy-based routing (takes precedence over Op)
+    entityConfig := entityMap[ep.Entity]
+    strategy := strategyFromConfig(ep.Strategy, entityConfig)
+    handler = NewStrategyHandler(ctx, strategy, ep.Entity, entityConfig)
+} else {
+    // Legacy Op-based routing (find, list, get_by_id, count...)
+    switch ep.Op { ... }
+}
+```
+
+### MCP tool generation (mcp.go)
+
+- Strategy endpoints получают MCP-тулы через `strategyToMCPTool()`.
+- Сама стратегия генерирует `ToolName()`, `ToolDescription()`, `ToolParams()`.
+- Для entity со strategy: `find_*`, `list_*`, и relationship custom queries (`products_by_category`) **скипаются** — их заменяют `search_*`, `get_*`, `count_*`, `distinct_*`.
+
+### Backward compatibility
+
+- Старые конфиги без `strategy` работают как legacy (Op-based routing).
+- Поле опциональное, не участвует в `Normalize()`.
+- `ConfigVersion` остаётся `2`.
+
 ## 5. Testing migrations
 
 ### Required test cases
@@ -416,14 +475,15 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 |---------|-------------|-------------|------|
 | 0 | Pre-history — no version field | — | — |
 | 1 | First explicit version | `version: 1` | `types.go` (original) |
-| 2 | **Current.** Meta block, struct ApprovedTools, JunctionTable, ArrayOf, EnumValues | `meta`, `junction_table`, `array_of`, `enum_values`, `ApprovedTool` | `migration.go` |
+| 2 | **Current** (until strategy addition). Meta block, struct ApprovedTools, JunctionTable, ArrayOf, EnumValues | `meta`, `junction_table`, `array_of`, `enum_values`, `ApprovedTool` | `migration.go` |
+| 2 (post-strategy) | Same version (`2`), no migration needed. `endpoints[].strategy` added with `omitempty` — old configs without it keep working. The field is consumed by `endpoint_builder.go` (strategy-based routing) and `mcp.go` (`GenerateMCPTools()`). | `endpoints[].strategy` ("grep", "filter", "search", "simple") | `types.go` |
 
 ### Where each version is produced
 
 | Source | Version |
 |--------|---------|
 | Hand-written `specs/config.example.json` | **2** (updated during v1→v2 migration) |
-| `configgen.Generate()` | **2** (`config.CurrentConfigVersion`) |
+| `configgen.Generate()` | **2** (`config.CurrentConfigVersion`) — now produces `search`, `grep`, `filter` endpoints with `strategy` field |
 | Old `.data/tenants/*.json` on disk | 0 or 1 — auto-upgraded by `Normalize()` |
 
 ### Key files
@@ -435,7 +495,10 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 | `helperium-go/config/loader.go` | `Load()` — the Normalize → Validate pipeline |
 | `helperium-go/config/validate.go` | `Validate(rawJSON)` — convenience for admin API |
 | `helperium-go/config/migration_test.go` | Migration tests |
-| `data-service/internal/configgen/configgen.go` | Config generator (produces latest version) |
+| `data-service/internal/configgen/configgen.go` | Config generator (produces latest version) — now emits `search`, `grep`, `filter` endpoints with `strategy` |
+| `data-service/internal/configgen/mcp.go` | `GenerateMCPTools()` — generates MCP tools from strategy endpoints using `Strategy.ToolParams()` |
+| `data-service/internal/server/endpoint_builder.go` | Strategy-based HTTP routing — uses `ep.Strategy` to construct search handlers |
 | `specs/config.example.json` | Example config (kept at latest version) |
 | `specs/config.schema.md` | Human-readable format reference |
 | `doc/agents/tenant-lifecycle.md` | How configs are created and persisted |
+| `doc/agents/search-strategies.md` | Detailed description of each strategy (grep, filter, search, simple) |

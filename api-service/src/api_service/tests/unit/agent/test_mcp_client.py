@@ -96,7 +96,9 @@ class TestBuildToolResult:
         tr = MCPClient._build_tool_result("find_student", result)
         assert tr.ok is False
         assert tr.error == "Student not found"
-        assert "вернул ошибку" in tr.reminder
+        assert "TOOL_ERROR" in tr.reminder
+        assert "'find_student'" in tr.reminder
+        assert "FAILED" in tr.reminder
 
     def test_empty_result(self):
         """Empty or null text should produce ok=True with data=None."""
@@ -254,7 +256,9 @@ class TestCallTool:
 
         assert tr.ok is False
         assert tr.error == "Student not found"
-        assert "вернул ошибку" in tr.reminder
+        assert "TOOL_ERROR" in tr.reminder
+        assert "'get_student'" in tr.reminder
+        assert "FAILED" in tr.reminder
 
     @pytest.mark.asyncio
     async def test_call_tool_reconnect_on_failure(self, mcp_client: MCPClient):

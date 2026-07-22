@@ -18,19 +18,18 @@ import (
 //
 // Результат кэшируется — генерируем tools только один раз при старте сервиса.
 func MCPManifestHandler(cfg *config.Config) http.HandlerFunc {
-	// Предварительная генерация MCPTools — только один раз при старте
-	tools := cfg.MCPTools
-	if len(tools) == 0 {
-		displayPrefixes := cfg.DisplayPrefixes
-		if len(displayPrefixes) == 0 {
-			displayPrefixes = configgen.DefaultDisplayPrefixes()
-		}
-		customPlurals := cfg.CustomPlurals
-		if customPlurals == nil {
-			customPlurals = make(map[string]string)
-		}
-		tools = configgen.GenerateMCPTools(cfg.Endpoints, cfg.Entities, displayPrefixes, customPlurals)
+	// Генерация MCPTools из эндпоинтов при каждом запросе.
+	// Не используем cfg.MCPTools — он может быть устаревшим на диске.
+	// Всегда регенерируем из текущих cfg.Endpoints.
+	displayPrefixes := cfg.DisplayPrefixes
+	if len(displayPrefixes) == 0 {
+		displayPrefixes = configgen.DefaultDisplayPrefixes()
 	}
+	customPlurals := cfg.CustomPlurals
+	if customPlurals == nil {
+		customPlurals = make(map[string]string)
+	}
+	tools := configgen.GenerateMCPTools(cfg.Endpoints, cfg.Entities, displayPrefixes, customPlurals)
 	// Определяем read-only режим
 	readOnly := cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly
 

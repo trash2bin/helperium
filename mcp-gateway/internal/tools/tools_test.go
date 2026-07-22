@@ -532,6 +532,62 @@ func TestValidateArgs_AcceptsZeroLimit(t *testing.T) {
 	}
 }
 
+func TestValidateArgs_RejectsMissingRequiredField(t *testing.T) {
+	trueVal := true
+	params := []config.EndpointParam{
+		{Name: "pattern", Type: config.ParamTypeString, Required: &trueVal},
+		{Name: "limit", Type: config.ParamTypeInt},
+	}
+	// Empty args map when pattern is required
+	args := map[string]any{}
+	errs := validateArgs(args, params)
+	if len(errs) == 0 {
+		t.Errorf("validateArgs should reject empty args when 'pattern' is required, got no errors")
+	}
+}
+
+func TestValidateArgs_RejectsNilArgsWhenRequired(t *testing.T) {
+	trueVal := true
+	params := []config.EndpointParam{
+		{Name: "pattern", Type: config.ParamTypeString, Required: &trueVal},
+	}
+	// nil args map when pattern is required
+	var args map[string]any = nil
+	errs := validateArgs(args, params)
+	if len(errs) == 0 {
+		t.Errorf("validateArgs should reject nil args when 'pattern' is required, got no errors")
+	}
+}
+
+func TestValidateArgs_AcceptsAllRequiredFields(t *testing.T) {
+	trueVal := true
+	params := []config.EndpointParam{
+		{Name: "pattern", Type: config.ParamTypeString, Required: &trueVal},
+		{Name: "limit", Type: config.ParamTypeInt},
+	}
+	args := map[string]any{
+		"pattern": "brake pads",
+		"limit":   50,
+	}
+	errs := validateArgs(args, params)
+	if len(errs) > 0 {
+		t.Errorf("validateArgs should accept all required fields present, got errors: %v", errs)
+	}
+}
+
+func TestValidateArgs_StillAcceptsEmptyWhenNoRequiredFields(t *testing.T) {
+	params := []config.EndpointParam{
+		{Name: "limit", Type: config.ParamTypeInt},
+		{Name: "offset", Type: config.ParamTypeInt},
+	}
+	// No required fields — empty args is still OK
+	args := map[string]any{}
+	errs := validateArgs(args, params)
+	if len(errs) > 0 {
+		t.Errorf("validateArgs should accept empty args when no params are required, got errors: %v", errs)
+	}
+}
+
 // ════════════════════════════════════════════════════════════════
 // truncateResult tests
 // ════════════════════════════════════════════════════════════════

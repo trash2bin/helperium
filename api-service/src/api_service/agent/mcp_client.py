@@ -350,6 +350,19 @@ class MCPClient:
                     )
                     async with asyncio.timeout(TOOL_EXECUTION_TIMEOUT):
                         result = await conn.session.call_tool(name, arguments)
+                        conn.last_used = time.monotonic()
+                        # Log result size for abuse detection
+                        result_size = sum(
+                            len(getattr(b, "text", ""))
+                            for b in result.content
+                            if getattr(b, "type", None) == "text"
+                        )
+                        logger.info(
+                            "[MCP] Tool %s completed: %d content blocks, %d chars total",
+                            name,
+                            len(result.content),
+                            result_size,
+                        )
         except TimeoutError:
             logger.warning(
                 "[MCP] call_tool %s timed out for tenants=%s (lock=%ss, exec=%ss)",
@@ -398,6 +411,18 @@ class MCPClient:
                         async with asyncio.timeout(TOOL_EXECUTION_TIMEOUT):
                             result = await conn.session.call_tool(name, arguments)
                             conn.last_used = time.monotonic()
+                            # Log result size for abuse detection
+                            result_size = sum(
+                                len(getattr(b, "text", ""))
+                                for b in result.content
+                                if getattr(b, "type", None) == "text"
+                            )
+                            logger.info(
+                                "[MCP] Tool %s completed after reconnect: %d content blocks, %d chars total",
+                                name,
+                                len(result.content),
+                                result_size,
+                            )
             except TimeoutError:
                 logger.warning(
                     "[MCP] call_tool %s timed out for tenants=%s"
@@ -449,6 +474,14 @@ class MCPClient:
         ]
         raw_text = "\n".join(text_parts)
 
+        logger.info(
+            "[MCP] _build_tool_result for %s: isError=%s, result_length=%d, preview=%s...",
+            name,
+            getattr(result, "isError", False),
+            len(raw_text),
+            raw_text[:150],
+        )
+
         if getattr(result, "isError", False):
             error_text = raw_text or "Unknown error"
             return ToolResult(
@@ -456,8 +489,10 @@ class MCPClient:
                     {"ok": False, "error": error_text}, ensure_ascii=False
                 ),
                 reminder=(
-                    f"Инструмент {name} вернул ошибку. "
-                    "Не повторяй запрос с теми же аргументами."
+                    f"[TOOL_ERROR] '{name}' FAILED: {error_text[:250]}. "
+                    "You MUST pass a non-empty 'pattern' parameter! "
+                    "Example: search_auto_parts(pattern='oil filter'). "
+                    "NEVER call with empty arguments."
                 ),
                 ok=False,
                 error=error_text,

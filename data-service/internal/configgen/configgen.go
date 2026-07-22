@@ -245,6 +245,16 @@ func buildCRUDEndpoints(entities []config.Entity) []config.Endpoint {
 			Entity:      entity.Name,
 			Description: fmt.Sprintf("Counts %s records matching filters", entity.Name),
 		})
+
+		// search endpoint (unified text search + field filtering)
+		endpoints = append(endpoints, config.Endpoint{
+			Method:   config.MethodGET,
+			Path:     fmt.Sprintf("/%s/search", entity.Name),
+			Op:       config.OpFind,
+			Strategy: "search",
+			Entity:   entity.Name,
+			Description: fmt.Sprintf("Search %s by text and/or field filters. Pass 'pattern' for text search, or field parameters for filtering.", entity.Name),
+		})
 	}
 
 	return endpoints

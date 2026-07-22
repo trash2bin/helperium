@@ -11,8 +11,8 @@ B2B SaaS: клиент подключает свою БД → платформа
 ```
 Admin Dashboard (:8085) → GET /admin/tenants/{id}/data/{entity}
   → data-service (:8084) — chi router → tenantStore.resolveTenant()
-    → generic handler (get_by_id / find / list / custom_query)
-      → QueryBuilder (без ORM, prepared statements, placeholder адаптация под СУБД)
+    → generic handler (get_by_id / find / list / custom_query / grep / filter)
+      → Query Engine (Expression AST → SQL, placeholder адаптация под СУБД)
         → Adapter.Conn.QueryContext → Client DB (SQLite/PG)
 ```
 
@@ -44,7 +44,14 @@ Admin Dashboard (:8085) → proxyToApiService()
 
 **Типы SSE-событий:** `token`, `tool_call`, `tool_result`, `final`, `error`, `done`, `audio` (для TTS).
 
-**⚠️ Важно про data-service:** Не semantic search. Поддерживает только точное совпадение (WHERE с LIKE/равенством) по полям entities + custom_queries (заранее утверждённые SELECT-запросы). Не строит JOIN'ы на лету — только то, что описано в конфиге tenant'а. LLM сама решает, какой инструмент вызвать.
+**⚠️ Важно про data-service:** Не semantic search. Поиск строится через Expression AST (`data-service/internal/query/`) — Condition + Operator дерево превращается в SQL через `Engine.Build()`. Новые search strategies (`data-service/internal/search/`):
+- **grep** — multi-token AND, multi-field OR, regex, ignore_case, invert (аналог GNU grep)
+- **filter** — field-based c компараторами (`field__gt`, `field__like`, `field__in`)
+- **simple** — backward compat для старых find/list
+
+Подробно: [doc/agents/search-strategies.md](doc/agents/search-strategies.md)
+
+Не строит JOIN'ы на лету — только то, что описано в конфиге tenant'а. LLM сама решает, какой инструмент вызвать.
 
 **Архитектура api-service/agent/ (Pipeline + Protocol-based DI):**
 ```
@@ -70,9 +77,18 @@ LLMAgent (orchestrator) — тонкий координатор (~268 строк
 1. **SSE-сессия** (GET /mcp): клиент открывает долгий SSE-стрим, получает `event: endpoint` с URL для POST
 2. **POST /mcp/message?sessionId=...**: JSON-RPC → `mcpPostHandler()` → `mcpServer.HandleMessage()`
 3. **Создание MCP-сервера**: `FetchConfigWithTenant()` → GET к data-service `/mcp/manifest` → `tools.NewRegistry(cfg)`
-4. **Каждый инструмент** — closure с `httpClient.GetData()` к data-service
+4. **Генерация инструментов**: манифест возвращает `mcp_tools[]`, сгенерированный через `configgen.GenerateMCPTools()`. Для strategy-эндпоинтов (grep, filter) параметры и описания генерируют сами стратегии через `Strategy.ToolParams()/ToolDescription()` — см. [doc/agents/search-strategies.md](doc/agents/search-strategies.md).
+5. **Каждый инструмент** — closure с `httpClient.GetData()` к data-service
 
-**Composite Mode** (один агент — N tenant'ов): заголовок `X-Tenant-ID: tenant-a,tenant-b` → `createCompositeServer()` → инструменты с префиксом `{tenantID}__find_catalog_product`. При 1 tenant — legacy-режим без префикса.
+**Как выглядят тулы для LLM:**
+```
+grep_products   — поиск по тексту: token search, regex, multi-field, ignore_case, format
+get_products    — по ID
+filter_orders   — field__gt/lt/lte/gte/like/in + пагинация
+count_products  — количество с фильтрами
+```
+
+**Composite Mode** (один агент — N tenant'ов): заголовок `X-Tenant-ID: tenant-a,tenant-b` → `createCompositeServer()` → инструменты с префиксом `{tenantID}__grep_catalog_product`. При 1 tenant — legacy-режим без префикса.
 
 **Детали MCP Session Lifecycle:** [doc/agents/mcp-session-lifecycle.md](doc/agents/mcp-session-lifecycle.md)
 
@@ -87,8 +103,10 @@ LLMAgent (orchestrator) — тонкий координатор (~268 строк
 
 ## 🏗️ 2c. Config — что генерируется/редактируется
 
-**Авто:** entities[], endpoints[] (GET /{entity}/{id}, GET /{entity}), mcp_tools[], stats.counters[], read_only: true
+**Авто:** entities[], endpoints[] (GET /{entity}/{id}, GET /{entity}, GET /{entity}/grep, GET /{entity}/filter, GET /{entity}/count), mcp_tools[] (через стратегии), stats.counters[], read_only: true
 **Вручную:** custom_queries{}, метод POST/PUT/DELETE, auth{}, mcp_tools[].description/display_name, introspection{}, approved_tools[], readonly_dsn
+
+**Strategy-эндпоинты** (поле `endpoints[].strategy`): `grep`, `filter`, `simple`. MCP-параметры для них генерирует сама стратегия — не нужно вручную описывать `mcp_tools[]`.
 
 **Схема:** `helperium-go/config/types.go:Config`. Версионируется через `Normalize()` — старые конфиги (v0, v1) апгрейдятся автоматически при загрузке.
 **Детали схемы:** [specs/config.schema.md](specs/config.schema.md)
@@ -133,8 +151,8 @@ LLMAgent (orchestrator) — тонкий координатор (~268 строк
 | Сервис | Порт | Ключевая роль |
 |---|---|---|
 | **api-service** (Python) | :8081 | **Мозг.** Embed-виджет (TS), оркестратор агента, LiteLLM, чат (SSE), agent CRUD, voice (STT/TTS), spending, guardrails, LLM provider store |
-| **data-service** (Go) | :8084 | Generic CRUD + custom_queries (только SELECT). Config-driven — схема БД описывается JSON-конфигом (v2, с миграциями через `Normalize()`). **Не semantic search** — точное совпадение по полям. Безопасная обёртка над БД |
-| **mcp-gateway** (Go) | :8083 | MCP SSE/JSON-RPC, composite инструменты, tenant-aware tool registry |
+| **data-service** (Go) | :8084 | Generic CRUD + custom_queries (только SELECT) + **search strategies** (grep/filter). Config-driven — Expression AST → SQL, placeholder адаптация под СУБД. **Не semantic search** — точное совпадение + LIKE + regex по полям. Безопасная обёртка над БД. Детали поиска: [doc/agents/search-strategies.md](doc/agents/search-strategies.md) |
+| **mcp-gateway** (Go) | :8083 | MCP SSE/JSON-RPC, composite инструменты, tenant-aware tool registry. MCP-тулы генерятся из data-service `/mcp/manifest` — strategy-тулы получают параметры от стратегий |
 | **admin-dashboard** (Go) | :8085 | Web UI для администрирования (Alpine.js), proxy к api-service/data-service |
 | **rag-service** (Python) | :8082 | Поиск по документам (ChromaDB), опционально |
 | **demo/web** (Python) | :8080 | **Рудимент MVP.** Только для локальной разработки. Reverse-proxy ко всем сервисам |
@@ -177,8 +195,58 @@ LLMAgent (orchestrator) — тонкий координатор (~268 строк
 На проекте используеться Grafana + Prometheus
 **Детали:** [doc/agents/monitoring.md](doc/agents/monitoring.md)
 
+## 🧹 2k. Tool Abuse Prevention — защита от пустых/жадных LLM вызовов
+
+### Проблема
+LLM склонна вызывать инструменты с пустыми аргументами: `search_auto_parts({})`. Если не заблокировать — дамп всей таблицы, перерасход, abuse.
+
+### Решения (3 уровня защиты)
+
+**Уровень 1 — JSON Schema Validation (MCP Gateway)**
+- `search_*` тулы имеют `pattern` с `required: true` + `minLength: 1`
+- MCP гейтвей **отклоняет pre-request** если `pattern` отсутствует или пустой → `isError: true`
+- Реализация: `go`-стратегия через `Strategy.ToolParams()` задаёт `Required: &t`
+
+**Уровень 2 — Server-side guard (data-service)**
+- `search.go`: `ParseRequest()` проверяет `pattern != ""` и `len(pattern) >= 1`, возвращает 400 при нарушении
+- `search.go`: `maxFilters=15`, `maxTotalConditions=25` — защита от ReDoS/token flood
+- `filter.go`: `parseFilterLimit` default `10` (было 20)
+- `Config.MCPTool` carries `Required: &t` — приходит через manifest в mcp-gateway и проверяется там
+- См. `data-service/internal/search/search.go:ParseRequest`
+
+**Уровень 3 — LLM Prompt Engineering**
+- `llm.go`: hints описывают эффективный воркфлоу: `distinct → count → search`
+- `llm.go`: explicit примеры `search_auto_parts(pattern='oil filter')`
+- `_build_tool_result` (api-service): error message содержит конкретный пример вызова
+- `llm.go` hints **не содержат** relationship tools (`products_by_category`) — они убраны из манифеста
+
+### Filtering старых/relationship тулов
+`mcp.go:GenerateMCPTools()`:
+- Строит `hasStrategy` map — все entity, у которых есть `endpoint[].strategy != ""`
+- **Skip** `config.OpFind` → если entity в `hasStrategy`, `find_*` не генерится
+- **Skip** `config.OpList` → если entity в `hasStrategy`, `list_*` не генерится
+- **Skip** `config.OpCustomQuery` → если entity в `hasStrategy`, `products_by_category` и прочие relationship тулы не генерится
+- Вместо них: `search_*` (от strategy), `get_*`, `count_*`, `distinct_*`
+
+### Security limits per strategy
+| Strategy | Limits |
+|----------|--------|
+| `search` (search.go) | `maxFilters=15`, `maxTotalConditions=25`, `pattern minLength=1` |
+| `grep` (grep.go) | `maxFilterValueLen`, `maxRegexLen` (default 200), `maxValues` for `field__in` (default 100) |
+| `filter` (filter.go) | `parseFilterLimit` default 10 |
+| `simple` (simple.go) | — |
+
+### Logging
+- `stages.py`: логгирует `name`, `arguments`, `iteration` до/после/при ошибке
+- `mcp_client.py`: логгирует `[MCP] Calling tool X with args=Y`, результат `[MCP] Tool X completed: N blocks, M chars`
+- `server.py` SSE events: `token`/`audio` только в DEBUG; `tool_call`/`tool_result`/`final`/`error`/`done` — INFO
+
+**Детали:** `data-service/internal/search/`, `data-service/internal/configgen/mcp.go`
+
 ## ⚠️ Важные правила
 
 - **Никакого SQL в Проекте** — только HTTP к data-service (либо генерация тестовой бд разрешаеться)
 - **Виджет — основной клиент.** embed/embed.js — единственный production-ready UI. demo/web — для тестов
 - **Generic-подход** — не хардкодить сущности в коде
+- **Не кешировать MCP manifest** — всегда регенерировать через `configgen.GenerateMCPTools(cfg.Endpoints, ...)` (см. `mcp_manifest.go`)
+- **`search_*` тулы всегда с `required=['pattern']`** — защита от пустых вызовов

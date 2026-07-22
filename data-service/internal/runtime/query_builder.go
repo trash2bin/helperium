@@ -185,6 +185,50 @@ func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []a
 			args = append(args, val)
 			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" = "+ph)
 			phIdx++
+		case "neq":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" != "+ph)
+			phIdx++
+		case "gt":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" > "+ph)
+			phIdx++
+		case "gte":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" >= "+ph)
+			phIdx++
+		case "lt":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" < "+ph)
+			phIdx++
+		case "lte":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" <= "+ph)
+			phIdx++
+		case "in":
+			// val is comma-separated string from query param
+			s, ok := val.(string)
+			if !ok {
+				continue
+			}
+			parts := strings.Split(s, ",")
+			if len(parts) > 100 {
+				continue // safety cap
+			}
+			var placeholders []string
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p == "" {
+					continue
+				}
+				placeholders = append(placeholders, b.adapter.TranslatePlaceholder(phIdx))
+				args = append(args, p)
+				phIdx++
+			}
+			if len(placeholders) == 0 {
+				continue
+			}
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" IN ("+strings.Join(placeholders, ", ")+")")
 		}
 	}
 

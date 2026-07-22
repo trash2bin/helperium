@@ -1,6 +1,36 @@
 # Adapter Pattern — Добавление новой СУБД
 
-Чтобы добавить MySQL, MSSQL и т.д., нужно реализовать интерфейс `datasource.Adapter`:
+Чтобы добавить MySQL, MSSQL и т.д., нужно реализовать интерфейсы `datasource.Adapter` (подключение/интроспекция) и `query.AdapterSubset` (поисковый движок).
+
+## Интерфейсы
+
+### datasource.Adapter — подключение, интроспекция
+
+`data-service/internal/datasource/adapter.go`:
+
+```go
+type Adapter interface {
+    Driver() string                     // "sqlite", "postgres", "mysql"
+    Connect(ctx, dsn) (Conn, error)    // sql.Open + PingContext
+    Introspect(ctx, conn) (*Schema, error)  // системные таблицы → generic Schema
+    TranslatePlaceholder(index int) string   // "?" / "$N"
+    QuoteIdentifier(name string) string      // `"name"` / `\`name\`` / `[name]`
+}
+```
+
+### query.AdapterSubset — для поискового движка
+
+`data-service/internal/query/builder.go`:
+
+```go
+type AdapterSubset interface {
+    TranslatePlaceholder(index int) string   // "?" / "$1"
+    QuoteIdentifier(name string) string      // квотирование имён
+    QuoteString(s string) string             // экранирование % и _ для LIKE
+}
+```
+
+`QuoteString` экранирует wildcard-символы LIKE: `% → \%`, `_ → \_`. Для SQLite/Postgres реализация одинакова. Если твоя СУБД использует другой escape (например MySQL — `%%`), переопредели.
 
 ## Шаг 1: Адаптер
 
@@ -23,17 +53,14 @@ func (MySQLAdapter) Introspect(ctx, conn) (*Schema, error)     // SHOW TABLES/CO
 
 `helperium-go/config/types.go` → добавить `DriverMySQL` в enum и `Valid()`.
 
-## Шаг 4: JSON Schema
-
-Обновить `enum` в schema (если есть).
-
-## Шаг 5: Тесты
+## Шаг 4: Тесты
 
 ```bash
 go test ./data-service/internal/datasource/ -run TestMySQLAdapter_*
-curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -d '{"id":"test","config":{"version":1,"data_source":{"driver":"mysql","dsn":"mysql://user:pass@host:3306/db"},"entities":[],"endpoints":[]}}' \
-  http://localhost:8084/admin/tenants
+go test ./data-service/internal/query/...     # 37 тестов engine (должны проходить без правок)
+go test ./data-service/internal/search/...    # 51 тест стратегий (должны проходить без правок)
 ```
 
-**Весь существующий код** (runtime handlers, query builder, admin API, MCP tools) не требует правок — работает через интерфейс.
+**Весь существующий код** (runtime handlers, search strategies, query engine, MCP tools, admin API) не требует правок — работает через интерфейсы.
+
+Детали поискового движка: [doc/agents/search-strategies.md](search-strategies.md)
