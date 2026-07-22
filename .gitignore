@@ -99,3 +99,4 @@ api-service/specs
 
 # tp and js
 node_modules/
+coverage.out

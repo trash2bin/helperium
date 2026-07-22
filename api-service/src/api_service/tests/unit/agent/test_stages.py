@@ -145,8 +145,23 @@ class TestLLMStage:
         assert ctx.turn.empty_rounds == 1
 
     @pytest.mark.asyncio
-    async def test_empty_response(self):
-        """Пустой ответ — empty_rounds++."""
+    async def test_empty_response_no_retry(self):
+        """Пустой ответ с отключённым retry — empty_rounds++."""
+        llm = TestLLMProvider()
+        llm.queue(llm_response.empty())
+        ctx = await make_pipeline_ctx(llm_provider=llm)
+
+        stage = LLMStage(max_empty_retries=0)
+        events = await collect_events(stage.run(ctx))
+
+        status_events = [(t, d) for t, d in events if t == "status"]
+        empty_rounds = [d for t, d in status_events if d.get("phase") == "empty_round"]
+        assert len(empty_rounds) >= 1
+        assert ctx.turn.empty_rounds == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_response_retry(self):
+        """Пустой ответ с retry — re_prompt вместо empty_round."""
         llm = TestLLMProvider()
         llm.queue(llm_response.empty())
         ctx = await make_pipeline_ctx(llm_provider=llm)
@@ -154,10 +169,10 @@ class TestLLMStage:
         stage = LLMStage()
         events = await collect_events(stage.run(ctx))
 
-        status_events = [(t, d) for t, d in events if t == "status"]
-        empty_rounds = [d for t, d in status_events if d.get("phase") == "empty_round"]
-        assert len(empty_rounds) >= 1
-        assert ctx.turn.empty_rounds == 1
+        status_phases = [d.get("phase") for t, d in events if t == "status"]
+        assert "re_prompt" in status_phases
+        assert "empty_round" not in status_phases
+        assert ctx.turn.empty_rounds == 0
 
     @pytest.mark.asyncio
     async def test_stops_on_should_stop(self):

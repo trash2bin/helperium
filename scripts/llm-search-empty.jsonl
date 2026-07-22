@@ -1,0 +1,22 @@
+// Round 1: LLM тупит — зовёт search_auto_parts с пустыми аргументами
+// validateArgs → required не стоит (или ломаный конфиг) → проходит
+// data-service → ParseRequest → 400 "no search conditions"
+// LLM получает isError: true с ошибкой
+{"content": "Давайте поищем запчасти. Для начала я попробую найти глушитель в каталоге.", "tool_calls": [{"name": "search_auto_parts", "arguments": {}}], "delay_ms": 200}
+
+// Round 2: LLM видит ошибку, но не понимает что делать — пробует другой тул тоже пустой
+{"content": "Похоже, произошла ошибка. Попробую другой способ.", "tool_calls": [{"name": "search_car_models", "arguments": {}}], "delay_ms": 200}
+
+// Round 3: LLM продолжает тыкать вслепую — третий пустой вызов
+// На этом раунде pipeline обычно ломается через max_empty_rounds
+{"content": "Попробую ещё раз с более точным запросом.", "tool_calls": [{"name": "search_auto_parts", "arguments": {}}], "delay_ms": 200}
+
+// Если дошли сюда — verify что reminder inject сработал
+// Round 4: LLM наконец поняла что надо передать pattern
+{"content": "Нашёл! Вот что есть в наличии:", "tool_calls": [{"name": "search_auto_parts", "arguments": {"pattern": "глушитель", "limit": 5}}], "delay_ms": 200}
+
+// Round 5: Теперь нужно по car_model_id уточнить
+{"content": "Давайте уточню модель BMW X5.", "tool_calls": [{"name": "search_car_models", "arguments": {"pattern": "BMW X5"}}], "delay_ms": 200}
+
+// Round 6: Финальный ответ
+{"content": "Отлично! Для BMW X5 я нашёл следующие глушители:\n\n1. **Глушитель задний BMW X5 E70 оригинал** — 45 000 руб\n2. **Глушитель средний BMW X5 E70 оригинал** — 32 000 руб\n3. **Глушитель в сборе BMW X5 E70 (Bosal)** — 18 500 руб\n\nКакой вариант вас интересует?", "delay_ms": 300}

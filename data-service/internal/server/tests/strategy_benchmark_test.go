@@ -30,7 +30,7 @@ func setupStrategyBenchmark(b *testing.B) *httptest.Server {
 	if err != nil {
 		b.Fatalf("sql.Open: %v", err)
 	}
-	b.Cleanup(func() { db.Close() })
+	b.Cleanup(func() { _ = db.Close() })
 
 	_, err = db.Exec(`CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT, category TEXT, price REAL)`)
 	if err != nil {

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -206,6 +207,15 @@ class LLMStage:
     - пусто → empty_rounds += 1, continue
     """
 
+    def __init__(self, max_empty_retries: int = 2) -> None:
+        """LLMStage with configurable empty-response retry.
+
+        Args:
+            max_empty_retries: Times to retry when LLM returns empty
+                (e.g. API finish_reason='error'). -1 = unlimited.
+        """
+        self._max_empty_retries = max_empty_retries
+
     async def run(self, ctx: PipelineContext) -> AsyncIterator[AgentEvent]:
         # LLMStage повторяется на каждой итерации — никакого gating
 
@@ -299,10 +309,36 @@ class LLMStage:
             return
 
         else:
-            # Empty response
+            # Empty response (e.g. finish_reason 'error' mapped to 'stop')
             logger.warning(
-                "[LLM_STAGE] Empty response (iteration %d)", ctx.turn.iteration
+                "[LLM_STAGE] Empty response (iteration %d, tool_results=%d)",
+                ctx.turn.iteration,
+                len(ctx.turn.tool_results),
             )
+
+            # Retry when LLM returns empty (DeepSeek overload, API error).
+            # Use iteration as retry counter — each run() call increments it
+            # in the pipeline loop. Retries are NOT counted as empty_rounds.
+            if self._max_empty_retries != 0 and (
+                self._max_empty_retries == -1
+                or ctx.turn.iteration < self._max_empty_retries
+            ):
+                logger.warning(
+                    "[LLM_STAGE] Retrying empty response (attempt %d/%d)",
+                    ctx.turn.iteration + 1,
+                    self._max_empty_retries,
+                )
+                # Brief delay for API backpressure
+                await asyncio.sleep(0.5)
+                yield AgentEvent(
+                    "status",
+                    StatusEventData(
+                        phase="re_prompt",
+                        iteration=ctx.turn.iteration,
+                    ),
+                )
+                return
+
             ctx.turn.empty_rounds += 1
             yield AgentEvent(
                 "status",
@@ -375,8 +411,26 @@ class ToolExecutionStage:
                     display_names[n] = n
 
         for tool_call in ctx.turn.pending_calls:
-            name: str = tool_call.get("name", "")
-            arguments: dict[str, Any] = tool_call.get("arguments", {})
+            # IMPORTANT: tool_calls come from LiteLLM in the format:
+            #   {"id":"call_x", "type":"function",
+            #    "function": {"name":"search_auto_parts", "arguments":"{}"}}
+            # NOT the old OpenAI message format with top-level name/arguments.
+            name: str = tool_call.get("name") or tool_call.get("function", {}).get(
+                "name", ""
+            )
+
+            raw_args = tool_call.get("arguments") or tool_call.get("function", {}).get(
+                "arguments", {}
+            )
+            if isinstance(raw_args, str):
+                try:
+                    arguments = json.loads(raw_args)
+                except (json.JSONDecodeError, TypeError):
+                    arguments = {}
+            elif isinstance(raw_args, dict):
+                arguments = raw_args
+            else:
+                arguments = {}
             tool_call_id: str = (
                 tool_call.get("id", "") or f"call_{name}_{uuid.uuid4().hex[:8]}"
             )
@@ -509,6 +563,16 @@ class ToolExecutionStage:
                     "name": name,
                 }
             )
+
+            # Inject reminder as system message so LLM understands what to do
+            # after a failed tool call (only when reminder is available).
+            if not tool_result.ok and tool_result.reminder:
+                ctx.turn.messages.append(
+                    {"role": "system", "content": tool_result.reminder}
+                )
+                ctx.turn.turn_messages.append(
+                    {"role": "system", "content": tool_result.reminder}
+                )
 
         # Clear pending calls
         ctx.turn.pending_calls = []

@@ -181,8 +181,14 @@ class LLMAgent:
             user_message[:100],
         )
 
-        # Use per-request LLM client if explicitly provided, or build from config.
-        if llm_client:
+        # Use scripted LLM in dev mode (USE_SCRIPTED_LLM=1).
+        # Overrides ALL other providers — deterministic responses.
+        from .scripted_provider import create_scripted_provider as _create_scripted
+
+        scripted = _create_scripted()
+        if scripted:
+            request_llm: Any = scripted
+        elif llm_client:
             request_llm: Any = llm_client
         elif llm_config:
             # If llm_config is a single provider config

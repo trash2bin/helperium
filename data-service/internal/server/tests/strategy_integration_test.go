@@ -61,7 +61,7 @@ func setupStrategyIntegration(t *testing.T) *httptest.Server {
 		}
 	}
 
-	t.Cleanup(func() { sqlDB.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	// Build config with strategy endpoints
 	cfg := &config.Config{

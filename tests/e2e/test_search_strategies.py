@@ -695,7 +695,7 @@ class TestLLMImplicitIntent:
         """
         tid, _ = auto_shop_tenant
         llm_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")
-        llm_model = os.environ.get("OPENAI_MODEL", "deepseek-v4-flash@provider=DeepSeek&allow_fallbacks=false")
+        llm_model = os.environ.get("OPENAI_MODEL", "openai/deepseek-v4-flash")
         llm_api_base = os.environ.get("OPENAI_API_BASE", "https://polza.ai/api/v1")
 
         agent_name = f"e2e-autoshop-{uuid.uuid4().hex[:6]}"
@@ -713,7 +713,7 @@ class TestLLMImplicitIntent:
         # Create agent with appropriate system prompt
         payload = {
             "name": agent_name,
-            "provider_priority": ["openai"],
+            "provider_priority": ["polza"],
             "tenant_ids": [tid],
             "llm_config": {
                 "model": llm_model,

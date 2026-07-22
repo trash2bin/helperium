@@ -158,7 +158,7 @@ class LLMResponse(TypedDict):
 class StatusEventData(TypedDict):
     """Data for status events."""
 
-    phase: Literal["empty_round", "tool_calls"]
+    phase: Literal["empty_round", "tool_calls", "re_prompt"]
     iteration: int
     empty_rounds: NotRequired[int]
     count: NotRequired[int]
