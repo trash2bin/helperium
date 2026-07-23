@@ -1,7 +1,6 @@
 package search
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/trash2bin/helperium/data-service/internal/query"
@@ -56,41 +55,6 @@ type Adapter interface {
 
 	// IsPostgres — true если адаптер использует PostgreSQL-стиль ($N).
 	IsPostgres() bool
-}
-
-// NewDataSourceStrategy создаёт Strategy, делегирующую всё DataSource.
-// Позволяет endpoint_builder'у работать с DataSource через старый Strategy interface
-// для стратегий, пока не переведённых на DataSourceHandler.
-func NewDataSourceStrategy(name, idCol, nameCol string) Strategy {
-	return &dataSourceStrategy{
-		name:    name,
-		idCol:   idCol,
-		nameCol: nameCol,
-	}
-}
-
-type dataSourceStrategy struct {
-	name    string
-	idCol   string
-	nameCol string
-}
-
-func (s *dataSourceStrategy) Name() string           { return s.name }
-func (s *dataSourceStrategy) EntityIDCol() string    { return s.idCol }
-func (s *dataSourceStrategy) EntityNameCol() string  { return s.nameCol }
-
-func (s *dataSourceStrategy) ToolName(entity config.Entity) string {
-	return s.name + "_" + entity.Name
-}
-func (s *dataSourceStrategy) ToolDescription(entity config.Entity) string {
-	return fmt.Sprintf("Search %s", entity.Name)
-}
-func (s *dataSourceStrategy) ToolParams(entity config.Entity) []config.EndpointParam {
-	return nil
-}
-func (s *dataSourceStrategy) ParseRequest(r *http.Request, entity config.Entity, a Adapter) (*query.QueryPlan, error) {
-	// DataSource-based: handler не использует QueryPlan, работает напрямую с DataSource
-	return nil, nil
 }
 
 // adapterWrapper оборачивает query.AdapterSubset в search.Adapter.

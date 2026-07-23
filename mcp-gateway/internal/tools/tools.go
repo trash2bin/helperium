@@ -264,8 +264,6 @@ func (r *Registry) GetToolNames() []string {
 	}
 	if r.RagEnabled() {
 		names = append(names, "search_documents", "list_documents", "get_rag_context")
-	} else {
-		names = append(names, "search_documents", "list_documents", "get_rag_context")
 	}
 	return names
 }
