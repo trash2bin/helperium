@@ -582,9 +582,7 @@ def _looks_like_raw_json_tool_calls(content: str) -> bool:
     if "name" in stripped and "arguments" in stripped:
         # Must have the structure: {"name"..."arguments"...}
         try:
-            import json as _json
-
-            parsed = _json.loads(stripped)
+            parsed = json.loads(stripped)
             # array of tool-like objects or a single tool-like object
             if isinstance(parsed, list):
                 for item in parsed:
@@ -600,7 +598,7 @@ def _looks_like_raw_json_tool_calls(content: str) -> bool:
                 )
                 if n and ("arguments" in parsed or "args" in parsed):
                     return True
-        except (_json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError):
             pass
 
     return False

@@ -436,10 +436,6 @@ class TestE2EPipeline:
     @pytest.mark.asyncio
     async def test_ndjson_multiple_tools_then_final(self):
         """NDJSON 2 строки → 2 тула → оба результата → LLM → финал."""
-        ndjson_content = (
-            '{"name": "get_product", "arguments": {"id": 1059}}\n'
-            '{"name": "get_product", "arguments": {"id": 1060}}'
-        )
         llm = TestLLMProvider()
         llm.queue(
             llm_response.text_tool_calls(
@@ -455,7 +451,7 @@ class TestE2EPipeline:
             middlewares=[SpendingMiddleware(), BacklogMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
-        events = await collect_events(pipeline.run(ctx))
+        await collect_events(pipeline.run(ctx))
         assert len(mcp.call_history) == 2, (
             f"NDJSON 2 тула не выполнились: {mcp.call_history}"
         )
@@ -478,7 +474,7 @@ class TestE2EPipeline:
             middlewares=[SpendingMiddleware(), BacklogMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
-        events = await collect_events(pipeline.run(ctx))
+        await collect_events(pipeline.run(ctx))
 
         assert len(mcp.call_history) == 2, (
             f"Оба тула должны выполниться: {[h['name'] for h in mcp.call_history]}"
