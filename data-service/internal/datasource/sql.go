@@ -281,7 +281,7 @@ func (s *SQLDataSource) Search(ctx context.Context, q *Query) (*Result, error) {
 			log.Printf("DB error in Search: %v", err)
 			return nil, fmt.Errorf("query execution failed")
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck
 
 		data, err := scanRows(rows)
 		if err != nil {
@@ -309,7 +309,7 @@ func (s *SQLDataSource) Search(ctx context.Context, q *Query) (*Result, error) {
 		log.Printf("DB error in Search: %v", err)
 		return nil, fmt.Errorf("query execution failed")
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	data, err := scanRows(rows)
 	if err != nil {
@@ -443,7 +443,7 @@ func (s *SQLDataSource) Filter(ctx context.Context, q *Query) (*Result, error) {
 		log.Printf("DB error in Filter: %v", err)
 		return nil, fmt.Errorf("query execution failed")
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	data, err := scanRows(rows)
 	if err != nil {
@@ -492,7 +492,7 @@ func (s *SQLDataSource) GetByID(ctx context.Context, entityName string, id any) 
 		log.Printf("DB error in GetByID: %v", err)
 		return nil, fmt.Errorf("query execution failed")
 	}
-	defer rows2.Close()
+	defer rows2.Close() //nolint:errcheck
 
 	cols := make([]string, len(allCols))
 	for i, c := range allCols {
@@ -595,10 +595,10 @@ func (s *SQLDataSource) Count(ctx context.Context, q *Query) (int64, error) {
 		log.Printf("DB error in Count: %v", err)
 		return 0, fmt.Errorf("query execution failed")
 	}
-	defer countRows.Close()
+	defer countRows.Close() //nolint:errcheck
 	var count int64
 	if countRows.Next() {
-		countRows.Scan(&count)
+		_ = countRows.Scan(&count)
 	}
 
 	auditDuration(start, "count", q)
@@ -646,7 +646,7 @@ func (s *SQLDataSource) Distinct(ctx context.Context, entityName, column string)
 		log.Printf("DB error in Distinct: %v", err)
 		return nil, fmt.Errorf("query execution failed")
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var results []string
 	for rows.Next() {
@@ -687,8 +687,8 @@ func (s *SQLDataSource) Schema(ctx context.Context, entityName string) (*SchemaI
 	if err != nil {
 		log.Printf("DB error in Schema count: %v", err)
 	} else if totalRows.Next() {
-		totalRows.Scan(&info.Total)
-		totalRows.Close()
+		_ = totalRows.Scan(&info.Total)
+		_ = totalRows.Close()
 	}
 
 	// 2. Per-field metadata
@@ -713,10 +713,10 @@ func (s *SQLDataSource) Schema(ctx context.Context, entityName string) (*SchemaI
 				var vals []string
 				for rows.Next() {
 					var v string
-					rows.Scan(&v)
+					_ = rows.Scan(&v)
 					vals = append(vals, v)
 				}
-				rows.Close()
+				_ = rows.Close()
 				meta.Distinct = vals
 			}
 
@@ -727,8 +727,8 @@ func (s *SQLDataSource) Schema(ctx context.Context, entityName string) (*SchemaI
 			statRows, err := s.db.QueryContext(ctx, sqlStr)
 			if err == nil && statRows.Next() {
 				var min, max, avg sql.NullFloat64
-				statRows.Scan(&min, &max, &avg)
-				statRows.Close()
+				_ = statRows.Scan(&min, &max, &avg)
+				_ = statRows.Close()
 				if min.Valid {
 					meta.Min = f64ptr(min.Float64)
 				}
@@ -758,7 +758,7 @@ func f64ptr(v float64) *float64 {
 
 func auditDuration(start time.Time, tool string, q *Query) {
 	dur := time.Since(start).Milliseconds()
-	GlobalAuditRecorder.RecordToolCall(context.Background(), &ToolCallRecord{
+	_ = GlobalAuditRecorder.RecordToolCall(context.Background(), &ToolCallRecord{
 		ToolName:   tool,
 		Entity:     q.Entity,
 		TenantID:   q.TenantID,

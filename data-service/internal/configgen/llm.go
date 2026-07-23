@@ -76,48 +76,6 @@ type LLMRelation struct {
 	ReferencedTool string `json:"referenced_tool,omitempty"`
 }
 
-// compactFilterSummary builds a grouped description of filter fields.
-// Groups: search (partial), exact (string/int/float), bool (true/false).
-func compactFilterSummary(ent *config.Entity) string {
-	if ent == nil || len(ent.Fields) == 0 {
-		return ""
-	}
-	var searchFields, exactFields, boolFields []string
-	for _, f := range ent.Fields {
-		if f.PrimaryKey != nil && *f.PrimaryKey {
-			continue
-		}
-		if f.Name == "limit" || f.Name == "offset" {
-			continue
-		}
-		lower := f.Name
-		isSearch := lower == "name" || strings.HasSuffix(lower, "_name") || strings.HasSuffix(lower, "_title") || strings.HasPrefix(lower, "name")
-		if isSearch && f.Type == config.FieldTypeString {
-			searchFields = append(searchFields, lower)
-		} else if f.Type == config.FieldTypeBool {
-			boolFields = append(boolFields, lower)
-		} else {
-			exactFields = append(exactFields, lower)
-		}
-	}
-	var parts []string
-	if len(searchFields) > 0 {
-		parts = append(parts, fmt.Sprintf("partial match on '%s'", strings.Join(searchFields, ", ")))
-	}
-	if len(exactFields) > 0 {
-		show := exactFields
-		if len(show) > 3 {
-			show = show[:3]
-			show = append(show, fmt.Sprintf("+%d more", len(exactFields)-3))
-		}
-		parts = append(parts, fmt.Sprintf("exact: %s", strings.Join(show, ", ")))
-	}
-	if len(boolFields) > 0 {
-		parts = append(parts, fmt.Sprintf("bool: %s", strings.Join(boolFields, ", ")))
-	}
-	return strings.Join(parts, "; ")
-}
-
 // GenerateSchemaForLLM превращает datasource.Schema в обселиченное
 // описание для LLM-агента. Никакого raw SQL.
 //

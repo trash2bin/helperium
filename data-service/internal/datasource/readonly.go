@@ -28,7 +28,7 @@ func NewReadOnlyDB(driverName, dsn string) (*ReadOnlyDB, error) {
 	// Пробуем write — если успешно, СУБД не read-only
 	_, writeErr := db.ExecContext(ctx, "CREATE TEMP TABLE IF NOT EXISTS _helperium_ro_check (id int)")
 	if writeErr == nil {
-		db.ExecContext(ctx, "DROP TABLE IF EXISTS _helperium_ro_check")
+		db.ExecContext(ctx, "DROP TABLE IF EXISTS _helperium_ro_check") //nolint:errcheck
 	}
 	// Не фатально — просто предупреждение если write работает
 

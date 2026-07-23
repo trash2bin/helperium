@@ -188,7 +188,7 @@ func collectEmptyHint(ctx context.Context, db runtime.AdapterSubset, entity conf
 			}
 			vals = append(vals, v)
 		}
-		rows.Close()
+		rows.Close() //nolint:errcheck
 
 		if len(vals) > 0 {
 			hint.AvailableValues[f.Name] = vals

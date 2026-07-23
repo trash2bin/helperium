@@ -47,7 +47,7 @@ func (h *SchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if countRows.Next() {
 		_ = countRows.Scan(&total)
 	}
-	countRows.Close()
+	countRows.Close() //nolint:errcheck
 
 	// 2. For each field — collect metadata
 	fields := make(map[string]any)
@@ -160,7 +160,7 @@ func (h *SchemaHandler) fieldStats(rctx context.Context, qTable, qCol, tenantWhe
 	if statRows.Next() {
 		_ = statRows.Scan(&min, &max, &avg)
 	}
-	statRows.Close()
+	statRows.Close() //nolint:errcheck
 
 	result := map[string]float64{}
 	if min.valid {

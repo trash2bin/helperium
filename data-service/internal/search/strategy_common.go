@@ -177,15 +177,6 @@ func selectClause(entity config.Entity, q map[string][]string, a Adapter) query.
 	}
 }
 
-// selectClauseFull creates a SelectClause with all entity columns.
-func selectClauseFull(entity config.Entity, a Adapter) query.SelectClause {
-	cols := make([]string, 0, len(entity.Fields))
-	for _, f := range entity.Fields {
-		cols = append(cols, a.QuoteIdentifier(f.Column))
-	}
-	return query.SelectClause{Columns: cols}
-}
-
 // makeEqCondition creates a Condition for exact comparison based on field type.
 func makeEqCondition(qName string, f config.EntityField, val string) (query.Condition, error) {
 	typed, err := convertValue(val, f.Type)
