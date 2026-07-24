@@ -28,7 +28,6 @@ from .llm_client import (
 )
 from .mcp_client import MCPClient
 from .middlewares import (
-    BacklogMiddleware,
     SpendingMiddleware,
     TokenBudgetMiddleware,
 )
@@ -104,7 +103,6 @@ class LLMAgent:
             ],
             middlewares=[
                 SpendingMiddleware(),
-                BacklogMiddleware(),
                 TokenBudgetMiddleware(),
             ],
         )

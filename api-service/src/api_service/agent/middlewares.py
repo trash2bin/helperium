@@ -55,35 +55,6 @@ class SpendingMiddleware:
         return event
 
 
-class BacklogMiddleware:
-    """Запись событий в backlog (ModelBacklog).
-
-    Пишет:
-    - turn_start при первом событии любого типа
-    - остальные события проходят сквозь (Stage'ы сами пишут свои вызовы)
-    """
-
-    def __init__(self) -> None:
-        self._turn_started: bool = False
-
-    async def process(
-        self, ctx: PipelineContext, event: AgentEvent
-    ) -> AgentEvent | None:
-        if not self._turn_started:
-            # Запись turn_start уже сделана в orchestrator.stream_events()
-            # через backlog.turn_start() — не дублируем
-            self._turn_started = True
-
-        # Дополнительное логирование ошибок
-        if event.type == "error":
-            error_msg = (
-                event.data.get("message", "") if isinstance(event.data, dict) else ""
-            )
-            logger.warning("[BACKLOG_MW] Error event: %s", error_msg)
-
-        return event
-
-
 class TokenBudgetMiddleware:
     """Проверка token budget после каждого события.
 

@@ -9,7 +9,6 @@ Pipeline.run() ─► while loop ─► for stage in stages ─► for event in 
                                   │                        │
                                   │                        └──► Middleware chain
                                   │                      SpendingMiddleware
-                                  │                      BacklogMiddleware
                                   │                      TokenBudgetMiddleware
                                   └──► ctx.should_stop? ──► break
                      ─► Фаза 2 (finalization): FallbackStage → GuardOutputStage → SaveHistoryStage
@@ -21,7 +20,6 @@ GuardInputStage / ToolDiscoveryStage / GuardOutputStage / FallbackStage / SaveHi
 
 Middleware (актуальный список):
 - ``SpendingMiddleware`` — запись cost + проверка лимитов для tenant'ов
-- ``BacklogMiddleware`` — запись событий в backlog
 - ``TokenBudgetMiddleware`` — проверка лимита токенов контекста
 """
 
@@ -30,7 +28,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Protocol
 
 from .models import CompletionResponse
 from .protocols import (
@@ -38,6 +36,7 @@ from .protocols import (
     ConversationStore,
     GuardChecker,
     LLMProvider,
+    MCPSession,
     SpendingTracker,
 )
 from .turn_context import TurnContext
@@ -59,9 +58,7 @@ class PipelineContext:
 
     turn: TurnContext
     llm_provider: LLMProvider
-    mcp_session: (
-        Any  # _SessionProxy из MCPClient (не MCPToolProvider — это proxy-объект сессии)
-    )
+    mcp_session: MCPSession
 
     # Runtime-зависимости (типизированы через протоколы из protocols.py)
     store: ConversationStore
@@ -131,7 +128,7 @@ class Pipeline:
             stages=[GuardInputStage(), ToolDiscoveryStage(),
                     LLMStage(), ToolExecutionStage(),
                     GuardOutputStage(), FallbackStage(), SaveHistoryStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         async for event in pipeline.run(ctx):
             ...
@@ -229,20 +226,6 @@ class Pipeline:
                     ctx.max_iterations,
                 )
                 break
-
-            # Token budget check
-            if ctx.max_turn_tokens > 0 and ctx.turn.messages:
-                from .token_estimator import estimate_tokens
-
-                model = getattr(ctx.llm_provider, "model", "")
-                tokens = estimate_tokens(ctx.turn.messages, model=model)
-                if tokens >= ctx.max_turn_tokens:
-                    logger.warning(
-                        "[PIPELINE] Token budget exceeded (%d ≥ %d)",
-                        tokens,
-                        ctx.max_turn_tokens,
-                    )
-                    break
 
             # ── Next iteration ─────────────────────────────────────────
             # Не расходуем iteration когда в этом раунде были tool_calls

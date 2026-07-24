@@ -5,7 +5,7 @@ Modules
 orchestrator       — Thin coordinator (LLMAgent, agent singleton)
 pipeline            — Pipeline orchestration (Pipeline, PipelineContext, Stage, Middleware)
 stages              — Pipeline stages (LLMStage, ToolExecutionStage, GuardInputStage, …)
-middlewares          — Pipeline middleware (SpendingMiddleware, BacklogMiddleware, …)
+middlewares          — Pipeline middleware (SpendingMiddleware, TokenBudgetMiddleware, …)
 turn_context        — Turn-level state container
 prompts             — System prompt constants
 token_estimator     — Token estimation & fallback trimming
@@ -33,7 +33,7 @@ from .models import (
     ProviderConfig,
     UsageInfo,
 )
-from .middlewares import BacklogMiddleware, SpendingMiddleware, TokenBudgetMiddleware
+from .middlewares import SpendingMiddleware, TokenBudgetMiddleware
 from .orchestrator import LLMAgent, agent
 from .pipeline import Pipeline, PipelineContext, Stage, Middleware
 from .provider_pool import ProviderPool, ProviderWorker
@@ -51,6 +51,7 @@ from .protocols import (
     ConversationStore,
     LLMProvider,
     MCPToolProvider,
+    MCPSession,
     SpendingTracker,
 )
 from .tool_parser import ToolCallParser
@@ -59,7 +60,6 @@ from .turn_context import TurnContext
 
 __all__ = [
     "AgentEvent",
-    "BacklogMiddleware",
     "BacklogWriter",
     "CompletionRequest",
     "CompletionResponse",
@@ -77,6 +77,7 @@ __all__ = [
     "LiteLLMProvider",
     "MCPClient",
     "MCPToolProvider",
+    "MCPSession",
     "Middleware",
     "Pipeline",
     "PipelineContext",

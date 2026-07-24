@@ -22,7 +22,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from .models import CompletionRequest
+from .models import CompletionRequest, CompletionResponse
 from .pipeline import PipelineContext
 from .prompts import FALLBACK_GENERIC
 from .token_estimator import trim_for_fallback
@@ -346,6 +346,33 @@ class LLMStage:
         if ctx.should_stop:
             return
 
+        response = await self._call_llm(ctx)
+
+        # 4-way dispatch by response shape
+        if response.tool_calls:
+            async for event in self._emit_tool_calls(
+                ctx, response.tool_calls, response.content, ctx.turn.iteration
+            ):
+                yield event
+            return
+
+        elif response.content:
+            async for event in self._handle_content_response(ctx, response):
+                yield event
+            return
+
+        elif response.reasoning_content:
+            async for event in self._handle_reasoning(ctx, response):
+                yield event
+            return
+
+        else:
+            async for event in self._handle_empty_response(ctx):
+                yield event
+            return
+
+    async def _call_llm(self, ctx: PipelineContext) -> CompletionResponse:
+        """Build request, call LLM, record backlog. Plain async, no yields."""
         req = CompletionRequest(
             messages=ctx.turn.messages,
             tools=ctx.turn.tools if ctx.turn.tools else None,
@@ -377,190 +404,180 @@ class LLMStage:
             iteration=ctx.turn.iteration,
         )
 
-        # ══════════════════════════════════════════════════════════════════
-        # LAYER 1 — LiteLLM returned structured tool_calls
+        return response
+
+    async def _emit_tool_calls(
+        self,
+        ctx: PipelineContext,
+        pending_calls: list[dict[str, Any]],
+        raw_content: str | None,
+        iteration: int,
+    ) -> AsyncIterator[AgentEvent]:
+        """Shared helper for LAYER 1 and LAYER 2 tool call emission.
+
+        Sets had_tool_calls_this_iteration, pending_calls, yields status event,
+        formats and appends assistant message.
+        """
+        ctx.had_tool_calls_this_iteration = True
+        ctx.turn.pending_calls = pending_calls
+        yield AgentEvent(
+            "status",
+            StatusEventData(phase="tool_calls", iteration=iteration),
+        )
+        formatted_tc = _format_tool_calls_for_message(pending_calls)
+        assistant_msg: dict[str, Any] = {
+            "role": "assistant",
+            "content": raw_content or "",
+        }
+        if formatted_tc:
+            assistant_msg["tool_calls"] = formatted_tc
+        ctx.turn.messages.append(assistant_msg)
+        ctx.turn.turn_messages.append(assistant_msg)
+
+    async def _handle_content_response(
+        self, ctx: PipelineContext, response: CompletionResponse
+    ) -> AsyncIterator[AgentEvent]:
+        """LAYER 2 (ToolCallParser) → LAYER 3 (safety net) → TRUE FINAL."""
+        # ════════════════════════════════════════════════════════════════════
+        # LAYER 2 — Fallback: ToolCallParser extracts tools from text
         # ──────────────────────────────────────────────────────────────────
-        # Either the model natively supports function calling, or
-        # add_function_to_prompt parsed the text response back into
-        # msg.tool_calls. In either case, no manual parsing needed.
-        # content_tokens are NOT streamed here — they contain the raw
-        # LLM output which may include inline JSON tool definitions.
-        # Streaming happens ONLY in the final path (LAYER 3).
-        # ══════════════════════════════════════════════════════════════════
-        if response.tool_calls:
-            # LiteLLM вернула структурированные tool_calls
-            # (родная поддержка модели + add_function_to_prompt)
-            ctx.had_tool_calls_this_iteration = True
-            ctx.turn.pending_calls = response.tool_calls
-            yield AgentEvent(
-                "status",
-                StatusEventData(
-                    phase="tool_calls",
-                    iteration=ctx.turn.iteration,
-                ),
+        # If LiteLLM didn't parse tool calls (model returned JSON as
+        # plain text despite add_function_to_prompt), try to extract
+        # them from content manually. Supports: NDJSON, JSON arrays,
+        # OpenAI-style function wrappers, markdown code blocks, inline.
+        # Still does NOT stream content_tokens — they contain raw JSON.
+        # ════════════════════════════════════════════════════════════════════
+        parser = ToolCallParser()
+        parsed = parser.extract_tool_calls({"content": response.content})
+        if parsed:
+            logger.info(
+                "[LLM_STAGE][TOOL_PARSER] Extracted %d tool calls from JSON text "
+                "(LiteLLM didn't parse them, fallback parser caught them)",
+                len(parsed),
             )
-            # Append assistant message with tool_calls to history
-            formatted_tc = _format_tool_calls_for_message(response.tool_calls)
-            assistant_msg: dict[str, Any] = {
-                "role": "assistant",
-                "content": response.content or "",
-            }
-            if formatted_tc:
-                assistant_msg["tool_calls"] = formatted_tc
-            ctx.turn.messages.append(assistant_msg)
-            ctx.turn.turn_messages.append(assistant_msg)
-            return  # let ToolExecutionStage handle calls
-
-        elif response.content:
-            # ══════════════════════════════════════════════════════════════
-            # LAYER 2 — Fallback: ToolCallParser extracts tools from text
-            # ──────────────────────────────────────────────────────────────
-            # If LiteLLM didn't parse tool calls (model returned JSON as
-            # plain text despite add_function_to_prompt), try to extract
-            # them from content manually. Supports: NDJSON, JSON arrays,
-            # OpenAI-style function wrappers, markdown code blocks, inline.
-            # Still does NOT stream content_tokens — they contain raw JSON.
-            # ══════════════════════════════════════════════════════════════
-            parser = ToolCallParser()
-            parsed = parser.extract_tool_calls({"content": response.content})
-            if parsed:
-                logger.info(
-                    "[LLM_STAGE][TOOL_PARSER] Extracted %d tool calls from JSON text "
-                    "(LiteLLM didn't parse them, fallback parser caught them)",
-                    len(parsed),
-                )
-                # Pre-resolve name from function dict if needed
-                pending = []
-                for tc in parsed:
-                    name = tc.get("name", "")
-                    args = tc.get("arguments", {})
-                    call_id = tc.get("id", f"call_{uuid.uuid4().hex[:8]}")
-                    pending.append({"name": name, "arguments": args, "id": call_id})
-                ctx.had_tool_calls_this_iteration = True
-                ctx.turn.pending_calls = pending
-                yield AgentEvent(
-                    "status",
-                    StatusEventData(
-                        phase="tool_calls",
-                        iteration=ctx.turn.iteration,
-                    ),
-                )
-                formatted_tc = _format_tool_calls_for_message(pending)
-                assistant_msg: dict[str, Any] = {
-                    "role": "assistant",
-                    "content": response.content or "",
-                }
-                if formatted_tc:
-                    assistant_msg["tool_calls"] = formatted_tc
-                ctx.turn.messages.append(assistant_msg)
-                ctx.turn.turn_messages.append(assistant_msg)
-                return  # let ToolExecutionStage handle calls
-
-            # ══════════════════════════════════════════════════════════════
-            # LAYER 3 — Safety net: block raw JSON from reaching the user
-            # ──────────────────────────────────────────────────────────────
-            # If both LAYER 1 and LAYER 2 failed (unrecognised format,
-            # malformed JSON, mixed text+JSON that parser missed), check
-            # if the content still looks like tool calls via heuristic
-            # pattern matching. If yes, emit error instead of final.
-            # content_tokens are NEVER emitted in this path.
-            # ══════════════════════════════════════════════════════════════
-            if _looks_like_raw_json_tool_calls(response.content):
-                logger.warning(
-                    "[LLM_STAGE][SAFETY_NET] BLOCKED final: content looks like raw "
-                    "JSON tool calls (LiteLLM+ToolParser both failed). "
-                    "Content[0:200]=%s",
-                    response.content[:200],
-                )
-                err_msg = (
-                    "Ошибка: модель вернула необработанный JSON-запрос. "
-                    "Попробуйте переформулировать вопрос."
-                )
-                ctx.turn.final_content = err_msg
-                ctx.should_stop = True
-                yield AgentEvent("error", {"message": err_msg})
-                return
-
-            # ══════════════════════════════════════════════════════════════
-            # TRUE FINAL — stream tokens to the user
-            # ──────────────────────────────────────────────────────────────
-            # We only reach here if ALL THREE LAYERS above concluded that
-            # the response is NOT tool calls — it's a genuine final answer.
-            # content_tokens are safe to stream. This is the ONLY path
-            # that yields token events to the user.
-            # ══════════════════════════════════════════════════════════════
-            for token in response.content_tokens:
-                yield AgentEvent("token", {"data": token})
-
-            ctx.turn.final_content = response.content
-            assistant_msg = {
-                "role": "assistant",
-                "content": response.content,
-            }
-            ctx.turn.messages.append(assistant_msg)
-            ctx.turn.turn_messages.append(assistant_msg)
-            yield AgentEvent("final", FinalEventData(content=response.content))
-            ctx.should_stop = True
-            return
-
-        elif response.reasoning_content:
-            # NOT adding to messages — фикс проблемы "модели пишут мысли"
-            logger.debug(
-                "[LLM_STAGE] Reasoning-only response (iteration %d)",
-                ctx.turn.iteration,
-            )
-            ctx.turn.empty_rounds += 1
-            yield AgentEvent(
-                "status",
-                StatusEventData(
-                    phase="empty_round",
-                    iteration=ctx.turn.iteration,
-                    empty_rounds=ctx.turn.empty_rounds,
-                ),
-            )
-            return
-
-        else:
-            # Empty response (e.g. finish_reason 'error' mapped to 'stop')
-            logger.warning(
-                "[LLM_STAGE] Empty response (iteration %d, tool_results=%d)",
-                ctx.turn.iteration,
-                len(ctx.turn.tool_results),
-            )
-
-            # Retry when LLM returns empty (DeepSeek overload, API error).
-            # Use iteration as retry counter — each run() call increments it
-            # in the pipeline loop. Retries are NOT counted as empty_rounds.
-            if self._max_empty_retries != 0 and (
-                self._max_empty_retries == -1
-                or ctx.turn.iteration < self._max_empty_retries
+            pending = []
+            for tc in parsed:
+                name = tc.get("name", "")
+                args = tc.get("arguments", {})
+                call_id = tc.get("id", f"call_{uuid.uuid4().hex[:8]}")
+                pending.append({"name": name, "arguments": args, "id": call_id})
+            async for event in self._emit_tool_calls(
+                ctx, pending, response.content, ctx.turn.iteration
             ):
-                logger.warning(
-                    "[LLM_STAGE] Retrying empty response (attempt %d/%d)",
-                    ctx.turn.iteration + 1,
-                    self._max_empty_retries,
-                )
-                # Brief delay for API backpressure
-                await asyncio.sleep(0.5)
-                yield AgentEvent(
-                    "status",
-                    StatusEventData(
-                        phase="re_prompt",
-                        iteration=ctx.turn.iteration,
-                    ),
-                )
-                return
+                yield event
+            return
 
-            ctx.turn.empty_rounds += 1
+        # ════════════════════════════════════════════════════════════════════
+        # LAYER 3 — Safety net: block raw JSON from reaching the user
+        # ──────────────────────────────────────────────────────────────────
+        # If both LAYER 1 and LAYER 2 failed (unrecognised format,
+        # malformed JSON, mixed text+JSON that parser missed), check
+        # if the content still looks like tool calls via heuristic
+        # pattern matching. If yes, emit error instead of final.
+        # content_tokens are NEVER emitted in this path.
+        # ════════════════════════════════════════════════════════════════════
+        if _looks_like_raw_json_tool_calls(response.content):
+            logger.warning(
+                "[LLM_STAGE][SAFETY_NET] BLOCKED final: content looks like raw "
+                "JSON tool calls (LiteLLM+ToolParser both failed). "
+                "Content[0:200]=%s",
+                response.content[:200],
+            )
+            err_msg = (
+                "Ошибка: модель вернула необработанный JSON-запрос. "
+                "Попробуйте переформулировать вопрос."
+            )
+            ctx.turn.final_content = err_msg
+            ctx.should_stop = True
+            yield AgentEvent("error", {"message": err_msg})
+            return
+
+        # ════════════════════════════════════════════════════════════════════
+        # TRUE FINAL — stream tokens to the user
+        # ──────────────────────────────────────────────────────────────────
+        # We only reach here if ALL THREE LAYERS above concluded that
+        # the response is NOT tool calls — it's a genuine final answer.
+        # content_tokens are safe to stream. This is the ONLY path
+        # that yields token events to the user.
+        # ════════════════════════════════════════════════════════════════════
+        for token in response.content_tokens:
+            yield AgentEvent("token", {"data": token})
+
+        ctx.turn.final_content = response.content
+        assistant_msg = {
+            "role": "assistant",
+            "content": response.content,
+        }
+        ctx.turn.messages.append(assistant_msg)
+        ctx.turn.turn_messages.append(assistant_msg)
+        yield AgentEvent("final", FinalEventData(content=response.content))
+        ctx.should_stop = True
+        return
+
+    async def _handle_reasoning(
+        self, ctx: PipelineContext, response: CompletionResponse
+    ) -> AsyncIterator[AgentEvent]:
+        """Handle reasoning-only response (thinking, no tool/content)."""
+        # NOT adding to messages — фикс проблемы "модели пишут мысли"
+        logger.debug(
+            "[LLM_STAGE] Reasoning-only response (iteration %d)",
+            ctx.turn.iteration,
+        )
+        ctx.turn.empty_rounds += 1
+        yield AgentEvent(
+            "status",
+            StatusEventData(
+                phase="empty_round",
+                iteration=ctx.turn.iteration,
+                empty_rounds=ctx.turn.empty_rounds,
+            ),
+        )
+        return
+
+    async def _handle_empty_response(
+        self, ctx: PipelineContext
+    ) -> AsyncIterator[AgentEvent]:
+        """Handle empty response + retry logic."""
+        # Empty response (e.g. finish_reason 'error' mapped to 'stop')
+        logger.warning(
+            "[LLM_STAGE] Empty response (iteration %d, tool_results=%d)",
+            ctx.turn.iteration,
+            len(ctx.turn.tool_results),
+        )
+
+        # Retry when LLM returns empty (DeepSeek overload, API error).
+        # Use iteration as retry counter — each run() call increments it
+        # in the pipeline loop. Retries are NOT counted as empty_rounds.
+        if self._max_empty_retries != 0 and (
+            self._max_empty_retries == -1
+            or ctx.turn.iteration < self._max_empty_retries
+        ):
+            logger.warning(
+                "[LLM_STAGE] Retrying empty response (attempt %d/%d)",
+                ctx.turn.iteration + 1,
+                self._max_empty_retries,
+            )
+            # Brief delay for API backpressure
+            await asyncio.sleep(0.5)
             yield AgentEvent(
                 "status",
                 StatusEventData(
-                    phase="empty_round",
+                    phase="re_prompt",
                     iteration=ctx.turn.iteration,
-                    empty_rounds=ctx.turn.empty_rounds,
                 ),
             )
             return
+
+        ctx.turn.empty_rounds += 1
+        yield AgentEvent(
+            "status",
+            StatusEventData(
+                phase="empty_round",
+                iteration=ctx.turn.iteration,
+                empty_rounds=ctx.turn.empty_rounds,
+            ),
+        )
+        return
 
 
 def _looks_like_raw_json_tool_calls(content: str) -> bool:

@@ -10,7 +10,6 @@ import pytest
 
 from api_service.agent.middlewares import (
     SpendingMiddleware,
-    BacklogMiddleware,
     TokenBudgetMiddleware,
 )
 from api_service.agent.types import AgentEvent
@@ -103,26 +102,6 @@ class TestSpendingMiddleware:
         result = await mw.process(ctx, event)
         assert result is not None
         assert len(spending._records) == 0
-
-
-class TestBacklogMiddleware:
-    """BacklogMiddleware: логирование событий."""
-
-    @pytest.mark.asyncio
-    async def test_events_pass_through(self):
-        """Все события проходят через middleware без изменений."""
-        ctx = await make_pipeline_ctx()
-        mw = BacklogMiddleware()
-        events = [
-            AgentEvent("token", {"data": "hello"}),
-            AgentEvent("final", {"content": "world"}),
-            AgentEvent("tool_call", {"name": "test", "arguments": {}}),
-            AgentEvent("error", {"message": "test error"}),
-        ]
-        for ev in events:
-            result = await mw.process(ctx, ev)
-            assert result is ev, f"Middleware изменил событие {ev.type}: {result}"
-            assert result.type == ev.type
 
 
 class TestTokenBudgetMiddleware:

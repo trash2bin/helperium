@@ -25,7 +25,6 @@ from api_service.agent.stages import (
 )
 from api_service.agent.middlewares import (
     SpendingMiddleware,
-    BacklogMiddleware,
 )
 
 from .helpers import (
@@ -395,7 +394,7 @@ class TestErrorFlowScenarios:
                 FallbackStage(),
                 SaveHistoryStage(),
             ],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         events = await collect_events(pipe.run(ctx))
 

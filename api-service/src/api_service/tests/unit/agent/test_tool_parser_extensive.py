@@ -20,7 +20,6 @@ from api_service.agent.stages import (
 )
 from api_service.agent.middlewares import (
     SpendingMiddleware,
-    BacklogMiddleware,
 )
 
 from .helpers import (
@@ -375,7 +374,7 @@ class TestE2EPipeline:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -402,7 +401,7 @@ class TestE2EPipeline:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         await collect_events(pipeline.run(ctx))
@@ -425,7 +424,7 @@ class TestE2EPipeline:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         await collect_events(pipeline.run(ctx))
@@ -459,7 +458,7 @@ class TestE2EPipeline:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -494,7 +493,7 @@ class TestE2EPipeline:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -524,7 +523,7 @@ class TestE2EPipeline:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         await collect_events(pipeline.run(ctx))
@@ -572,7 +571,7 @@ class TestTokenLeak:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -613,7 +612,7 @@ class TestTokenLeak:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -645,7 +644,7 @@ class TestTokenLeak:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -698,7 +697,7 @@ class TestIterationBudget:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(
             llm_provider=llm,
@@ -750,7 +749,7 @@ class TestRealWorldFormats:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -794,7 +793,7 @@ class TestRealWorldFormats:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -822,7 +821,7 @@ class TestRealWorldFormats:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -850,7 +849,7 @@ class TestRealWorldFormats:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
@@ -869,7 +868,7 @@ class TestRealWorldFormats:
 
         pipeline = Pipeline(
             stages=[LLMStage(), ToolExecutionStage()],
-            middlewares=[SpendingMiddleware(), BacklogMiddleware()],
+            middlewares=[SpendingMiddleware()],
         )
         ctx = await make_pipeline_ctx(llm_provider=llm, mcp_provider=mcp)
         events = await collect_events(pipeline.run(ctx))
