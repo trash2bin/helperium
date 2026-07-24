@@ -81,7 +81,7 @@ mcp-gateway: buildTools() — строит toolDefs из cfg.MCPTools
 ### Пример валидации
 
 ```
-LLM вызывает: search_product({})
+LLM вызывает: grep_product({})
   Уровень 1:  Required → pattern required → провал, isError
   (даже не доходит до data-service)
 
@@ -107,7 +107,9 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 **Поведение:**
 - Composite: тулы с префиксом (`tenant-a__grep_products`, `tenant-b__grep_products`)
 - Single: тулы без префикса (`grep_products`)
-- RAG-тулы: регистрируются один раз (не per-tenant)
+- RAG-тулы: регистрируются один раз (не per-tenant).
+  Защита: если RAG недоступен (`RagEnabled()` → false), `registerRagTools()`
+  не регистрирует ни один RAG-тул, возвращаясь без ошибки.
 
 ## Session Lifecycle & Timeouts
 

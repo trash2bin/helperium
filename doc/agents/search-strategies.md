@@ -60,9 +60,9 @@ data-service/internal/
 │   └── schema.go                  SchemaStrategy — schema_{entity}
 │
 ├── runtime/handlers/             — HTTP handlers
-│   ├── strategy_handler.go        Generic handler for grep/filter strategies
-│   ├── schema_handler.go          Handler for schema_{entity}
-│   └── datasource_handler.go      Universal DataSource-based handler
+│   ├── strategy_handler.go        Generic handler for grep/filter strategies (legacy Strategy interface)
+│   ├── schema_handler.go          Handler for schema_{entity} via legacy SchemaStrategy (StrategySchemaHandler)
+│   └── datasource_handler.go      Handler for schema_{entity} via DataSource interface (SchemaHandler)
 │
 └── server/                       — Router + middleware
     └── endpoint_builder.go        Routes from config → handlers
@@ -278,18 +278,18 @@ filter_orders(status__in=new,processing,shipped)            # IN
 |---|---|---|
 | maxLimit | **100** (было 1000) | parseLimitParam |
 | maxPatternLen | **500** (было 2000) | grep constructor |
-| maxRegexLen | 200 | grep/search |
-| maxTokens | 10 | grep/search |
-| maxFilters | 15 | search |
-| maxTotalConditions | 25 | search |
-| maxFilterValueLen | 200 | search/filter |
-| maxInValues | 50 | search/filter |
+| maxRegexLen | 200 | grep |
+| maxTokens | 10 | grep |
+| maxFilters | 15 | filter |
+| maxTotalConditions | 25 | query engine |
+| maxFilterValueLen | 200 | filter |
+| maxInValues | 50 | filter |
 | statement timeout | 30s configurable | handlers.Context |
 
 ### 6. Санитизация ошибок
 
 ```
-DB error → log.Printf("DB error: %v (tenant=%s, entity=%s)", err, tid, ent)
+DB error → slog.ErrorContext(ctx, "DB error", "err", err, "tenant", tid, "entity", ent)
 HTTP response → {"error": "query_failed", "message": "Query execution failed. Check field names via schema tool."}
 ```
 

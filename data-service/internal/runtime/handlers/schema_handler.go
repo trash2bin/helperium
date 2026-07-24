@@ -12,18 +12,18 @@ import (
 
 // SchemaHandler — HTTP handler for schema_{entity}.
 // Returns structured metadata about an entity: total count, distinct values, min/max/avg.
-type SchemaHandler struct {
+type StrategySchemaHandler struct {
 	strategy *search.SchemaStrategy
 	entity   config.Entity
 	ctx      *Context
 }
 
-// NewSchemaHandler creates a SchemaHandler.
-func NewSchemaHandler(ctx *Context, strategy *search.SchemaStrategy, entity config.Entity) *SchemaHandler {
-	return &SchemaHandler{strategy: strategy, entity: entity, ctx: ctx}
+// NewStrategySchemaHandler creates a StrategySchemaHandler.
+func NewStrategySchemaHandler(ctx *Context, strategy *search.SchemaStrategy, entity config.Entity) *StrategySchemaHandler {
+	return &StrategySchemaHandler{strategy: strategy, entity: entity, ctx: ctx}
 }
 
-func (h *SchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *StrategySchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	qTable := h.ctx.Adapter.QuoteIdentifier(h.entity.Table)
 	translate := asPlaceholderFunc(h.ctx.Adapter)
@@ -98,7 +98,7 @@ func (h *SchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // distinctValues returns up to 20 distinct values for a column.
-func (h *SchemaHandler) distinctValues(rctx context.Context, qTable, qCol, tenantWhere string, tenantArgs []any) []string {
+func (h *StrategySchemaHandler) distinctValues(rctx context.Context, qTable, qCol, tenantWhere string, tenantArgs []any) []string {
 	query := fmt.Sprintf("SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL ORDER BY %s LIMIT 20",
 		qCol, qTable, qCol, qCol)
 	if tenantWhere != "" {
@@ -145,7 +145,7 @@ func (ns *nullableString) Scan(src any) error {
 }
 
 // fieldStats returns min/max/avg for a numeric field.
-func (h *SchemaHandler) fieldStats(rctx context.Context, qTable, qCol, tenantWhere string, tenantArgs []any) map[string]float64 {
+func (h *StrategySchemaHandler) fieldStats(rctx context.Context, qTable, qCol, tenantWhere string, tenantArgs []any) map[string]float64 {
 	query := fmt.Sprintf("SELECT MIN(%s), MAX(%s), AVG(%s) FROM %s", qCol, qCol, qCol, qTable)
 	if tenantWhere != "" {
 		query += " WHERE " + tenantWhere

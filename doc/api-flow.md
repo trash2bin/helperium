@@ -27,7 +27,6 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 | `proxy_mapping()` | GET `/mcp/tools/mapping` | HTTP | Fetch display_name map for tenant tools |
 | `proxy_data_entity()` | GET `/{entity}` | HTTP | Generic data entity lookup |
 | `proxy_data_entity()` | GET `/{entity}/{id}` | HTTP | Entity by ID |
-| `proxy_data_entity()` | GET `/{entity}/search` | HTTP | **Strategy — unified text + field search** |
 | `proxy_data_entity()` | GET `/{entity}/grep` | HTTP | **Strategy — multi-token AND, multi-field OR, regex** |
 | `proxy_data_entity()` | GET `/{entity}/filter` | HTTP | **Strategy — field-based c `field__gt`/`__like`/`__in`** |
 | `proxy_data_entity()` | GET `/{entity}/count` | HTTP | Count with `field__op` filters |
@@ -77,12 +76,12 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 | `FetchConfigWithTenant(tenantID)` | GET `/mcp/manifest` | HTTP | Load tenant MCP tool config (now includes strategy tools) |
 | `Call(ctx, endpoint, params)` | GET `/{endpoint}` | HTTP | Execute generic data query |
 | `Call(ctx, endpoint, params)` | GET `/{endpoint}/{id}` | HTTP | Get entity by ID |
-| `Call(ctx, endpoint, params)` | GET `/{endpoint}?pattern=...&field__gt=...` | HTTP | **Strategy endpoints — `search`, `grep`, `filter` — через тот же `Call()`** |
+| `Call(ctx, endpoint, params)` | GET `/{endpoint}?pattern=...&field__gt=...` | HTTP | **Strategy endpoints — `grep`, `filter`, `schema` — через тот же `Call()`** |
 | `Call(ctx, endpoint, params)` | GET `/{endpoint}/count?field__gt=...` | HTTP | **Count with field__op filters** |
 
 **Strategy endpoints:**
-- MCP manifest теперь генерирует `search_*`, `grep_*`, `filter_*` тулы через `configgen.GenerateMCPTools()` вместе с `get_*`, `count_*`, `distinct_*`.
-- Каждый strategy-тул в манифесте содержит `Endpoint` (например `"catalog_product/search"`), который mcp-gateway использует в `Call()`.
+- MCP manifest генерирует `grep_*`, `filter_*`, `schema_*` тулы через `configgen.GenerateMCPTools()` вместе с `get_*`, `count_*`, `distinct_*`.
+- Каждый strategy-тул в манифесте содержит `Endpoint` (например `"catalog_product/grep"`), который mcp-gateway использует в `Call()`.
 - Параметры тулов (required `pattern`, field filters, types) генерируют сами стратегии через `Strategy.ToolParams()`, а не берутся из `cfg.MCPTools[].params`.
 
 **Auth:** `X-Tenant-ID` from context
@@ -184,12 +183,12 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 | HTTP Call | Route | Method | Purpose |
 |---|---|---|---|
-| `AsyncDataServiceClient.list_all()` | GET `/{entity}` | HTTP | List all entities |
-| `AsyncDataServiceClient.get_by_id()` | GET `/{entity}/{id}` | HTTP | Get by ID |
-| `AsyncDataServiceClient.search()` | GET `/{entity}/search` | HTTP | **Strategy — unified text + field search** |
-| `AsyncDataServiceClient.grep()` | GET `/{entity}/grep` | HTTP | **Strategy — multi-token/regex grep** |
-| `AsyncDataServiceClient.filter()` | GET `/{entity}/filter` | HTTP | **Strategy — field-based filter** |
-| `DataServiceClientSync` (sync) | Same as above | HTTP | CLI tool access |
+| `AsyncDataServiceClient.get(entity, id)` | GET `/{entity}/{id}` | HTTP | Get entity by ID |
+| `AsyncDataServiceClient.find(entity, field, value)` | GET `/{entity}?{field}={value}` | HTTP | Find entity by field |
+| `AsyncDataServiceClient.list_all(entity)` | GET `/{entity}` | HTTP | List all entities |
+| `DataServiceClientSync.get(entity, id)` | GET `/{entity}/{id}` | HTTP | Get entity by ID (sync) |
+| `DataServiceClientSync.find(entity, field, value)` | GET `/{entity}?{field}={value}` | HTTP | Find entity by field (sync) |
+| `DataServiceClientSync.list_all(entity)` | GET `/{entity}` | HTTP | List all entities (sync) |
 
 ## Data Flow Summary
 
@@ -201,9 +200,9 @@ Browser
   ├── POST /api/chat (SSE) ──→ demo-web ──→ api-service:8081
   │                                               │
   │                                               ├── SSE ──→ mcp-gateway:8083 ──→ data-service:8084
-  │                                               │       search_* tools → GET /{entity}/search?pattern=...
-  │                                               │       grep_* tools   → GET /{entity}/grep?q=...
+  │                                               │       grep_* tools   → GET /{entity}/grep?pattern=...
   │                                               │       filter_* tools → GET /{entity}/filter?field__gt=...
+  │                                               │       schema_* tools → GET /{entity}/schema
   │                                               │       count_* tools  → GET /{entity}/count?field__gt=...
   │                                               │
   │                                               └── HTTP ──→ rag:8082
@@ -216,15 +215,30 @@ Browser
 ### Strategy endpoint flow (detail)
 
 ```
-LLM → tool_call("search_catalog_product", {pattern: "brake pads", category: "Brakes", limit: 10})
+LLM → tool_call("grep_catalog_product", {pattern: "brake pads", limit: 10})
   │
   └── api-service MCPClient → POST /mcp/message?sessionId=... (JSON-RPC call_tool)
         │
         └── mcp-gateway (tools.go) → validates required params, resolves endpoint from toolDef.Endpoint
               │
-              └── httpClient.GetData() → GET /catalog_product/search?pattern=brake+pads&category=Brakes&limit=10
+              └── httpClient.GetData() → GET /catalog_product/grep?pattern=brake+pads&limit=10
                     │
-                    └── data-service strategy_handler.go → search.NewSearchStrategy().ParseRequest()
+                    └── data-service strategy_handler.go → search.NewGrepStrategy().ParseRequest()
+                          │
+                          └── Engine.Build() → Expression AST → SQL → DB
+```
+
+**Пример с filter:**
+```
+LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 1000, limit: 10})
+  │
+  └── api-service MCPClient → POST /mcp/message?sessionId=... (JSON-RPC call_tool)
+        │
+        └── mcp-gateway (tools.go) → validates required params
+              │
+              └── httpClient.GetData() → GET /catalog_product/filter?category=Brakes&price__gte=1000&limit=10
+                    │
+                    └── data-service strategy_handler.go → search.NewFilterStrategy().ParseRequest()
                           │
                           └── Engine.Build() → Expression AST → SQL → DB
 ```

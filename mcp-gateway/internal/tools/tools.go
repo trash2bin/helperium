@@ -161,6 +161,10 @@ func (r *Registry) RegisterAll(mcpServer *server.MCPServer) {
 // get_rag_context). Tools are always registered — if RAG is unavailable the
 // handlers return a descriptive error.
 func (r *Registry) registerRagTools(mcpServer *server.MCPServer) {
+	if !r.RagEnabled() {
+		return
+	}
+
 	// search_documents — семантический поиск по документам
 	searchTool := mcp.NewTool(
 		"search_documents",

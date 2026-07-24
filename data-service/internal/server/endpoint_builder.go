@@ -161,11 +161,11 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 			// Schema strategy — uses DataSource directly (not the legacy Strategy pipeline).
 			if ep.Strategy == "schema" {
 				if dataSource != nil {
-					h = handlers.NewDataSourceHandler(dataSource, ep.Entity, "schema").ServeHTTP
+					h = handlers.NewSchemaHandler(dataSource, ep.Entity).ServeHTTP
 				} else {
 					// Fallback: legacy SchemaStrategy (без dataSource).
 					strategy := search.NewSchemaStrategy(idCol, nameCol)
-					h = handlers.NewSchemaHandler(ctx, strategy, entityConfig).ServeHTTP
+					h = handlers.NewStrategySchemaHandler(ctx, strategy, entityConfig).ServeHTTP
 				}
 			} else {
 				var strategy search.Strategy

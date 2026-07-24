@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"time"
 
@@ -63,12 +63,13 @@ func (s *SQLDataSource) Close() error {
 }
 
 // ── DataSource interface stubs ─────────────────────────────────────────────
-// These methods satisfy the DataSource interface but are never called.
-// The DataSourceHandler only invokes Schema().
+// These methods satisfy the DataSource interface but are never called directly.
+// Schema is served by handlers.SchemaHandler (DataSource-based) or
+// handlers.StrategySchemaHandler (legacy Strategy-based).
 //
-// Search / Filter / GetByID / Count / Distinct have full implementations
-// in the search.Strategy pipeline (GrepStrategy, FilterStrategy, etc.)
-// and their corresponding handlers.
+// Search / Filter / GetByID / Count / Distinct are implemented here but
+// primarily used through the search.Strategy pipeline (GrepStrategy, FilterStrategy,
+// etc.) which calls DataSource methods internally.
 
 func (s *SQLDataSource) Search(_ context.Context, _ *Query) (*Result, error) {
 	return nil, fmt.Errorf("Search not used on SQLDataSource — use GrepStrategy instead")
@@ -134,7 +135,7 @@ func (s *SQLDataSource) Schema(ctx context.Context, entityName string) (*SchemaI
 	totalSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", a.QuoteIdentifier(entity.Table))
 	totalRows, err := s.db.QueryContext(ctx, totalSQL)
 	if err != nil {
-		log.Printf("DB error in Schema count: %v", err)
+		slog.ErrorContext(ctx, "DB error in Schema count", "err", err)
 	} else if totalRows.Next() {
 		_ = totalRows.Scan(&info.Total)
 		_ = totalRows.Close()
