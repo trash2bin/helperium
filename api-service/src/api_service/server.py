@@ -46,7 +46,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from api_service.agent.orchestrator import LLMAgent
+from api_service.agent.orchestrator import LLMAgent, _pool as _provider_pool
 from api_service.agent.types import AgentEventData
 from api_service.backlog import backlog
 from api_service.sessions import session_store
@@ -260,6 +260,70 @@ def _get_lang(request: Request) -> str:
     return "en"
 
 
+async def _sync_pool_from_store() -> int:
+    """Sync ProviderPool workers from ProviderStore.
+
+    Reads all enabled providers from ProviderStore and (re-)populates
+    the pool.  Returns the number of workers added.
+
+    Called at startup.  Call again when providers change via admin API.
+    """
+    from api_service.provider_store import get_provider_store
+
+    store = get_provider_store()
+    router_config = store.get_active_router_config()
+
+    # Clear and re-populate
+    await _provider_pool.clear()
+
+    count = 0
+    for entry in router_config:
+        params = entry.get("litellm_params", {})
+        model = params.get("model", "")
+        if not model:
+            continue
+        api_key = params.get("api_key", "") or ""
+        api_base = params.get("api_base", "") or ""
+        temperature = float(params.get("temperature", 0.5))
+        timeout = float(params.get("timeout", 120.0))
+
+        name = entry.get("model_name", model)
+        _provider_pool.add_worker(
+            name=name,
+            model=model,
+            api_base=api_base,
+            api_key=api_key,
+            timeout=timeout,
+            temperature=temperature,
+        )
+        count += 1
+
+    # Start background health checks after populating
+    _provider_pool.start_health_checks()
+
+    logger.info(
+        "ProviderPool synced: %d workers from ProviderStore, health checks started",
+        count,
+    )
+    return count
+
+
+def _resolve_llm_for_agent(agent_data: dict | None) -> tuple[Any, Any]:
+    """Resolve (provider_priority, llm_config) from agent data.
+
+    Returns a tuple of (provider_priority_or_none, llm_config_or_none)
+    to be passed directly to ``stream_events()``.
+
+    This replaces the old pattern of ``create_client(llm_config)`` which
+    is no longer available.
+    """
+    if not agent_data:
+        return None, None
+    provider_priority = agent_data.get("provider_priority", []) or None
+    llm_config = agent_data.get("llm_config")
+    return provider_priority, llm_config
+
+
 async def chat_handler(request: Request) -> StreamingResponse:
     """Streaming chat endpoint that handles user messages."""
     try:
@@ -387,6 +451,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Agent warmup failed (will retry on first request): %s", exc)
 
+    # Startup: sync ProviderPool from ProviderStore + start health checks
+    try:
+        await _sync_pool_from_store()
+    except Exception as exc:
+        logger.warning("ProviderPool sync failed (will retry later): %s", exc)
+
     yield
 
     # Shutdown: закрываем MCP-сессию, если она была открыта
@@ -397,6 +467,11 @@ async def lifespan(app: FastAPI):
             await agent.mcp_client.close()
     except Exception as exc:
         logger.warning("MCP client close failed: %s", exc)
+    # Shutdown: stop ProviderPool health checks
+    try:
+        await _provider_pool.stop_health_checks()
+    except Exception as exc:
+        logger.warning("ProviderPool shutdown failed: %s", exc)
     # Flush OTel spans before exit
     try:
         otel_shutdown()
@@ -1124,15 +1199,8 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     if abuse_result is not None:
         return abuse_result
 
-    # Resolve provider priority -> prioritized LLM client
-    provider_priority = agent.get("provider_priority", [])
-    request_llm = None
-    if provider_priority:
-        pass  # handled inside stream_events via provider_priority param
-    elif llm_config:
-        from api_service.agent.llm_client import create_client
-
-        request_llm = create_client(llm_config)
+    # Resolve provider config for this agent
+    provider_priority, resolved_llm_config = _resolve_llm_for_agent(agent)
 
     if not message:
         return StreamingResponse(
@@ -1160,10 +1228,8 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
             )
             if provider_priority:
                 kwargs["provider_priority"] = provider_priority
-            elif request_llm:
-                kwargs["llm_client"] = request_llm
-            elif llm_config:
-                kwargs["llm_config"] = llm_config
+            elif resolved_llm_config:
+                kwargs["llm_config"] = resolved_llm_config
             async for event in get_agent().stream_events(**kwargs):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
@@ -1311,25 +1377,16 @@ async def chat_voice_endpoint(
     # Resolve lang
     request_lang = lang or _get_lang(request)
 
-    # Resolve LLM client from agent config (same as chat_agent_handler)
+    # Resolve LLM provider config from agent data (same as chat_agent_handler)
     if agent_data:
-        llm_config_agent = agent_data.get("llm_config")
-        provider_priority = agent_data.get("provider_priority", [])
+        provider_priority, llm_config = _resolve_llm_for_agent(agent_data)
         system_prompt = agent_data.get("system_prompt") or (
-            llm_config_agent.get("system_prompt") if llm_config_agent else None
+            llm_config.get("system_prompt") if llm_config else None
         )
     else:
-        llm_config_agent = None
-        provider_priority = []
+        provider_priority = None
+        llm_config = None
         system_prompt = None
-
-    request_llm = None
-    if provider_priority:
-        pass  # handled inside stream_events via provider_priority param
-    elif llm_config_agent:
-        from api_service.agent.llm_client import create_client
-
-        request_llm = create_client(llm_config_agent)
 
     # Build TTS engine if configured
     tts_enabled = (
@@ -1349,10 +1406,8 @@ async def chat_voice_endpoint(
             )
             if provider_priority:
                 kwargs["provider_priority"] = provider_priority
-            elif request_llm:
-                kwargs["llm_client"] = request_llm
-            elif llm_config_agent:
-                kwargs["llm_config"] = llm_config_agent
+            elif llm_config:
+                kwargs["llm_config"] = llm_config
             async for event in get_agent().stream_events(
                 **kwargs,
             ):

@@ -139,9 +139,13 @@ async def test_voice_passes_llm_config():
 
     assert result.status_code == 200
     call_kwargs = mock_stream.call_args.kwargs or {}
-    assert "llm_client" in call_kwargs, (
-        f"Нет llm_client, есть: {list(call_kwargs.keys())}"
+    assert "llm_client" not in call_kwargs, (
+        f"llm_client больше не передаётся, есть: {list(call_kwargs.keys())}"
     )
+    assert call_kwargs.get("llm_config") == {
+        "provider": "ollama",
+        "model": "qwen2.5:0.5b",
+    }, f"Ожидался llm_config, получено: {call_kwargs.get('llm_config')}"
 
 
 @pytest.mark.asyncio

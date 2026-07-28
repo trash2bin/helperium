@@ -23,7 +23,7 @@ class LLMProvider(Protocol):
     response.  Does NOT track cost, emit metrics, or write to the backlog
     — those are the caller's responsibility.
 
-    Implementations: LLMClient (LiteLLM), mock LLMProvider for tests,
+    Implementations: LiteLLMProvider, mock LLMProvider for tests,
     direct API wrappers.
     """
 

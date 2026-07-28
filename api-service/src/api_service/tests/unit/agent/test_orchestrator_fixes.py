@@ -1,5 +1,8 @@
 """Tests for orchestrator fixes: handler restoration and schema caching.
 
+Uses TestLLMProvider (complete() protocol) instead of old FakeLLMClient.
+No references to LLMClient, stream_completion, or create_fallback_client.
+
 See: AGENTS.md audit — _run_turn handler mutation (needs contextmanager restore)
 and _build_schema_message (needs per-tenant cache).
 """
@@ -7,7 +10,6 @@ and _build_schema_message (needs per-tenant cache).
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -17,37 +19,7 @@ from api_service.agent.orchestrator import LLMAgent
 from api_service.agent.types import AgentEvent
 
 
-# ── Shared fakes ─────────────────────────────────────────────────────────────
-
-
-class FakeLLMClient:
-    """Minimal fake LLM client for handler tests."""
-
-    def __init__(self, name: str = "default"):
-        self.name = name
-        self.model = "test-model"
-        self.api_base = "http://test"
-        self.enable_thinking = False
-        self.last_usage: dict[str, int] | None = {
-            "prompt_tokens": 5,
-            "completion_tokens": 3,
-            "total_tokens": 8,
-        }
-        self.last_cost: float = 0.0005
-
-    async def stream_completion(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        tenant_ids: list[str] | None = None,
-    ) -> AsyncIterator[tuple[str | None, dict[str, Any] | None]]:
-        yield ("ok", None)
-        yield (None, {"role": "assistant", "content": "ok"})
-
-    async def stream_answer(
-        self, user_message: str, system_prompt: str | None = None
-    ) -> AsyncIterator[str]:
-        yield "ok"
+# ── Fake MCP Client (schema-aware, for cache tests) ──────────────────────────
 
 
 class FakeMCPClient:
@@ -103,11 +75,15 @@ async def test_handler_restored_after_custom_llm(conv_manager):
     """stream_events with custom llm_client uses local handlers — no shared state leak.
 
     With the new architecture, _run_turn builds local handlers per-request
-    instead of mutating instance attributes.  Multiple concurrent requests
+    instead of mutating instance attributes. Multiple concurrent requests
     with different LLMs are safe without any save/restore dance.
     """
-    default_llm = FakeLLMClient(name="default")
-    custom_llm = FakeLLMClient(name="custom")
+    from .helpers import TestLLMProvider, llm_response
+
+    default_llm = TestLLMProvider(name="default")
+    default_llm.queue(llm_response.final("ok"))
+    custom_llm = TestLLMProvider(name="custom")
+    custom_llm.queue(llm_response.final("ok"))
     mcp = FakeMCPClient(schema=None)
     agent = LLMAgent(
         llm_client=default_llm, mcp_client=mcp, conversation_manager=conv_manager
@@ -125,6 +101,7 @@ async def test_handler_restored_after_custom_llm(conv_manager):
     assert len(errors) == 0, f"Unexpected errors: {errors}"
 
     # Now call AGAIN without custom LLM — should fall through to default_llm
+    # (self._test_llm_client was set in constructor)
     events2: list[AgentEvent] = []
     async for event in agent.stream_events("hello again", session_id="test-handler-2"):
         events2.append(event)
@@ -135,7 +112,10 @@ async def test_handler_restored_after_custom_llm(conv_manager):
 @pytest.mark.asyncio
 async def test_handler_not_affected_without_custom_llm(conv_manager):
     """Without custom llm, default client is used, no handlers to mutate."""
-    llm = FakeLLMClient(name="default")
+    from .helpers import TestLLMProvider, llm_response
+
+    llm = TestLLMProvider(name="default")
+    llm.queue(llm_response.final("ok"))
     mcp = FakeMCPClient(schema=None)
     agent = LLMAgent(llm_client=llm, mcp_client=mcp, conversation_manager=conv_manager)
 
@@ -148,9 +128,13 @@ async def test_handler_not_affected_without_custom_llm(conv_manager):
 
 @pytest.mark.asyncio
 async def test_handler_restored_even_on_inner_error(conv_manager):
-    """If _run_turn encounters an error, local handlers are GC'd — no state leak."""
-    default_llm = FakeLLMClient(name="default")
-    custom_llm = FakeLLMClient(name="custom")
+    """If an error occurs, local handlers are GC'd — no state leak."""
+    from .helpers import TestLLMProvider, llm_response
+
+    default_llm = TestLLMProvider(name="default")
+    default_llm.queue(llm_response.final("ok"))
+    custom_llm = TestLLMProvider(name="custom")
+    custom_llm.queue(llm_response.final("ok"))
 
     # MCP that raises (simulates data-service error during session open)
     class BrokenMCP(FakeMCPClient):
@@ -190,7 +174,9 @@ async def test_build_schema_cached_per_tenant(conv_manager):
     This test FAILS before the fix because _build_schema_message is called
     on every _run_turn without caching.
     """
-    # Monkey-patch _build_schema_message in stages (where it's called)
+    from .helpers import TestLLMProvider, llm_response
+
+    # Monkey-patch _build_schema_message in stages
     import api_service.agent.stages as stages_mod
 
     original = stages_mod._build_schema_message
@@ -217,13 +203,15 @@ async def test_build_schema_cached_per_tenant(conv_manager):
             "workflow_hints": ["Use search for students"],
         }
 
-        llm = FakeLLMClient()
+        llm = TestLLMProvider()
+        llm.queue(llm_response.final("ok"))
+        llm.queue(llm_response.final("ok"))
         mcp = FakeMCPClient(schema=schema_response)
         agent = LLMAgent(
             llm_client=llm, mcp_client=mcp, conversation_manager=conv_manager
         )
 
-        # First call with tenant-a → should call _build_schema_message
+        # First call with tenant-a — should call _build_schema_message
         async for _ in agent.stream_events(
             "test", session_id="test-cache-1", tenant_ids=["tenant-a"]
         ):
@@ -232,7 +220,7 @@ async def test_build_schema_cached_per_tenant(conv_manager):
             f"_build_schema_message called {call_count} times on first turn, expected ≥1"
         )
 
-        # Second call with SAME tenant → should use cache
+        # Second call with SAME tenant — should use cache
         async for _ in agent.stream_events(
             "test2", session_id="test-cache-2", tenant_ids=["tenant-a"]
         ):
@@ -250,6 +238,8 @@ async def test_build_schema_cached_per_tenant(conv_manager):
 @pytest.mark.asyncio
 async def test_schema_cache_different_tenants_not_shared(conv_manager):
     """Different tenant_ids produce different cache entries."""
+    from .helpers import TestLLMProvider, llm_response
+
     import api_service.agent.stages as stages_mod
 
     original = stages_mod._build_schema_message
@@ -276,7 +266,9 @@ async def test_schema_cache_different_tenants_not_shared(conv_manager):
             "workflow_hints": [],
         }
 
-        llm = FakeLLMClient()
+        llm = TestLLMProvider()
+        llm.queue(llm_response.final("ok"))
+        llm.queue(llm_response.final("ok"))
         mcp = FakeMCPClient(schema=schema_response)
         agent = LLMAgent(
             llm_client=llm, mcp_client=mcp, conversation_manager=conv_manager
@@ -309,64 +301,70 @@ async def test_schema_cache_different_tenants_not_shared(conv_manager):
 
 
 @pytest.mark.asyncio
-async def test_fallback_client_created_fresh_each_request(monkeypatch, conv_manager):
-    """When no llm_client/llm_config is passed, create_fallback_client()
-    is called fresh on every request — no stale Router from startup."""
+async def test_provider_created_fresh_each_request_when_no_llm_client(
+    monkeypatch, conv_manager
+):
+    """When no llm_client/llm_config/provider_priority is passed,
+    _resolve_pool_or_env() is called fresh on every request."""
+    from .helpers import TestLLMProvider, llm_response
     import api_service.agent.orchestrator as orch
 
     call_count = 0
-    created_clients = []
+    created_providers = []
 
-    def counting_fallback():
+    async def counting_resolve():
         nonlocal call_count
         call_count += 1
-        llm = FakeLLMClient(name=f"fresh-{call_count}")
-        created_clients.append(llm)
-        return llm
+        prov = TestLLMProvider(name=f"fresh-{call_count}")
+        prov.queue(llm_response.final("ok"))
+        created_providers.append(prov)
+        return prov
 
-    monkeypatch.setattr(orch, "create_fallback_client", counting_fallback)
+    monkeypatch.setattr(orch, "_resolve_pool_or_env", counting_resolve)
 
     mcp = FakeMCPClient(schema=None)
-    # NOTE: no llm_client passed — will use create_fallback_client()
+    # NOTE: no llm_client passed — will use _resolve_pool_or_env()
     agent = LLMAgent(mcp_client=mcp, conversation_manager=conv_manager)
 
-    # First call — should create #1
+    # First call — should resolve #1
     async for _ in agent.stream_events("hello", session_id="test-rt-1"):
         pass
-    assert call_count == 1, f"Expected 1 fallback client, got {call_count}"
+    assert call_count == 1, f"Expected 1 resolve call, got {call_count}"
     assert agent._test_llm_client is None, (
         "_test_llm_client should be None when not passed"
     )
 
-    # Second call — should create #2 (fresh!)
+    # Second call — should resolve #2 (fresh!)
     async for _ in agent.stream_events("hello again", session_id="test-rt-2"):
         pass
-    assert call_count == 2, f"Expected 2 fallback clients, got {call_count}"
-    assert len(created_clients) == 2
-    assert created_clients[0] is not created_clients[1], (
-        "Each request got the SAME client instance — stale Router!"
+    assert call_count == 2, f"Expected 2 resolve calls, got {call_count}"
+    assert len(created_providers) == 2
+    assert created_providers[0] is not created_providers[1], (
+        "Each request got the SAME provider instance — stale singleton!"
     )
 
 
 @pytest.mark.asyncio
-async def test_fallback_client_not_called_when_llm_client_explicit(
-    monkeypatch, conv_manager
-):
-    """When llm_client is explicitly passed, create_fallback_client()
+async def test_fallback_not_called_when_llm_client_explicit(monkeypatch, conv_manager):
+    """When llm_client is explicitly passed, _resolve_pool_or_env()
     should NOT be called."""
+    from .helpers import TestLLMProvider, llm_response
     import api_service.agent.orchestrator as orch
 
     call_count = 0
 
-    def counting_fallback():
+    async def counting_resolve():
         nonlocal call_count
         call_count += 1
-        return FakeLLMClient(name=f"fresh-{call_count}")
+        prov = TestLLMProvider(name=f"fresh-{call_count}")
+        prov.queue(llm_response.final("ok"))
+        return prov
 
-    monkeypatch.setattr(orch, "create_fallback_client", counting_fallback)
+    monkeypatch.setattr(orch, "_resolve_pool_or_env", counting_resolve)
 
     mcp = FakeMCPClient(schema=None)
-    explicit = FakeLLMClient(name="explicit")
+    explicit = TestLLMProvider(name="explicit")
+    explicit.queue(llm_response.final("ok"))
     agent = LLMAgent(
         llm_client=explicit, mcp_client=mcp, conversation_manager=conv_manager
     )
@@ -377,7 +375,7 @@ async def test_fallback_client_not_called_when_llm_client_explicit(
     ):
         pass
 
-    # create_fallback_client should NOT have been called
+    # _resolve_pool_or_env should NOT have been called
     assert call_count == 0, (
-        f"create_fallback_client was called {call_count} times, expected 0"
+        f"_resolve_pool_or_env was called {call_count} times, expected 0"
     )

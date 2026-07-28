@@ -43,6 +43,7 @@ class LiteLLMProvider:
         self,
         model: str,
         api_base: str | None = None,
+        api_key: str | None = None,
         timeout: float = 120.0,
         temperature: float = 0.5,
         max_tokens_thinking: int = 4096,
@@ -53,6 +54,7 @@ class LiteLLMProvider:
         Args:
             model: LiteLLM model identifier (e.g. ``"openai/gpt-4o-mini"``).
             api_base: Optional custom API base URL.
+            api_key: API key (passed to litellm; if None, LiteLLM reads env vars).
             timeout: Request timeout in seconds (default 120).
             temperature: Sampling temperature (0-2).
             max_tokens_thinking: Maximum tokens for thinking/reasoning.
@@ -60,6 +62,7 @@ class LiteLLMProvider:
         """
         self.model = model
         self.api_base = api_base
+        self.api_key = api_key
         self.timeout = timeout
         self.temperature = temperature
         self.max_tokens_thinking = max_tokens_thinking
@@ -84,6 +87,8 @@ class LiteLLMProvider:
 
         if self.api_base:
             kwargs["api_base"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
         if self.enable_thinking:
             kwargs["extra_body"] = {"think": True}
         if req.tools:

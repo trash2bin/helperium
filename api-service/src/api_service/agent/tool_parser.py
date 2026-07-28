@@ -16,7 +16,7 @@ class ToolCallParser:
     """Parses tool calls from LLM responses.
 
     Priority:
-    1. Native ``tool_calls`` field (OpenAI-style) — used by ``legacy_adapters.py``.
+    1. Native ``tool_calls`` field (OpenAI-style) — used by `_AsyncBacklogWriter` in orchestrator.py.
        In the new pipeline (LAYER 1), LiteLLM handles this before ToolCallParser
        is reached, but the legacy adapter path still needs it.
     2. JSON in ``content`` — fallback for models that write tool calls as text.
@@ -25,7 +25,7 @@ class ToolCallParser:
 
     def extract_tool_calls(self, message: dict[str, Any]) -> list[ParsedToolCall]:
         """Extract tool calls from a message, handling native and JSON formats."""
-        # 1. Native tool_calls (OpenAI-style) — used by legacy_adapters.py
+        # 1. Native tool_calls (OpenAI-style) — used by _AsyncBacklogWriter in orchestrator.py
         native_calls = message.get("tool_calls")
         if native_calls:
             return self._from_native_tool_calls(native_calls)

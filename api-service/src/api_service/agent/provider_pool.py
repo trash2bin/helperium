@@ -1,6 +1,6 @@
 """ProviderPool — пул здоровых LLM-провайдеров.
 
-Заменяет create_fallback_client() + Router целиком.
+Заменяет старый create_fallback_client() + Router целиком.
 Не использует litellm.Router.
 
 Каждый ``ProviderWorker`` оборачивает ``LiteLLMProvider`` с health check.
@@ -145,6 +145,7 @@ class ProviderPool:
         provider = LiteLLMProvider(
             model=model,
             api_base=api_base or None,
+            api_key=api_key or None,
             timeout=timeout,
             temperature=temperature,
             max_tokens_thinking=max_tokens_thinking,
@@ -268,6 +269,19 @@ class ProviderPool:
                 alive,
                 len(workers),
             )
+
+    async def get_any_worker(self) -> LiteLLMProvider | None:
+        """Return the LiteLLMProvider of the first alive worker, or None."""
+        alive = await self.alive_workers()
+        if not alive:
+            return None
+        return alive[0].provider_impl
+
+    async def clear(self) -> None:
+        """Remove all workers from the pool."""
+        async with self._lock:
+            self._workers.clear()
+            self._rr_index = 0
 
     def worker_names(self) -> list[str]:
         """Return all worker names (for inspection)."""

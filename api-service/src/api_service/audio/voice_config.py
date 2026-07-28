@@ -85,7 +85,7 @@ def build_stt_providers(config):
     """Build STT provider instances from a Pydantic VoiceConfig object.
 
     Falls back to ``OPENAI_API_KEY`` env var when ``api_key`` is not set
-    in the stored config (matching the pattern in ``llm_client.py``).
+    in the stored config (matching the pattern in ``LiteLLMProvider``).
     """
     providers = []
     for p in config.stt_providers:

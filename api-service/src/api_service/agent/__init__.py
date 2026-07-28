@@ -10,7 +10,6 @@ turn_context        — Turn-level state container
 prompts             — System prompt constants
 token_estimator     — Token estimation & fallback trimming
 event_stream        — SSE formatting utilities
-llm_client          — LiteLLM wrapper (+ LLMClientProtocol) [DEPRECATED]
 litellm_provider    — Clean LiteLLM adapter under LLMProvider protocol [NEW]
 provider_pool       — Health-checked LLM provider pool with failover [NEW]
 mcp_client          — MCP SSE client
@@ -25,7 +24,6 @@ from __future__ import annotations
 
 from .conversation import ConversationManager
 from .litellm_provider import LiteLLMProvider
-from .llm_client import LLMClient, LLMClientProtocol
 from .mcp_client import MCPClient, ToolResult
 from .models import (
     CompletionRequest,
@@ -70,8 +68,6 @@ __all__ = [
     "GuardInputStage",
     "GuardOutputStage",
     "LLMAgent",
-    "LLMClient",
-    "LLMClientProtocol",
     "LLMProvider",
     "LLMStage",
     "LiteLLMProvider",

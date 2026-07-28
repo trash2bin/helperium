@@ -364,7 +364,7 @@ class ProviderStore:
         api_key может быть пустым — LiteLLM сама решает пускать или нет.
         (Оллима, локальные инференсы работают без ключа.)
 
-        **Synchronous** — вызывается из ``create_fallback_client()``
+        **Synchronous** — вызывается из ``_sync_pool_from_store()``
         который может работать без event loop.
 
         Note: uses the internal dict directly (no lock) since it's

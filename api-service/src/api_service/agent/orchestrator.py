@@ -5,7 +5,7 @@ Responsibility
 Drive a single conversation turn: build context, run the pipeline,
 yield events.  Pipeline orchestration goes to ``pipeline.py``,
 stage logic to ``stages.py``, middleware to ``middlewares.py``,
-legacy adapters to ``legacy_adapters.py``.
+async adapters for sync singletons (SpendingChecker, ModelBacklog).
 
 Backward-compatible: ``stream_answer()``, ``stream_sse()``, ``stream_events()``
 keep the same signatures.  ``health()`` stays.
@@ -22,11 +22,6 @@ from helperium_sdk.settings import settings
 
 from .conversation import ConversationManager
 from .event_stream import format_sse_event, unstreamed_suffix
-from .llm_client import (
-    LLMClient,
-    create_client,
-    create_fallback_client,
-)
 from .mcp_client import MCPClient
 from .middlewares import (
     SpendingMiddleware,
@@ -48,21 +43,177 @@ from .types import (
     AgentEvent,
     SessionId,
 )
-from .legacy_adapters import (
-    _AsyncSpendingTracker,
-    _OldStyleLLMAdapter,
-    _AsyncBacklogWriter,
-)
-
 from api_service.backlog import backlog
+from api_service.spending import get_spending_checker
+
+from .litellm_provider import LiteLLMProvider
+from .provider_pool import ProviderPool
+
 from api_service.error_messages import classify_error
 from api_service.guardrails import get_guard_checker
 
 logger = logging.getLogger("api_service.agent.orchestrator")
 
 
-# ── Legacy adapters ──────────────────────────────────────
-# Defined in legacy_adapters.py — imported above.
+# ── Async adapters for sync singletons ──────────────────────────────────
+
+
+class _AsyncSpendingTracker:
+    """Async wrapper around the sync SpendingChecker singleton."""
+
+    async def record(self, tenant_id: str, cost: float) -> None:
+        get_spending_checker().record_spending(tenant_id, cost)
+
+    async def check_limits(self, tenant_id: str) -> tuple[bool, str]:
+        return get_spending_checker().check_limits(tenant_id)
+
+
+class _AsyncBacklogWriter:
+    """Sync wrapper around the ModelBacklog singleton."""
+
+    def record_llm_call(self, session_id: str, **kwargs: Any) -> None:
+        backlog.record_llm_call(session_id, **kwargs)
+
+    def tool_call(
+        self,
+        session_id: str,
+        turn_id: str,
+        iteration: int,
+        name: str,
+        arguments: dict[str, Any],
+    ) -> None:
+        backlog.tool_call(session_id, turn_id, iteration, name, arguments)
+
+    def tool_result(
+        self,
+        session_id: str,
+        turn_id: str,
+        iteration: int,
+        name: str,
+        result: str,
+        duration_ms: float = 0.0,
+    ) -> None:
+        backlog.tool_result(session_id, turn_id, iteration, name, result, duration_ms)
+
+    def error(
+        self,
+        session_id: str,
+        turn_id: str,
+        iteration: int,
+        error: str,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        backlog.error(session_id, turn_id, iteration, error, context)
+
+
+# ── Module-level constants ──────────────────────────────────────────────
+
+# Known model prefixes for Ollama fallback detection (env-path and llm_config-path).
+_OLLAMA_PREFIXES = (
+    "ollama/",
+    "ollama_chat/",
+    "openai/",
+    "anthropic/",
+    "deepseek/",
+    "huggingface/",
+    "mistral/",
+    "groq/",
+    "together_ai/",
+)
+
+# Module-level ProviderPool singleton for fallback + health checks.
+_pool = ProviderPool()
+
+
+def _create_env_provider() -> LiteLLMProvider:
+    """Create a LiteLLMProvider from environment variables (last-resort fallback)."""
+    import os
+
+    # 1. Scan env for *{PREFIX}_API_KEY* + *{PREFIX}_MODEL*
+    for key, val in os.environ.items():
+        if not key.endswith("_API_KEY") or not val:
+            continue
+        prefix = key.removesuffix("_API_KEY")
+        if not prefix:
+            continue
+        model = os.environ.get(f"{prefix}_MODEL", "")
+        if not model:
+            continue
+        provider_slug = prefix.lower()
+        if provider_slug == "mistral" and not model.startswith("mistral/"):
+            model = f"mistral/{model}"
+        elif provider_slug == "openai" and not model.startswith("openai/"):
+            model = f"openai/{model}"
+        elif provider_slug == "anthropic" and not model.startswith("anthropic/"):
+            model = f"anthropic/{model}"
+        api_base = os.environ.get(f"{prefix}_API_BASE", "") or None
+        return LiteLLMProvider(
+            model=model,
+            api_base=api_base,
+            timeout=settings.request_timeout,
+            temperature=settings.agent_temperature,
+            max_tokens_thinking=settings.agent_max_tokens_thinking,
+            enable_thinking=settings.think_mode,
+        )
+
+    # 2. Fall back to Ollama
+    model_name = settings.ollama_model
+    if settings.ollama_url and not model_name.startswith(_OLLAMA_PREFIXES):
+        model_name = f"ollama_chat/{model_name}"
+    api_base = settings.ollama_url.rstrip("/") if settings.ollama_url else None
+    return LiteLLMProvider(
+        model=model_name,
+        api_base=api_base,
+        timeout=settings.request_timeout,
+        temperature=settings.agent_temperature,
+        max_tokens_thinking=settings.agent_max_tokens_thinking,
+        enable_thinking=settings.think_mode,
+    )
+
+
+async def _resolve_pool_or_env() -> LiteLLMProvider:
+    """Try ProviderPool first, then fall back to env-based provider."""
+    import warnings
+
+    try:
+        worker = await _pool.get_any_worker()
+        if worker is not None:
+            return worker
+    except Exception:
+        pass
+    warnings.warn(
+        "ProviderPool is empty or unavailable — falling back to env-based LiteLLMProvider",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return _create_env_provider()
+
+
+def _set_provider_env_key(provider: str, api_key: str) -> None:
+    """Set the OS env var for a provider key so LiteLLM can find it."""
+    import os
+
+    key_map = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+    }
+    if provider in key_map:
+        os.environ[key_map[provider]] = api_key
+
+
+def _prefix_model(provider: str | None, model_name: str, api_base: str | None) -> str:
+    """Add provider prefix to model name if needed."""
+    if provider == "ollama" and api_base:
+        if not model_name.startswith(_OLLAMA_PREFIXES):
+            return f"ollama_chat/{model_name}"
+    elif provider == "mistral":
+        if not model_name.startswith("mistral/"):
+            return f"mistral/{model_name}"
+    elif provider == "openai":
+        if not model_name.startswith("openai/"):
+            return f"openai/{model_name}"
+    return model_name
 
 
 class LLMAgent:
@@ -77,15 +228,13 @@ class LLMAgent:
 
     def __init__(
         self,
-        llm_client: LLMClient | None = None,
+        llm_client: Any | None = None,
         mcp_client: MCPClient | None = None,
         conversation_manager: ConversationManager | None = None,
     ) -> None:
         # ── Persistent core (no LLM — created fresh per request) ────────
-        # llm_client is DEPRECATED for production.  When passed (tests only)
-        # it becomes the fallback for stream_events() when neither
-        # llm_client nor llm_config is provided explicitly.
-        self._test_llm_client: LLMClient | None = llm_client
+        # llm_client is for tests only — overrides all other resolution.
+        self._test_llm_client: Any | None = llm_client
         self.mcp_client = mcp_client or MCPClient()
         self.conversation_manager = conversation_manager or ConversationManager()
 
@@ -148,7 +297,7 @@ class LLMAgent:
         session_id: SessionId = "default",
         tenant_ids: list[str] | None = None,
         llm_config: dict | None = None,
-        llm_client: LLMClient | None = None,
+        llm_client: Any | None = None,
         provider_priority: list[str] | None = None,
         system_prompt: str | None = None,
         lang: str = "ru",
@@ -157,19 +306,17 @@ class LLMAgent:
 
         This is the main entry point for new code.
 
-        **Real-time provider update** — when neither ``llm_client``,
-        ``provider_priority`` nor ``llm_config`` is provided, a fresh
-        ``create_fallback_client()`` is built from the current ProviderStore
-        on every call. This means adding/changing/deleting providers via
-        the admin dashboard takes effect immediately without restarting
-        the service.
+        **Real-time provider update** — when none of ``llm_client``,
+        ``provider_priority`` nor ``llm_config`` is provided, the
+        ``ProviderPool`` is used.  If the pool is empty an env-based
+        ``LiteLLMProvider`` is created instead.
 
         Args:
             user_message:   Raw text from the user.
             session_id:     Conversation session identifier.
             tenant_ids:     Scopes the MCP session to one or more tenants.
             llm_config:     Overrides the global LLM config for this request.
-            llm_client:     Overrides the LLM client for this request (e.g. prioritized).
+            llm_client:     Overrides the LLM provider for this request (e.g. prioritized).
             provider_priority:  Ordered list of provider names to try (first valid wins).
             system_prompt:  Overrides the global system prompt.
         """
@@ -191,10 +338,31 @@ class LLMAgent:
         elif llm_client:
             request_llm: Any = llm_client
         elif llm_config:
-            # If llm_config is a single provider config
-            request_llm = create_client(llm_config)
+            # Build a LiteLLMProvider from the per-agent config dict
+            model_name = llm_config.get("model") or settings.ollama_model
+            api_base = llm_config.get("api_base") or settings.ollama_url
+            provider = llm_config.get("provider")
+            api_key = llm_config.get("api_key")
+
+            if api_key and provider:
+                _set_provider_env_key(provider, api_key)
+
+            model_name = _prefix_model(provider, model_name, api_base)
+            if provider == "mistral":
+                api_base = None
+            api_base_url = api_base.rstrip("/") if api_base else None
+
+            request_llm = LiteLLMProvider(
+                model=model_name,
+                api_base=api_base_url,
+                timeout=settings.request_timeout,
+                temperature=llm_config.get("temperature") or settings.agent_temperature,
+                max_tokens_thinking=llm_config.get("max_tokens")
+                or settings.agent_max_tokens_thinking,
+                enable_thinking=settings.think_mode,
+            )
         elif provider_priority:
-            # Resolve first valid provider from priority list (sync operation)
+            # Resolve first valid provider from priority list
             from api_service.provider_store import (
                 KNOWN_PROVIDERS as _KNOWN,
                 get_provider_store,
@@ -212,9 +380,6 @@ class LLMAgent:
                 model = provider_data.get("model", "")
                 if not model:
                     continue
-                # Allow empty api_key — local providers (Ollama, local) don't need one.
-                # LiteLLM handles auth-less calls gracefully when api_key is empty.
-                # The key requirement was blocking local Ollama providers from working.
                 found = (name, provider_data)
                 break
 
@@ -225,25 +390,18 @@ class LLMAgent:
                 if not model.startswith(tuple(p + "/" for p in _KNOWN)) and provider:
                     model = f"{provider}/{model}"
                 api_base = data.get("api_base", "") or ""
-                from .litellm_provider import LiteLLMProvider
-
                 request_llm = LiteLLMProvider(
                     model=model,
                     api_base=api_base or None,
                     timeout=120.0,
                 )
             else:
-                request_llm = self._test_llm_client or create_fallback_client()
+                # Fallback: try ProviderPool, then env
+                request_llm = self._test_llm_client or await _resolve_pool_or_env()
         else:
-            # FRESH client every request — reflects current ProviderStore state.
+            # FRESH provider every request — reflects current ProviderStore state.
             # Falls back to self._test_llm_client when set (tests only).
-            request_llm = self._test_llm_client or create_fallback_client()
-
-        # ── Wrap old-style client if needed ────────────────────────────────
-        # New pipeline expects the ``complete() → CompletionResponse`` contract.
-        # Old clients expose ``stream_completion()`` — wrap with adapter.
-        if not hasattr(request_llm, "complete"):
-            request_llm = _OldStyleLLMAdapter(request_llm)
+            request_llm = self._test_llm_client or await _resolve_pool_or_env()
 
         # ── Async adapters ──────────────────────────────────────────────
         async_spending = _AsyncSpendingTracker()
@@ -330,7 +488,17 @@ class LLMAgent:
         import warnings
 
         try:
-            live = create_fallback_client()
+            # Check ProviderPool first
+            worker = await _pool.get_any_worker()
+            if worker is not None:
+                return {
+                    "status": "ok",
+                    "model": worker.model,
+                    "api_base": worker.api_base,
+                    "thinking_enabled": worker.enable_thinking,
+                }
+            # Fallback to env-based provider
+            live = _create_env_provider()
             return {
                 "status": "ok",
                 "model": live.model,
@@ -338,7 +506,7 @@ class LLMAgent:
                 "thinking_enabled": live.enable_thinking,
             }
         except Exception as exc:
-            warnings.warn(f"Health check failed to create client: {exc}")
+            warnings.warn(f"Health check failed: {exc}")
             return {
                 "status": "degraded",
                 "model": "unknown",
