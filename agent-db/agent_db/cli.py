@@ -5,6 +5,8 @@ import copy
 import json
 import os
 import queue
+import socket
+import statistics
 import subprocess
 import sys
 import threading
@@ -1669,6 +1671,191 @@ def _cleanup_dbs(*db_paths: Path):
             p = db_path.with_name(db_path.name + ext)
             if p.exists():
                 p.unlink(missing_ok=True)
+
+@cli.group()
+def bench():
+    """Benchmark commands: report and run."""
+
+
+@bench.command()
+@click.option("--backlog-dir", default=None, help="Backlog directory (default: auto-detect)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--limit", default=0, type=int, help="Only analyze last N turns (0 = all)")
+def report(backlog_dir: str | None, as_json: bool, limit: int):
+    """Show benchmark report from backlog data (token usage, costs, errors, tool calls)."""
+    from agent_db.bench.reader import find_backlog_dir
+    from agent_db.bench.parser import parse_turns
+    from agent_db.bench.reporter import format_report
+    from agent_db.bench.models import BenchReport
+
+    bdir = find_backlog_dir(backlog_dir)
+
+    if not bdir.exists():
+        click.echo(
+            click.style(f"❌ Backlog directory not found: {bdir}", fg="red"),
+            err=True,
+        )
+        sys.exit(1)
+
+    files = sorted(bdir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        click.secho("  ℹ️  No backlog files found.", fg="yellow")
+        sys.exit(0)
+
+    turns = parse_turns(files)
+    if not turns:
+        click.secho("  ℹ️  No turn_end records found.", fg="yellow")
+        sys.exit(0)
+
+    if limit > 0 and len(turns) > limit:
+        turns = turns[-limit:]
+
+    passed = sum(1 for t in turns if t.outcome == "final" and not t.errors)
+    failed = sum(1 for t in turns if t.outcome == "final" and t.errors)
+    errored = sum(1 for t in turns if t.outcome != "final")
+    report = BenchReport(
+        turns=turns, total_questions=len(turns),
+        passed=passed, failed=failed, errored=errored,
+        total_cost=sum(t.total_cost for t in turns),
+        total_duration_ms=sum(t.duration_ms for t in turns),
+        total_tokens=sum(t.total_tokens for t in turns),
+    )
+
+    if as_json:
+        from dataclasses import asdict
+        click.echo(json.dumps(asdict(report), ensure_ascii=False, indent=2, default=str))
+    else:
+        click.echo("")
+        click.echo(format_report(report))
+
+
+# ---- Benchmark: run ----
+
+
+
+@bench.command()
+@click.option("--questions", default=None, help="Path to JSON file with questions array")
+@click.option("--agent", default=None, help="Agent name")
+@click.option("--api-url", default="http://127.0.0.1:8081", help="API service URL")
+@click.option("--tenant", default=None, help="Tenant ID")
+@click.option("--scenario", default="auto-shop", help="Scenario (scripted mode only)")
+@click.option("--scripted", is_flag=True, help="Use ScriptedLLMProvider (no real LLM)")
+@click.option("--backlog-dir", default=None, help="Backlog dir (default: auto-detect)")
+@click.pass_context
+def run(
+    ctx: click.Context,
+    questions: str | None,
+    agent: str | None,
+    api_url: str,
+    tenant: str | None,
+    scenario: str,
+    scripted: bool,
+    backlog_dir: str | None,
+):
+    """Run benchmark questions through the agent and show report."""
+    from agent_db.bench.runner import run_bench
+    from agent_db.bench.models import DEFAULT_BENCH_QUESTIONS
+    from agent_db.bench.reader import find_backlog_dir
+    from agent_db.bench.parser import parse_turns
+    from agent_db.bench.reporter import format_report
+    from agent_db.bench.models import BenchReport
+
+    if scripted:
+        click.echo(click.style("\n\u2550\u2550\u2550 Setting up scripted benchmark \u2550\u2550\u2550\n", fg="cyan", bold=True))
+        click.secho("  Scripted mode not yet migrated. Run against a running api-service.", fg="yellow")
+        sys.exit(1)
+
+    if not agent:
+        click.secho("\u274c --agent is required", fg="red", err=True)
+        sys.exit(1)
+    if not tenant:
+        click.secho("\u274c --tenant is required", fg="red", err=True)
+        sys.exit(1)
+
+    # Load questions
+    if questions:
+        try:
+            qdata = json.loads(Path(questions).read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            click.secho(f"\u274c Failed to load questions: {e}", fg="red", err=True)
+            sys.exit(1)
+        bench_questions = qdata.get("questions", [])
+        if not bench_questions:
+            click.secho("\u274c Empty questions array", fg="red", err=True)
+            sys.exit(1)
+    else:
+        bench_questions = DEFAULT_BENCH_QUESTIONS
+
+    click.echo(click.style(f"\n\u2550\u2550\u2550 Running {len(bench_questions)} questions \u2550\u2550\u2550\n", fg="cyan", bold=True))
+    click.echo(f"  API: {api_url}")
+    click.echo(f"  Agent: {agent}")
+    click.echo(f"  Tenant: {tenant}")
+    click.echo()
+
+    # Run via bench.runner
+    admin_token = ctx.parent.params.get("admin_token", "") or os.environ.get("ADMIN_TOKEN", "")
+    results = run_bench(
+        api_url=api_url,
+        agent_name=agent,
+        questions=bench_questions,
+        tenant_id=tenant,
+        admin_token=admin_token,
+    )
+
+    # Print per-question
+    errors = 0
+    for i, result in enumerate(results, 1):
+        q = bench_questions[i - 1]
+        click.echo(f"  [{i}/{len(results)}] {click.style(q[:80], bold=True)}")
+        if "error" in result:
+            click.secho(f"    \u26d4 {result['error']}", fg="red")
+            errors += 1
+            continue
+        n_tools = len(result.get("tool_calls", []))
+        n_errors = len(result.get("errors", []))
+        final_len = len(result.get("final_text", ""))
+        icon = "\u2705" if not n_errors else "\u26a0\ufe0f"
+        click.echo(f"    {icon} tools={n_tools} errors={n_errors} response={final_len}chars")
+        if result.get("errors"):
+            for err in result["errors"]:
+                click.secho(f"      \u274c {err[:200]}", fg="red")
+        if final_len > 0:
+            click.echo(f"      \U0001f4ac {result['final_text'][:300]}")
+
+    click.echo()
+    click.echo(click.style("\u2550\u2550\u2550 Done \u2550\u2550\u2550", fg="cyan", bold=True))
+    click.echo(f"  Completed: {len(results)}/{len(bench_questions)}  |  Errors: {errors}")
+    click.echo()
+
+    # Report from backlog
+    report_dir = find_backlog_dir(backlog_dir)
+    if report_dir.exists():
+        files = sorted(report_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
+        turns = parse_turns(files)
+        if turns:
+            passed = sum(1 for t in turns if t.outcome == "final" and not t.errors)
+            failed = sum(1 for t in turns if t.outcome == "final" and t.errors)
+            errored = sum(1 for t in turns if t.outcome != "final")
+            report = BenchReport(
+                turns=turns, total_questions=len(turns),
+                passed=passed, failed=failed, errored=errored,
+                total_cost=sum(t.total_cost for t in turns),
+                total_duration_ms=sum(t.duration_ms for t in turns),
+                total_tokens=sum(t.total_tokens for t in turns),
+            )
+            click.echo(format_report(report))
+            click.echo()
+            loops = [(i, t) for i, t in enumerate(turns, 1) if t.loop_warnings]
+            if loops:
+                click.echo(click.style("  \u26a0\ufe0f  Loop warnings:", fg="yellow"))
+                for idx, t in loops:
+                    for w in t.loop_warnings:
+                        click.echo(f"    Turn {idx}: {w}")
+        else:
+            click.secho(f"  \u2139\ufe0f  No turns in {report_dir}", fg="yellow")
+        click.echo(f"  \U0001f517 Backlog: {report_dir}")
+    else:
+        click.secho(f"  \u2139\ufe0f  Backlog dir not found: {report_dir}", fg="yellow")
 
 
 if __name__ == "__main__":
