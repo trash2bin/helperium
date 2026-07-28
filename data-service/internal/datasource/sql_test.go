@@ -21,7 +21,7 @@ func TestSQLDataSource_Schema_Works(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	_, err = db.Exec(`CREATE TABLE items (
 		id   TEXT PRIMARY KEY,
@@ -122,7 +122,7 @@ func TestSQLDataSource_Type(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ds := NewSQLDataSource(db, &testQuerierAdapter{db: db}, nil, 0)
 	if ds.Type() != "sql" {
@@ -137,7 +137,7 @@ func TestSQLDataSource_EntityNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ds := NewSQLDataSource(db, &testQuerierAdapter{db: db}, nil, 0)
 	_, err = ds.Schema(context.Background(), "nonexistent")
