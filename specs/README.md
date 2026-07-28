@@ -43,7 +43,7 @@ Authorization: Bearer <admin_token>
 3. `configgen.Generate(schema, dsConfig, skipPrefixes)` — генерирует:
    - `entities[]` — по одной на таблицу
    - `endpoints[]` — `GET /{entity}/{id}`, `GET /{entity}` (find по name)
-   - `mcp_tools[]` — `get_{entity}`, `find_{entity}` с LLM-описаниями
+   - `mcp_tools[]` — `get_{entity}`, `distinct_{entity}`, `count_{entity}` (op-based) + `grep_{entity}`, `filter_{entity}`, `schema_{entity}` (strategy-based). `find_{entity}` **НЕ генерируется** как MCP-тул — эндпоинты find существуют как REST, но `GenerateMCPTools()` их скипает (см. [`data-service/internal/configgen/mcp.go`](../data-service/internal/configgen/mcp.go))
    - `stats.counters[]` — по одному счётчику на entity
    - `read_only: true` — по умолчанию (защита от записи)
 4. `SaveTenantConfig()` → пишет `.data/tenants/{id}.json`
@@ -138,9 +138,12 @@ func (cfg *Config) Validate() error   // для Load() — проверяет в
 |---|---|---|
 | `entities[]` | ✅ | Все не-системные таблицы, PK, FK, колонки |
 | `endpoints[]` | ✅ | `GET /{entity}/{id}` (get_by_id), `GET /{entity}` (find) |
-| `mcp_tools[]` | ✅ | `get_{entity}`, `find_{entity}` (LLM-friendly) |
+| `mcp_tools[]` | ✅ | `get_{entity}`, `distinct_{entity}`, `count_{entity}` (op-based), `grep_{entity}`, `filter_{entity}`, `schema_{entity}` (strategy-based). `find`/`list` эндпоинты REST существуют, но `GenerateMCPTools()` их не включает |
 | `stats.counters[]` | ✅ | Счётчики для `/stats` |
 | `data_source.read_only` | ✅ | `true` — write по умолчанию выключен |
+
+> **Source of truth:** [`data-service/internal/configgen/`](../data-service/internal/configgen/) — [`configgen.go`](../data-service/internal/configgen/configgen.go), [`mcp.go`](../data-service/internal/configgen/mcp.go).
+> Полное описание тулов и стратегий: [AGENTS.md](../AGENTS.md) §2a MCP Архитектура.
 
 ### 6. Что нужно писать вручную
 
@@ -240,3 +243,5 @@ curl http://data-service:8084/openapi.json
 openapi-generator generate -i specs/rag.openapi.yaml -g python -o /tmp/rag-client
 openapi-generator generate -i specs/api.openapi.yaml -g typescript -o /tmp/api-client
 ```
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

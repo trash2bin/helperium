@@ -6,25 +6,31 @@ Unified CLI + Python seedgen for helperium database materialization, tenant regi
 
 ```
 agent-db/
-├── cli.py                       # Click entry point (legacy: e2e, materialize, register)
-├── core/__init__.py             # Path resolution, shared constants
-│
 ├── agent_db/
-│   └── seedgen/                 # Python reimplementation of data-service/seedgen (Go → Python)
-│       ├── __init__.py          # Public API: generate_ddl, apply, apply_with_ddl, materialize
-│       ├── models.py           # Entity, Field, ScenarioConfig + TestSeed + Seed models
-│       ├── ddl.py              # Config entities → CREATE TABLE (driver-aware)
-│       ├── apply.py            # DDL + seed data insertion to SQLite/Postgres
-│       └── materialize.py      # scenario dir (config.json + seed.json) → populated .db
-│
-├── scenarios/                   # (future) Scenario directories — currently in data-service/testdata/scenarios/
-│
+│   ├── __init__.py              # Package init
+│   ├── cli.py                   # Click entry point: materialize, register, test, bench
+│   ├── core/__init__.py         # Path resolution, shared constants
+│   ├── seedgen/                 # Python seed generator
+│   │   ├── __init__.py          # Public API: generate_ddl, apply, apply_with_ddl, materialize
+│   │   ├── models.py           # Entity, Field, ScenarioConfig + TestSeed + Seed models
+│   │   ├── ddl.py              # Config entities → CREATE TABLE (driver-aware)
+│   │   ├── apply.py            # DDL + seed data insertion to SQLite/Postgres
+│   │   └── materialize.py      # scenario dir (config.json + seed.json) → populated .db
+│   └── bench/                   # Benchmark suite (сбор метрик, отчёты)
+│       ├── __init__.py
+│       ├── models.py           # BenchConfig, BenchReport
+│       ├── parser.py           # Парсинг бэклогов
+│       ├── reader.py           # Чтение логов/бэклогов
+│       ├── runner.py           # Запуск бенчмарков
+│       └── reporter.py         # Генерация отчётов
 ├── pyproject.toml
 └── README.md
 ```
 
 **Key change (v1.1.0):** `seedgen` moved from `data-service/internal/seedgen/` (Go) into `agent-db/agent_db/seedgen/` (Python).
 `data-service --materialize` flag and `cmd/seed-cli/` are removed. All seed generation happens through Python seedgen now.
+
+**CLI moved:** from `cli.py` (root) to `agent_db/cli.py` (package).
 
 ## Seed generation (Python seedgen)
 
@@ -115,7 +121,7 @@ print('OK:', cfg.data_source.dsn)
 
 # 5. Register tenant with this database via admin API
 curl -X POST http://127.0.0.1:8084/admin/tenants \
-  -H "Authorization: Bearer secret" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"id":"mydb","config":{"version":1,"data_source":{"driver":"sqlite","dsn":"/path/to/mydb.db"},"entities":[...]}}'
 
@@ -132,3 +138,7 @@ curl -H "X-Tenant-ID: mydb" http://127.0.0.1:8084/health
 | E2E tests | `cli.py` `_run_*` функции (~900 строк) | `tests/e2e/*.py` — модульные, 49 тестов |
 | LLM tests | — | `tests/e2e/llm/test_llm_chat.py — 4 теста |
 | DB generation in e2e | `subprocess.run(["go", "run", "./cmd/seed-cli/"])` | `from agent_db.seedgen import materialize` |
+| CLI entry point | `cli.py` (root) | `agent_db/cli.py` |
+| Benchmark | — | `agent_db/bench/` — парсинг, прогон, отчёт |
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

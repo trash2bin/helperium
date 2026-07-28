@@ -40,3 +40,5 @@
 **Важно:** demo-web — это reverse-proxy для разработки/демонстрации, а не продакшен entry point.
 Основной клиент — embed-виджет, который ходит напрямую в api-service (:8081).
 Админка (admin-dashboard) ходит напрямую в свои бэкенды, минуя demo-web.
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

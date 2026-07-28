@@ -166,3 +166,5 @@ DataSource interface          ← высокий уровень, для LLM
 - Adapter — для SQL-сценариев (интроспекция схемы, placeholder'ы). Интерфейс СУБД.
 
 Детали поискового движка: [search-strategies.md](search-strategies.md)
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

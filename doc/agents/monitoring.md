@@ -31,3 +31,5 @@ Grafana дашборд (18 панелей): `docker/grafana/dashboards/helperium
 - Emergency Big Red Button (Normal → Cautious → Lockdown)
 - i18n: RU/EN (309 ключей), language switcher
 - `LOG_LEVEL=debug` для трассировки
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

@@ -9,8 +9,8 @@
 `api-service` — единственный компонент, который общается с LLM (через LiteLLM). Он:
 - Формирует системный промпт + Persona агента
 - Управляет MCP-клиентом (подключение к mcp-gateway:8083)
-- Хранит историю диалогов (SQLite: `demo_sessions.sqlite`)
-- Хранит глобальный voice config (SQLite: `agents.sqlite`, таблица `global_config`)
+- Хранит историю диалогов (SQLite, путь настраивается через `DEMO_SESSION_DB_PATH`)
+- Хранит voice config: глобальный (SQLite: `agents.sqlite`, таблица `global_config`) и per-agent (колонка `voice_config` в таблице `agents`)
 - Пишет полный бэклог взаимодействий (JSONL в `backlog/`)
 - Проксирует SSE-стрим от агента к Web
 
@@ -19,7 +19,7 @@
 | Путь | Метод | Описание |
 |---|---|---|
 | `/health` | GET | Статус сервиса |
-| `/api/chat` | POST | SSE-стрим чата с агентом (требует `X-Tenant-ID`) |
+| `/api/chat` | POST | SSE-стрим чата с агентом |
 | `/api/chat/voice` | POST | SSE-стрим голосового чата (multipart/form-data с audio) |
 | `/api/chat/{name}` | POST | SSE-чат с именованным агентом (tenant_ids из Agent Store) |
 | `/api/session/history` | GET | История сессии (query params: session_id, agent_name) |
@@ -65,18 +65,26 @@
 | Поле | Тип | Описание |
 |---|---|---|
 | `provider` | `str` | Провайдер: `ollama`, `mistral`, `openai`, `anthropic` |
-| `api_key` | `str` | API-ключ (устанавливается в env-переменную для LiteLLM) |
+| `api_key` | `str` | API-ключ (устанавливается в переменную окружения для LiteLLM) |
 | `model` | `str` | Имя модели (например `qwen2.5:0.5b`, `gpt-4`, `mistral-small`) |
 | `api_base` | `str` | Кастомный API base URL (опционально) |
 | `temperature` | `float` | Температура генерации (0–2) |
 | `max_tokens` | `int` | Максимум токенов в ответе |
 | `system_prompt` | `str` | Кастомный системный промпт (переопределяет глобальный) |
 
+### Per-agent `provider_priority`
+
+Помимо `llm_config`, каждый агент может иметь поле `provider_priority: list[str]` — упорядоченный список имён провайдеров из `LlmProviderStore` (SQLite `.data/providers.json`).
+При запросе `ProviderPool` перебирает их по порядку и использует первого, кто прошёл health check.
+
 ### Приоритет выбора LLM
 
-1. **Per-agent `llm_config`** — если передан, используется он
-2. **Mistral API** — если `MISTRAL_API_KEY` установлен глобально
-3. **Ollama** — дефолтный fallback
+Реальный приоритет сложнее трёх пунктов:
+
+1. **`provider_priority`** (из Agent Store) — если задан, `ProviderPool` перебирает провайдеров по порядку, первый здоровый используется
+2. **Per-agent `llm_config`** — если задан (и нет `provider_priority`), создаётся временный `LiteLLMProvider`
+3. **ProviderPool** — если не задано ни то, ни другое, используется `_provider_pool` (системный пул, инициализируется из ProviderStore при старте)
+4. **Env fallback** — если пул пуст, создаётся `LiteLLMProvider` из переменных окружения (`MISTRAL_API_KEY` → Ollama)
 
 ### Примеры создания агента
 
@@ -125,7 +133,10 @@ curl -X POST http://localhost:8081/api/agents \
   }'
 ```
 
-> ⚠️ API-ключи устанавливаются в `os.environ` при старте запроса и **не сохраняются между запросами**. При каждом новом вызове чата ключ снова загружается из хранилища агента.
+> ⚠️ API-ключи хранятся в **двух местах**:
+> - **LlmProviderStore** — SQLite-файл `.data/providers.json`, персистентное хранение, управляется через админку (радел LLM Provider Fallback). Ключи **шифруются** при наличии `ENCRYPTION_KEY`.
+> - **Per-agent `llm_config`** — зашифрованное поле в таблице `agents` (`agents.sqlite`), читается в `os.environ` при старте запроса.
+> - **Переменные окружения** — `MISTRAL_API_KEY`, `OPENAI_API_KEY` и т.п. импортируются как провайдеры при старте, если `LlmProviderStore` пуст.
 
 ## Embed Widget
 
@@ -287,6 +298,22 @@ curl -X POST http://localhost:8081/api/agents \
 | `ABUSE_MIN_INTERVAL` | `1.0` | Мин. интервал между сообщениями (сек) |
 | `ABUSE_SESSION_BUDGET` | `50` | Макс. сообщений за сессию |
 | `ABUSE_REPEATED_THRESHOLD` | `3` | Порог повторяющегося текста (раз) |
+| `EMBED_DIR` | `<project>/embed/dist/` | Путь к статике embed-виджета (absolute override) |
+| `ENABLE_METRICS` | `true` | Включить Prometheus-метрики |
+| `API_BEARER_TOKEN` | — | Bearer token для API (обязателен в production) |
+| `VOICE_ENABLED` | `true` | Мастер-выключатель голосовых функций |
+| `VOICE_STT_PROVIDER` | `litellm` | Тип STT: `litellm` или `local` |
+| `VOICE_STT_MODEL` | `whisper-1` | Модель STT |
+| `VOICE_STT_API_KEY` | — | API-ключ STT |
+| `VOICE_STT_API_BASE` | — | Кастомный API base URL STT |
+| `VOICE_TTS_PROVIDER` | `litellm` | Тип TTS: `litellm` или `local` |
+| `VOICE_TTS_MODEL` | `tts-1` | Модель TTS |
+| `VOICE_TTS_VOICE` | `alloy` | Голос TTS |
+| `VOICE_TTS_API_KEY` | — | API-ключ TTS |
+| `VOICE_TTS_API_BASE` | — | Кастомный API base URL TTS |
+| `VOICE_MAX_SIZE_BYTES` | `10485760` | Макс. размер голосового сообщения (байт) |
+| `VOICE_MIN_INTERVAL_SEC` | `10` | Мин. интервал между голосовыми сообщениями (сек) |
+| `VOICE_MAX_DURATION_SEC` | `120` | Макс. длительность записи (сек) |
 
 ## Запуск
 
@@ -300,102 +327,8 @@ uv run --package api-service python -m uvicorn api_service.server:app --port 808
 uv run pytest api-service/src/api_service/tests/ -v
 ```
 
----
-
-## 🔧 Troubleshooting
-
-| Симптом | Причина | Фикс |
-|---|---|---|
-| `Cannot connect to host 127.0.0.1:11434` | Ollama не запущен | `ollama serve` или `docker run -d -p 11434:11434 ollama/ollama` |
-| `MISTRAL_API_KEY not set` и Ollama недоступен | Нет LLM бэкенда | Настроить `MISTRAL_API_KEY` или запустить Ollama |
-| `MCP connection failed` / 502 | mcp-gateway не запущен на 8083 | `go run ./mcp-gateway/cmd/` |
-| 401 на `/api/chat` | Не передан `X-Tenant-ID` | Добавить заголовок `X-Tenant-ID: <tenant-id>` |
-| SSE обрывается / нет tool calls | LLM не вызывает инструменты | Проверить системный промпт, capabilities модели, логи `DEMO_DEBUG=1` |
-| `demo_sessions.sqlite` locked | Остался процесс от прошлого запуска | `pkill -f "api.service" && rm -f demo_sessions.sqlite* backlog/*.jsonl` |
-| Голосовой конфиг | Voice config хранится в `agents.sqlite` → `global_config` (key=`voice`), а не в отдельном JSON-файле |
-
-### Быстрый smoke-тест
-```bash
-# 1. Зависимости
-lsof -ti:11434  # Ollama
-lsof -ti:8083   # mcp-gateway
-
-# 2. Health
-curl -s http://127.0.0.1:8081/health
-
-# 3. SSE chat (требует запущенный mcp-gateway + data-service + registered tenant)
-curl -N -X POST http://127.0.0.1:8081/api/chat \
-  -H "Content-Type: application/json" -H "X-Tenant-ID: default" \
-  -d '{"message":"привет","session_id":"test"}' | head -c 300
-```
-
-### Логи
-- Ручное запуск: stdout/stderr терминала
-- Через `dev.sh`: `.data/logs/api.log`
-- Debug режим: `DEMO_DEBUG=1 uv run --package api-service python -m uvicorn api_service.server:app --port 8081`
 
 ---
-
-## Monitoring & Observability
-
-Сервис отдаёт Prometheus-метрики на `/metrics`:
-
-| Метрика | Тип | Описание |
-|---|---|---|
-| `chat_sessions_total` | Counter | Всего создано сессий чата |
-| `chat_messages_total` | Counter | Всего сообщений (labels: status) |
-| `llm_calls_total` | Counter | Вызовов LLM (labels: model, provider) |
-| `llm_duration_ms` | Histogram | Длительность LLM-вызова |
-| `llm_token_usage` | Counter | Использовано токенов (labels: type=prompt/completion) |
-| `llm_cost_total` | Counter | Общая стоимость LLM вызовов ($) |
-| `abuse_blocked_total` | Counter | Заблокировано запросов по anti-abuse (labels: reason) |
-| `embed_widget_requests_total` | Counter | Запросов к embed-виджету (labels: endpoint) |
-| `backlog_records_total` | Counter | Записей бэклога (labels: type) |
-| `backlog_errors_total` | Counter | Ошибок в бэклоге (labels: error_type) |
-
-### Logging
-- Используется structlog (JSON-формат при `LOG_FORMAT=json`)
-- `LOG_LEVEL` поддерживает: debug, info, warn, error
-- Подробнее: `log_config.py`
-
-### Anti-Abuse Engine
-Встроенный механизм защиты от злоупотреблений для embed-виджета:
-- **TokenBucket**: per-сессия, конфигурируемый (`ABUSE_RPS`, `ABUSE_BURST`)
-- **User-Agent проверка**: блокирует curl, wget, python-requests, Go-http-client, Java, libwww, scrapy, PostmanRuntime
-- **Message length**: кап 2000 символов
-- **Min interval**: не быстрее 1 сообщения в секунду
-- **Session budget**: не более 50 сообщений за сессию
-- **Repeated text**: 3+ одинаковых сообщений подряд блокируются
-- **Настройка**: через admin dashboard (глобально + per-agent через `abuse_config`)
-- **Emergency presets**: Normal / Cautious / Lockdown — одним кликом
-- Подробнее: `anti_abuse.py`
-
-## 🛡️ Guardrails (Prompt Injection)
-
-Модуль `api_service/guardrails.py` проверяет входящие сообщения и исходящие ответы на признаки prompt injection.
-
-**Режимы работы:**
-- `block` (дефолт) — сообщение блокируется, пользователь получает ошибку
-- `warn` — сообщение логируется, но не блокируется
-
-**Блокируемые паттерны (input):** ignore instructions, role override, pretend/DAN jailbreak, leak request, system prompt extraction
-
-**Блокируемые паттерны (output):** утечка system prompt, credentials, токенов
-
-**Env vars:** `GUARDRAIL_ENABLED`, `GUARDRAIL_BLOCK_ON_MATCH`, `GUARDRAIL_BLOCK_PATTERNS`
-
-**Admin API:** `GET/POST /admin/guardrails`
-
-
-## 💰 Spending Limits (Per-tenant)
-
-Модуль `api_service/spending.py` отслеживает расходы на LLM для каждого тенанта и жёстко блокирует при превышении бюджета.
-
-**Как работает:**
-1. После каждого LLM вызова `record_spending(tenant_id, cost)` суммирует расход
-2. Перед следующим вызовом `check_limits()` проверяет, не превышен ли бюджет
-3. При превышении — LLM вызовы блокируются, пользователь получает ошибку
-
-**Env vars:** `SPENDING_LIMIT_ENABLED`, `SPENDING_DEFAULT_BUDGET`, `SPENDING_BUDGET_PERIOD`
-
-**Admin API:** `GET /admin/spending`, `GET/POST /admin/spending/{tenant_id}`
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

@@ -104,3 +104,5 @@ uv run pytest demo/web/tests/unit/ -v    # ~50 тестов
 | `DEFAULT_TENANT_ID` | `default` | Fallback tenant ID |
 | `DEMO_TENANTS` | — | Список tenant IDs для UI селектора |
 | `WEB_PROXY_TIMEOUT` | `30.0` | Таймаут HTTP-клиента (секунды) |
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

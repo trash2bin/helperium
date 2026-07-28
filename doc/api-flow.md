@@ -3,6 +3,10 @@
 This document describes all HTTP communication between microservices.
 It serves as ground truth for cross-service dependency mapping.
 
+**Source of truth references:**
+- [AGENTS.md](./AGENTS.md) — general architecture, data flow diagrams, tool workflow
+- [mcp-gateway/README.md](../mcp-gateway/README.md) — MCP session lifecycle, tool registry, caching details
+
 ## Service Map
 
 ```
@@ -24,7 +28,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 | HTTP Call | Route | Method | Purpose |
 |---|---|---|---|
 | `proxy_manifest()` | GET `/mcp/manifest` | HTTP | Fetch MCP tool manifest for tenant |
-| `proxy_mapping()` | GET `/mcp/tools/mapping` | HTTP | Fetch display_name map for tenant tools |
+
 | `proxy_data_entity()` | GET `/{entity}` | HTTP | Generic data entity lookup |
 | `proxy_data_entity()` | GET `/{entity}/{id}` | HTTP | Entity by ID |
 | `proxy_data_entity()` | GET `/{entity}/grep` | HTTP | **Strategy — multi-token AND, multi-field OR, regex** |
@@ -73,7 +77,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 | HTTP Call | Route | Method | Purpose |
 |---|---|---|---|
-| `FetchConfigWithTenant(tenantID)` | GET `/mcp/manifest` | HTTP | Load tenant MCP tool config (now includes strategy tools) |
+| `FetchConfigWithTenant(tenantID)` | GET `/mcp/manifest` | HTTP | Load tenant MCP tool config (cached 30s TTL per tenant, see `internal/httpclient/client.go:206-248`) |
 | `Call(ctx, endpoint, params)` | GET `/{endpoint}` | HTTP | Execute generic data query |
 | `Call(ctx, endpoint, params)` | GET `/{endpoint}/{id}` | HTTP | Get entity by ID |
 | `Call(ctx, endpoint, params)` | GET `/{endpoint}?pattern=...&field__gt=...` | HTTP | **Strategy endpoints — `grep`, `filter`, `schema` — через тот же `Call()`** |
@@ -176,20 +180,6 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 **Config field:** `Opts.RagSvcURL`
 
-### 11. api-service → data-service (Python SDK)
-
-**Source:** `helperium-sdk/src/helperium_sdk/data_client.py`
-**Target:** `data-service:8084`
-
-| HTTP Call | Route | Method | Purpose |
-|---|---|---|---|
-| `AsyncDataServiceClient.get(entity, id)` | GET `/{entity}/{id}` | HTTP | Get entity by ID |
-| `AsyncDataServiceClient.find(entity, field, value)` | GET `/{entity}?{field}={value}` | HTTP | Find entity by field |
-| `AsyncDataServiceClient.list_all(entity)` | GET `/{entity}` | HTTP | List all entities |
-| `DataServiceClientSync.get(entity, id)` | GET `/{entity}/{id}` | HTTP | Get entity by ID (sync) |
-| `DataServiceClientSync.find(entity, field, value)` | GET `/{entity}?{field}={value}` | HTTP | Find entity by field (sync) |
-| `DataServiceClientSync.list_all(entity)` | GET `/{entity}` | HTTP | List all entities (sync) |
-
 ## Data Flow Summary
 
 ```
@@ -254,3 +244,5 @@ LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 100
 | `ADMIN_DASHBOARD_DS_URL` | - | admin-dashboard | data-service |
 | `ADMIN_DASHBOARD_AS_URL` | - | admin-dashboard | api-service |
 | `ADMIN_DASHBOARD_RS_URL` | - | admin-dashboard | rag |
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

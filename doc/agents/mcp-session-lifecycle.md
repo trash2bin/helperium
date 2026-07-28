@@ -145,3 +145,5 @@ Go-таймаута в 5 минут. После реконнекта → нов�
 - Write-методы блокируются на уровне endpoint_builder
 
 Подробнее о стратегиях поиска: [search-strategies.md](search-strategies.md)
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

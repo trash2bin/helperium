@@ -25,3 +25,5 @@ Tools регистрируются с tenantID в closure. Составные и
 - `pytest tests/e2e/test_data_isolation.py -v` — data-level
 - `pytest tests/e2e/test_mcp_dynamic.py -v` — tool-level
 - `pytest tests/e2e/test_mcp_composite.py -v` — composite routing
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

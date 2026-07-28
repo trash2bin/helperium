@@ -9,11 +9,16 @@
 ## Архитектура (30 сек)
 
 ```
-config.json → chi Router → Runtime Handlers (generic) → Query Builder → Prepared SQL → DB
+config.json → chi Router → TenantStore (per-tenant Router)
                 │
                 ├─ /{entity}/{id}        → get_by_id
-                ├─ /{entity}?search=...  → find
-                ├─ /{entity}             → list
+                ├─ /{entity}?search=...  → find (legacy, name-based)
+                ├─ /{entity}             → list (legacy)
+                ├─ /{entity}/grep        → grep strategy (multi-token AND text search)
+                ├─ /{entity}/filter      → filter strategy (field__op)
+                ├─ /{entity}/count       → count with filters
+                ├─ /{entity}/distinct    → unique values for enum columns
+                ├─ /{entity}/schema      → schema discovery (total, distinct, min/max)
                 ├─ /{entity}/{id}/...    → custom_query (whitelist SELECT)
                 ├─ /docs                 → Swagger UI
                 ├─ /openapi.json         → OpenAPI 3.1 spec
@@ -38,12 +43,23 @@ internal/
 ├── datasource/                 # Adapter interface (SQLite, PG, MySQL в перспективе)
 │   └── tests/                  # black-box adapter тесты
 ├── openapigen/                 # Runtime OpenAPI 3.1 генерация из конфига
+├── query/                      # Expression-based query engine (Condition AST → SQL)
+│   ├── expression.go           # QueryPlan, Condition, Operator, EmptyHint — типы
+│   ├── builder.go              # Engine.Build / BuildCount — Condition AST → SQL+args
+│   ├── format.go               # SearchResult, FormatRows (compact/full/count)
+│   └── builder_test.go         # white-box тесты query builder'а
 ├── runtime/                    # Query builder + typed response mapper
 │   ├── instrumented_adapter.go # Conn+Adapter → AdapterSubset с опциональными метриками
-│   ├── handlers/               # 9 хендлеров (get_by_id, find, list, custom_query,
-│   │                           #   count, distinct, health, stats, mcp_manifest)
+│   ├── handlers/               # 16 хендлеров (см. Архитектура ниже)
 │   │   └── tests/              # black-box handler тесты
 │   └── tests/                  # black-box query builder тесты
+├── search/                     # Search strategies (v4): единый Strategy interface
+│   ├── strategy.go             # Strategy, Adapter interfaces
+│   ├── grep.go                 # GrepStrategy — текст. поиск (multi-token AND, regex, LIKE)
+│   ├── filter.go               # FilterStrategy — field-based field__op фильтрация
+│   ├── schema.go               # SchemaStrategy — мета-инфо для LLM discovery
+│   ├── strategy_common.go      # Общие утилиты (parseLimitParam, tokenize, regexOp и др.)
+│   └── *_test.go               # white-box тесты стратегий
 └── server/                     # HTTP server, middleware, TenantStore
     ├── tenant.go               # TenantInstance, TenantStore, ServeHTTP, config persistence
     ├── tenant_admin.go         # admin-хендлеры (CRUD tenant'ов, rewrite, reload)
@@ -54,6 +70,44 @@ internal/
     ├── admin.go                # Admin API handlers (config CRUD, tool approval)
     ├── swagger.go              # Swagger UI (GET /docs) + OpenAPI (GET /openapi.json)
     └── tests/                  # black-box scenario/integration тесты
+```
+
+### Search Strategies (v4)
+
+6 стратегий через единый `search.Strategy` interface:
+
+| Стратегия | HTTP path | MCP tool | Описание для LLM |
+|-----------|-----------|----------|------------------|
+| `grep` | `/{entity}/grep` | `grep_{entity}` | Multi-token AND текст. поиск (LIKE/ILIKE, regex, ignore_case, invert по полям) |
+| `filter` | `/{entity}/filter` | `filter_{entity}` | Field-based field__op: `{field}__gt`, `__like`, `__in` и т.д. |
+| `get_by_id` | `/{entity}/{id}` | `get_{entity}` | Получение записи по PK |
+| `count` | `/{entity}/count` | `count_{entity}` | Количество записей с фильтрами |
+| `distinct` | `/{entity}/distinct` | `distinct_{entity}` | Уникальные значения колонки |
+| `schema` | `/{entity}/schema` | `schema_{entity}` | Мета-инфо: total, distinct values, min/max/avg для LLM discovery |
+
+**Flow:**
+
+```
+LLM Tool Call (MCP / HTTP)
+       │
+       ▼
+search.Strategy interface     ← grep, filter, schema имплементации
+  └── ParseRequest(r, entity, adapter)  →  query.QueryPlan
+       │
+       ▼
+query.Engine.Build(plan)      ← Condition AST → нативный SQL
+       │
+       ▼
+ReadOnlyDB                    ← урезанный *sql.DB (только SELECT)
+       │
+       ▼
+query.FormatRows              ← SearchResult (Total, Data/Preview, EmptyHint)
+```
+
+**EmptyHint:** При `total==0` стратегии возвращают подсказку LLM с доступными значениями:
+```json
+{"suggested_action": "Try schema_products() to discover available values",
+ "available_values": {"brand": ["Brembo", "Bosch"]}}
 ```
 
 **Принцип:** white-box тесты (`package xxx`) остаются рядом с исходным кодом, black-box тесты (`package xxx_test`) вынесены в `tests/` внутри каждого пакета для чистоты иерархии.
@@ -217,10 +271,15 @@ AGENT_TUTOR_TEST_PG=1 go test ./internal/server/tests/ -v
 ## Security & Hardening
 
 - Только SELECT, prepared statements (`?` / `$1`), `max_rows` обязателен для custom_query
-- `read_only: true` enforced, если явно установлен в конфиге (поле `ReadOnly` — `*bool`, по умолчанию nil — read-write режим)
+- `read_only: true` по умолчанию: configgen.Generate() форсирует `ReadOnly = &true` если nil
+  (вручную можно выставить `false` через config.json; см. `configgen.go:114`)
+- ReadOnlyConn обёртка (`datasource.NewReadOnlyConn`) блокирует `ExecContext` на уровне Go
+- Banned SQL: `;`, `--`, `/*`, DDL/DML ключевые слова в `counter.Filter`
 - Валидация через Go-типы (`helperium-go/config/types.go`), JSON Schema не используется
 - Защита от SQL injection в `counter.Filter` — `isValidFilterExpression()` блокирует `;`, `--`, DDL/DML
 - Content-Type: `application/json` для всех ответов (включая error recovery)
+- Per-query timeout: 30s (`QUERY_TIMEOUT_SECONDS`)
+- Data race protection: `healthMu sync.Mutex` в TenantInstance, `atomic.Int32` в ThrottleMiddleware
 - Data race protection: `healthMu sync.Mutex` в TenantInstance, `atomic.Int32` в ThrottleMiddleware
 
 ---
@@ -234,14 +293,40 @@ AGENT_TUTOR_TEST_PG=1 go test ./internal/server/tests/ -v
 
 ---
 
+## Skip Rules (почему таблицы не генерируются)
+
+Configgen.DefaultSkipRules() исключает таблицы по prefix/contains MatchRule:
+
+| Prefix | Причина |
+|--------|--------|
+| `sqlite_`, `pg_`, `information_schema` | Системные таблицы СУБД |
+| `auth_`, `django_`, `migrations`, `jobs` | Django/Laravel framework internals |
+| `documents` | Helperium RAG: внутренние чанки документов |
+| `schema_migrations`, `ar_internal_metadata` | Rails ActiveRecord metadata |
+
+**Кастомизация:** `skip_rules[]` в config.json (дополняет default), `disabled_default_rules[]` (отключает default по prefix).
+Подробно: [doc/agents/search-strategies.md](doc/agents/search-strategies.md).
+
+---
+
+## Ссылки по теме
+
+- [AGENTS.md](../AGENTS.md) — общая архитектура, data flow
+- [doc/agents/search-strategies.md](../doc/agents/search-strategies.md) — Search Strategies v4 детально
+- [doc/agents/adapter-pattern.md](../doc/agents/adapter-pattern.md) — DataSource interface и адаптеры
+- [doc/agents/tenant-lifecycle.md](../doc/agents/tenant-lifecycle.md) — Tenant CRUD, persistence
+- [specs/config.schema.md](../specs/config.schema.md) — полная схема config.json
+
 ## Связь с остальными сервисами
 
 | Сервис | Порт | Контракт |
 |---|---|---|
-| **mcp-gateway** | 8083 | `GET /mcp/manifest` (с `X-Tenant-ID`) → runtime MCP tools |
-| **demo-web** | 8080 | Reverse proxy `/api/data/*` → `GET /{entity}` |
-| **demo-api** | 8081 | Через mcp-gateway вызывает тулы data-service |
-| **admin-dashboard** | 8085 | `/admin/*` (tenant CRUD, config, tools approval) |
+| **mcp-gateway** | 8083 | `GET /mcp/manifest` (с `X-Tenant-ID`) → runtime MCP tools;
+  все data-запросы от LLM через MCP-тулы → data-service HTTP |
+| **api-service** | 8081 | Получает данные через mcp-gateway (не напрямую);
+  embed-виджет, оркестратор, LiteLLM |
+| **admin-dashboard** | 8085 | `/admin/*` (tenant CRUD, config, tools approval);
+  прямые запросы к data-service для данных |
 
 ---
 
@@ -253,3 +338,5 @@ AGENT_TUTOR_TEST_PG=1 go test ./internal/server/tests/ -v
 | `config: load "...": no such file` | Не тот cwd | Запуск из корня проекта |
 | `ADMIN_TOKEN not configured` / 401 | Токен mismatch | `export ADMIN_TOKEN=secret` |
 | PG `connection refused` | Colima PG упал | `pg_isready -h localhost -p 5432` |
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

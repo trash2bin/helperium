@@ -122,3 +122,5 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 2. [ ] Pre-commit hooks — все Passed
 3. [ ] `uv run pytest tests/e2e/ -v` — 44 теста без LLM
 4. [ ] Mutation score не упал (опционально)
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

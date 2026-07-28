@@ -55,3 +55,5 @@ DELETE /admin/tenants/{id}
 Authorization: Bearer $ADMIN_TOKEN
 ```
 → graceful drain: закрыть пул, удалить из мапы, стереть config.
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

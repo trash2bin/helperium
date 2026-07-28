@@ -45,3 +45,5 @@ LLM склонна вызывать инструменты с пустыми а�
 - `server.py`: SSE events `token`/`audio` только в DEBUG; `tool_call`/`tool_result`/`final`/`error`/`done` — INFO
 
 **Детали:** `data-service/internal/search/`, `data-service/internal/configgen/mcp.go`, [search-strategies.md](search-strategies.md)
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

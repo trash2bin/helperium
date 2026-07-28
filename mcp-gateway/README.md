@@ -15,21 +15,21 @@ Generic MCP (Model Context Protocol) сервер на Go. Заменил Python
 ```
 
 - SSE-сессия (GET /mcp) → одна на tenant
-- Инструменты без префикса: `list_students`, `find_products`
+- Инструменты без префикса: `grep_products`, `filter_products`, `get_products`
 - Включён, когда `X-Tenant-ID` содержит **один** tenant
 
 ### Composite Multi-Tenant Mode
 
 ```text
 X-Tenant-ID: tenant-a               → legacy: инструменты без префикса
-X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__list_students, tenant-b__list_students
+X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tenant-b__grep_products
 ```
 
 Режим включается автоматически, когда `X-Tenant-ID` содержит несколько tenant'ов через запятую.
 `createCompositeServer()` загружает конфиги всех tenant'ов и регистрирует инструменты с префиксом `{tenantID}__`.
 
 **Изоляция через closure:** `makeHandler(td, client, tenantID)` — tenantID зашит в closure.
-Инструмент `tenant-a__list_students` всегда идёт в data-service с `X-Tenant-ID: tenant-a`,
+Инструмент `tenant-a__grep_products` всегда идёт в data-service с `X-Tenant-ID: tenant-a`,
 даже если клиент подменит заголовок.
 
 **Кэш на SSE-сессии:** `sseSession.ensureCompositeServer()` переиспользует созданный сервер,
@@ -56,8 +56,11 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__list_students, tena
    - `tools.NewRegistry(cfg)` → конвертирует `mcp_tools[]` из конфига в MCP-инструменты
    - `registry.RegisterAll(mcpServer)` → регистрирует хендлеры
 
-> **Кэш манифеста:** `FetchConfigWithTenant()` кэширует ответ `/mcp/manifest` на 30 секунд (TTL).
+> **Кэш манифеста:** `FetchConfigWithTenant()` кэширует ответ `/mcp/manifest` на 30 секунд (TTL, per-tenant).
 > Повторные вызовы в пределах окна не ходят в data-service.
+> После config rewrite (POST /admin/config/rewrite) нужно вызвать `InvalidateManifestCache(tenantID)`
+> для принудительного сброса кэша — иначе до 30 секунд будут использоваться старые тулы.
+> `InvalidateManifestCache()` без аргументов очищает весь кэш.
 4. **Каждый инструмент** — closure с `client.Call(ctx, endpoint, params)` к data-service
 
 ### Поток вызова инструмента
@@ -72,17 +75,32 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__list_students, tena
 | Op | Имя | Пример |
 |---|---|---|
 | `get_by_id` | `get_{entity}` | `get_student` |
-| `find` | `find_{entity}` | `find_student` |
-| `list` | `list_{entity}` | `list_students` |
+| `grep` (strategy) | `grep_{entity}` | `grep_products` |
+| `filter` (strategy) | `filter_{entity}` | `filter_products` |
+| `schema` (strategy) | `schema_{entity}` | `schema_products` |
+| `distinct` | `distinct_{entity}` | `distinct_products` |
+| `count` | `count_{entity}` | `count_products` |
 | `builtin_health` | `health` | `health` |
 | `builtin_stats` | `stats` | `stats` |
 | `custom_query` | `{query_id}` | `student_grades` |
 
+> **Примечание:** `find` / `list` — REST-эндпоинты для data-service, но **не MCP-тулы**.
+> MCP-тулы для поиска/фильтрации генерируются через стратегии (`grep`, `filter`, `schema`).
+
 Санитизация: `deriveToolName()` удаляет `{` `}` из имён (Mistral reject).
+
+> **⚠️ Баг в legacy fallback `deriveToolName()`:** функция корректно обрабатывает только `OpGetByID`.
+> Все остальные операции (`find`, `list`, `distinct`, `count` и стратегии) падают в `default: return ""`.
+> На практике это не критично, т.к. data-service возвращает явный `mcp_tools[]` в манифесте,
+> и `buildTools()` использует его в приоритете. Fallback срабатывает только в legacy-режиме
+> (конфиг без `mcp_tools[]`), где в итоге регистрируются только `get_*` инструменты.
+>
+> Аналогичная ситуация в `buildDefaultDesc()` — осмысленное описание генерируется только для `OpGetByID`.
 
 ## RAG-инструменты
 
-Три тула доступны всем tenant'ам, регистрируются через `registerRagTools()`:
+Три тула регистрируются через `registerRagTools()`, но **только если RAG доступен** (проверка `RagEnabled()` → `ragClient.IsAvailable()`).
+Если RAG_SERVICE_URL не задан или health-check падает — инструменты не регистрируются:
 
 | Инструмент | RAG-эндпоинт | Описание |
 |---|---|---|
@@ -114,6 +132,13 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__list_students, tena
 | `/openapi.json` | GET | OpenAPI spec | MCP_API_KEY |
 
 **Auth:** если `MCP_API_KEY` не установлена — все маршруты без аутентификации. `/health` и `/metrics` всегда открыты.
+
+## 📚 Ссылки
+
+- [AGENTS.md](../AGENTS.md) — общая архитектура проекта, data flow, правила работы
+- [doc/agents/mcp-session-lifecycle.md](../doc/agents/mcp-session-lifecycle.md) — полный lifecycle MCP-сессии
+- [doc/agents/search-strategies.md](../doc/agents/search-strategies.md) — стратегии поиска (grep, filter, schema)
+- [mcp-gateway/internal/tools/tools.go](internal/tools/tools.go) — реестр инструментов (source of truth)
 
 ## Переменные окружения
 
@@ -191,3 +216,8 @@ curl -s -X POST http://127.0.0.1:8083/mcp/message \
 | `connection refused` :8083 | mcp-gateway не запущен | `go run ./cmd/` |
 | Пустой манифест (0 tools) | Tenant не зарегистрирован | register через data-service admin API |
 | 401 Unauthorized | MCP_API_KEY mismatch | Синхронизируй токен |
+
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

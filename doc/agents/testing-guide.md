@@ -230,3 +230,5 @@ Score: ~65% (8100+ KILLED / 2681 SURVIVED).
 ```bash
 ./scripts/run_mutmut.sh --go
 ```
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

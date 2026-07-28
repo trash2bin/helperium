@@ -156,3 +156,5 @@ ctx.had_tool_calls_this_iteration = False
 - Double-encoding fix: `test_layer1_arguments_not_double_encoded`
 - Safety net pipeline: `test_safety_net_blocks_unparseable_json`
 - Full orchestrator LAYER 1/LAYER 2: `TestLLMAgentWithProtocolProvider` (`test_orchestrator_e2e.py`)
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

@@ -354,3 +354,5 @@ go test ./data-service/...                    # ~613 тестов всего
 | `search/schema_test.go` | ~10 | distinct values, min/max/avg, total count |
 | `configgen/...` | ~12 | config generation, MCP tool count, PG integration |
 | `runtime/handlers/...` | ~50+ | strategy handler, HTTP integration, tenant isolation |
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

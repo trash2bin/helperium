@@ -46,3 +46,5 @@ curl -X POST http://127.0.0.1:8084/admin/tenants -H "Authorization: Bearer secre
 ```
 
 **agent-db CLI (legacy):** `uv run agent-db register <tenant_id> <scenario>`, `uv run agent-db tenants`, `uv run agent-db drop <scenario>`
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

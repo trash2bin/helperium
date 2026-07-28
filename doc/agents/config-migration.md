@@ -503,3 +503,5 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 | `specs/config.schema.md` | Human-readable format reference |
 | `doc/agents/tenant-lifecycle.md` | How configs are created and persisted |
 | `doc/agents/search-strategies.md` | Detailed description of each strategy (grep, filter, schema) |
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)

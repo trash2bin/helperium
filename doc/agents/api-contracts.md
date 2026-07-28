@@ -16,3 +16,5 @@ specs/
 uv run pytest api-service/src/api_service/tests/unit/test_openapi_api.py
 uv run pytest rag/tests/unit/test_openapi_spec.py
 ```
+---
+**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
