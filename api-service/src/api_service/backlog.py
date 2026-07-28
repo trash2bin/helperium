@@ -103,7 +103,7 @@ class ModelBacklog:
 
         return records
 
-    #  Public event methods
+    # ── Turn lifecycle ─────────────────────────────────────────────
 
     def turn_start(self, session_id: str, user_message: str) -> str:
         turn_id = uuid.uuid4().hex[:12]
@@ -119,6 +119,54 @@ class ModelBacklog:
             },
         )
         return turn_id
+
+    def turn_end(
+        self,
+        session_id: str,
+        turn_id: str,
+        *,
+        duration_ms: float,
+        outcome: str,  # "final" | "error" | "timeout" | "limit"
+        total_prompt_tokens: int = 0,
+        total_completion_tokens: int = 0,
+        total_cost: float = 0.0,
+        llm_calls: int = 0,
+        tool_calls: int = 0,
+        tool_errors: int = 0,
+        empty_results: int = 0,
+        empty_rounds: int = 0,
+        iterations: int = 0,
+        final_length_chars: int = 0,
+        error_message: str = "",
+    ) -> None:
+        """Record the final aggregate for one turn.
+
+        This is the KEY record for benchmark analysis — one line per turn
+        with ALL metrics summed up.  Read these with ``benchmark_report()``.
+        """
+        self._write(
+            session_id,
+            {
+                "type": "turn_end",
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": round(duration_ms, 1),
+                "outcome": outcome,
+                "total_prompt_tokens": total_prompt_tokens,
+                "total_completion_tokens": total_completion_tokens,
+                "total_tokens": total_prompt_tokens + total_completion_tokens,
+                "total_cost": round(total_cost, 6),
+                "llm_calls": llm_calls,
+                "tool_calls": tool_calls,
+                "tool_errors": tool_errors,
+                "empty_results": empty_results,
+                "empty_rounds": empty_rounds,
+                "iterations": iterations,
+                "final_length_chars": final_length_chars,
+                "error_message": error_message,
+            },
+        )
 
     def tool_call(
         self,
@@ -219,6 +267,86 @@ class ModelBacklog:
             record["error_message"] = error_message
         record.update(extra)
         self._write(session_id, record)
+
+    # ── Benchmark report ──────────────────────────────────────────
+
+    def benchmark_report(self) -> dict[str, Any]:
+        """Aggregate ALL turns across ALL sessions into a benchmark summary.
+
+        Reads only ``turn_end`` records (one per turn).  Ignores raw events.
+        """
+        turns: list[dict[str, Any]] = []
+        for path in sorted(self._dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime):
+            records = self._read_records(path.stem)
+            for r in records:
+                if r.get("type") == "turn_end":
+                    turns.append(r)
+
+        if not turns:
+            return {
+                "turns": 0,
+                "message": "No completed turns found.  Run some questions first.",
+            }
+
+        n = len(turns)
+        outcomes: dict[str, int] = {}
+        for t in turns:
+            oc = t.get("outcome", "unknown")
+            outcomes[oc] = outcomes.get(oc, 0) + 1
+
+        def _avg(key: str) -> float:
+            vals = [t.get(key, 0) or 0 for t in turns]
+            return sum(vals) / n
+
+        def _sum(key: str) -> float:
+            return sum(t.get(key, 0) or 0 for t in turns)
+
+        def _pct(key: str) -> float:
+            return sum(1 for t in turns if t.get(key, 0)) / n * 100
+
+        durations = sorted([t.get("duration_ms", 0) or 0 for t in turns])
+        p50 = durations[len(durations) // 2] if durations else 0
+        p95_idx = (
+            min(int(len(durations) * 0.95), len(durations) - 1) if durations else 0
+        )
+        p95 = durations[p95_idx] if durations else 0
+        p99_idx = (
+            min(int(len(durations) * 0.99), len(durations) - 1) if durations else 0
+        )
+        p99 = durations[p99_idx] if durations else 0
+
+        avg_cost = _avg("total_cost")
+        return {
+            "turns": n,
+            "outcomes": outcomes,
+            "total_duration_ms": round(_sum("duration_ms")),
+            "avg_duration_ms": round(_avg("duration_ms"), 1),
+            "min_duration_ms": round(durations[0], 1) if durations else 0,
+            "max_duration_ms": round(durations[-1], 1) if durations else 0,
+            "p50_duration_ms": round(p50, 1),
+            "p95_duration_ms": round(p95, 1),
+            "p99_duration_ms": round(p99, 1),
+            "avg_prompt_tokens": round(_avg("total_prompt_tokens"), 1),
+            "avg_completion_tokens": round(_avg("total_completion_tokens"), 1),
+            "avg_total_tokens": round(_avg("total_tokens"), 1),
+            "total_prompt_tokens": round(_sum("total_prompt_tokens")),
+            "total_completion_tokens": round(_sum("total_completion_tokens")),
+            "total_tokens": round(_sum("total_tokens")),
+            "avg_cost_per_turn": round(avg_cost, 6),
+            "total_cost": round(_sum("total_cost"), 6),
+            "estimated_monthly_cost": round(avg_cost * 30, 6),
+            "avg_llm_calls": round(_avg("llm_calls"), 2),
+            "avg_tool_calls": round(_avg("tool_calls"), 2),
+            "total_llm_calls": round(_sum("llm_calls")),
+            "total_tool_calls": round(_sum("tool_calls")),
+            "total_tool_errors": round(_sum("tool_errors")),
+            "pct_tool_errors": round(_pct("tool_errors"), 1),
+            "total_empty_results": round(_sum("empty_results")),
+            "pct_empty_results": round(_pct("empty_results"), 1),
+            "avg_empty_rounds": round(_avg("empty_rounds"), 2),
+            "avg_iterations": round(_avg("iterations"), 2),
+            "avg_final_length_chars": round(_avg("final_length_chars"), 1),
+        }
 
     def get_session_stats(self, session_id: str) -> dict[str, Any]:
         """Get aggregated stats for a session: total tokens, cost, call count."""

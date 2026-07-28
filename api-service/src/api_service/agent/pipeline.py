@@ -83,6 +83,18 @@ class PipelineContext:
     # Guard checker (опционально, для Stage'ов которые не хотят хардкодить синглтон)
     guard_checker: GuardChecker | None = None
 
+    # Bench metrics accumulator (populated by stages, consumed by orchestrator)
+    bench: dict = field(
+        default_factory=lambda: {
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "total_cost": 0.0,
+            "llm_calls": 0,
+            "tool_errors": 0,
+            "empty_results": 0,
+        }
+    )
+
     # Флаги для one-shot stage'ов (GuardInput, ToolDiscovery, SaveHistory)
     _done_flags: set[str] = field(default_factory=set)
 

@@ -14,6 +14,7 @@ keep the same signatures.  ``health()`` stays.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -263,6 +264,10 @@ class LLMAgent:
             ctx.turn_id = backlog.turn_start(session_id, user_message)
 
             # Build PipelineContext and run
+            _turn_start = time.monotonic()
+            _outcome = "final"
+            _error_msg = ""
+            pipeline_ctx = None
             try:
                 async with self.mcp_client.get_session(
                     tenant_ids=tenant_ids
@@ -284,11 +289,38 @@ class LLMAgent:
                         yield event
 
             except Exception as exc:
+                _outcome = "error"
+                _error_msg = str(exc)
                 logger.exception("[AGENT] Turn failed: %s", exc)
                 backlog.error(session_id, ctx.turn_id, ctx.iteration, str(exc))
                 yield AgentEvent(
                     "error",
                     {"message": classify_error(exc, lang)},
+                )
+            finally:
+                _duration = (time.monotonic() - _turn_start) * 1000
+                if not ctx.final_content and _outcome != "error":
+                    _outcome = "limit"
+                _b = pipeline_ctx.bench if pipeline_ctx else {}
+                _tc = pipeline_ctx.tool_call_count if pipeline_ctx else 0
+                backlog.turn_end(
+                    session_id=session_id,
+                    turn_id=ctx.turn_id,
+                    duration_ms=_duration,
+                    outcome=_outcome,
+                    total_prompt_tokens=_b.get("total_prompt_tokens", 0),
+                    total_completion_tokens=_b.get("total_completion_tokens", 0),
+                    total_cost=_b.get("total_cost", 0.0),
+                    llm_calls=_b.get("llm_calls", 0),
+                    tool_calls=_tc,
+                    tool_errors=_b.get("tool_errors", 0),
+                    empty_results=_b.get("empty_results", 0),
+                    empty_rounds=ctx.empty_rounds,
+                    iterations=ctx.iteration,
+                    final_length_chars=len(ctx.final_content)
+                    if ctx.final_content
+                    else 0,
+                    error_message=_error_msg[:500] if _error_msg else "",
                 )
 
     # ── Health ───────────────────────────────────────────────────────────

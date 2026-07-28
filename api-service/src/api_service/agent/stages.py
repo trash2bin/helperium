@@ -386,6 +386,15 @@ class LLMStage:
 
         ctx.last_response = response
 
+        # Accumulate bench metrics
+        if response.usage:
+            ctx.bench["total_prompt_tokens"] += response.usage.prompt_tokens or 0
+            ctx.bench["total_completion_tokens"] += (
+                response.usage.completion_tokens or 0
+            )
+            ctx.bench["total_cost"] += response.cost or 0.0
+        ctx.bench["llm_calls"] += 1
+
         # 📊 Backlog: LLM call
         model = getattr(ctx.llm_provider, "model", "unknown")
         usage = response.usage
@@ -787,6 +796,17 @@ class ToolExecutionStage:
             }
             if not tool_result.ok:
                 result_payload["isError"] = True
+                ctx.bench["tool_errors"] += 1
+
+            # Check for empty result (LLM guessed wrong params)
+            if tool_result.ok:
+                try:
+                    parsed = json.loads(tool_result.tool_content)
+                    if isinstance(parsed, dict) and parsed.get("total") == 0:
+                        ctx.bench["empty_results"] += 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
             yield AgentEvent("tool_result", ToolResultEventData(**result_payload))
 
             # Store result in tool_results

@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .models import CompletionRequest, CompletionResponse
+from .models import CompletionRequest, CompletionResponse, UsageInfo
 from .tool_parser import ToolCallParser
 
 from api_service.backlog import backlog
@@ -86,6 +86,16 @@ class _OldStyleLLMAdapter:
 
         content = (final_message.get("content") or "").strip()
 
+        # Extract usage from old-style client (stored by stream_completion)
+        last_usage = getattr(self._inner, "last_usage", None)
+        usage_info = None
+        if last_usage:
+            usage_info = UsageInfo(
+                prompt_tokens=last_usage.get("prompt_tokens", 0),
+                completion_tokens=last_usage.get("completion_tokens", 0),
+                total_tokens=last_usage.get("total_tokens", 0),
+            )
+
         return CompletionResponse(
             content=content,
             content_tokens=list(content_chars)
@@ -93,6 +103,7 @@ class _OldStyleLLMAdapter:
             else ([content] if content else []),
             tool_calls=tool_calls_raw,
             reasoning_content=reasoning,
+            usage=usage_info,
             cost=getattr(self._inner, "last_cost", 0.0),
         )
 
