@@ -19,9 +19,7 @@ def _make_vc():
     vc.enabled = True
     vc.max_voice_message_size = 10485760
     vc.stt_fallback_enabled = True
-    vc.tts_fallback_enabled = False
     vc.stt_providers = []
-    vc.tts_providers = []
     return vc
 
 

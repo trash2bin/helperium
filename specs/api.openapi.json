@@ -764,7 +764,7 @@
     "/api/voice-config": {
       "get": {
         "summary": "Get Voice Config",
-        "description": "Get current voice (STT/TTS) configuration.",
+        "description": "Get current STT (Speech-to-Text) configuration.",
         "operationId": "get_voice_config_api_voice_config_get",
         "responses": {
           "200": {
@@ -1039,7 +1039,7 @@
     "/api/chat/voice": {
       "post": {
         "summary": "Chat Voice Endpoint",
-        "description": "Voice chat endpoint.\n\nAccepts an audio file via multipart/form-data, transcribes it via\nthe configured STT provider(s), feeds the text through the existing\nchat pipeline, and streams the response as SSE events.\n\nIf TTS providers are configured, the final answer is also sent as\nan ``type=\"audio\"`` SSE event with base64-encoded audio bytes.",
+        "description": "Voice chat endpoint.\n\nAccepts an audio file via multipart/form-data, transcribes it via\nthe configured STT provider(s), feeds the text through the existing\nchat pipeline, and streams the response as SSE events.",
         "operationId": "chat_voice_endpoint_api_chat_voice_post",
         "requestBody": {
           "content": {
@@ -1881,18 +1881,6 @@
             "title": "Stt Provider",
             "description": "STT provider name (must match a name in VoiceConfig.stt_providers)"
           },
-          "tts_provider": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tts Provider",
-            "description": "TTS provider name (must match a name in VoiceConfig.tts_providers)"
-          },
           "stt_fallback": {
             "anyOf": [
               {
@@ -1905,18 +1893,6 @@
             "title": "Stt Fallback",
             "description": "Override STT fallback setting for this agent"
           },
-          "tts_fallback": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tts Fallback",
-            "description": "Override TTS fallback setting for this agent"
-          },
           "voice_input_disabled": {
             "anyOf": [
               {
@@ -1928,18 +1904,6 @@
             ],
             "title": "Voice Input Disabled",
             "description": "Explicitly disable voice input for this agent (hide mic in widget)"
-          },
-          "voice_output_disabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Voice Output Disabled",
-            "description": "Explicitly disable TTS for this agent"
           }
         },
         "type": "object",

@@ -1,5 +1,5 @@
 /**
- * Helperium Embed Widget — Voice Input & TTS Playback
+ * Helperium Embed Widget — Voice Input
  *
  * Manages microphone recording via MediaRecorder API,
  * voice chat streaming, and base64 audio playback.
@@ -264,7 +264,7 @@ export function streamVoiceChat(
 /**
  * Plays a base64-encoded audio string as an Audio element.
  *
- * Used for TTS (text-to-speech) output from the agent.
+ * Reserved for future audio output from the agent.
  *
  * @param b64data - Base64-encoded audio (e.g. MP3).
  */

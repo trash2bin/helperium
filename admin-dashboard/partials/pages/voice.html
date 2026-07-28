@@ -40,17 +40,7 @@
                 <div class="stat-label" x-text="__('voice.sttFallback')"></div>
                 <small class="text-muted" x-text="__('voice.sttFallbackDesc')"></small>
               </div>
-              <div class="stat-card">
-                <div class="stat-value">
-                  <label class="checkbox-row">
-                    <input type="checkbox" x-model="voiceConfig.tts_fallback_enabled">
-                    <span x-show="voiceConfig.tts_fallback_enabled" style="color:#3fb950;" x-text="__('llm.fallbackOn')"></span>
-                    <span x-show="!voiceConfig.tts_fallback_enabled" style="color:#8b949e;" x-text="__('llm.fallbackOff')"></span>
-                  </label>
-                </div>
-                <div class="stat-label" x-text="__('voice.ttsFallback')"></div>
-                <small class="text-muted" x-text="__('voice.ttsFallbackDesc')"></small>
-              </div>
+
             </div>
 
             <!-- General settings -->
@@ -77,7 +67,7 @@
             <div class="card" style="margin-top:16px;">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <h3 style="margin:0;" x-text="__('voice.sttProviders')"></h3>
-                <button type="button" @click="showAddSttProvider = !showAddSttProvider; showAddTtsProvider = false; editingSttIndex = -1" class="btn btn-sm" x-text="__('llm.tabAdd')"></button>
+                <button type="button" @click="showAddSttProvider = !showAddSttProvider; editingSttIndex = -1" class="btn btn-sm" x-text="__('llm.tabAdd')"></button>
               </div>
 
               <!-- STT Add/Edit form -->
@@ -153,91 +143,7 @@
               </table>
             </div>
 
-            <!-- TTS Providers -->
-            <div class="card" style="margin-top:16px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <h3 style="margin:0;" x-text="__('voice.ttsProviders')"></h3>
-                <button type="button" @click="showAddTtsProvider = !showAddTtsProvider; showAddSttProvider = false; editingTtsIndex = -1" class="btn btn-sm" x-text="__('llm.tabAdd')"></button>
-              </div>
 
-              <!-- TTS Add/Edit form -->
-              <div x-show="showAddTtsProvider || editingTtsIndex >= 0" x-cloak style="margin-bottom:16px;padding:12px;border:1px solid #30363d;border-radius:6px;">
-                <h4 x-text="editingTtsIndex >= 0 ? __('voice.editTtsTitle') : __('voice.addTtsTitle')"></h4>
-                <div class="form-group">
-                  <label x-text="__('voice.name')"></label>
-                  <input type="text" x-model="voiceTtsForm.name" :placeholder="__('llm.namePlaceholder')" required :disabled="editingTtsIndex >= 0">
-                </div>
-                <div class="form-group">
-                  <label x-text="__('voice.engine')"></label>
-                  <select x-model="voiceTtsForm.provider" required>
-                    <option value="litellm" x-text="__('voice.engineLitellm')"></option>
-                    <option value="local" x-text="__('voice.engineLocal')"></option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label x-text="__('voice.model')"></label>
-                  <input type="text" x-model="voiceTtsForm.model" placeholder="tts-1" required>
-                </div>
-                <div class="form-group">
-                  <label x-text="__('voice.voice')"></label>
-                  <input type="text" x-model="voiceTtsForm.voice" placeholder="alloy">
-                </div>
-                <div class="form-group">
-                  <label x-text="__('voice.apiKey')"></label>
-                  <input type="password" x-model="voiceTtsForm.api_key" :placeholder="__('llm.apiKeyPlaceholder')">
-                </div>
-                <div class="form-group">
-                  <label x-text="__('voice.apiBase')"></label>
-                  <input type="text" x-model="voiceTtsForm.api_base" placeholder="https://api.openai.com/v1">
-                </div>
-                <div class="form-group">
-                  <label class="checkbox-row">
-                    <input type="checkbox" x-model="voiceTtsForm.enabled">
-                    <span x-text="__('voice.enabled')"></span>
-                  </label>
-                </div>
-                <div class="form-actions">
-                  <button type="button" @click="saveTtsProvider()" class="btn btn-primary" :disabled="!voiceTtsForm.name || !voiceTtsForm.model || !voiceTtsForm.provider">
-                    <span x-text="editingTtsIndex >= 0 ? __('voice.saveBtn') : __('voice.addBtn')"></span>
-                  </button>
-                  <button type="button" @click="cancelVoiceEdit()" class="btn" x-text="__('voice.cancelBtn')"></button>
-                </div>
-              </div>
-
-              <!-- TTS Provider list -->
-              <div x-show="voiceConfig.tts_providers.length === 0" class="text-muted" style="font-size:13px;" x-text="__('voice.noProviders')"></div>
-              <table class="table" x-show="voiceConfig.tts_providers.length">
-                <thead>
-                  <tr>
-                    <th x-text="__('voice.name')"></th>
-                    <th x-text="__('voice.engine')"></th>
-                    <th x-text="__('voice.model')"></th>
-                    <th x-text="__('voice.voice')"></th>
-                    <th x-text="__('voice.apiKey')"></th>
-                    <th x-text="__('voice.apiBase')"></th>
-                    <th x-text="__('voice.enabled')"></th>
-                    <th x-text="__('label.actions')"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-for="(prov, idx) in voiceConfig.tts_providers" :key="idx">
-                    <tr>
-                      <td><strong x-text="prov.name"></strong></td>
-                      <td><span style="font-size:11px;" x-text="prov.provider"></span></td>
-                      <td style="font-family:monospace;font-size:12px;" x-text="prov.model"></td>
-                      <td style="font-size:12px;" x-text="prov.voice || '—'"></td>
-                      <td><span x-show="prov.api_key" style="color:#3fb950;" x-text="__('llm.apiKeyExists')"></span><span x-show="!prov.api_key" style="color:#f85149;" x-text="__('llm.apiKeyDoesNotExist')"></span></td>
-                      <td style="font-size:11px;word-break:break-all;" x-text="prov.api_base || '—'"></td>
-                      <td><span x-show="prov.enabled" style="color:#3fb950;" x-text="__('llm.enabledYes')"></span><span x-show="!prov.enabled" x-text="__('llm.enabledNo')"></span></td>
-                      <td class="actions">
-                        <button type="button" @click="editTtsProvider(idx)" class="btn btn-sm" x-text="__('btn.edit')"></button>
-                        <button type="button" @click="deleteTtsProvider(idx)" class="btn btn-sm btn-danger" x-text="__('btn.delete')"></button>
-                      </td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
 
             <!-- Save button -->
             <div class="form-actions" style="margin-top:24px;">

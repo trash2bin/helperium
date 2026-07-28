@@ -89,7 +89,6 @@ from helperium_sdk.tracing import (
 )
 
 # Audio / Voice imports
-import base64
 from fastapi import UploadFile, File, Form
 from api_service.audio.voice_config import (
     load_voice_config,
@@ -97,7 +96,6 @@ from api_service.audio.voice_config import (
     resolve_voice_config,
 )
 from api_service.audio.stt_engine import STTEngine
-from api_service.audio.tts_engine import TTSEngine
 
 configure_logging()
 setup_opentelemetry("api-service")
@@ -1010,7 +1008,7 @@ def _preserve_fields(
 
 @app.get("/api/voice-config")
 async def get_voice_config():
-    """Get current voice (STT/TTS) configuration."""
+    """Get current voice (STT) configuration."""
     config = load_voice_config()
     return config.model_dump(mode="json")
 
@@ -1019,7 +1017,7 @@ async def get_voice_config():
 async def update_voice_config(body: dict) -> dict:
     """Update and persist voice configuration.
 
-    Preserves existing api_key/api_base/voice per provider when the
+    Preserves existing api_key/api_base per provider when the
     incoming value is None or empty (masks sensitive fields).
     """
     current = load_voice_config()
@@ -1027,11 +1025,6 @@ async def update_voice_config(body: dict) -> dict:
     # Preserve masked fields (frontend sends empty strings for security)
     _preserve_fields(
         body.get("stt_providers", []), current.stt_providers, ["api_key", "api_base"]
-    )
-    _preserve_fields(
-        body.get("tts_providers", []),
-        current.tts_providers,
-        ["api_key", "api_base", "voice"],
     )
 
     config = VoiceConfig(**body)
@@ -1258,9 +1251,6 @@ async def chat_voice_endpoint(
     Accepts an audio file via multipart/form-data, transcribes it via
     the configured STT provider(s), feeds the text through the existing
     chat pipeline, and streams the response as SSE events.
-
-    If TTS providers are configured, the final answer is also sent as
-    an ``type="audio"`` SSE event with base64-encoded audio bytes.
     """
     try:
         audio_bytes = await audio.read()
@@ -1388,14 +1378,7 @@ async def chat_voice_endpoint(
         llm_config = None
         system_prompt = None
 
-    # Build TTS engine if configured
-    tts_enabled = (
-        len(resolved_config.tts_providers) > 0 and resolved_config.tts_fallback_enabled
-    )
-    tts_engine = TTSEngine.from_config(resolved_config) if tts_enabled else None
-
     async def events():
-        final_text = ""
         try:
             kwargs: dict = dict(
                 user_message=text,
@@ -1413,23 +1396,7 @@ async def chat_voice_endpoint(
             ):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
-                    if event.type == "final":
-                        final_text = event.data.get("content", "")
                     yield _sse(payload)
-
-            # TTS: synthesize final response if configured
-            if tts_engine and final_text.strip():
-                try:
-                    tts_result = await tts_engine.synthesize(final_text)
-                    audio_b64 = base64.b64encode(tts_result.audio_bytes).decode()
-                    yield _sse(
-                        {
-                            "type": "audio",
-                            "data": audio_b64,
-                        }
-                    )
-                except Exception as exc:
-                    logger.warning("TTS synthesis failed: %s", exc)
 
             yield _sse({"type": "done"})
         except Exception as exc:

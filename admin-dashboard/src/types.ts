@@ -193,9 +193,7 @@ export interface AgentInfo {
 export interface VoiceConfig {
   enabled?: boolean;
   voice_input_disabled?: boolean;
-  voice_output_disabled?: boolean;
   stt_provider?: string;
-  tts_provider?: string;
 }
 
 // ── LLM ──
@@ -275,9 +273,7 @@ export interface AuditEntry {
 export interface VoiceConfigData {
   enabled: boolean;
   stt_providers: VoiceProviderEntry[];
-  tts_providers: VoiceProviderEntry[];
   stt_fallback_enabled: boolean;
-  tts_fallback_enabled: boolean;
   max_voice_message_size: number;
   min_voice_interval_seconds: number;
   max_voice_duration_seconds: number;

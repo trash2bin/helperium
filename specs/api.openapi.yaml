@@ -515,7 +515,7 @@ paths:
   /api/voice-config:
     get:
       summary: Get Voice Config
-      description: Get current voice (STT/TTS) configuration.
+      description: Get current STT (Speech-to-Text) configuration.
       operationId: get_voice_config_api_voice_config_get
       responses:
         '200':
@@ -703,12 +703,7 @@ paths:
 
         the configured STT provider(s), feeds the text through the existing
 
-        chat pipeline, and streams the response as SSE events.
-
-
-        If TTS providers are configured, the final answer is also sent as
-
-        an ``type="audio"`` SSE event with base64-encoded audio bytes.'
+        chat pipeline, and streams the response as SSE events.'
       operationId: chat_voice_endpoint_api_chat_voice_post
       requestBody:
         content:
@@ -1242,24 +1237,12 @@ components:
           - type: 'null'
           title: Stt Provider
           description: STT provider name (must match a name in VoiceConfig.stt_providers)
-        tts_provider:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Tts Provider
-          description: TTS provider name (must match a name in VoiceConfig.tts_providers)
         stt_fallback:
           anyOf:
           - type: boolean
           - type: 'null'
           title: Stt Fallback
           description: Override STT fallback setting for this agent
-        tts_fallback:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Tts Fallback
-          description: Override TTS fallback setting for this agent
         voice_input_disabled:
           anyOf:
           - type: boolean
@@ -1267,12 +1250,6 @@ components:
           title: Voice Input Disabled
           description: Explicitly disable voice input for this agent (hide mic in
             widget)
-        voice_output_disabled:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Voice Output Disabled
-          description: Explicitly disable TTS for this agent
       type: object
       title: VoiceAgentConfig
       description: 'Per-agent voice configuration overrides.

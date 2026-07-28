@@ -148,12 +148,6 @@
                 <span x-text="__('voice.voiceInputDisabled')"></span>
               </label>
             </div>
-            <div class="form-group">
-              <label class="checkbox-row">
-                <input type="checkbox" x-model="editAgentData.voice_output_disabled">
-                <span x-text="__('voice.voiceOutputDisabled')"></span>
-              </label>
-            </div>
             <div x-show="editAgentData._sttProviders && editAgentData._sttProviders.length">
               <div class="form-group">
                 <label x-text="__('voice.sttProvider')"></label>
@@ -165,17 +159,7 @@
                 </select>
               </div>
             </div>
-            <div x-show="editAgentData._ttsProviders && editAgentData._ttsProviders.length">
-              <div class="form-group">
-                <label x-text="__('voice.ttsProvider')"></label>
-                <select x-model="editAgentData.voice_tts_provider">
-                  <option value="" x-text="__('abuse.selectAgent')"></option>
-                  <template x-for="prov in editAgentData._ttsProviders" :key="prov.name">
-                    <option :value="prov.name" x-text="prov.name"></option>
-                  </template>
-                </select>
-              </div>
-            </div>
+
           </div>
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary" :disabled="savingAgent">

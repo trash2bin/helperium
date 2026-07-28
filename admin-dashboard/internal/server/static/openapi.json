@@ -824,15 +824,6 @@
               "type": "object"
             },
             "type": "array"
-          },
-          "tts_fallback_enabled": {
-            "type": "boolean"
-          },
-          "tts_providers": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
           }
         },
         "type": "object"
@@ -3170,7 +3161,7 @@
             "description": "Внутренняя ошибка сервера"
           }
         },
-        "summary": "Get STT/TTS voice configuration",
+        "summary": "Get STT voice configuration",
         "tags": [
           "API-Service"
         ],
@@ -3222,7 +3213,7 @@
             "description": "Внутренняя ошибка сервера"
           }
         },
-        "summary": "Update STT/TTS voice configuration",
+        "summary": "Update STT voice configuration",
         "tags": [
           "API-Service"
         ],

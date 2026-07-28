@@ -59,7 +59,7 @@
 | `data-bot-bubble-text` | `"var(--ink)"` | Цвет текста пузырька ассистента |
 | `data-lang` | auto | Язык: `"ru"` или `"en"`. Если не указан — определяется по `navigator.language` |
 | `data-voice-input` | `"true"` | Голосовой ввод: `"true"` или `"false"` |
-| `data-voice-output` | `"true"` | Голосовой вывод (TTS): `"true"` или `"false"` |
+| `data-voice-output` | `"true"` | Голосовой вывод: `"true"` или `"false"` (зарезервировано) |
 | `data-voice-toggle` | `"telegram"` | Режим голоса: `"telegram"` (зажать = запись, отпустить = отправить; если есть текст в поле — показывает кнопку отправки вместо микрофона) или `"classic"` (toggle on/off) |
 
 ### Сообщения об ошибках

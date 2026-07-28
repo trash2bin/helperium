@@ -53,7 +53,7 @@
 | `/admin/llm-providers/{name}` | DELETE | Удалить провайдера |
 | `/admin/llm-providers/{name}/toggle` | POST | Вкл/выкл провайдера |
 | `/admin/llm-config` | GET | Глобальная LLM-конфигурация |
-| `/api/voice-config` | GET | Voice config (STT/TTS) |
+| `/api/voice-config` | GET | Voice config (STT) |
 | `/api/voice-config` | PUT | Обновить voice config |
 
 ## Per-Agent LLM Config
@@ -173,7 +173,6 @@ curl -X POST http://localhost:8081/api/agents \
 | `data-bot-bubble-color` | ❌ | `"#eef3f4"` | Цвет фона пузырька ассистента |
 | `data-bot-bubble-text` | ❌ | `"var(--ink)"` | Цвет текста пузырька ассистента |
 | `data-voice-input` | ❌ | `"true"` | Голосовой ввод: `"true"` / `"false"` |
-| `data-voice-output` | ❌ | `"true"` | Голосовой вывод (TTS): `"true"` / `"false"` |
 | `data-voice-toggle` | ❌ | `"classic"` | Режим голоса: `"classic"` (toggle) / `"telegram"` (зажать=запись, текст=send) |
 
 ### Голосовой ввод
@@ -306,11 +305,7 @@ curl -X POST http://localhost:8081/api/agents \
 | `VOICE_STT_MODEL` | `whisper-1` | Модель STT |
 | `VOICE_STT_API_KEY` | — | API-ключ STT |
 | `VOICE_STT_API_BASE` | — | Кастомный API base URL STT |
-| `VOICE_TTS_PROVIDER` | `litellm` | Тип TTS: `litellm` или `local` |
-| `VOICE_TTS_MODEL` | `tts-1` | Модель TTS |
-| `VOICE_TTS_VOICE` | `alloy` | Голос TTS |
-| `VOICE_TTS_API_KEY` | — | API-ключ TTS |
-| `VOICE_TTS_API_BASE` | — | Кастомный API base URL TTS |
+
 | `VOICE_MAX_SIZE_BYTES` | `10485760` | Макс. размер голосового сообщения (байт) |
 | `VOICE_MIN_INTERVAL_SEC` | `10` | Мин. интервал между голосовыми сообщениями (сек) |
 | `VOICE_MAX_DURATION_SEC` | `120` | Макс. длительность записи (сек) |

@@ -23,9 +23,9 @@ AppRegistry.register('agents', {
     editingAgent: false,
     editAgentData: {
       name: '', description: '', tenant_ids: [] as string[], provider_priority: [] as string[], system_prompt: '',
-      voice_config_enabled: true, voice_input_disabled: false, voice_output_disabled: false,
-      voice_stt_provider: '', voice_tts_provider: '',
-      _sttProviders: [] as any[], _ttsProviders: [] as any[],
+      voice_config_enabled: true, voice_input_disabled: false,
+      voice_stt_provider: '',
+      _sttProviders: [] as any[],
     },
     llmProviderStoreList: [] as any[],
     creatingAgent: false, savingAgent: false, agentCreateResult: null,
@@ -93,15 +93,13 @@ AppRegistry.register('agents', {
           system_prompt: agent.system_prompt || '',
           voice_config_enabled: vc.enabled != null ? vc.enabled : true,
           voice_input_disabled: vc.voice_input_disabled || false,
-          voice_output_disabled: vc.voice_output_disabled || false,
-          voice_stt_provider: vc.stt_provider || '', voice_tts_provider: vc.tts_provider || '',
-          _sttProviders: [], _ttsProviders: [],
+          voice_stt_provider: vc.stt_provider || '',
+          _sttProviders: [],
         };
         this.editingAgent = true;
         api().get('/api/voice-config').then((vcResp: any) => {
           this.editAgentData._sttProviders = vcResp.stt_providers || [];
-          this.editAgentData._ttsProviders = vcResp.tts_providers || [];
-        }).catch(() => { this.editAgentData._sttProviders = []; this.editAgentData._ttsProviders = []; });
+        }).catch(() => { this.editAgentData._sttProviders = []; });
       },
 
       async updateAgent(this: any) {
@@ -109,9 +107,8 @@ AppRegistry.register('agents', {
         const vc: any = {};
         if (this.editAgentData.voice_config_enabled !== undefined) vc.enabled = this.editAgentData.voice_config_enabled;
         if (this.editAgentData.voice_input_disabled) vc.voice_input_disabled = true;
-        if (this.editAgentData.voice_output_disabled) vc.voice_output_disabled = true;
         if (this.editAgentData.voice_stt_provider) vc.stt_provider = this.editAgentData.voice_stt_provider;
-        if (this.editAgentData.voice_tts_provider) vc.tts_provider = this.editAgentData.voice_tts_provider;
+
         const body = {
           description: this.editAgentData.description, tenant_ids: this.editAgentData.tenant_ids,
           provider_priority: this.editAgentData.provider_priority || [],

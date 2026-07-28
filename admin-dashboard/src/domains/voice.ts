@@ -1,19 +1,18 @@
-// voice.ts — Voice Config: STT/TTS providers
+// voice.ts — Voice Config: STT providers
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const w = window as any;
 
 AppRegistry.register('voice', {
   state: {
     voiceConfig: {
-      enabled: true, stt_providers: [] as any[], tts_providers: [] as any[],
-      stt_fallback_enabled: true, tts_fallback_enabled: true,
+      enabled: true, stt_providers: [] as any[],
+      stt_fallback_enabled: true,
       max_voice_message_size: 10485760, min_voice_interval_seconds: 10, max_voice_duration_seconds: 120,
     },
     voiceError: '', voiceSaveMsg: '', voiceSaveSuccess: false, voiceSaving: false,
-    showAddSttProvider: false, showAddTtsProvider: false,
-    editingSttIndex: -1, editingTtsIndex: -1,
+    showAddSttProvider: false,
+    editingSttIndex: -1,
     voiceSttForm: { name: '', provider: 'litellm', model: 'whisper-1', api_key: '', api_base: '', enabled: true },
-    voiceTtsForm: { name: '', provider: 'litellm', model: 'tts-1', voice: 'alloy', api_key: '', api_base: '', enabled: true },
   },
 
   methods() {
@@ -48,16 +47,15 @@ AppRegistry.register('voice', {
       },
 
       cancelVoiceEdit(this: any) {
-        this.showAddSttProvider = false; this.showAddTtsProvider = false;
-        this.editingSttIndex = -1; this.editingTtsIndex = -1;
+        this.showAddSttProvider = false;
+        this.editingSttIndex = -1;
         this.voiceSttForm = { name: '', provider: 'litellm', model: 'whisper-1', api_key: '', api_base: '', enabled: true };
-        this.voiceTtsForm = { name: '', provider: 'litellm', model: 'tts-1', voice: 'alloy', api_key: '', api_base: '', enabled: true };
       },
 
       editSttProvider(this: any, idx: number) {
         const prov = this.voiceConfig?.stt_providers?.[idx];
         if (!prov) return;
-        this.editingSttIndex = idx; this.showAddSttProvider = true; this.showAddTtsProvider = false;
+        this.editingSttIndex = idx; this.showAddSttProvider = true;
         this.voiceSttForm = { name: prov.name || '', provider: prov.provider, model: prov.model, api_key: prov.api_key || '', api_base: prov.api_base || '', enabled: prov.enabled !== false };
       },
 
@@ -75,26 +73,6 @@ AppRegistry.register('voice', {
         this.cancelVoiceEdit(); this.saveVoiceConfig();
       },
 
-      editTtsProvider(this: any, idx: number) {
-        const prov = this.voiceConfig?.tts_providers?.[idx];
-        if (!prov) return;
-        this.editingTtsIndex = idx; this.showAddTtsProvider = true; this.showAddSttProvider = false;
-        this.voiceTtsForm = { name: prov.name || '', provider: prov.provider, model: prov.model, voice: prov.voice || 'alloy', api_key: prov.api_key || '', api_base: prov.api_base || '', enabled: prov.enabled !== false };
-      },
-
-      deleteTtsProvider(this: any, idx: number) {
-        if (!confirm(__('voice.deleteConfirmMsg') + '?')) return;
-        this.voiceConfig.tts_providers.splice(idx, 1);
-        this.saveVoiceConfig();
-      },
-
-      saveTtsProvider(this: any) {
-        if (!this.voiceConfig.tts_providers) this.voiceConfig.tts_providers = [];
-        const body = { name: this.voiceTtsForm.name, provider: this.voiceTtsForm.provider, model: this.voiceTtsForm.model, voice: this.voiceTtsForm.voice || 'alloy', api_key: this.voiceTtsForm.api_key || '', api_base: this.voiceTtsForm.api_base || '', enabled: this.voiceTtsForm.enabled };
-        if (this.editingTtsIndex >= 0 && this.editingTtsIndex < this.voiceConfig.tts_providers.length) this.voiceConfig.tts_providers[this.editingTtsIndex] = body;
-        else this.voiceConfig.tts_providers.push(body);
-        this.cancelVoiceEdit(); this.saveVoiceConfig();
-      },
     };
   },
 });

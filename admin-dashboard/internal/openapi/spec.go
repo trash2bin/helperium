@@ -234,11 +234,11 @@ func buildPaths() map[string]any {
 		withProxyTo("api-service"),
 		withResponse("ok", "#/components/schemas/ProviderListResponse"))
 
-	addGet(paths, "/api/voice-config", "voice_config_get", "Get STT/TTS voice configuration", "API-Service",
+	addGet(paths, "/api/voice-config", "voice_config_get", "Get STT voice configuration", "API-Service",
 		withProxyTo("api-service"),
 		withResponse("ok", "#/components/schemas/VoiceConfig"))
 
-	addPut(paths, "/api/voice-config", "voice_config_put", "Update STT/TTS voice configuration", "API-Service",
+	addPut(paths, "/api/voice-config", "voice_config_put", "Update STT voice configuration", "API-Service",
 		withProxyTo("api-service"),
 		withRequestBody("#/components/schemas/VoiceConfig"),
 		withResponse("ok", "#/components/schemas/VoiceConfig"))
@@ -665,9 +665,7 @@ func buildSchemas() map[string]any {
 			"properties": map[string]any{
 				"enabled":                   map[string]any{"type": "boolean"},
 				"stt_providers":              map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-				"tts_providers":              map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 				"stt_fallback_enabled":       map[string]any{"type": "boolean"},
-				"tts_fallback_enabled":       map[string]any{"type": "boolean"},
 				"max_voice_message_size":     map[string]any{"type": "integer"},
 				"min_voice_interval_seconds": map[string]any{"type": "integer"},
 				"max_voice_duration_seconds": map[string]any{"type": "integer"},

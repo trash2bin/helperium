@@ -16,7 +16,7 @@ export interface StreamChatCallbacks {
   onFinal: (text: string) => void;
   /** Called when the agent invokes a tool. */
   onToolCall: (name: string, displayName?: string) => void;
-  /** Called when audio (TTS) data is received. */
+  /** Called when audio data is received. */
   onAudio: (data: string) => void;
   /** Called when the stream is done. */
   onDone: (raw: string, tools: string[]) => void;

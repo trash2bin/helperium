@@ -193,7 +193,7 @@ func (s *Server) Router() chi.Router {
 		r.Post("/llm-providers/{name}/toggle", s.llmProvidersToggleHandler)
 		r.Get("/llm-provider-list", s.llmProviderListHandler)
 
-		// Voice Config (STT/TTS) — proxy to api-service
+		// Voice Config (STT) — proxy to api-service
 		r.Get("/voice-config", s.voiceConfigGetHandler)
 		r.Put("/voice-config", s.voiceConfigPutHandler)
 		r.Post("/chat/voice", s.voiceChatHandler)

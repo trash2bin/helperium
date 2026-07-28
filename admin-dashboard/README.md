@@ -39,7 +39,7 @@ Admin Dashboard (:8085)
 | **🤖 Агенты** | Agents sidebar | CRUD AI-агентов, привязка tenant'ов |
 | **🛡️ Anti-Abuse** | Anti-Abuse sidebar | Настройка anti-abuse engine + Emergency Presets (Normal/Cautious/Lockdown) |
 | **🤖 LLM Fallback** | LLM Fallback sidebar | Статус провайдеров LLM, failover цепочка |
-| **🎤 Voice** | Voice sidebar | STT/TTS провайдеры, настройки голоса |
+| **🎤 Voice** | Voice sidebar | STT провайдеры, настройки голоса |
 | **📋 Аудит** | Audit sidebar | История изменений конфигурации |
 
 ---

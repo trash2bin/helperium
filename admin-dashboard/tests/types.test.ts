@@ -322,19 +322,17 @@ describe('Types — type-level contracts', () => {
   });
 
   // ── Voice ──
-  it('VoiceConfigData has STT/TTS provider lists', () => {
+  it('VoiceConfigData has STT provider lists', () => {
     const v: VoiceConfigData = {
       enabled: true,
       stt_providers: [{ name: 'whisper', provider: 'litellm', model: 'whisper-1', enabled: true }],
-      tts_providers: [],
       stt_fallback_enabled: true,
-      tts_fallback_enabled: false,
       max_voice_message_size: 10485760,
       min_voice_interval_seconds: 10,
       max_voice_duration_seconds: 120,
     };
     expect(v.stt_providers).toHaveLength(1);
-    expect(v.tts_fallback_enabled).toBe(false);
+    expect(v.stt_fallback_enabled).toBe(true);
   });
 
   // ── ApiLog ──

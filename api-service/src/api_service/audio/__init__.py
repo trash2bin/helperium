@@ -1,1 +1,1 @@
-"""Audio processing (STT/TTS) for voice chat."""
+"""Audio processing (STT) for voice chat."""

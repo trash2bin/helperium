@@ -89,7 +89,7 @@ admin-dashboard/internal/server/static/
 │       ├── abuse.js                # Anti-abuse
 │       ├── emergency.js            # Lockdown
 │       ├── llm.js                  # LLM-провайдеры
-│       └── voice.js                # STT/TTS
+│       └── voice.js                # STT
 └── styles.css
 ```
 

@@ -112,7 +112,7 @@ class WidgetConfig(BaseModel):
     position: str = Field(default="right", description="Widget position: right | left")
 
 
-# === Voice Config Models (STT/TTS) ===
+# === Voice Config Models (STT) ===
 
 
 class STTProviderConfig(BaseModel):
@@ -135,49 +135,18 @@ class STTProviderConfig(BaseModel):
     enabled: bool = Field(default=True, description="Whether this provider is active")
 
 
-class TTSProviderConfig(BaseModel):
-    """TTS provider configuration — one entry in the priority list."""
-
-    name: str = Field(..., description="Display name for this provider")
-    provider: str = Field(
-        ...,
-        pattern=r"^(litellm|local)$",
-        description="Engine type: litellm (OpenAI/Azure TTS API) or local (piper-tts, coqui, OOT)",
-    )
-    model: str = Field(
-        default="tts-1", description="Model name: tts-1, tts-1-hd, piper, coqui-xtts"
-    )
-    voice: str = Field(
-        default="alloy",
-        description="Voice name: alloy, echo, fable, onyx, nova, shimmer (OpenAI); or local voice pack name",
-    )
-    api_key: str | None = Field(
-        default=None,
-        description="API key for cloud TTS (OpenAI, Azure, ElevenLabs, etc.)",
-    )
-    api_base: str | None = Field(default=None, description="Custom API base URL")
-    enabled: bool = Field(default=True, description="Whether this provider is active")
-
-
 class VoiceConfig(BaseModel):
-    """Global voice (STT/TTS) configuration.
+    """Global STT (Speech-to-Text) configuration.
 
-    Mirrors the structure of LLM provider config — a priority list of providers
-    with fallback support.
+    A priority list of STT providers with fallback support.
     """
 
     enabled: bool = Field(default=True, description="Master switch for voice features")
     stt_providers: list[STTProviderConfig] = Field(
         default_factory=list, description="STT providers in priority order"
     )
-    tts_providers: list[TTSProviderConfig] = Field(
-        default_factory=list, description="TTS providers in priority order"
-    )
     stt_fallback_enabled: bool = Field(
         default=True, description="If first STT provider fails, try next in list"
-    )
-    tts_fallback_enabled: bool = Field(
-        default=True, description="If first TTS provider fails, try next in list"
     )
     max_voice_message_size: int = Field(
         default=10 * 1024 * 1024,
@@ -197,7 +166,7 @@ class VoiceConfig(BaseModel):
 
 
 class VoiceAgentConfig(BaseModel):
-    """Per-agent voice configuration overrides.
+    """Per-agent STT voice configuration overrides.
 
     All fields are optional (None = fall back to global VoiceConfig).
     """
@@ -209,23 +178,12 @@ class VoiceAgentConfig(BaseModel):
         default=None,
         description="STT provider name (must match a name in VoiceConfig.stt_providers)",
     )
-    tts_provider: str | None = Field(
-        default=None,
-        description="TTS provider name (must match a name in VoiceConfig.tts_providers)",
-    )
     stt_fallback: bool | None = Field(
         default=None, description="Override STT fallback setting for this agent"
-    )
-    tts_fallback: bool | None = Field(
-        default=None, description="Override TTS fallback setting for this agent"
     )
     voice_input_disabled: bool | None = Field(
         default=None,
         description="Explicitly disable voice input for this agent (hide mic in widget)",
-    )
-    voice_output_disabled: bool | None = Field(
-        default=None,
-        description="Explicitly disable TTS for this agent",
     )
 
 

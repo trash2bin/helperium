@@ -64,19 +64,7 @@ def _get_app(monkeypatch, tmp_path):
                 "enabled": True,
             }
         ],
-        "tts_providers": [
-            {
-                "name": "Test TTS",
-                "provider": "litellm",
-                "model": "tts-1",
-                "voice": "alloy",
-                "api_key": "tts-secret-456",
-                "api_base": None,
-                "enabled": False,
-            }
-        ],
         "stt_fallback_enabled": True,
-        "tts_fallback_enabled": True,
         "max_voice_message_size": 10485760,
         "min_voice_interval_seconds": 10,
         "max_voice_duration_seconds": 120,
@@ -134,19 +122,7 @@ class TestVoiceConfigKeyPreservation:
                             "enabled": True,
                         }
                     ],
-                    "tts_providers": [
-                        {
-                            "name": "Test TTS",
-                            "provider": "litellm",
-                            "model": "tts-1",
-                            "voice": "alloy",
-                            "api_key": "",
-                            "api_base": "",
-                            "enabled": False,
-                        }
-                    ],
                     "stt_fallback_enabled": True,
-                    "tts_fallback_enabled": True,
                     "max_voice_message_size": 10485760,
                     "min_voice_interval_seconds": 10,
                     "max_voice_duration_seconds": 120,
@@ -171,58 +147,6 @@ class TestVoiceConfigKeyPreservation:
                 f"Ожидалось 'https://api.test.com/v1', получено {stt_base!r}"
             )
 
-    def test_put_empty_api_key_does_not_erase_tts_key(self, monkeypatch, tmp_path):
-        """PUT с пустым api_key не удаляет TTS ключ."""
-        app = _get_app(monkeypatch, tmp_path)
-        with TestClient(app) as client:
-            put_resp = client.put(
-                "/api/voice-config",
-                json={
-                    "stt_providers": [
-                        {
-                            "name": "Test STT",
-                            "provider": "litellm",
-                            "model": "whisper-1",
-                            "api_key": "",
-                            "api_base": "",
-                            "enabled": True,
-                        }
-                    ],
-                    "tts_providers": [
-                        {
-                            "name": "Test TTS",
-                            "provider": "litellm",
-                            "model": "tts-1",
-                            "voice": "",
-                            "api_key": "",
-                            "api_base": "",
-                            "enabled": False,
-                        }
-                    ],
-                    "stt_fallback_enabled": True,
-                    "tts_fallback_enabled": True,
-                    "max_voice_message_size": 10485760,
-                    "min_voice_interval_seconds": 10,
-                    "max_voice_duration_seconds": 120,
-                },
-            )
-            assert put_resp.status_code == 200
-            body = put_resp.json()
-
-            # TTS api_key должен сохраниться
-            tts_key = body["tts_providers"][0].get("api_key")
-            assert tts_key == "tts-secret-456", (
-                f"TTS api_key был перезаписан пустотой! "
-                f"Ожидалось 'tts-secret-456', получено {tts_key!r}"
-            )
-
-            # TTS voice должен сохраниться
-            tts_voice = body["tts_providers"][0].get("voice")
-            assert tts_voice == "alloy", (
-                f"TTS voice был перезаписан пустотой! "
-                f"Ожидалось 'alloy', получено {tts_voice!r}"
-            )
-
     def test_put_new_api_key_can_override(self, monkeypatch, tmp_path):
         """PUT с НОВЫМ api_key должен обновлять ключ (это intentional update)."""
         app = _get_app(monkeypatch, tmp_path)
@@ -240,9 +164,7 @@ class TestVoiceConfigKeyPreservation:
                             "enabled": True,
                         }
                     ],
-                    "tts_providers": [],
                     "stt_fallback_enabled": True,
-                    "tts_fallback_enabled": True,
                     "max_voice_message_size": 10485760,
                     "min_voice_interval_seconds": 10,
                     "max_voice_duration_seconds": 120,
@@ -275,9 +197,7 @@ class TestVoiceConfigKeyPreservation:
                             "enabled": True,
                         }
                     ],
-                    "tts_providers": [],
                     "stt_fallback_enabled": True,
-                    "tts_fallback_enabled": True,
                     "max_voice_message_size": 10485760,
                     "min_voice_interval_seconds": 10,
                     "max_voice_duration_seconds": 120,
