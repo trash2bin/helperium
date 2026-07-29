@@ -290,10 +290,11 @@
     {
       "method": "GET",
       "path": "/categories",
-      "op": "find",
+      "op": "strategy",
       "entity": "categories",
       "search_field": "name",
-      "query_param": "name"
+      "query_param": "name",
+      "strategy": "grep"
     },
     {
       "method": "GET",
@@ -304,10 +305,11 @@
     {
       "method": "GET",
       "path": "/customers",
-      "op": "find",
+      "op": "strategy",
       "entity": "customers",
       "search_field": "name",
-      "query_param": "name"
+      "query_param": "name",
+      "strategy": "grep"
     },
     {
       "method": "GET",
@@ -330,10 +332,11 @@
     {
       "method": "GET",
       "path": "/products",
-      "op": "find",
+      "op": "strategy",
       "entity": "products",
       "search_field": "name",
-      "query_param": "name"
+      "query_param": "name",
+      "strategy": "grep"
     },
     {
       "method": "GET",

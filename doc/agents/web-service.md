@@ -11,7 +11,7 @@
 **Важно:** demo-web — **не основной entry point** в production-сценарии. Это наследие MVP, сохраняемое для удобства разработки, локального тестирования и демо-презентаций.
 
 Основные клиенты ходят напрямую:
-- **Embed виджет** (`embed.js`) → `POST /api/agents/{name}/chat` напрямую в **api-service:8081**, минуя demo-web
+- **Embed виджет** (`embed.js`) → `POST /api/chat/{name}` напрямую в **api-service:8081**, минуя demo-web
 - **Admin Dashboard** → напрямую в **admin-dashboard:8085**, который проксирует к data-service и api-service
 
 ### Потенциал развития
@@ -59,7 +59,7 @@ demo-web может эволюционировать в полноценный p
 Путь виджета (без demo-web):
 ```
 Браузер → <script src="https://server.com/embed/embed.js">
-   → initWidget() → POST /api/agents/{name}/chat → напрямую в api-service:8081
+   → initWidget() → POST /api/chat/{name} → напрямую в api-service:8081
 ```
 
 Через demo-web (для разработки):

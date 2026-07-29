@@ -954,7 +954,7 @@ def _run_mcp_dynamic_tool_tests():
             }
         ],
         "endpoints": [
-            {"method": "GET", "path": "/students", "op": "list", "entity": "student"}
+            {"method": "GET", "path": "/students", "op": "strategy", "entity": "student"}
         ],
     }
     for tid in ["tenant-uni", "tenant-shop"]:
@@ -977,7 +977,7 @@ def _run_mcp_dynamic_tool_tests():
             }
         ],
         "endpoints": [
-            {"method": "GET", "path": "/products", "op": "list", "entity": "product"}
+            {"method": "GET", "path": "/products", "op": "strategy", "entity": "product"}
         ],
     }
     requests.post(
@@ -1228,7 +1228,7 @@ def _run_mcp_composite_tests():
             }
         ],
         "endpoints": [
-            {"method": "GET", "path": "/students", "op": "list", "entity": "student"}
+            {"method": "GET", "path": "/students", "op": "strategy", "entity": "student"}
         ],
     }
 
@@ -1243,7 +1243,7 @@ def _run_mcp_composite_tests():
             }
         ],
         "endpoints": [
-            {"method": "GET", "path": "/products", "op": "list", "entity": "product"}
+            {"method": "GET", "path": "/products", "op": "strategy", "entity": "product"}
         ],
     }
 

@@ -50,8 +50,7 @@ const (
 	OpBuiltinHealth   Op = "builtin_health"
 	OpBuiltinStats    Op = "builtin_stats"
 	OpGetByID         Op = "get_by_id"
-	OpFind            Op = "find"
-	OpList            Op = "list"
+	OpStrategy        Op = "strategy"
 	OpCustomQuery     Op = "custom_query"
 	OpDistinct        Op = "distinct"
 	OpCount           Op = "count"
@@ -60,7 +59,7 @@ const (
 // Valid проверяет, что op входит в whitelist.
 func (o Op) Valid() bool {
 	switch o {
-	case OpBuiltinHealth, OpBuiltinStats, OpGetByID, OpFind, OpList, OpCustomQuery, OpDistinct, OpCount:
+	case OpBuiltinHealth, OpBuiltinStats, OpGetByID, OpStrategy, OpCustomQuery, OpDistinct, OpCount:
 		return true
 	}
 	return false
@@ -647,14 +646,11 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Sprintf("endpoints[%d].op: unsupported %q", i, ep.Op))
 		}
 		switch ep.Op {
-		case OpGetByID, OpFind, OpList:
+		case OpGetByID:
 			if ep.Entity == "" {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].entity: required for op=%q", i, ep.Op))
 			} else if !entityNames[ep.Entity] {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].entity %q not found in entities", i, ep.Entity))
-			}
-			if ep.Op == OpFind && ep.SearchField == "" && ep.Strategy == "" {
-				errs = append(errs, fmt.Sprintf("endpoints[%d].search_field: required for op=find", i))
 			}
 			if ep.Strategy != "" && !validStrategy(ep.Strategy) {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].strategy: unknown %q, must be one of: grep, filter, schema", i, ep.Strategy))

@@ -188,31 +188,6 @@ func buildCRUDEndpoints(entities []config.Entity) []config.Endpoint {
 			})
 		}
 
-		// find (по name-полю) — поиск по тексту + фильтры
-		searchCol := findSearchFieldFromEntity(entity)
-		if searchCol != "" {
-			endpoints = append(endpoints, config.Endpoint{
-				Method:      config.MethodGET,
-				Path:        fmt.Sprintf("/%s", entity.Name),
-				Op:          config.OpFind,
-				Entity:      entity.Name,
-				SearchField: searchCol,
-				QueryParam:  searchCol,
-				Description: fmt.Sprintf("Searches %s by name. Returns all records when no query given.", entity.Name),
-				Params:      buildFilterParamsFromEntity(entity, searchCol),
-			})
-		} else if entity.IDColumn != "" {
-			// Нет name-поля — list как fallback с фильтрами
-			endpoints = append(endpoints, config.Endpoint{
-				Method:      config.MethodGET,
-				Path:        fmt.Sprintf("/%s", entity.Name),
-				Op:          config.OpList,
-				Entity:      entity.Name,
-				Description: fmt.Sprintf("Returns all %s. Use filters to narrow results.", entity.Name),
-				Params:      buildFilterParamsFromEntity(entity, ""),
-			})
-		}
-
 		// distinct endpoint — enum-колонки
 		enumCols := findEnumColumnsFromEntity(entity)
 		if len(enumCols) > 0 {
@@ -250,7 +225,7 @@ func buildCRUDEndpoints(entities []config.Entity) []config.Endpoint {
 		endpoints = append(endpoints, config.Endpoint{
 			Method:   config.MethodGET,
 			Path:     fmt.Sprintf("/%s/grep", entity.Name),
-			Op:       config.OpFind,
+			Op:       config.OpStrategy,
 			Strategy: "grep",
 			Entity:   entity.Name,
 			Description: fmt.Sprintf("Search %s by text query. Pass 'pattern' parameter for text search.", entity.Name),
@@ -260,7 +235,7 @@ func buildCRUDEndpoints(entities []config.Entity) []config.Endpoint {
 		endpoints = append(endpoints, config.Endpoint{
 			Method:   config.MethodGET,
 			Path:     fmt.Sprintf("/%s/filter", entity.Name),
-			Op:       config.OpFind,
+			Op:       config.OpStrategy,
 			Strategy: "filter",
 			Entity:   entity.Name,
 			Description: fmt.Sprintf("Filter %s by field values. Pass field__op parameters.", entity.Name),
@@ -270,7 +245,7 @@ func buildCRUDEndpoints(entities []config.Entity) []config.Endpoint {
 		endpoints = append(endpoints, config.Endpoint{
 			Method:   config.MethodGET,
 			Path:     fmt.Sprintf("/%s/schema", entity.Name),
-			Op:       config.OpFind, // dummy — strategy routing заменит
+			Op:       config.OpStrategy,
 			Strategy: "schema",
 			Entity:   entity.Name,
 			Description: fmt.Sprintf("Get metadata about %s: total count, field types, distinct values, numeric ranges.", entity.Name),

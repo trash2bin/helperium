@@ -248,20 +248,20 @@ func TestAutoparts_Generate(t *testing.T) {
 
 	// === Bool Filters ===
 	t.Run("bool_filters", func(t *testing.T) {
-		// find_catalog_product should have bool filter params
-		var findEp *config.Endpoint
+		// catalog_product/filter should have bool filter params
+		var filterEp *config.Endpoint
 		for i, ep := range cfg.Endpoints {
-			if ep.Op == config.OpFind && ep.Entity == "catalog_product" {
-				findEp = &cfg.Endpoints[i]
+			if ep.Strategy == "filter" && ep.Entity == "catalog_product" {
+				filterEp = &cfg.Endpoints[i]
 				break
 			}
 		}
-		if findEp == nil {
-			t.Fatal("expected find endpoint for catalog_product")
+		if filterEp == nil {
+			t.Fatal("expected filter strategy endpoint for catalog_product")
 		}
 
 		boolParams := make([]string, 0)
-		for _, p := range findEp.Params {
+		for _, p := range filterEp.Params {
 			if p.Type == config.ParamTypeBool {
 				boolParams = append(boolParams, p.Name)
 			}
@@ -284,19 +284,19 @@ func TestAutoparts_Generate(t *testing.T) {
 
 	// === Datetime Filters ===
 	t.Run("datetime_filters", func(t *testing.T) {
-		var findEp *config.Endpoint
+		var filterEp *config.Endpoint
 		for i, ep := range cfg.Endpoints {
-			if ep.Op == config.OpFind && ep.Entity == "catalog_product" {
-				findEp = &cfg.Endpoints[i]
+			if ep.Strategy == "filter" && ep.Entity == "catalog_product" {
+				filterEp = &cfg.Endpoints[i]
 				break
 			}
 		}
-		if findEp == nil {
-			t.Fatal("expected find endpoint for catalog_product")
+		if filterEp == nil {
+			t.Fatal("expected filter strategy endpoint for catalog_product")
 		}
 
 		var hasCreatedAt bool
-		for _, p := range findEp.Params {
+		for _, p := range filterEp.Params {
 			if p.Name == "created_at" && p.Type == config.ParamTypeString {
 				hasCreatedAt = true
 				if !strings.Contains(p.Description, "ISO-8601") {

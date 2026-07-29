@@ -739,7 +739,7 @@
     {
       "method": "GET",
       "path": "/catalog_brand",
-      "op": "find",
+      "op": "strategy",
       "entity": "catalog_brand",
       "search_field": "name",
       "query_param": "name",
@@ -769,7 +769,7 @@
     {
       "method": "GET",
       "path": "/catalog_category",
-      "op": "find",
+      "op": "strategy",
       "entity": "catalog_category",
       "search_field": "name",
       "query_param": "name",
@@ -785,7 +785,7 @@
     {
       "method": "GET",
       "path": "/catalog_order",
-      "op": "find",
+      "op": "strategy",
       "entity": "catalog_order",
       "search_field": "first_name",
       "query_param": "first_name",
@@ -801,7 +801,7 @@
     {
       "method": "GET",
       "path": "/catalog_product",
-      "op": "find",
+      "op": "strategy",
       "entity": "catalog_product",
       "search_field": "name",
       "query_param": "name",
@@ -817,7 +817,7 @@
     {
       "method": "GET",
       "path": "/catalog_sitesettings",
-      "op": "find",
+      "op": "strategy",
       "entity": "catalog_sitesettings",
       "search_field": "site_name",
       "query_param": "site_name",

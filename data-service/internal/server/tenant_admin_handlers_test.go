@@ -47,7 +47,6 @@ func newTenantAdminTestStore(t *testing.T) *TenantStore {
 		},
 		Endpoints: []config.Endpoint{
 			{Method: "GET", Path: "/health", Op: config.OpBuiltinHealth},
-			{Method: "GET", Path: "/groups", Op: config.OpList, Entity: "group"},
 		},
 	}
 

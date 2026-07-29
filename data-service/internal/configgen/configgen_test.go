@@ -95,14 +95,14 @@ func TestGenerate(t *testing.T) {
 	}
 
 	// Проверяем endpoint'ы
-	hasStudentsFind := false
+	hasStudentsGrep := false
 	hasStudentsByID := false
 	hasHealth := false
 	hasStats := false
 	for _, ep := range cfg.Endpoints {
 		switch {
-		case ep.Path == "/students" && ep.Op == config.OpFind:
-			hasStudentsFind = true
+		case ep.Path == "/students/grep" && ep.Strategy == "grep":
+			hasStudentsGrep = true
 		case ep.Path == "/students/{id}" && ep.Op == config.OpGetByID:
 			hasStudentsByID = true
 		case ep.Path == "/health":
@@ -111,8 +111,8 @@ func TestGenerate(t *testing.T) {
 			hasStats = true
 		}
 	}
-	if !hasStudentsFind {
-		t.Error("expected /students find endpoint")
+	if !hasStudentsGrep {
+		t.Error("expected /students/grep strategy endpoint")
 	}
 	if !hasStudentsByID {
 		t.Error("expected /students/{id} get_by_id endpoint")
@@ -190,14 +190,16 @@ func TestGenerate_FullSchema(t *testing.T) {
 		t.Errorf("expected at least 8 endpoints, got %d", len(cfg.Endpoints))
 	}
 
-	// Check every entity has an endpoint
-	has := make(map[string]bool)
+	// Check every entity has strategy endpoints (grep/filter/schema)
+	hasStrategy := make(map[string]bool)
 	for _, ep := range cfg.Endpoints {
-		has[ep.Path] = true
+		if ep.Strategy != "" {
+			hasStrategy[ep.Entity] = true
+		}
 	}
 	for _, e := range cfg.Entities {
-		if _, ok := has["/"+e.Name]; !ok && e.Name != "grades" && e.Name != "schedule" {
-			t.Errorf("missing /%s endpoint", e.Name)
+		if !hasStrategy[e.Name] {
+			t.Errorf("missing strategy endpoint for /%s", e.Name)
 		}
 	}
 
@@ -211,9 +213,8 @@ func TestGenerate_FullSchema(t *testing.T) {
 		len(cfg.Entities), len(cfg.Endpoints), len(data))
 }
 
-// TestGenerate_ListEndpoint проверяет, что list_{entity} генерируется
-// для сущностей без name-поля (grades, schedule и т.д.).
-func TestGenerate_ListEndpoint(t *testing.T) {
+// TestGenerate_GrepForGrades проверяет, что grep генерируется для всех сущностей.
+func TestGenerate_GrepForGrades(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
@@ -235,43 +236,33 @@ func TestGenerate_ListEndpoint(t *testing.T) {
 		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
 	})
 
-	// grades не имеет name-поля → должен получить list endpoint
-	var hasList bool
-	var listParams []config.EndpointParam
+	// grades без name-поля → проверяем что grep / filter / schema генерируются, а не list
+	var hasGrep, hasFilter, hasSchema bool
 	for _, ep := range cfg.Endpoints {
-		if ep.Op == config.OpList && ep.Entity == "grades" {
-			hasList = true
-			listParams = ep.Params
-			break
+		if ep.Strategy == "grep" && ep.Entity == "grades" {
+			hasGrep = true
+		}
+		if ep.Strategy == "filter" && ep.Entity == "grades" {
+			hasFilter = true
+		}
+		if ep.Strategy == "schema" && ep.Entity == "grades" {
+			hasSchema = true
 		}
 	}
-	if !hasList {
-		t.Error("expected list endpoint for 'grades' entity (no name field)")
+	if !hasGrep {
+		t.Error("expected grep endpoint for 'grades'")
 	}
-	if len(listParams) == 0 {
-		t.Error("expected filter params on list endpoint")
+	if !hasFilter {
+		t.Error("expected filter endpoint for 'grades'")
 	}
-
-	// Проверяем, что filter params содержат все колонки кроме PK
-	paramNames := make(map[string]bool)
-	for _, p := range listParams {
-		paramNames[p.Name] = true
+	if !hasSchema {
+		t.Error("expected schema endpoint for 'grades'")
 	}
-	if !paramNames["student_id"] {
-		t.Error("expected 'student_id' filter param")
-	}
-	if !paramNames["discipline_id"] {
-		t.Error("expected 'discipline_id' filter param")
-	}
-	if !paramNames["grade"] {
-		t.Error("expected 'grade' filter param")
-	}
-	if paramNames["id"] {
-		t.Error("should not have 'id' as filter param (it's PK)")
+	if hasGrep && hasFilter && hasSchema {
+		t.Log("grades: grep/filter/schema all present")
 	}
 
 	// Проверяем, что MCP tools генерируются для grades
-	// (grades не имеет name-поля, search заменяет list)
 	var hasSearchTool bool
 	for _, tool := range cfg.MCPTools {
 		if tool.Name == "grep_grades" {
@@ -280,7 +271,7 @@ func TestGenerate_ListEndpoint(t *testing.T) {
 		}
 	}
 	if !hasSearchTool {
-		t.Error("expected grep_grades MCP tool for grades (replaces list_grades)")
+		t.Error("expected grep_grades MCP tool for grades")
 	}
 }
 
@@ -431,9 +422,9 @@ func TestGenerate_RelationsFromFK(t *testing.T) {
 	t.Logf("generated %d entities with relations: %d bytes", len(decoded.Entities), len(data))
 }
 
-// TestGenerate_FindWithFilters проверяет, что find_{entity} получает
-// фильтры по всем колонкам (не только name).
-func TestGenerate_FindWithFilters(t *testing.T) {
+// TestGenerate_StrategyEndpoints проверяет, что grep/filter/schema стратегии
+// генерируются для всех сущностей.
+func TestGenerate_StrategyEndpoints(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
@@ -455,41 +446,29 @@ func TestGenerate_FindWithFilters(t *testing.T) {
 		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
 	})
 
-	// customers имеет name-поле → должен получить find endpoint с фильтрами
-	var findEp *config.Endpoint
+	// Проверяем, что стратегии grep/filter/schema есть для customers
+	var grepEp, filterEp, schemaEp *config.Endpoint
 	for i, ep := range cfg.Endpoints {
-		if ep.Op == config.OpFind && ep.Entity == "customers" {
-			findEp = &cfg.Endpoints[i]
-			break
+		switch {
+		case ep.Strategy == "grep" && ep.Entity == "customers":
+			grepEp = &cfg.Endpoints[i]
+		case ep.Strategy == "filter" && ep.Entity == "customers":
+			filterEp = &cfg.Endpoints[i]
+		case ep.Strategy == "schema" && ep.Entity == "customers":
+			schemaEp = &cfg.Endpoints[i]
 		}
 	}
-	if findEp == nil {
-		t.Fatal("expected find endpoint for 'customers'")
+	if grepEp == nil {
+		t.Fatal("expected grep strategy endpoint for 'customers'")
 	}
-	if len(findEp.Params) == 0 {
-		t.Error("expected filter params on find endpoint")
+	if filterEp == nil {
+		t.Fatal("expected filter strategy endpoint for 'customers'")
 	}
-
-	// Проверяем, что все не-PK колонки есть в params
-	paramNames := make(map[string]bool)
-	for _, p := range findEp.Params {
-		paramNames[p.Name] = true
-	}
-	if !paramNames["email"] {
-		t.Error("expected 'email' filter param")
-	}
-	if !paramNames["city"] {
-		t.Error("expected 'city' filter param")
-	}
-	if !paramNames["status"] {
-		t.Error("expected 'status' filter param")
-	}
-	if paramNames["id"] {
-		t.Error("should not have 'id' as filter param (it's PK)")
+	if schemaEp == nil {
+		t.Fatal("expected schema strategy endpoint for 'customers'")
 	}
 
-	// Проверяем, что MCP tool получает фильтры через grep
-	// (customers имеет grep стратегию, find_customers больше не генерируется)
+	// Проверяем, что MCP tool grep_customers сгенерирован
 	var searchTool *config.MCPTool
 	for i, tool := range cfg.MCPTools {
 		if tool.Name == "grep_customers" {
@@ -498,7 +477,7 @@ func TestGenerate_FindWithFilters(t *testing.T) {
 		}
 	}
 	if searchTool == nil {
-		t.Fatal("expected grep_customers MCP tool (replaces find_customers)")
+		t.Fatal("expected grep_customers MCP tool")
 	}
 	if len(searchTool.Params) < 3 {
 		t.Errorf("expected at least 3 params on grep_customers, got %d", len(searchTool.Params))
@@ -506,7 +485,7 @@ func TestGenerate_FindWithFilters(t *testing.T) {
 }
 
 // TestGenerate_BoolFilterParams проверяет, что bool-колонки получают
-// фильтр с типом bool (true/false) в find/list параметрах.
+// фильтр с типом bool (true/false) в strategy параметрах.
 func TestGenerate_BoolFilterParams(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
@@ -528,19 +507,31 @@ func TestGenerate_BoolFilterParams(t *testing.T) {
 		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
 	})
 
-	var findEp *config.Endpoint
+	var filterEp *config.Endpoint
 	for i, ep := range cfg.Endpoints {
-		if ep.Op == config.OpFind && ep.Entity == "products" {
-			findEp = &cfg.Endpoints[i]
+		if ep.Strategy == "filter" && ep.Entity == "products" {
+			filterEp = &cfg.Endpoints[i]
 			break
 		}
 	}
-	if findEp == nil {
-		t.Fatal("expected find endpoint for 'products'")
+	if filterEp == nil {
+		t.Fatal("expected filter strategy endpoint for 'products'")
+	}
+
+	// Check MCP tool filter_products for typed params (generated by FilterStrategy.ToolParams)
+	var filterTool *config.MCPTool
+	for i, tool := range cfg.MCPTools {
+		if tool.Name == "filter_products" {
+			filterTool = &cfg.MCPTools[i]
+			break
+		}
+	}
+	if filterTool == nil {
+		t.Fatal("expected filter_products MCP tool")
 	}
 
 	paramMap := make(map[string]config.ParamType)
-	for _, p := range findEp.Params {
+	for _, p := range filterTool.Params {
 		paramMap[p.Name] = p.Type
 	}
 

@@ -50,7 +50,7 @@ func baseConfig() *config.Config {
 			{Method: config.MethodGET, Path: "/health", Op: config.OpBuiltinHealth, Description: "Health check"},
 			{Method: config.MethodGET, Path: "/stats", Op: config.OpBuiltinStats, Description: "Stats"},
 			{Method: config.MethodGET, Path: "/students/{id}", Op: config.OpGetByID, Entity: "student", Description: "Get student by ID"},
-			{Method: config.MethodGET, Path: "/students", Op: config.OpFind, Entity: "student", SearchField: "full_name", QueryParam: "name", Description: "Find student by name"},
+			{Method: config.MethodGET, Path: "/students/grep", Op: config.OpStrategy, Strategy: "grep", Entity: "student", Description: "Search student"},
 		},
 	}
 }

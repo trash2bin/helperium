@@ -90,7 +90,7 @@ Default `read_only: true`. Активация: `false` в конфиге, PUT /a
 ## 🧬 Verification
 
 ```
-Last verified: 2026-07-28 (commit a12e54c96fb1b751902329133786daf8bab8e971)
+Last verified: 2026-07-28 (commit 7167942f704e57d8a39f1df18c95fae9c0336b01)
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
 ```

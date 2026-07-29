@@ -57,7 +57,7 @@ Unlike static RAG systems that require manual re-indexing, this platform queries
 
 ## Core Capabilities
 
-- **Live SQL introspection.** Connects to SQLite or PostgreSQL. Auto-generates entity-level tools (`list_*`, `get_by_id`, `find`) and custom query tools from the schema. No code changes required when the database structure evolves.
+- **Live SQL introspection.** Connects to SQLite or PostgreSQL. Auto-generates entity-level tools (`grep_*`, `filter_*`, `schema_*`, `get_*`, `count_*`, `distinct_*`) and custom query tools from the schema. No code changes required when the database structure evolves.
 - **Read-only by default.** All write operations are blocked at the MCP gateway layer. Write tools exist as an opt-in capability but are disabled by default and require explicit admin approval before they appear in the agent's tool manifest.
 - **Domain-agnostic.** Works with any schema — product catalogs, student records, patient data, inventory, orders. The agent adapts to whatever tables and columns it finds.
 - **Hybrid retrieval.** Combines live SQL queries with vector search over uploaded documents (PDF, TXT, MD, DOCX). Documents are chunked, embedded, and cached. Re-embedding pipelines handle updates without full re-indexing.
@@ -74,7 +74,7 @@ The platform consists of six independent HTTP services. They communicate over RE
                         ^
                         | HTTP
                         |
-Browser (Embed Widget → POST /api/agents/{name}/chat
+Browser (Embed Widget → POST /api/chat/{name}
   JS script, Shadow DOM)   |
                            v
                     api:8081 (FastAPI + LiteLLM) → SSE stream ← Widget
@@ -97,7 +97,7 @@ Browser (Embed Widget → POST /api/agents/{name}/chat
 
 **demo/web** (:8080) — **только для локальной разработки**, не production entry point.
 
-**Note:** data-service is **not** a semantic search engine. It supports exact WHERE (LIKE/equality) on entity fields, `list` (all records with pagination), `get_by_id` (single record), and custom_queries (pre-approved SELECT statements configured per tenant). LLM decides which tool to call and with which parameters.
+**Note:** data-service is **not** a semantic search engine. It provides three search strategies — `grep` (multi-token AND text search, regex), `filter` (field-based with `field__gt`, `__like`, `__in` operators), and `schema` (metadata discovery with distinct values and numeric ranges) — plus `get_by_id`, `count`, `distinct`, and custom_queries (pre-approved SELECT statements configured per tenant). LLM decides which tool to call and with which parameters.
 
 - **Mechanical workloads** (MCP gateway, admin dashboard, data-service) are written in Go for throughput and full async concurrency.
 - **AI workloads** (agent orchestration, LLM integration, embed widget serving, RAG, embeddings) are written in Python using FastAPI, LiteLLM, and Sentence Transformers.

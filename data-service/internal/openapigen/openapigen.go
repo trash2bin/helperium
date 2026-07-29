@@ -830,9 +830,6 @@ func queryParam(ep config.Endpoint) string {
 	if ep.QueryParam != "" {
 		return ep.QueryParam
 	}
-	if ep.Op == config.OpFind && ep.SearchField != "" {
-		return ep.SearchField
-	}
 	return ""
 }
 
@@ -844,7 +841,7 @@ func responseSchema(ep config.Endpoint) map[string]any {
 		return map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}
 	case ep.Op == config.OpGetByID && ep.Entity != "":
 		return map[string]any{"$ref": "#/components/schemas/" + ep.Entity}
-	case (ep.Op == config.OpFind || ep.Op == config.OpList) && ep.Entity != "":
+	case ep.Op == config.OpStrategy && ep.Entity != "":
 		return map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/" + ep.Entity}}
 	case ep.Op == config.OpCustomQuery:
 		return map[string]any{"type": "array", "items": map[string]any{"type": "object"}}

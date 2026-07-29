@@ -61,7 +61,7 @@ func defaultTestConfig() string {
 		"endpoints": [
 			{ "method": "GET", "path": "/health", "op": "builtin_health", "description": "Health check" },
 			{ "method": "GET", "path": "/students/{id}", "op": "get_by_id", "entity": "student", "description": "Get by ID" },
-			{ "method": "GET", "path": "/students", "op": "find", "entity": "student", "search_field": "full_name", "query_param": "name" }
+			{ "method": "GET", "path": "/students", "op": "strategy", "strategy": "grep", "entity": "student", "description": "Search student" }
 		],
 		"mcp_tools": [
 			{

@@ -231,7 +231,7 @@ func TestTypes_DriverValid(t *testing.T) {
 func TestTypes_OpValid(t *testing.T) {
 	for _, ok := range []config.Op{
 		config.OpBuiltinHealth, config.OpBuiltinStats,
-		config.OpGetByID, config.OpFind, config.OpList, config.OpCustomQuery,
+		config.OpGetByID, config.OpStrategy, config.OpCustomQuery,
 	} {
 		if !ok.Valid() {
 			t.Errorf("%q.Valid() = false, want true", string(ok))

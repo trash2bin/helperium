@@ -103,10 +103,6 @@ func toolDisplayName(op, entityName string, displayPrefixes []string, customPlur
 	switch op {
 	case string(config.OpGetByID):
 		return fmt.Sprintf("%s by ID", short)
-	case string(config.OpFind):
-		return fmt.Sprintf("Find %s", short)
-	case string(config.OpList):
-		return fmt.Sprintf("All %s", plural)
 	case string(config.OpCount):
 		return fmt.Sprintf("Count %s", plural)
 	case string(config.OpDistinct):

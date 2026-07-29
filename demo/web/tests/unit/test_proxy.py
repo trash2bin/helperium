@@ -238,7 +238,7 @@ class TestManifestProxy:
                     "method": "GET",
                     "path": "/students",
                     "entity": "student",
-                    "op": "list",
+                    "op": "strategy",
                 }
             ],
             "custom_queries": {},

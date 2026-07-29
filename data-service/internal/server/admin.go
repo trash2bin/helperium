@@ -441,10 +441,8 @@ func deriveToolName(ep config.Endpoint) string {
 		return "stats"
 	case config.OpGetByID:
 		return "get_" + ep.Entity
-	case config.OpFind:
-		return "find_" + ep.Entity
-	case config.OpList:
-		return "list_" + ep.Entity
+	case config.OpStrategy:
+		return ep.Strategy + "_" + ep.Entity
 	case config.OpCustomQuery:
 		if ep.QueryID != "" {
 			return "query_" + ep.QueryID

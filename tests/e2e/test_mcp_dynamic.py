@@ -74,7 +74,7 @@ def setup_module(module):
             }
         ],
         "endpoints": [
-            {"method": "GET", "path": "/students", "op": "list", "entity": "student"},
+            {"method": "GET", "path": "/students", "op": "strategy", "entity": "student"},
             {
                 "method": "GET",
                 "path": "/students/{id}",
@@ -110,7 +110,7 @@ def setup_module(module):
             }
         ],
         "endpoints": [
-            {"method": "GET", "path": "/products", "op": "list", "entity": "product"},
+            {"method": "GET", "path": "/products", "op": "strategy", "entity": "product"},
         ],
         "mcp_tools": [
             {

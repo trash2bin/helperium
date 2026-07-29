@@ -295,7 +295,8 @@
     {
       "method": "GET",
       "path": "/categories",
-      "op": "find",
+      "op": "strategy",
+      "strategy": "grep",
       "entity": "categories",
       "search_field": "name",
       "query_param": "name"
@@ -309,7 +310,8 @@
     {
       "method": "GET",
       "path": "/customers",
-      "op": "find",
+      "op": "strategy",
+      "strategy": "grep",
       "entity": "customers",
       "search_field": "name",
       "query_param": "name"
@@ -335,7 +337,8 @@
     {
       "method": "GET",
       "path": "/products",
-      "op": "find",
+      "op": "strategy",
+      "strategy": "grep",
       "entity": "products",
       "search_field": "name",
       "query_param": "name"

@@ -190,16 +190,6 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 					return nil, fmt.Errorf("endpoint %q: op get_by_id requires entity", ep.Path)
 				}
 				h = handlers.GetByIDHandler(ctx, ep.Entity)
-			case "find":
-				if ep.Entity == "" {
-					return nil, fmt.Errorf("endpoint %q: op find requires entity", ep.Path)
-				}
-				h = handlers.FindHandler(ctx, ep.Entity, ep.SearchField, ep.QueryParam)
-			case "list":
-				if ep.Entity == "" {
-					return nil, fmt.Errorf("endpoint %q: op list requires entity", ep.Path)
-				}
-				h = handlers.ListHandler(ctx, ep.Entity)
 			case "distinct":
 				if ep.Entity == "" {
 					return nil, fmt.Errorf("endpoint %q: op distinct requires entity", ep.Path)

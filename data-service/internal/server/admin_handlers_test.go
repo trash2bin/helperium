@@ -106,7 +106,7 @@ func TestAdminPendingToolsHandler_ReadOnlyMode_WithWriteEndpoints(t *testing.T) 
 	cfg := &config.Config{
 		DataSource: config.DataSourceConfig{ReadOnly: &readOnly},
 		Endpoints: []config.Endpoint{
-			{Method: "GET", Path: "/groups", Op: config.OpList, Entity: "group"},
+			{Method: "GET", Path: "/groups/{id}", Op: config.OpGetByID, Entity: "group"},
 			{Method: "POST", Path: "/groups", Op: config.OpCustomQuery, QueryID: "create_group"},
 		},
 	}

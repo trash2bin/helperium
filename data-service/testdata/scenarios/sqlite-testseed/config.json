@@ -208,10 +208,11 @@
     {
       "method": "GET",
       "path": "/students",
-      "op": "find",
+      "op": "strategy",
       "entity": "student",
       "search_field": "full_name",
-      "query_param": "name"
+      "query_param": "name",
+      "strategy": "grep"
     },
     {
       "method": "GET",
@@ -254,16 +255,18 @@
     {
       "method": "GET",
       "path": "/disciplines",
-      "op": "list",
-      "entity": "discipline"
+      "op": "strategy",
+      "entity": "discipline",
+      "strategy": "grep"
     },
     {
       "method": "GET",
       "path": "/teachers",
-      "op": "find",
+      "op": "strategy",
       "entity": "teacher",
       "search_field": "full_name",
-      "query_param": "name"
+      "query_param": "name",
+      "strategy": "grep"
     },
     {
       "method": "GET",
