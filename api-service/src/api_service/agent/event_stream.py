@@ -1,7 +1,6 @@
 """SSE (Server-Sent Events) formatting utilities.
 
-Pure functions that convert agent events into SSE-wire-format strings
-and handle the backward-compatible token-stream suffix logic.
+Pure functions that convert agent events into SSE-wire-format strings.
 """
 
 from __future__ import annotations
@@ -21,16 +20,3 @@ def format_sse_event(event: AgentEvent) -> str:
     """
     payload = json.dumps(event.data, ensure_ascii=False)
     return f"event: {event.type}\ndata: {payload}\n\n"
-
-
-def unstreamed_suffix(streamed_text: str, final_text: str) -> str:
-    """Return the portion of *final_text* not yet emitted via streaming.
-
-    Used by ``stream_answer()`` — the backward-compat helper that
-    converts the full event stream into a plain token stream.
-    """
-    if not streamed_text:
-        return final_text
-    if final_text.startswith(streamed_text):
-        return final_text[len(streamed_text) :]
-    return ""

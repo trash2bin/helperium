@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from api_service.agent.event_stream import format_sse_event, unstreamed_suffix
+from api_service.agent.event_stream import format_sse_event
 from api_service.agent.types import AgentEvent
 
 
@@ -65,38 +65,3 @@ class TestFormatSSEEvent:
         event = AgentEvent("token", {"data": ""})
         result = format_sse_event(event)
         assert '"data": ""' in result
-
-
-# ── unstreamed_suffix ────────────────────────────────────────────────────────
-
-
-class TestUnstreamedSuffix:
-    """Tests for the unstreamed_suffix() function."""
-
-    def test_empty_streamed_returns_full(self):
-        """When nothing was streamed, return full text."""
-        assert unstreamed_suffix("", "Hello world") == "Hello world"
-
-    def test_exact_match_returns_empty(self):
-        """When streamed equals final, return empty string."""
-        assert unstreamed_suffix("Hello", "Hello") == ""
-
-    def test_prefix_returns_remainder(self):
-        """When streamed is a proper prefix, return the suffix."""
-        assert unstreamed_suffix("Hello, ", "Hello, world!") == "world!"
-
-    def test_not_a_prefix_returns_empty(self):
-        """When streamed is not a prefix of final, return ''."""
-        assert unstreamed_suffix("Hxllo", "Hello") == ""
-
-    def test_russian_text(self):
-        """Russian text handled correctly."""
-        assert unstreamed_suffix("Привет, ", "Привет, мир!") == "мир!"
-
-    def test_empty_both(self):
-        """Both empty returns empty."""
-        assert unstreamed_suffix("", "") == ""
-
-    def test_streamed_longer_than_final(self):
-        """When streamed is not a prefix (longer), return empty."""
-        assert unstreamed_suffix("Hello!!", "Hello") == ""

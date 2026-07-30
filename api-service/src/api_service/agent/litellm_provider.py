@@ -141,6 +141,19 @@ class LiteLLMProvider:
                 total_tokens=getattr(raw_usage, "total_tokens", 0) or 0,
             )
 
+        # ── Extract real cost from LiteLLM response (LOW-1 fix) ──────
+        # LiteLLM stores cost in two possible places:
+        #   1. response.usage.cost — per-request cost returned by provider
+        #   2. response._hidden_params['cost'] — LiteLLM-calculated cost
+        # We check both, falling back to 0.0 (safe for local models).
+        cost = 0.0
+        if raw_usage is not None:
+            cost = getattr(raw_usage, "cost", None) or 0.0
+        if cost == 0.0:
+            hidden = getattr(response, "_hidden_params", None)
+            if hidden is not None:
+                cost = hidden.get("cost", 0.0) or 0.0
+
         # Populate content_tokens for streaming consumers (LLMStage)
         # When req.stream=True, content_tokens carries the raw streaming
         # output token-by-token. Since litellm.acompletion(stream=False)
@@ -160,6 +173,6 @@ class LiteLLMProvider:
             tool_calls=tool_calls,
             reasoning_content=reasoning,
             usage=usage_info,
-            cost=0.0,
+            cost=cost,
             content_tokens=content_tokens,
         )

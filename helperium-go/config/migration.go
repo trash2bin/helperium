@@ -10,7 +10,7 @@ import "encoding/json"
 
 // CurrentConfigVersion is the latest config schema version.
 // Increment when introducing a breaking change to the config structure.
-const CurrentConfigVersion = 2
+const CurrentConfigVersion = 3
 
 // Normalize upgrades the config to CurrentConfigVersion.
 // Fields that do not exist in older versions are backfilled with safe defaults.
@@ -26,6 +26,8 @@ func (c *Config) Normalize() {
 		switch c.Version {
 		case 1:
 			c.normalizeV1ToV2()
+		case 2:
+			c.normalizeV2ToV3()
 		default:
 			// Unknown version — pin to current and continue.
 			c.Version = CurrentConfigVersion
@@ -55,6 +57,26 @@ func (c *Config) normalizeV1ToV2() {
 
 	// 4. Bump version
 	c.Version = 2
+}
+
+// normalizeV2ToV3 upgrades v2 → v3 configs.
+//
+// Changes in v3:
+//   - Legacy op="find" and op="list" endpoints converted to op="strategy" with strategy="schema"
+//   - SearchField and QueryParam removed from Endpoint struct (no longer used)
+func (c *Config) normalizeV2ToV3() {
+	for i := range c.Endpoints {
+		ep := &c.Endpoints[i]
+		switch ep.Op {
+		case "find", "list":
+			ep.Op = OpStrategy
+			ep.Strategy = "schema"
+		}
+	}
+	if c.Meta != nil {
+		c.Meta.ConfigVersion = 3
+	}
+	c.Version = 3
 }
 
 // normalizeV0 handles version-0 configs (pre-schema-version configs).

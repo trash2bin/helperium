@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import importlib
+import sys
 
 from fastapi.testclient import TestClient
 
 
 def test_embed_mounted_exactly_once(monkeypatch):
     """The app must start without errors from duplicate /embed mount."""
-    import api_service.server as sv
+    app_mod = importlib.reload(sys.modules["api_service.server.app"])
 
-    if hasattr(sv, "app"):
-        del sv.app
-
-    importlib.reload(sv)
-
-    with TestClient(sv.app) as client:
+    with TestClient(app_mod.app) as client:
         resp = client.get("/embed/does-not-exist")
         # If mounted once → 404 (file not found) or 200 (if file exists)
         # If duplicate mount → 500 (crash on startup)
@@ -34,26 +30,16 @@ def test_embed_mount_uses_resolved_override(monkeypatch, tmp_path):
 
     monkeypatch.setenv("EMBED_DIR", str(embed_dir))
 
-    import api_service.server as sv
+    app_mod = importlib.reload(sys.modules["api_service.server.app"])
 
-    if hasattr(sv, "app"):
-        del sv.app
-
-    importlib.reload(sv)
-
-    with TestClient(sv.app) as client:
+    with TestClient(app_mod.app) as client:
         resp = client.get("/embed/test.html")
         assert resp.status_code == 200
 
 
 def test_app_startup_no_embed_directory_warning(caplog):
     """When embed dir doesn't exist, app should log a warning but not crash."""
-    import api_service.server as sv
-
-    if hasattr(sv, "app"):
-        del sv.app
-
-    importlib.reload(sv)
+    app_mod = importlib.reload(sys.modules["api_service.server.app"])
 
     # Check there's no crash — if we got here without Exception, it's fine
-    assert sv.app is not None
+    assert app_mod.app is not None

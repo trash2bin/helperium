@@ -14,9 +14,31 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ── Unicode homoglyph translation table ───────────────────────────────────
+# Maps visually identical Cyrillic/Ukrainian characters to their Latin
+# equivalents.  Applied before regex guard checks to prevent homoglyph bypass.
+# Note: unicodedata.normalize('NFKC', ...) does NOT translate these — they
+# are distinct codepoints.
+
+HOMOGLYPH_MAP: dict[str, str] = {
+    "\u0430": "a",  # Cyrillic а → Latin a
+    "\u0435": "e",  # Cyrillic е → Latin e
+    "\u0456": "i",  # Ukrainian і → Latin i
+    "\u043e": "o",  # Cyrillic о → Latin o
+    "\u0440": "p",  # Cyrillic р → Latin p
+    "\u0441": "c",  # Cyrillic с → Latin c
+    "\u0443": "y",  # Cyrillic у → Latin y
+    "\u0445": "x",  # Cyrillic х → Latin x
+}
+
+
+def _normalize_homoglyphs(text: str) -> str:
+    """Replace homoglyph characters with their Latin equivalents."""
+    return "".join(HOMOGLYPH_MAP.get(ch, ch) for ch in text)
 
 
 # ── Default blocking patterns (input) ────────────────────────────────────────
@@ -175,7 +197,7 @@ class GuardConfig:
 class GuardChecker:
     """Check messages against prompt injection patterns."""
 
-    def __init__(self, config: Optional[GuardConfig] = None):
+    def __init__(self, config: GuardConfig | None = None):
         self.config = config or GuardConfig.from_env()
         self._input_compiled = [
             (re.compile(p), reason) for p, reason in self.config.input_patterns
@@ -200,8 +222,10 @@ class GuardChecker:
             return GuardResult()
         if not message:
             return GuardResult()
+        # Normalize homoglyphs before regex search (LOW-3 fix)
+        normalized = _normalize_homoglyphs(message)
         for compiled, reason in self._input_compiled:
-            if compiled.search(message):
+            if compiled.search(normalized):
                 self.config.blocked_count += 1
                 logger.warning(
                     "[GUARD] Blocked input: %s (pattern: %s)",
@@ -227,8 +251,10 @@ class GuardChecker:
             return GuardResult()
         if not content:
             return GuardResult()
+        # Normalize homoglyphs before regex search (LOW-3 fix)
+        normalized = _normalize_homoglyphs(content)
         for compiled, reason in self._output_compiled:
-            if compiled.search(content):
+            if compiled.search(normalized):
                 self.config.blocked_count += 1
                 logger.warning(
                     "[GUARD] Matched output: %s (pattern: %s)",
@@ -245,7 +271,7 @@ class GuardChecker:
 
 # ── Singleton ────────────────────────────────────────────────────────────────
 
-_guard_checker: Optional[GuardChecker] = None
+_guard_checker: GuardChecker | None = None
 
 
 def get_guard_checker() -> GuardChecker:
@@ -254,9 +280,3 @@ def get_guard_checker() -> GuardChecker:
     if _guard_checker is None:
         _guard_checker = GuardChecker()
     return _guard_checker
-
-
-def reload_guard_checker() -> None:
-    """Reload guard checker from env."""
-    global _guard_checker
-    _guard_checker = GuardChecker()

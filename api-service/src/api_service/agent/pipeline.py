@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, Any
 
 from .models import CompletionResponse
 from .protocols import (
@@ -43,10 +43,6 @@ from .turn_context import TurnContext
 from .types import AgentEvent
 
 logger = logging.getLogger("api_service.agent.pipeline")
-
-# Maximum number of tool calls across all iterations of a single turn.
-# When exceeded, the pipeline emits an error and stops.
-MAX_TOOL_CALLS_PER_TURN: int = 10
 
 
 @dataclass
@@ -65,10 +61,14 @@ class PipelineContext:
     spending: SpendingTracker
     backlog: BacklogWriter
 
-    # Limits
+    # Limits — set by orchestrator from settings; plain defaults for direct construction (tests)
     max_iterations: int = 5
     max_empty_rounds: int = 3
     max_turn_tokens: int = 8000
+    max_tool_calls_per_turn: int = 10
+
+    # Structured error context (optional — pipeline works without it)
+    error_context: Any | None = None
 
     # Tool call counter (per turn, across all iterations)
     tool_call_count: int = 0
@@ -103,6 +103,15 @@ class PipelineContext:
 
     def _mark_done(self, name: str) -> None:
         self._done_flags.add(name)
+
+    def set_error_context(self, session_id: str, correlation_id: str = "") -> None:
+        """Create and attach an ErrorContext for this pipeline run."""
+        from .error_context import ErrorContext
+
+        self.error_context = ErrorContext(
+            session_id=session_id,
+            correlation_id=correlation_id,
+        )
 
 
 class Stage(Protocol):
@@ -197,20 +206,14 @@ class Pipeline:
                         # Tool call limit per turn
                         if processed.type == "tool_result":
                             ctx.tool_call_count += 1
-                            if ctx.tool_call_count > MAX_TOOL_CALLS_PER_TURN:
+                            if ctx.tool_call_count > ctx.max_tool_calls_per_turn:
                                 logger.warning(
                                     "[PIPELINE] Tool call limit reached (%d), aborting",
-                                    MAX_TOOL_CALLS_PER_TURN,
+                                    ctx.max_tool_calls_per_turn,
                                 )
-                                yield AgentEvent(
-                                    type="error",
-                                    data={
-                                        "message": (
-                                            "Too many tool calls. "
-                                            "Please refine your search."
-                                        )
-                                    },
-                                )
+                                # FallbackStage в фазе 2 финализации триммит
+                                # историю и переспрашивает LLM — пользователь
+                                # получает ответ, а не ошибку.
                                 ctx.should_stop = True
 
             # ── Loop termination checks ────────────────────────────────

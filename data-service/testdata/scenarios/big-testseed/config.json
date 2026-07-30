@@ -210,8 +210,6 @@
       "path": "/students",
       "op": "strategy",
       "entity": "student",
-      "search_field": "full_name",
-      "query_param": "name",
       "strategy": "grep"
     },
     {
@@ -264,8 +262,6 @@
       "path": "/teachers",
       "op": "strategy",
       "entity": "teacher",
-      "search_field": "full_name",
-      "query_param": "name",
       "strategy": "grep"
     },
     {

@@ -161,13 +161,26 @@ class ProviderPool:
         logger.info("[POOL] Added worker: %s (%s)", name, model)
         return worker
 
-    def remove_worker(self, name: str) -> bool:
+    async def remove_worker(self, name: str) -> bool:
         """Remove a worker by name. Returns ``True`` if it existed."""
-        if name in self._workers:
+        async with self._lock:
+            if name not in self._workers:
+                return False
+
+            # Find insertion-order index before removal
+            keys = list(self._workers.keys())
+            removed_idx = keys.index(name)
+
             del self._workers[name]
+
+            # Adjust round-robin index so it stays valid
+            if removed_idx < self._rr_index:
+                self._rr_index -= 1
+            elif self._rr_index >= len(self._workers) and self._workers:
+                self._rr_index = 0
+
             logger.info("[POOL] Removed worker: %s", name)
             return True
-        return False
 
     async def alive_workers(self) -> list[ProviderWorker]:
         """Return workers that are currently considered alive."""

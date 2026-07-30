@@ -372,22 +372,16 @@ type Endpoint struct {
 	// Path — URL-путь. Поддерживает {param}.
 	Path string `json:"path"`
 
-	// Op — реализация (builtin / get_by_id / find / list / custom_query).
+	// Op — реализация (builtin / get_by_id / strategy / custom_query).
 	Op Op `json:"op"`
 
-	// Entity — имя entity (для op=get_by_id, find, list).
+	// Entity — имя entity (для op=get_by_id, strategy).
 	Entity string `json:"entity,omitempty"`
-
-	// SearchField — имя поля для поиска (для op=find).
-	SearchField string `json:"search_field,omitempty"`
-
-	// QueryParam — имя query-параметра для значения поиска.
-	QueryParam string `json:"query_param,omitempty"`
 
 	// QueryID — ключ из custom_queries (для op=custom_query).
 	QueryID string `json:"query_id,omitempty"`
 
-	// Strategy — имя search strategy ("grep", "filter", "simple").
+	// Strategy — имя search strategy ("grep", "filter", "schema").
 	// Если пусто — используется Op-based routing (legacy).
 	Strategy string `json:"strategy,omitempty"`
 
@@ -652,7 +646,15 @@ func (c *Config) Validate() error {
 			} else if !entityNames[ep.Entity] {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].entity %q not found in entities", i, ep.Entity))
 			}
-			if ep.Strategy != "" && !validStrategy(ep.Strategy) {
+		case OpStrategy:
+			if ep.Entity == "" {
+				errs = append(errs, fmt.Sprintf("endpoints[%d].entity: required for op=%q", i, ep.Op))
+			} else if !entityNames[ep.Entity] {
+				errs = append(errs, fmt.Sprintf("endpoints[%d].entity %q not found in entities", i, ep.Entity))
+			}
+			if ep.Strategy == "" {
+				errs = append(errs, fmt.Sprintf("endpoints[%d].strategy: required for op=%q", i, ep.Op))
+			} else if !validStrategy(ep.Strategy) {
 				errs = append(errs, fmt.Sprintf("endpoints[%d].strategy: unknown %q, must be one of: grep, filter, schema", i, ep.Strategy))
 			}
 		case OpCustomQuery:

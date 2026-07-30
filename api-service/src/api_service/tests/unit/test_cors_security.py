@@ -9,29 +9,25 @@ Verifies that CORS defaults are fail-secure:
 from __future__ import annotations
 
 import importlib
+import sys
 
 from fastapi.testclient import TestClient
 
 
 def _reload_app(monkeypatch, cors_origins: str | None = None):
-    """Reload api_service.server with a specific CORS_ALLOW_ORIGINS value.
+    """Reload api_service.server.app with a specific CORS_ALLOW_ORIGINS value.
 
-    Since CORS config is read at module level, we need to reload the
-    module after setting the env var.
+    Since CORS config is read at module level in app.py, we need to
+    reload that module after setting the env var.
     """
     if cors_origins is None:
         monkeypatch.delenv("CORS_ALLOW_ORIGINS", raising=False)
     else:
         monkeypatch.setenv("CORS_ALLOW_ORIGINS", cors_origins)
 
-    import api_service.server as sv
-
-    # Clean up the old app's state
-    if hasattr(sv, "app"):
-        del sv.app
-
-    importlib.reload(sv)
-    return sv.app
+    mod = sys.modules["api_service.server.app"]
+    importlib.reload(mod)
+    return mod.app
 
 
 class TestCorsDefaults:

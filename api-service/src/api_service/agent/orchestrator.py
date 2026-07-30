@@ -7,8 +7,7 @@ yield events.  Pipeline orchestration goes to ``pipeline.py``,
 stage logic to ``stages.py``, middleware to ``middlewares.py``,
 async adapters for sync singletons (SpendingChecker, ModelBacklog).
 
-Backward-compatible: ``stream_answer()``, ``stream_sse()``, ``stream_events()``
-keep the same signatures.  ``health()`` stays.
+Main entry point: ``stream_events()``.  ``health()`` stays.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from typing import Any
 from helperium_sdk.settings import settings
 
 from .conversation import ConversationManager
-from .event_stream import format_sse_event, unstreamed_suffix
+from .factory import resolve_llm, _pool, _create_env_provider
 from .mcp_client import MCPClient
 from .middlewares import (
     SpendingMiddleware,
@@ -44,10 +43,8 @@ from .types import (
     SessionId,
 )
 from api_service.backlog import backlog
-from api_service.spending import get_spending_checker
 
-from .litellm_provider import LiteLLMProvider
-from .provider_pool import ProviderPool
+from .adapters import _AsyncBacklogWriter, _AsyncSpendingTracker
 
 from api_service.error_messages import classify_error
 from api_service.guardrails import get_guard_checker
@@ -55,165 +52,10 @@ from api_service.guardrails import get_guard_checker
 logger = logging.getLogger("api_service.agent.orchestrator")
 
 
-# ── Async adapters for sync singletons ──────────────────────────────────
-
-
-class _AsyncSpendingTracker:
-    """Async wrapper around the sync SpendingChecker singleton."""
-
-    async def record(self, tenant_id: str, cost: float) -> None:
-        get_spending_checker().record_spending(tenant_id, cost)
-
-    async def check_limits(self, tenant_id: str) -> tuple[bool, str]:
-        return get_spending_checker().check_limits(tenant_id)
-
-
-class _AsyncBacklogWriter:
-    """Sync wrapper around the ModelBacklog singleton."""
-
-    def record_llm_call(self, session_id: str, **kwargs: Any) -> None:
-        backlog.record_llm_call(session_id, **kwargs)
-
-    def tool_call(
-        self,
-        session_id: str,
-        turn_id: str,
-        iteration: int,
-        name: str,
-        arguments: dict[str, Any],
-    ) -> None:
-        backlog.tool_call(session_id, turn_id, iteration, name, arguments)
-
-    def tool_result(
-        self,
-        session_id: str,
-        turn_id: str,
-        iteration: int,
-        name: str,
-        result: str,
-        duration_ms: float = 0.0,
-    ) -> None:
-        backlog.tool_result(session_id, turn_id, iteration, name, result, duration_ms)
-
-    def error(
-        self,
-        session_id: str,
-        turn_id: str,
-        iteration: int,
-        error: str,
-        context: dict[str, Any] | None = None,
-    ) -> None:
-        backlog.error(session_id, turn_id, iteration, error, context)
-
-
 # ── Module-level constants ──────────────────────────────────────────────
-
-# Known model prefixes for Ollama fallback detection (env-path and llm_config-path).
-_OLLAMA_PREFIXES = (
-    "ollama/",
-    "ollama_chat/",
-    "openai/",
-    "anthropic/",
-    "deepseek/",
-    "huggingface/",
-    "mistral/",
-    "groq/",
-    "together_ai/",
-)
-
-# Module-level ProviderPool singleton for fallback + health checks.
-_pool = ProviderPool()
-
-
-def _create_env_provider() -> LiteLLMProvider:
-    """Create a LiteLLMProvider from environment variables (last-resort fallback)."""
-    import os
-
-    # 1. Scan env for *{PREFIX}_API_KEY* + *{PREFIX}_MODEL*
-    for key, val in os.environ.items():
-        if not key.endswith("_API_KEY") or not val:
-            continue
-        prefix = key.removesuffix("_API_KEY")
-        if not prefix:
-            continue
-        model = os.environ.get(f"{prefix}_MODEL", "")
-        if not model:
-            continue
-        provider_slug = prefix.lower()
-        if provider_slug == "mistral" and not model.startswith("mistral/"):
-            model = f"mistral/{model}"
-        elif provider_slug == "openai" and not model.startswith("openai/"):
-            model = f"openai/{model}"
-        elif provider_slug == "anthropic" and not model.startswith("anthropic/"):
-            model = f"anthropic/{model}"
-        api_base = os.environ.get(f"{prefix}_API_BASE", "") or None
-        return LiteLLMProvider(
-            model=model,
-            api_base=api_base,
-            timeout=settings.request_timeout,
-            temperature=settings.agent_temperature,
-            max_tokens_thinking=settings.agent_max_tokens_thinking,
-            enable_thinking=settings.think_mode,
-        )
-
-    # 2. Fall back to Ollama
-    model_name = settings.ollama_model
-    if settings.ollama_url and not model_name.startswith(_OLLAMA_PREFIXES):
-        model_name = f"ollama_chat/{model_name}"
-    api_base = settings.ollama_url.rstrip("/") if settings.ollama_url else None
-    return LiteLLMProvider(
-        model=model_name,
-        api_base=api_base,
-        timeout=settings.request_timeout,
-        temperature=settings.agent_temperature,
-        max_tokens_thinking=settings.agent_max_tokens_thinking,
-        enable_thinking=settings.think_mode,
-    )
-
-
-async def _resolve_pool_or_env() -> LiteLLMProvider:
-    """Try ProviderPool first, then fall back to env-based provider."""
-    import warnings
-
-    try:
-        worker = await _pool.get_any_worker()
-        if worker is not None:
-            return worker
-    except Exception:
-        pass
-    warnings.warn(
-        "ProviderPool is empty or unavailable — falling back to env-based LiteLLMProvider",
-        RuntimeWarning,
-        stacklevel=2,
-    )
-    return _create_env_provider()
-
-
-def _set_provider_env_key(provider: str, api_key: str) -> None:
-    """Set the OS env var for a provider key so LiteLLM can find it."""
-    import os
-
-    key_map = {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "mistral": "MISTRAL_API_KEY",
-    }
-    if provider in key_map:
-        os.environ[key_map[provider]] = api_key
-
-
-def _prefix_model(provider: str | None, model_name: str, api_base: str | None) -> str:
-    """Add provider prefix to model name if needed."""
-    if provider == "ollama" and api_base:
-        if not model_name.startswith(_OLLAMA_PREFIXES):
-            return f"ollama_chat/{model_name}"
-    elif provider == "mistral":
-        if not model_name.startswith("mistral/"):
-            return f"mistral/{model_name}"
-    elif provider == "openai":
-        if not model_name.startswith("openai/"):
-            return f"openai/{model_name}"
-    return model_name
+# All provider resolution functions are imported from factory.py.
+# _pool, _create_env_provider, _resolve_pool_or_env, _prefix_model
+# are used by health() method and re-exported for deps.py.
 
 
 class LLMAgent:
@@ -247,8 +89,8 @@ class LLMAgent:
                 ToolExecutionStage(),
             ],
             finalizer_stages=[
-                GuardOutputStage(),
                 FallbackStage(),
+                GuardOutputStage(),
                 SaveHistoryStage(),
             ],
             middlewares=[
@@ -265,32 +107,6 @@ class LLMAgent:
 
     # ── Public entry points ──────────────────────────────────────────────
 
-    async def stream_answer(
-        self, user_message: str, session_id: SessionId = "default"
-    ) -> AsyncIterator[str]:
-        """Backward-compatible token stream (plain strings, no SSE)."""
-        streamed_text = ""
-        async for event in self.stream_events(user_message, session_id=session_id):
-            if event.type == "token":
-                token = str(event.data)
-                streamed_text += token
-                yield token
-            elif event.type == "final":
-                content = (
-                    event.data.get("content") if isinstance(event.data, dict) else None
-                )
-                if content:
-                    suffix = unstreamed_suffix(streamed_text, str(content))
-                    if suffix:
-                        yield suffix
-
-    async def stream_sse(
-        self, user_message: str, session_id: SessionId = "default"
-    ) -> AsyncIterator[str]:
-        """Stream Server-Sent Events (legacy compatibility)."""
-        async for event in self.stream_events(user_message, session_id=session_id):
-            yield format_sse_event(event)
-
     async def stream_events(
         self,
         user_message: str,
@@ -301,6 +117,7 @@ class LLMAgent:
         provider_priority: list[str] | None = None,
         system_prompt: str | None = None,
         lang: str = "ru",
+        correlation_id: str = "",
     ) -> AsyncIterator[AgentEvent]:
         """Stream agent events: tokens, tool calls, tool results, final.
 
@@ -328,80 +145,13 @@ class LLMAgent:
             user_message[:100],
         )
 
-        # Use scripted LLM in dev mode (USE_SCRIPTED_LLM=1).
-        # Overrides ALL other providers — deterministic responses.
-        from .scripted_provider import create_scripted_provider as _create_scripted
-
-        scripted = _create_scripted()
-        if scripted:
-            request_llm: Any = scripted
-        elif llm_client:
-            request_llm: Any = llm_client
-        elif llm_config:
-            # Build a LiteLLMProvider from the per-agent config dict
-            model_name = llm_config.get("model") or settings.ollama_model
-            api_base = llm_config.get("api_base") or settings.ollama_url
-            provider = llm_config.get("provider")
-            api_key = llm_config.get("api_key")
-
-            if api_key and provider:
-                _set_provider_env_key(provider, api_key)
-
-            model_name = _prefix_model(provider, model_name, api_base)
-            if provider == "mistral":
-                api_base = None
-            api_base_url = api_base.rstrip("/") if api_base else None
-
-            request_llm = LiteLLMProvider(
-                model=model_name,
-                api_base=api_base_url,
-                timeout=settings.request_timeout,
-                temperature=llm_config.get("temperature") or settings.agent_temperature,
-                max_tokens_thinking=llm_config.get("max_tokens")
-                or settings.agent_max_tokens_thinking,
-                enable_thinking=settings.think_mode,
-            )
-        elif provider_priority:
-            # Resolve first valid provider from priority list
-            from api_service.provider_store import (
-                KNOWN_PROVIDERS as _KNOWN,
-                get_provider_store,
-            )
-
-            store = get_provider_store()
-            raw_providers = store.all_providers_raw
-            found = None
-            for name in provider_priority:
-                provider_data = raw_providers.get(name)
-                if not provider_data:
-                    continue
-                if not provider_data.get("enabled", True):
-                    continue
-                model = provider_data.get("model", "")
-                if not model:
-                    continue
-                found = (name, provider_data)
-                break
-
-            if found:
-                name, data = found
-                model = data["model"]
-                provider = data.get("provider", "")
-                if not model.startswith(tuple(p + "/" for p in _KNOWN)) and provider:
-                    model = f"{provider}/{model}"
-                api_base = data.get("api_base", "") or ""
-                request_llm = LiteLLMProvider(
-                    model=model,
-                    api_base=api_base or None,
-                    timeout=120.0,
-                )
-            else:
-                # Fallback: try ProviderPool, then env
-                request_llm = self._test_llm_client or await _resolve_pool_or_env()
-        else:
-            # FRESH provider every request — reflects current ProviderStore state.
-            # Falls back to self._test_llm_client when set (tests only).
-            request_llm = self._test_llm_client or await _resolve_pool_or_env()
+        # Resolve the LLM provider for this request.
+        request_llm = await resolve_llm(
+            llm_client=llm_client,
+            llm_config=llm_config,
+            provider_priority=provider_priority,
+            _test_llm_client=self._test_llm_client,
+        )
 
         # ── Async adapters ──────────────────────────────────────────────
         async_spending = _AsyncSpendingTracker()
@@ -441,7 +191,10 @@ class LLMAgent:
                         max_iterations=self._settings.agent_max_iterations,
                         max_empty_rounds=self._settings.agent_max_empty_rounds,
                         max_turn_tokens=self._settings.agent_max_turn_tokens,
+                        max_tool_calls_per_turn=self._settings.agent_max_tool_calls,
                     )
+
+                    pipeline_ctx.set_error_context(session_id, correlation_id)
 
                     async for event in self._pipeline.run(pipeline_ctx):
                         yield event
@@ -456,6 +209,28 @@ class LLMAgent:
                     {"message": classify_error(exc, lang)},
                 )
             finally:
+                # ⚡ Save history even if pipeline failed (HIGH-1 fix)
+                if pipeline_ctx is not None:
+                    try:
+                        await SaveHistoryStage().force_save(pipeline_ctx)
+                    except Exception:
+                        logger.exception(
+                            "[AGENT] force_save(pipeline_ctx) failed for session %s",
+                            session_id,
+                        )
+                elif ctx.turn_messages:
+                    # MCP connection failed before pipeline_ctx was created;
+                    # save turn_messages directly via conversation_manager.
+                    try:
+                        await self.conversation_manager.aremember_turn(
+                            ctx.session_id, ctx.turn_messages
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[AGENT] force_save(ctx) failed for session %s",
+                            session_id,
+                        )
+
                 _duration = (time.monotonic() - _turn_start) * 1000
                 if not ctx.final_content and _outcome != "error":
                     _outcome = "limit"

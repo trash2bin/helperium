@@ -30,6 +30,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from helperium_sdk.settings import settings
 from api_service.agent.models import CompletionRequest, CompletionResponse, UsageInfo
 from api_service.agent.pipeline import PipelineContext
 from api_service.agent.turn_context import TurnContext
@@ -625,9 +626,9 @@ async def make_pipeline_ctx(
     conversation_store: TestConversationStore | None = None,
     llm_provider: TestLLMProvider | None = None,
     mcp_provider: TestMCPProvider | None = None,
-    max_iterations: int = 5,
-    max_empty_rounds: int = 3,
-    max_turn_tokens: int = 8000,
+    max_iterations: int = settings.agent_max_iterations,
+    max_empty_rounds: int = settings.agent_max_empty_rounds,
+    max_turn_tokens: int = settings.agent_max_turn_tokens,
     guard_checker: Any = None,
 ) -> PipelineContext:
     """Build a PipelineContext with test defaults and optional overrides.

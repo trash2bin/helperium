@@ -1,0 +1,328 @@
+"""Chat endpoints — text, agent-scoped, and voice."""
+
+from __future__ import annotations
+import logging
+import asyncio
+from uuid import uuid4
+
+from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
+from ..rate_limit import rate_limit, limiter
+from api_service.http_models import ChatRequest, VoiceAgentConfig
+from api_service.error_messages import classify_error
+from api_service.prometheus_metrics import chat_sessions_total, chat_messages_total
+from api_service.audio.voice_config import (
+    load_voice_config,
+    resolve_voice_config,
+)
+from api_service.audio.stt_engine import STTEngine
+from ..deps import get_agent, get_agent_store
+from ..sse import _sse, _single_error, _event_payload, _get_lang
+from ..security import check_abuse
+
+logger = logging.getLogger("api_service.server")
+router = APIRouter()
+
+
+# ── Chat endpoints ──────────────────────────────────────────────────────
+
+
+@router.post("/api/chat")
+@limiter.limit(rate_limit)
+async def chat_endpoint(request: Request) -> StreamingResponse:
+    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+
+    try:
+        body = await request.json()
+        chat_req = ChatRequest(**body)
+    except Exception as exc:
+        return StreamingResponse(
+            _single_error(f"Invalid request body: {exc}", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    message = chat_req.message
+    session_id = chat_req.session_id
+    tenant_header = request.headers.get("X-Tenant-ID", "")
+    tenant_ids = (
+        [t.strip() for t in tenant_header.split(",") if t.strip()]
+        if tenant_header
+        else None
+    )
+
+    if not message:
+        return StreamingResponse(
+            _single_error("Empty message.", correlation_id),
+            media_type="text/event-stream",
+        )
+    if not session_id:
+        return StreamingResponse(
+            _single_error("Missing session_id.", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    abuse_result = await check_abuse(request, session_id, message)
+    if abuse_result is not None:
+        return abuse_result
+
+    effective_session_id = f"direct:{session_id}"
+    chat_sessions_total.inc()
+    lang = _get_lang(request)
+
+    async def events():
+        try:
+            async for event in get_agent().stream_events(
+                message,
+                session_id=effective_session_id,
+                tenant_ids=tenant_ids,
+                lang=lang,
+                correlation_id=correlation_id,
+            ):
+                payload = _event_payload(event.type, event.data)
+                if payload is not None:
+                    yield _sse(payload)
+            chat_messages_total.labels(status="sent").inc()
+            yield _sse({"type": "done"})
+        except Exception as exc:
+            yield _sse(
+                {
+                    "type": "error",
+                    "text": classify_error(exc, lang),
+                    "correlation_id": correlation_id,
+                }
+            )
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
+# ── Voice Chat ──────────────────────────────────────────────────────────
+
+
+@router.post("/api/chat/voice")
+@limiter.limit(rate_limit)
+async def chat_voice_endpoint(
+    request: Request,
+    audio: UploadFile = File(...),
+    session_id: str = Form("default"),
+    agent: str | None = Form(None),
+    lang: str | None = Form(None),
+) -> StreamingResponse:
+    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+
+    try:
+        audio_bytes = await audio.read()
+    except Exception as exc:
+        return StreamingResponse(
+            _single_error(f"Failed to read audio: {exc}", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    if not audio_bytes:
+        return StreamingResponse(
+            _single_error("Empty audio file", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    voice_config = load_voice_config()
+    if not voice_config.enabled:
+        return StreamingResponse(
+            _single_error("Voice input is disabled", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    if len(audio_bytes) > voice_config.max_voice_message_size:
+        size_mb = len(audio_bytes) / (1024 * 1024)
+        max_mb = voice_config.max_voice_message_size / (1024 * 1024)
+        return StreamingResponse(
+            _single_error(
+                f"Audio too large: {size_mb:.1f}MB > {max_mb:.0f}MB", correlation_id
+            ),
+            media_type="text/event-stream",
+        )
+
+    resolved_config = voice_config
+    agent_data = None
+    if agent:
+        agent_data = await asyncio.to_thread(get_agent_store().get_agent, agent)
+        if agent_data:
+            agent_voice_config = agent_data.get("voice_config")
+            if agent_voice_config:
+                agent_voice_obj = VoiceAgentConfig(**agent_voice_config)
+                resolved_config = resolve_voice_config(voice_config, agent_voice_obj)
+
+    if not resolved_config.enabled:
+        return StreamingResponse(
+            _single_error("Voice input is disabled", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    stt_engine = STTEngine.from_config(resolved_config)
+    try:
+        stt_result = await stt_engine.transcribe(audio_bytes)
+    except RuntimeError as exc:
+        return StreamingResponse(
+            _single_error(classify_error(exc, lang or "ru"), correlation_id),
+            media_type="text/event-stream",
+        )
+    except Exception as exc:
+        return StreamingResponse(
+            _single_error(classify_error(exc, lang or "ru"), correlation_id),
+            media_type="text/event-stream",
+        )
+
+    text = stt_result.text
+    if not text.strip():
+        return StreamingResponse(
+            _single_error("No speech detected", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    tenant_ids = None
+    if agent_data and agent_data.get("tenant_ids"):
+        tenant_ids_raw = agent_data.get("tenant_ids")
+        tenant_ids = tenant_ids_raw if tenant_ids_raw else None
+    if not tenant_ids:
+        tenant_header = request.headers.get("X-Tenant-ID", "")
+        tenant_ids = (
+            [t.strip() for t in tenant_header.split(",") if t.strip()]
+            if tenant_header
+            else None
+        )
+
+    if agent:
+        effective_session_id = f"agent:{agent}:{session_id}"
+    else:
+        effective_session_id = f"direct:{session_id}"
+
+    request_lang = lang or _get_lang(request)
+    chat_sessions_total.inc()
+
+    resolved_llm_config = None
+    provider_priority = None
+    system_prompt = None
+    if agent_data:
+        provider_priority = agent_data.get("provider_priority") or None
+        resolved_llm_config = agent_data.get("llm_config")
+        system_prompt = agent_data.get("system_prompt") or (
+            resolved_llm_config.get("system_prompt") if resolved_llm_config else None
+        )
+
+    async def events():
+        try:
+            kwargs = dict(
+                user_message=text,
+                session_id=effective_session_id,
+                tenant_ids=tenant_ids,
+                system_prompt=system_prompt,
+                lang=request_lang,
+            )
+            if resolved_llm_config:
+                kwargs["llm_config"] = resolved_llm_config
+            if provider_priority:
+                kwargs["provider_priority"] = provider_priority
+            kwargs["correlation_id"] = correlation_id
+            async for event in get_agent().stream_events(**kwargs):
+                payload = _event_payload(event.type, event.data)
+                if payload is not None:
+                    yield _sse(payload)
+            chat_messages_total.labels(status="sent").inc()
+            yield _sse({"type": "done"})
+        except Exception as exc:
+            yield _sse(
+                {
+                    "type": "error",
+                    "text": classify_error(exc, request_lang),
+                    "correlation_id": correlation_id,
+                }
+            )
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
+# ── Chat by agent name ─────────────────────────────────────────────────
+
+
+@router.post("/api/chat/{name}")
+@limiter.limit(rate_limit)
+async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
+    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+
+    agent = await asyncio.to_thread(get_agent_store().get_agent, name)
+    if not agent:
+        return StreamingResponse(
+            _single_error(f"Agent '{name}' not found", correlation_id),
+            media_type="text/event-stream",
+            status_code=404,
+        )
+
+    try:
+        body = await request.json()
+        chat_req = ChatRequest(**body)
+    except Exception as exc:
+        return StreamingResponse(
+            _single_error(f"Invalid request body: {exc}", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    message = chat_req.message
+    session_id = chat_req.session_id
+    tenant_ids_raw = agent.get("tenant_ids")
+    tenant_ids = tenant_ids_raw if tenant_ids_raw else None
+    llm_config = agent.get("llm_config")
+    system_prompt = agent.get("system_prompt") or (
+        llm_config.get("system_prompt") if llm_config else None
+    )
+
+    if not message:
+        return StreamingResponse(
+            _single_error("Empty message.", correlation_id),
+            media_type="text/event-stream",
+        )
+    if not session_id:
+        return StreamingResponse(
+            _single_error("Missing session_id.", correlation_id),
+            media_type="text/event-stream",
+        )
+
+    agent_abuse_config = agent.get("abuse_config")
+    abuse_result = await check_abuse(request, session_id, message, agent_abuse_config)
+    if abuse_result is not None:
+        return abuse_result
+
+    provider_priority = agent.get("provider_priority") or None
+    resolved_llm_config = agent.get("llm_config")
+
+    effective_session_id = f"agent:{name}:{session_id}"
+    chat_sessions_total.inc()
+    lang = _get_lang(request)
+
+    async def events():
+        try:
+            kwargs = dict(
+                user_message=message,
+                session_id=effective_session_id,
+                tenant_ids=tenant_ids,
+                system_prompt=system_prompt,
+                lang=lang,
+            )
+            if resolved_llm_config:
+                kwargs["llm_config"] = resolved_llm_config
+            if provider_priority:
+                kwargs["provider_priority"] = provider_priority
+            kwargs["correlation_id"] = correlation_id
+            async for event in get_agent().stream_events(**kwargs):
+                payload = _event_payload(event.type, event.data)
+                if payload is not None:
+                    yield _sse(payload)
+            chat_messages_total.labels(status="sent").inc()
+            yield _sse({"type": "done"})
+        except Exception as exc:
+            yield _sse(
+                {
+                    "type": "error",
+                    "text": classify_error(exc, lang),
+                    "correlation_id": correlation_id,
+                }
+            )
+
+    return StreamingResponse(events(), media_type="text/event-stream")

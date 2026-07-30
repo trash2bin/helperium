@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
@@ -45,6 +46,45 @@ func TestNormalize_V1toV2(t *testing.T) {
 	if cfg.Meta.ConfigVersion != config.CurrentConfigVersion {
 		t.Errorf("Meta.ConfigVersion = %d, want %d",
 			cfg.Meta.ConfigVersion, config.CurrentConfigVersion)
+	}
+}
+
+// TestNormalize_V2toV3 verifies that v2 configs with legacy find/list endpoints
+// are migrated to op=strategy, strategy=schema.
+func TestNormalize_V2toV3(t *testing.T) {
+	tests := []struct {
+		name      string
+		inputOp   string
+		wantOp    config.Op
+		wantStrat string
+	}{
+		{"find becomes strategy", "find", config.OpStrategy, "schema"},
+		{"list becomes strategy", "list", config.OpStrategy, "schema"},
+		{"strategy unchanged", "strategy", config.OpStrategy, "grep"},
+		{"get_by_id untouched", "get_by_id", config.OpGetByID, "grep"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTempConfig(t, fmt.Sprintf(`{
+				"version": 2,
+				"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+				"entities": [{"name": "student", "table": "students", "id_column": "id",
+					"fields": [{"name": "id", "column": "id", "type": "string", "nullable": false}]}],
+				"endpoints": [{"method": "GET", "path": "/students", "op": %q, "entity": "student", "strategy": "grep"}]
+			}`, tt.inputOp))
+
+			cfg, err := config.Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Endpoints[0].Op != tt.wantOp {
+				t.Errorf("Op = %v, want %v", cfg.Endpoints[0].Op, tt.wantOp)
+			}
+			if cfg.Endpoints[0].Strategy != tt.wantStrat {
+				t.Errorf("Strategy = %q, want %q", cfg.Endpoints[0].Strategy, tt.wantStrat)
+			}
+		})
 	}
 }
 

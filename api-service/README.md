@@ -289,6 +289,8 @@ curl -X POST http://localhost:8081/api/agents \
 | `AGENT_MAX_TOKENS_THINKING` | `4096` | Макс. токенов thinking |
 | `AGENT_MAX_EMPTY_ROUNDS` | `3` | Макс. пустых раундов thinking |
 | `AGENT_MAX_TURN_TOKENS` | `8000` | Макс. токенов за ход (контекст) |
+| `AGENT_MAX_TOOL_CALLS` | `10` | Макс. вызовов тулов за ход |
+| `AGENT_FALLBACK_MAX_MESSAGES` | `7` | Макс. сообщений в контексте Fallback |
 | `LOG_FORMAT` | `text` | Формат логов: `text` или `json` (structlog) |
 | `LOG_LEVEL` | `info` | Уровень логирования: debug, info, warn, error |
 | `ABUSE_RPS` | `1.0` | Token bucket refill rate (requests/second) |
@@ -322,8 +324,175 @@ uv run --package api-service python -m uvicorn api_service.server:app --port 808
 uv run pytest api-service/src/api_service/tests/ -v
 ```
 
+## Архитектура Agent Pipeline
+
+Все LLM-запросы проходят через Pipeline — циклический обработчик Stage'ов с Middleware-фильтрами.
+
+```
+Pipeline.run() ─► while loop ─► for stage in stages ─► for event in stage.run(ctx)
+                                  │                        │
+                                  │                        └──► Middleware chain
+                                  │                      SpendingMiddleware
+                                  │                      TokenBudgetMiddleware
+                                  └──► ctx.should_stop? ──► break
+                     ─► Фаза 2 (finalization): FallbackStage → GuardOutputStage → SaveHistoryStage
+```
+
+### Два фазы выполнения
+
+**Фаза 1 — Основной цикл**
+
+Stage'ы выполняются последовательно в цикле `while not ctx.should_stop`. LLMStage и ToolExecutionStage чередуются: LLM отвечает → если есть tool_calls → ToolExecution выполняет их → LLM получает результаты и отвечает снова. GuardInputStage и ToolDiscoveryStage выполняются один раз (через `_done_flags`).
+
+Цикл завершается когда:
+- `ctx.should_stop = True` (лимит tool calls, max iterations)
+- `ctx.turn.final_content` установлен (LLM дал финальный ответ)
+- `ctx.turn.empty_rounds >= max_empty_rounds` (модель не отвечает)
+- `ctx.turn.iteration >= max_iterations - 1` (максимальное число итераций)
+
+**Фаза 2 — Финализация**
+
+После выхода из цикла выполняются finalizer-стейджи (FallbackStage → GuardOutputStage → SaveHistoryStage) — каждый ровно один раз.
+
+### PipelineContext
+
+`PipelineContext` — dataclass, хранящий всё runtime-состояние:
+- `turn: TurnContext` — сообщения, история, tenant_ids, итерация
+- `llm_provider: LLMProvider` — текущий LLM-провайдер
+- `mcp_session: MCPSession` — MCP-сессия для tool calls
+- `store/spending/backlog` — runtime-зависимости через протоколы
+- `max_iterations/max_empty_rounds/max_turn_tokens` — лимиты (из ENV)
+- `bench: dict` — аккумулятор метрик (токены, cost, tool_calls)
+- `_done_flags: set[str]` — флаги one-shot stage'ов
+
+### Протоколы Stage и Middleware
+
+```python
+# Stage — любой асинхронный генератор событий
+class Stage(Protocol):
+    def run(self, ctx: PipelineContext) -> AsyncIterator[AgentEvent]: ...
+
+# Middleware — фильтр событий (модифицирует или блокирует)
+class Middleware(Protocol):
+    async def process(self, ctx: PipelineContext, event: AgentEvent) -> AgentEvent | None: ...
+```
+
+## Список Stage'ов
+
+| Stage | Файл | Назначение |
+|---|---|---|
+| `GuardInputStage` | `stages/guard_input.py` | Проверка пользовательского ввода на prompt injection |
+| `ToolDiscoveryStage` | `stages/tool_discovery.py` | Формирование JSON-схемы MCP-инструментов для LLM |
+| `LLMStage` | `stages/llm.py` | Вызов LLM, парсинг ответа, определение outcome (tool_calls / final / empty) |
+| `ToolExecutionStage` | `stages/tool_execution.py` | Выполнение MCP tool calls, возврат результатов |
+| `GuardOutputStage` | `stages/guard_output.py` | Фильтрация чувствительных данных в ответе LLM |
+| `FallbackStage` | `stages/fallback.py` | Обработка пустых/безответных случаев |
+| `SaveHistoryStage` | `stages/save_history.py` | Сохранение истории диалога в ConversationStore |
+
+Все stage'и находятся в `api_service/agent/stages/`. Импортируются через `stages/__init__.py`.
+
+## Как добавить свой Stage
+
+1. **Создать файл** в `agent/stages/` (например `my_stage.py`)
+2. **Реализовать протокол `Stage`**:
+
+```python
+from collections.abc import AsyncIterator
+from api_service.agent.types import AgentEvent
+from api_service.agent.pipeline import PipelineContext, Stage
+
+class MyStage:
+    async def run(self, ctx: PipelineContext) -> AsyncIterator[AgentEvent]:
+        # Ваша логика
+        yield AgentEvent(type="status", data={"message": "done"})
+```
+3. **Добавить импорт** в `agent/stages/__init__.py`
+4. **Зарегистрировать** в `LLMAgent.__init__` (`orchestrator.py`):   - Добавить в список `stages=[...]` — выполняется в основном цикле   - ИЛИ в `finalizer_stages=[...]` — выполняется один раз после цикла
+5. **Определить тип**:   - Loop stage (выполняется на каждой итерации) → `stages=[...]`   - One-shot stage (выполняется один раз) → используйте `ctx._stage_ran("MyStage")` / `ctx._mark_done("MyStage")` для гейтинга   - Finalizer (выполняется после цикла) → `finalizer_stages=[...]`
+6. **Написать тесты** в `tests/unit/agent/`
+
+Пример регистрации:
+
+```python
+# agent/orchestrator.py
+self._pipeline = Pipeline(
+    stages=[
+        GuardInputStage(),
+        ToolDiscoveryStage(),
+        MyStage(),          # ← новый stage
+        LLMStage(),
+        ToolExecutionStage(),
+    ],
+    finalizer_stages=[
+        FallbackStage(),
+        GuardOutputStage(),
+        SaveHistoryStage(),
+    ],
+    middlewares=[SpendingMiddleware(), TokenBudgetMiddleware()],
+)
+```
+
+## LLM Provider Resolution
+
+Провайдер LLM определяется функцией `resolve_llm()` в `agent/factory.py`. Приоритет (от высшего к низшему):
+
+| # | Источник | Когда используется | Пример |
+|---|---|---|---|
+| 1 | **Scripted** | `USE_SCRIPTED_LLM=1` — детерминированный режим для тестов | Возвращает фиксированные ответы |
+| 2 | **Explicit llm_client** | Вызывающий передаёт провайдер напрямую (тесты, priority routing) | `LLMStage(llm_client=mock)` |
+| 3 | **Per-agent llm_config** | Агент создан с `llm_config={model, provider, api_key, ...}` | `POST /api/agents` с `llm_config` |
+| 4 | **ProviderPriority** | У агента задан `provider_priority: ["openai", "mistral"]` | `ProviderPool` перебирает по порядку |
+| 5 | **Pool / env fallback** | По умолчанию — `ProviderPool` → env vars (`MISTRAL_API_KEY`) → Ollama | Автоматически |
+
+API-ключи передаются напрямую в `LiteLLMProvider(api_key=...)` — НЕ через `os.environ`, что безопасно при параллельных запросах.
+
+## Pipeline Configuration (ENV vars)
+
+| Переменная | Дефолт | Описание |
+|---|---|---|
+| `AGENT_MAX_ITERATIONS` | `5` | Максимальное число итераций tool calls за ход |
+| `AGENT_MAX_EMPTY_ROUNDS` | `3` | Максимум пустых ответов LLM перед остановкой |
+| `AGENT_MAX_TURN_TOKENS` | `8000` | Максимум токенов в контексте за ход |
+| `AGENT_MAX_TOOL_CALLS` | `10` | Максимум вызовов тулов за ход |
+| `AGENT_FALLBACK_MAX_MESSAGES` | `7` | Макс. сообщений в контексте Fallback (с окружением) |
+| `AGENT_TEMPERATURE` | `0.5` | Температура генерации LLM |
+| `AGENT_MAX_TOKENS_THINKING` | `4096` | Максимум thinking-токенов |
+| `ENABLE_THINK` | `true` | Включить thinking mode |
+
+## MCP Client Configuration (ENV vars)
+
+| Переменная | Дефолт | Описание |
+|---|---|---|
+| `MCP_MAX_CONSECUTIVE_FAILURES` | `3` | Circuit breaker: порог отказов перед пропуском reconnect |
+| `MCP_CIRCUIT_BREAKER_TIMEOUT` | `30.0` | Время (сек) до half-open retry после размыкания circuit breaker |
+| `MCP_GC_INTERVAL` | `60.0` | Интервал (сек) фонового GC для idle SSE сессий |
+| `MCP_MAX_IDLE_SECONDS` | `600.0` | Время (сек) бездействия SSE сессии до закрытия |
+| `MCP_LOCK_ACQUIRE_TIMEOUT` | `10.0` | Таймаут (сек) захвата per-tenant блокировки tool call |
+| `MCP_TOOL_EXECUTION_TIMEOUT` | `15.0` | Таймаут (сек) выполнения одного tool call |
+| `MCP_SSE_TIMEOUT` | `10.0` | Таймаут (сек) открытия SSE соединения |
+| `MCP_SSE_READ_TIMEOUT` | `1800.0` | Таймаут (сек) чтения SSE стрима |
+| `MCP_SESSION_INIT_TIMEOUT` | `15.0` | Таймаут (сек) инициализации MCP сессии (session.initialize) |
+
+Заменяют предыдущие хардкоды в `mcp_client.py`, читаются из `helperium_sdk.settings` при каждом вызове.
+
+## Middleware
+
+
+Middleware обрабатывают каждый `AgentEvent` после stage'а. Могут модифицировать, блокировать или записывать побочные эффекты.
+
+| Middleware | Файл | Что делает |
+|---|---|---|
+| `SpendingMiddleware` | `middlewares.py` | Записывает cost в SpendingTracker для tenant'ов; проверяет лимиты — при превышении заменяет событие на `error` |
+| `TokenBudgetMiddleware` | `middlewares.py` | После `tool_result`/`final`/`error` проверяет суммарное число токенов; при превышении `max_turn_tokens` выставляет `ctx.should_stop = True` |
+
+Middleware добавляются при создании `Pipeline`:
+
+```python
+Pipeline(
+    stages=[...],
+    middlewares=[SpendingMiddleware(), TokenBudgetMiddleware()],
+)
+```
 
 ---
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
----
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+**Last verified:** 2026-07-30 (post-refactor: agent pipeline docs, stages, protocols, factory)

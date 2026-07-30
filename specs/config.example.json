@@ -297,9 +297,7 @@
       "path": "/categories",
       "op": "strategy",
       "strategy": "grep",
-      "entity": "categories",
-      "search_field": "name",
-      "query_param": "name"
+      "entity": "categories"
     },
     {
       "method": "GET",
@@ -312,9 +310,7 @@
       "path": "/customers",
       "op": "strategy",
       "strategy": "grep",
-      "entity": "customers",
-      "search_field": "name",
-      "query_param": "name"
+      "entity": "customers"
     },
     {
       "method": "GET",
@@ -339,9 +335,7 @@
       "path": "/products",
       "op": "strategy",
       "strategy": "grep",
-      "entity": "products",
-      "search_field": "name",
-      "query_param": "name"
+      "entity": "products"
     },
     {
       "method": "GET",
@@ -453,37 +447,49 @@
   "custom_queries": {
     "order_items_by_orders": {
       "sql": "SELECT t.* FROM order_items t WHERE t.order_id = ?",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {},
       "max_rows": 100
     },
     "order_items_by_products": {
       "sql": "SELECT t.* FROM order_items t WHERE t.product_id = ?",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {},
       "max_rows": 100
     },
     "orders_by_customers": {
       "sql": "SELECT t.* FROM orders t WHERE t.customer_id = ?",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {},
       "max_rows": 100
     },
     "products_by_categories": {
       "sql": "SELECT t.* FROM products t WHERE t.category_id = ?",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {},
       "max_rows": 100
     },
     "reviews_by_customers": {
       "sql": "SELECT t.* FROM reviews t WHERE t.customer_id = ?",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {},
       "max_rows": 100
     },
     "reviews_by_products": {
       "sql": "SELECT t.* FROM reviews t WHERE t.product_id = ?",
-      "params": ["id"],
+      "params": [
+        "id"
+      ],
       "result_mapping": {},
       "max_rows": 100
     }

@@ -57,14 +57,17 @@ from helperium_sdk.settings import settings
 
 logger = logging.getLogger("api_service.agent.mcp_client")
 
-# Timeout for acquiring the per-tenant call lock.
-# Kept short so a stuck tool does not block other calls for too long.
-LOCK_ACQUIRE_TIMEOUT = 10.0
-
-# Max wall-clock time for a single tool execution after the lock is held.
-# Separate from LOCK_ACQUIRE_TIMEOUT so a slow DB query does not starve
-# the lock for other callers.
-TOOL_EXECUTION_TIMEOUT = 15.0
+# All MCP client constants are managed via env vars through settings.
+# See helperium_sdk.settings.DemoSettings for the full list:
+#   MCP_MAX_CONSECUTIVE_FAILURES  (default: 3)
+#   MCP_CIRCUIT_BREAKER_TIMEOUT   (default: 30.0)
+#   MCP_GC_INTERVAL               (default: 60.0)
+#   MCP_MAX_IDLE_SECONDS          (default: 600.0)
+#   MCP_LOCK_ACQUIRE_TIMEOUT      (default: 10.0)
+#   MCP_TOOL_EXECUTION_TIMEOUT    (default: 15.0)
+#   MCP_SSE_TIMEOUT               (default: 10.0)
+#   MCP_SSE_READ_TIMEOUT          (default: 1800.0)
+#   MCP_SESSION_INIT_TIMEOUT      (default: 15.0)
 
 
 @dataclass(slots=True)
@@ -95,6 +98,9 @@ class _TenantConnection:
     tool_display_names: dict[str, str] = field(default_factory=dict)
     schema: dict | None = None  # LLM-friendly schema description (from /mcp/schema)
     last_used: float = field(default_factory=time.monotonic)
+    # Circuit breaker state
+    consecutive_failures: int = 0
+    last_failure_time: float = 0.0
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):
@@ -114,6 +120,9 @@ class MCPClient:
     def __init__(self) -> None:
         self._connections: dict[str, _TenantConnection] = {}
         self._registry_lock = asyncio.Lock()
+        # GC background task
+        self._gc_task: asyncio.Task | None = None
+        self._gc_started: bool = False
 
     # -- connection lifecycle -------------------------------------------------
 
@@ -134,8 +143,8 @@ class MCPClient:
         http_ctx = sse_client(
             settings.mcp_service_url,
             headers=headers,
-            timeout=10.0,
-            sse_read_timeout=60 * 30,
+            timeout=settings.mcp_sse_timeout,
+            sse_read_timeout=settings.mcp_sse_read_timeout,
         )
         try:
             read_stream, write_stream = await http_ctx.__aenter__()
@@ -149,7 +158,7 @@ class MCPClient:
         session_ctx = ClientSession(read_stream, write_stream)
         try:
             session = await session_ctx.__aenter__()
-            async with asyncio.timeout(15):
+            async with asyncio.timeout(settings.mcp_session_init_timeout):
                 await session.initialize()
         except Exception:
             logger.exception(
@@ -210,6 +219,26 @@ class MCPClient:
 
         return conn
 
+    def _is_circuit_open(self, conn: _TenantConnection) -> bool:
+        """Check if circuit breaker is open for this connection.
+
+        Open means: consecutive_failures >= MAX and haven't waited long enough.
+        """
+        if conn.consecutive_failures < settings.mcp_max_consecutive_failures:
+            return False
+        elapsed = time.monotonic() - conn.last_failure_time
+        return elapsed < settings.mcp_circuit_breaker_timeout
+
+    def _mark_success(self, conn: _TenantConnection) -> None:
+        """Reset circuit breaker on successful operation."""
+        conn.consecutive_failures = 0
+        conn.last_failure_time = 0.0
+
+    def _mark_failure(self, conn: _TenantConnection) -> None:
+        """Increment circuit breaker on failure."""
+        conn.consecutive_failures += 1
+        conn.last_failure_time = time.monotonic()
+
     async def _get_connection(
         self, tenant_ids: list[str] | None = None
     ) -> _TenantConnection:
@@ -217,6 +246,21 @@ class MCPClient:
         async with self._registry_lock:
             conn = self._connections.get(tenant_key)
             if conn is not None:
+                # Circuit breaker: if open, raise immediately
+                if self._is_circuit_open(conn):
+                    logger.warning(
+                        "[MCP] Circuit breaker open for tenants=%s "
+                        "(%d failures, %.1fs ago), skipping reconnect",
+                        tenant_key or "(default)",
+                        conn.consecutive_failures,
+                        time.monotonic() - conn.last_failure_time,
+                    )
+                    raise ConnectionError(
+                        f"Circuit breaker open for {tenant_key or '(default)'}: "
+                        f"{conn.consecutive_failures} consecutive failures, "
+                        f"retry in {settings.mcp_circuit_breaker_timeout - (time.monotonic() - conn.last_failure_time):.0f}s"
+                    )
+
                 # Session idle > 4 min — reconnect proactively
                 idle = time.monotonic() - conn.last_used
                 if idle > 240:
@@ -242,8 +286,32 @@ class MCPClient:
         async with self._registry_lock:
             old = self._connections.pop(tenant_key, None)
         if old is not None:
+            # Carry over circuit breaker state from old connection
+            old_failures = old.consecutive_failures
             await old.close()
-        conn = await self._open_connection(tenant_ids)
+        else:
+            old_failures = 0
+
+        try:
+            conn = await self._open_connection(tenant_ids)
+            # Reset circuit breaker on successful reconnect
+            conn.consecutive_failures = 0
+            conn.last_failure_time = 0.0
+        except Exception:
+            # Reconnect failed — increment circuit breaker
+            logger.warning(
+                "[MCP] Reconnect failed for tenants=%s (accumulated %d failures)",
+                tenant_key or "(default)",
+                old_failures + 1,
+            )
+            # Blow the circuit — mark as failed and re-raise
+            async with self._registry_lock:
+                existing = self._connections.get(tenant_key)
+                if existing is not None:
+                    existing.consecutive_failures = old_failures + 1
+                    existing.last_failure_time = time.monotonic()
+            raise
+
         async with self._registry_lock:
             self._connections[tenant_key] = conn
         return conn
@@ -267,7 +335,7 @@ class MCPClient:
         """
         conn = await self._get_connection(session.tenant_ids)
         try:
-            async with asyncio.timeout(LOCK_ACQUIRE_TIMEOUT):
+            async with asyncio.timeout(settings.mcp_lock_acquire_timeout):
                 async with conn.list_lock:
                     result = await conn.session.list_tools()
                     conn.last_used = time.monotonic()
@@ -290,7 +358,7 @@ class MCPClient:
                 session.tenant_ids,
             )
             conn = await self._reconnect(session.tenant_ids)
-            async with asyncio.timeout(LOCK_ACQUIRE_TIMEOUT):
+            async with asyncio.timeout(settings.mcp_lock_acquire_timeout):
                 async with conn.list_lock:
                     result = await conn.session.list_tools()
                     conn.last_used = time.monotonic()
@@ -329,6 +397,88 @@ class MCPClient:
         except Exception:
             return None
 
+    # -- TTL Garbage Collection (MEDIUM-3 fix) ------------------------------
+
+    async def _cleanup_stale_connections(
+        self, max_idle_seconds: float = settings.mcp_max_idle_seconds
+    ) -> None:
+        """Close and remove connections idle longer than max_idle_seconds.
+
+        Idempotent: errors from individual close() are logged but don't
+        prevent cleanup of other connections.
+
+        Safe to call from outside the registry lock; acquires internally.
+        """
+        stale: list[tuple[str, _TenantConnection]] = []
+        async with self._registry_lock:
+            now = time.monotonic()
+            for key, conn in list(self._connections.items()):
+                idle = now - conn.last_used
+                if idle > max_idle_seconds:
+                    stale.append((key, conn))
+                    del self._connections[key]
+
+        if not stale:
+            logger.debug("[MCP_GC] No stale connections found")
+            return
+
+        for key, conn in stale:
+            try:
+                await conn.close()
+                logger.info(
+                    "[MCP_GC] Closed idle session for tenants=%s (idle > %.0fs)",
+                    key or "(default)",
+                    max_idle_seconds,
+                )
+            except Exception:
+                logger.warning(
+                    "[MCP_GC] Failed to close idle session for tenants=%s",
+                    key or "(default)",
+                )
+
+        logger.info("[MCP_GC] Cleaned %d stale connection(s)", len(stale))
+
+    async def start_gc(
+        self, interval_seconds: float = settings.mcp_gc_interval
+    ) -> None:
+        """Start a background GC task that periodically closes idle sessions.
+
+        Idempotent: subsequent calls are no-ops.
+        """
+        if self._gc_started:
+            return
+        self._gc_started = True
+
+        async def _gc_loop():
+            while True:
+                try:
+                    await asyncio.sleep(interval_seconds)
+                    await self._cleanup_stale_connections()
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    logger.exception("[MCP_GC] GC loop error")
+
+        self._gc_task = asyncio.create_task(_gc_loop())
+        self._gc_task.set_name("mcp_client_gc")
+        logger.info(
+            "[MCP_GC] Background GC started (interval=%ds, max_idle=%ds)",
+            interval_seconds,
+            settings.mcp_max_idle_seconds,
+        )
+
+    async def stop_gc(self) -> None:
+        """Cancel the background GC task."""
+        self._gc_started = False
+        if self._gc_task and not self._gc_task.done():
+            self._gc_task.cancel()
+            try:
+                await self._gc_task
+            except asyncio.CancelledError:
+                pass
+            self._gc_task = None
+            logger.info("[MCP_GC] Background GC stopped")
+
     # -- tool call execution helpers -----------------------------------------
 
     @staticmethod
@@ -342,8 +492,8 @@ class MCPClient:
             name,
             tenant_ids,
             context,
-            LOCK_ACQUIRE_TIMEOUT,
-            TOOL_EXECUTION_TIMEOUT,
+            settings.mcp_lock_acquire_timeout,
+            settings.mcp_tool_execution_timeout,
         )
         suffix = " after reconnect" if after_reconnect else ""
         reminder_suffix = " после переподключения" if after_reconnect else ""
@@ -353,8 +503,8 @@ class MCPClient:
                     "ok": False,
                     "error": (
                         f"Tool call timed out{suffix} "
-                        f"(lock timeout {LOCK_ACQUIRE_TIMEOUT}s, "
-                        f"exec timeout {TOOL_EXECUTION_TIMEOUT}s)"
+                        f"(lock timeout {settings.mcp_lock_acquire_timeout}s, "
+                        f"exec timeout {settings.mcp_tool_execution_timeout}s)"
                     ),
                 },
                 ensure_ascii=False,
@@ -389,7 +539,7 @@ class MCPClient:
             TimeoutError: If lock acquisition or execution times out.
             Exception: Any other MCP SDK error.
         """
-        async with asyncio.timeout(LOCK_ACQUIRE_TIMEOUT):
+        async with asyncio.timeout(settings.mcp_lock_acquire_timeout):
             async with conn.call_lock:
                 logger.info(
                     "[MCP] Calling tool %s for tenants=%s%s with args=%s",
@@ -398,7 +548,7 @@ class MCPClient:
                     f" ({context_label})" if context_label else "",
                     arguments,
                 )
-                async with asyncio.timeout(TOOL_EXECUTION_TIMEOUT):
+                async with asyncio.timeout(settings.mcp_tool_execution_timeout):
                     result = await conn.session.call_tool(name, arguments)
                     conn.last_used = time.monotonic()
                     # Log result size for abuse detection
@@ -428,12 +578,35 @@ class MCPClient:
         version (unwrapping JSON, building reminders) so downstream prompting
         logic doesn't need to change.
         """
-        conn = await self._get_connection(session.tenant_ids)
+        try:
+            conn = await self._get_connection(session.tenant_ids)
+        except ConnectionError as exc:
+            # Circuit breaker open
+            logger.warning(
+                "[MCP] call_tool %s blocked by circuit breaker for tenants=%s: %s",
+                name,
+                session.tenant_ids,
+                exc,
+            )
+            return ToolResult(
+                tool_content=json.dumps(
+                    {"ok": False, "error": str(exc)}, ensure_ascii=False
+                ),
+                reminder=(
+                    f"Инструмент {name} временно недоступен после {settings.mcp_max_consecutive_failures} "
+                    f"неудачных попыток. Попробуйте позже."
+                ),
+                ok=False,
+                error=str(exc),
+            )
+
         try:
             result = await self._execute_tool_call(
                 conn, name, arguments, session.tenant_ids
             )
+            self._mark_success(conn)
         except TimeoutError:
+            self._mark_failure(conn)
             return self._timeout_error_result(name, session.tenant_ids)
         except Exception as exc:
             if "Tool not found" in str(exc):
@@ -450,6 +623,7 @@ class MCPClient:
                     ok=False,
                     error=str(exc),
                 )
+            self._mark_failure(conn)
             logger.warning(
                 "[MCP] call_tool %s failed for tenants=%s, reconnecting: %s",
                 name,
@@ -465,11 +639,14 @@ class MCPClient:
                     session.tenant_ids,
                     context_label="after reconnect",
                 )
+                self._mark_success(conn)
             except TimeoutError:
+                self._mark_failure(conn)
                 return self._timeout_error_result(
                     name, session.tenant_ids, after_reconnect=True
                 )
             except Exception as exc2:
+                self._mark_failure(conn)
                 logger.exception(
                     "[MCP] call_tool %s failed after reconnect, tenants=%s",
                     name,
@@ -567,12 +744,18 @@ class MCPClient:
         )
 
     async def close(self) -> None:
-        """Close all open tenant sessions."""
+        """Close all open tenant sessions and stop GC."""
+        # Stop GC first
+        await self.stop_gc()
+
         async with self._registry_lock:
             conns = list(self._connections.values())
             self._connections.clear()
         for conn in conns:
-            await conn.close()
+            try:
+                await conn.close()
+            except Exception:
+                logger.warning("[MCP] Error closing connection for %s", conn.tenant_id)
         logger.info("[MCP] All tenant sessions closed")
 
 

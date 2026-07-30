@@ -46,13 +46,6 @@ RAG DOCUMENT RULES (English):
 - Если не понял запрос — уточни.
 """.strip()
 
-# ── Stuck-model recovery prompt ─────────────────────────────────────────────
-
-PARTIAL_REMINDER = (
-    "Верни только tool_calls или финальный ответ. "
-    "Опирайся на предыдущие сообщения и reasoning_content и действуй"
-)
-
 # ── Fallback messages ───────────────────────────────────────────────────────
 
 FALLBACK_GENERIC = (

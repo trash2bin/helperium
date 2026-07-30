@@ -279,14 +279,12 @@ def api_client(provider_store, monkeypatch):
 
     monkeypatch.setattr(ps_module, "get_provider_store", lambda: provider_store)
 
-    # Reload server module to pick up the patched store
-    import api_service.server as sv
+    # Reload server/app module to pick up the patched store
+    import api_service.server.app as app_mod
 
-    if hasattr(sv, "app"):
-        del sv.app
-    importlib.reload(sv)
+    importlib.reload(app_mod)
 
-    with TestClient(sv.app) as client:
+    with TestClient(app_mod.app) as client:
         yield client
 
 

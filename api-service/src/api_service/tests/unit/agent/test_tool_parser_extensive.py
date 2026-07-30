@@ -285,7 +285,7 @@ class TestSafetyNet:
 
     @staticmethod
     def check(content: str) -> bool:
-        from api_service.agent.stages import _looks_like_raw_json_tool_calls
+        from api_service.agent.stages.llm import _looks_like_raw_json_tool_calls
 
         return _looks_like_raw_json_tool_calls(content)
 

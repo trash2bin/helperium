@@ -826,10 +826,7 @@ func extractPathParams(path string) []string {
 	return params
 }
 
-func queryParam(ep config.Endpoint) string {
-	if ep.QueryParam != "" {
-		return ep.QueryParam
-	}
+func queryParam(_ config.Endpoint) string {
 	return ""
 }
 

@@ -11,7 +11,7 @@ class TestEventPayloadToolCall:
     """_event_payload returns correct shape for tool_call events."""
 
     def test_tool_call_basic(self):
-        """tool_call without display_name falls back to name."""
+        """tool_call with id and arguments sent to frontend."""
         data: dict[str, Any] = {
             "id": "c1",
             "name": "find_student",
@@ -22,7 +22,8 @@ class TestEventPayloadToolCall:
         assert result["type"] == "tool_call"
         assert result["name"] == "find_student"
         assert result["display_name"] == "find_student"  # fallback to name
-        assert "arguments" not in result  # не отдаётся браузеру
+        assert result["id"] == "c1"
+        assert result["arguments"] == {"name": "Alice"}
 
     def test_tool_call_with_display_name(self):
         """tool_call with explicit display_name."""
@@ -43,6 +44,8 @@ class TestEventPayloadToolCall:
         result = _event_payload("tool_call", data)
         assert result is not None
         assert result["display_name"] == ""
+        assert result["id"] == "c1"
+        assert result["arguments"] == {}
 
 
 class TestEventPayloadToolResult:

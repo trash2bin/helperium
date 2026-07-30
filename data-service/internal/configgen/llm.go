@@ -156,14 +156,6 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			desc = fmt.Sprintf("Таблица %s", e.Name)
 		}
 
-		// Search fields
-		var searchFields []string
-		for _, ep := range cfg.Endpoints {
-			if ep.Entity == e.Name && ep.SearchField != "" {
-				searchFields = append(searchFields, ep.SearchField)
-			}
-		}
-
 		// Filter fields — group by type
 		exactFields := make([]FilterField, 0)
 		boolFields := make([]FilterField, 0)
@@ -201,18 +193,6 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 					}
 					fkEntity = shortBusinessName(short, displayPrefixes)
 				}
-			}
-
-			// Check if search field (already handled above, skip from filters)
-			isSearch := false
-			for _, sf := range searchFields {
-				if sf == f.Column || sf == f.Name {
-					isSearch = true
-					break
-				}
-			}
-			if isSearch {
-				continue
 			}
 
 			fieldDesc := f.Description
@@ -271,7 +251,7 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			Name:         displayName,
 			ToolPrefix:   e.Name, // e.g. "catalog_product"
 			Description:  desc,
-			SearchFields: strings.Join(searchFields, ", "),
+			SearchFields: "",
 			FilterFields: filterFields,
 			Relations:    relations,
 		})

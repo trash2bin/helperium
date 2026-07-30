@@ -18,7 +18,6 @@ from api_service.prometheus_metrics import abuse_blocked_total
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 # ── Config ──
@@ -177,7 +176,7 @@ class CheckResult:
 
     allowed: bool
     reason: str = ""
-    retry_after: Optional[float] = None  # seconds
+    retry_after: float | None = None  # seconds
 
 
 class AntiAbuseChecker:
@@ -194,7 +193,7 @@ class AntiAbuseChecker:
         self._recent_messages: dict[str, list[tuple[str, float]]] = {}
         self._lock = threading.Lock()
 
-    def _check_user_agent(self, user_agent: str) -> Optional[str]:
+    def _check_user_agent(self, user_agent: str) -> str | None:
         """Returns error reason if UA is blocked, None if OK."""
         if not user_agent and self.config.block_empty_user_agent:
             return "Empty or missing User-Agent header"
@@ -205,14 +204,14 @@ class AntiAbuseChecker:
                 return f"Blocked User-Agent: {user_agent[:60]}"
         return None
 
-    def _check_message_length(self, message: str) -> Optional[str]:
+    def _check_message_length(self, message: str) -> str | None:
         if len(message) > self.config.max_message_length:
             return (
                 f"Message too long ({len(message)} > {self.config.max_message_length})"
             )
         return None
 
-    def _check_repeated_message(self, session_id: str, message: str) -> Optional[str]:
+    def _check_repeated_message(self, session_id: str, message: str) -> str | None:
         """Check if this session has sent the same message too many times."""
         now = time.monotonic()
         with self._lock:
@@ -237,7 +236,7 @@ class AntiAbuseChecker:
         user_agent: str,
         message: str,
         n_msg: int = 0,
-        last_msg_time_since: Optional[float] = None,
+        last_msg_time_since: float | None = None,
     ) -> CheckResult:
         """Run all checks against this request.
 
@@ -291,16 +290,3 @@ class AntiAbuseChecker:
             return CheckResult(allowed=False, reason=repeat_reason)
 
         return CheckResult(allowed=True)
-
-    def cleanup_old_sessions(self, max_age_seconds: int = 3600) -> None:
-        """Periodic cleanup of stale session tracking data."""
-        now = time.monotonic()
-        cutoff = now - max_age_seconds
-        with self._lock:
-            stale = [
-                sid
-                for sid, msgs in self._recent_messages.items()
-                if all(t < cutoff for _, t in msgs)
-            ]
-            for sid in stale:
-                del self._recent_messages[sid]

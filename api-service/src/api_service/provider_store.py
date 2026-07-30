@@ -58,6 +58,20 @@ def mask_api_key(key: str | None) -> str | None:
     return key[:4] + "****"
 
 
+def _mask_provider(name: str, cfg: Any, api_key: str | None = None) -> dict:
+    """Build standardized masked provider response dict."""
+    return {
+        "name": name,
+        "model": cfg.model,
+        "api_base": cfg.api_base,
+        "enabled": cfg.enabled,
+        "api_key_masked": mask_api_key(api_key or ""),
+        "provider": cfg.provider,
+        "has_api_key": bool(api_key),
+        "source": getattr(cfg, "source", None),
+    }
+
+
 class ProviderStore:
     """Async-safe хранилище LLM-провайдеров на основе Pydantic.
 
@@ -204,17 +218,7 @@ class ProviderStore:
             result = []
             for name, cfg in self._providers.items():
                 api_key_str = cfg.api_key.get_secret_value() if cfg.api_key else ""
-                entry: dict[str, Any] = {
-                    "name": name,
-                    "model": cfg.model,
-                    "api_base": cfg.api_base,
-                    "enabled": cfg.enabled,
-                    "api_key_masked": mask_api_key(api_key_str),
-                    "provider": cfg.provider,
-                    "has_api_key": bool(api_key_str),
-                    "source": cfg.source,
-                }
-                result.append(entry)
+                result.append(_mask_provider(name, cfg, api_key_str))
             return sorted(result, key=lambda x: x["name"])
 
     async def get_provider(self, name: str) -> dict[str, Any] | None:
@@ -224,17 +228,7 @@ class ProviderStore:
             if not cfg:
                 return None
             api_key_str = cfg.api_key.get_secret_value() if cfg.api_key else ""
-            return {
-                "name": name,
-                "model": cfg.model,
-                "api_base": cfg.api_base,
-                "enabled": cfg.enabled,
-                "api_key_masked": mask_api_key(api_key_str),
-                "provider": cfg.provider,
-                "has_api_key": bool(api_key_str),
-                "label": cfg.label,
-                "source": cfg.source,
-            }
+            return {**_mask_provider(name, cfg, api_key_str), "label": cfg.label}
 
     async def add_provider(
         self,
@@ -269,15 +263,7 @@ class ProviderStore:
             )
             self._save()
 
-            return {
-                "name": name,
-                "model": model,
-                "api_base": api_base or "",
-                "enabled": enabled,
-                "api_key_masked": mask_api_key(api_key),
-                "provider": provider or "",
-                "has_api_key": bool(api_key),
-            }
+            return _mask_provider(name, self._providers[name], api_key)
 
     async def update_provider(
         self,
@@ -326,17 +312,7 @@ class ProviderStore:
             self._save()
 
             api_key_str = cfg.api_key.get_secret_value() if cfg.api_key else ""
-            return {
-                "name": name,
-                "model": cfg.model,
-                "api_base": cfg.api_base,
-                "enabled": cfg.enabled,
-                "api_key_masked": mask_api_key(api_key_str),
-                "provider": cfg.provider,
-                "has_api_key": bool(api_key_str),
-                "label": cfg.label,
-                "source": cfg.source,
-            }
+            return {**_mask_provider(name, cfg, api_key_str), "label": cfg.label}
 
     async def delete_provider(self, name: str) -> bool:
         """Удаляет провайдера.

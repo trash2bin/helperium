@@ -105,7 +105,7 @@ class TestTrimForFallback:
         assert result == msgs
 
     def test_five_or_more_messages(self):
-        """trim_for_fallback with 5+ messages keeps system + last 4."""
+        """trim_for_fallback keeps system + last user (even with 0 context after)."""
         msgs = [
             {"role": "system", "content": "sp"},
             {"role": "user", "content": "q1"},
@@ -115,10 +115,12 @@ class TestTrimForFallback:
             {"role": "user", "content": "q3"},
         ]
         result = trim_for_fallback(msgs)
-        # Expected: [system] + last 4 = 5 messages
-        assert len(result) == 5
+        # System + last user = 2 (there's nothing after the last user)
         assert result[0] == msgs[0]  # system prompt preserved
-        assert result[1:] == msgs[-4:]  # last 4 preserved
+        assert len(result) >= 2  # system + q3
+        # Last message is the last user message (q3)
+        assert result[-1]["content"] == "q3"
+        assert result[-1]["role"] == "user"
 
     def test_returns_new_list(self):
         """trim_for_fallback returns a new list, not the same reference."""

@@ -292,8 +292,6 @@
       "path": "/categories",
       "op": "strategy",
       "entity": "categories",
-      "search_field": "name",
-      "query_param": "name",
       "strategy": "grep"
     },
     {
@@ -307,8 +305,6 @@
       "path": "/customers",
       "op": "strategy",
       "entity": "customers",
-      "search_field": "name",
-      "query_param": "name",
       "strategy": "grep"
     },
     {
@@ -334,8 +330,6 @@
       "path": "/products",
       "op": "strategy",
       "entity": "products",
-      "search_field": "name",
-      "query_param": "name",
       "strategy": "grep"
     },
     {

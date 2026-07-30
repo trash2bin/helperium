@@ -74,7 +74,8 @@ func TestScenario_BigTestseed(t *testing.T) {
 
 	t.Run("find_students_by_name_first", func(t *testing.T) {
 		// Поиск по подстроке "Иванов" — возвращает массив совпадений.
-		status, results := getJSON[[]map[string]any](t, ts.URL+"/students?full_name=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2")
+		status, resp := getJSON[map[string]any](t, ts.URL+"/students?pattern=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2")
+		results := extractPreview(t, resp)
 		if status != 200 {
 			t.Errorf("find: status=%d", status)
 		}
@@ -84,7 +85,8 @@ func TestScenario_BigTestseed(t *testing.T) {
 	})
 
 	t.Run("find_students_by_name_nonexistent", func(t *testing.T) {
-		status, results := getJSON[[]map[string]any](t, ts.URL+"/students?full_name=НеизвестныйНикогдаНеСуществовал")
+		status, resp := getJSON[map[string]any](t, ts.URL+"/students?pattern=НеизвестныйНикогдаНеСуществовал")
+		results := extractPreview(t, resp)
 		if status != 200 {
 			t.Errorf("expected 200 for non-existing name, got %d", status)
 		}
@@ -96,7 +98,8 @@ func TestScenario_BigTestseed(t *testing.T) {
 	t.Run("find_teachers_by_name", func(t *testing.T) {
 		// В big-testseed конфиге нет /teachers/{id}, только /teachers (find).
 		// find возвращает массив совпадений.
-		status, results := getJSON[[]map[string]any](t, ts.URL+"/teachers?full_name=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2")
+		status, resp := getJSON[map[string]any](t, ts.URL+"/teachers?pattern=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2")
+		results := extractPreview(t, resp)
 		if status != 200 {
 			t.Errorf("find teacher: status=%d", status)
 		}
@@ -274,7 +277,7 @@ func TestScenario_BigTestseed_NoPanicsOnRandomQueries(t *testing.T) {
 		{"/students/s1", 200},
 		{"/students/s500", 200},
 		{"/students/s99999", 404},
-		{"/teachers?full_name=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2", 200},
+		{"/teachers?pattern=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2", 200},
 		{"/groups/g1", 404},          // get_by_id не описан в конфиге
 		{"/groups/g1/schedule", 200}, // custom_query с g1
 		{"/students/s1/grades", 200},
@@ -284,7 +287,7 @@ func TestScenario_BigTestseed_NoPanicsOnRandomQueries(t *testing.T) {
 		{"/grades", 200},
 		{"/schedule", 200},
 		{"/disciplines", 200},
-		{"/students?full_name=Неизвестный", 200},
+		{"/students?pattern=Неизвестный", 200},
 	}
 
 	for _, tc := range tests {

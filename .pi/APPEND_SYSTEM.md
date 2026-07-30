@@ -63,6 +63,29 @@
 ### git-commit
 Только по явному запросу. Не пушит.
 
+### api-service audit (2026-07-30)
+Проведён глубокий аудит api-service через subagent'ы. Исправлено 12 проблем:
+
+| # | Область | Фикс |
+|---|---|---|
+| 🔴 HIGH-1 | Pipeline exception safety | `SaveHistoryStage.force_save()` в finally при ошибке |
+| 🔴 HIGH-3 | Dead protocol | Удалён мёртвый `AntiAbuseChecker` protocol из protocols.py |
+| 🟡 MEDIUM | classify_error | Type-based (isinstance) вместо substring matching |
+| 🟡 MEDIUM | ErrorContext coverage | Все 5 stage'ов + фикс immutable builder бага в ToolExecutionStage |
+| 🟡 MEDIUM | Circuit breaker MCP | 3+ failures → skip reconnect, half-open после 30s |
+| 🟡 MEDIUM | TTL GC MCP | Background task закрывает SSE сессии idle > 10 мин |
+| 🟡 MEDIUM | ProviderPool TOCTOU | `remove_worker()` async + `_lock` + `_rr_index` correction |
+| 🟡 MEDIUM | TokenBudget pre-check | Проверка ДО LLM call в LLMStage.run() |
+| 🟡 MEDIUM | Spending persistence | JSON-файл с atomic write, перезапуск без потерь |
+| 🟡 MEDIUM | Composite tenant DOS | Bad tenant не блокирует good tenant в multi-tenant запросе |
+| 🟢 LOW | LiteLLM cost | Извлекается из response, SpendingMiddleware работает |
+| 🟢 LOW | Safety net false positive | Структурная json.loads проверка, не тупой `in` |
+| 🟢 LOW | Unicode homoglyph guard | Таблица омоглифов, guard не bypass-ится |
+
+**Не воспроизводится:** HIGH-2 (backlog concurrent writes) — per-session lock стоит добавить при performance-тестах.
+
+Все фиксы сделаны TDD: сначала падающие тесты, потом код. 60+ тестов покрывают эти кейсы.
+
 ### pi-intercom
 Коммуникация между сессиями, передача контекста.
 
@@ -78,6 +101,8 @@
 |---|---|
 | `search-strategies.md` | Поиск, MCP-тулы, интроспекция |
 | `mcp-session-lifecycle.md` | MCP-сессии рвутся, тулы не работают |
+| `pipeline-architecture.md` | Pipeline api-service — Stage/Protocol/Middleware |
+| `api-service-audit.md` | Аудит api-service: найденные и исправленные проблемы |
 | `tenant-lifecycle.md` | Настройка/отладка tenant |
 | `adapter-pattern.md` | Добавление нового типа БД |
 | `http-clients.md` | Кросс-сервисные проблемы |
@@ -106,6 +131,20 @@
 | `embed/README.md` | Widget API, Shadow DOM, CSP |
 | `configgen/README.md` | Config generation, mcp tools |
 | `specs/README.md` | Config schema |
+
+### Decision tree: api-service — симптомы
+
+| Симптом | Читать / Что проверять |
+|---|---|
+| История сессии не сохраняется при ошибке | `orchestrator.py` — `finally` блок должен вызвать `SaveHistoryStage.force_save()` |
+| Spending не учитывается / всегда 0 | `litellm_provider.py` — `cost` извлекается из `_hidden_params['cost']` или `usage.cost` |
+| Safety net блокирует легитимные JSON-ответы | `stages/llm.py::_looks_like_raw_json_tool_calls()` — структурная проверка |
+| Guard не блокирует injection с омоглифами | `guardrails.py` — `HOMOGLYPH_MAP` применяется до regex |
+| classify_error даёт неверную категорию | `error_messages.py` — type-based (isinstance) проверяет тип исключения до substring |
+| ErrorContext.stage не заполнен | Stage должен вызвать `ctx.error_context = ctx.error_context.with_stage('name')` |
+| MCP reconnect бесконечный при падении gateway | `mcp_client.py` — circuit breaker: 3+ failures → skip, half-open через 30s |
+| SSE сессии не закрываются | `mcp_client.py` — `_cleanup_stale_connections()` + `start_gc()` фоновый cleaner |
+| ProviderPool race / stale rr_index | `provider_pool.py` — `remove_worker()` async с `_lock`, корректировка `_rr_index` |
 
 ### Decision tree: симптом → что читать
 

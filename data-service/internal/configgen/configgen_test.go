@@ -54,8 +54,8 @@ func TestGenerate(t *testing.T) {
 		DataSource: ds,
 	})
 
-	if cfg.Version != 2 {
-		t.Errorf("expected version 2, got %d", cfg.Version)
+	if cfg.Version != 3 {
+		t.Errorf("expected version 3, got %d", cfg.Version)
 	}
 	if len(cfg.Entities) != 3 {
 		t.Fatalf("expected 3 entities, got %d", len(cfg.Entities))
@@ -135,7 +135,7 @@ func TestGenerate(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal config: %v", err)
 	}
-	if decoded.Version != 2 {
+	if decoded.Version != 3 {
 		t.Errorf("roundtrip version mismatch")
 	}
 }

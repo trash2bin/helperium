@@ -1,11 +1,8 @@
 """Tests for AgentStore — SQLite agent registry with widget_config and llm_config."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
-from api_service.agent_store import AgentStore
+from api_service.tests.unit.conftest import SAMPLE_LLM, UPDATED_LLM
 
 
 # ── Helpers ──
@@ -17,37 +14,12 @@ SAMPLE_WIDGET = {
     "position": "left",
 }
 
-SAMPLE_LLM = {
-    "provider": "ollama",
-    "model": "qwen2.5:0.5b",
-    "temperature": 0.3,
-    "system_prompt": "You are a test assistant.",
-}
-
 UPDATED_WIDGET = {
     "title": "Updated Helper",
     "greeting": "What do you need?",
     "accent_color": "#0f766e",
     "position": "right",
 }
-
-UPDATED_LLM = {
-    "provider": "mistral",
-    "model": "mistral/mistral-small",
-    "temperature": 0.7,
-    "system_prompt": "You are an updated assistant.",
-}
-
-
-@pytest.fixture
-def agent_store():
-    """AgentStore backed by a temporary SQLite file."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        path = f.name
-    store = AgentStore(path)
-    yield store
-    Path(path).unlink(missing_ok=True)
-
 
 # ── Tests ──
 

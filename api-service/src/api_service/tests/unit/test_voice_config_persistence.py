@@ -4,7 +4,7 @@
 Это защита от бага: фронтенд присылает маскированные поля (пустая строка),
 и сервер не должен перезаписывать существующий ключ пустотой.
 
-Related: api-service/src/api_service/server.py update_voice_config()
+Related: api-service/src/api_service/server/routes/voice.py update_voice_config()
 
 Voice config теперь хранится в SQLite (таблица global_config в agents.sqlite).
 """
@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 import json
 import sqlite3
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -93,12 +94,8 @@ def _get_app(monkeypatch, tmp_path):
 
     vc_mod._repo = None
 
-    import api_service.server as sv
-
-    if hasattr(sv, "app"):
-        del sv.app
-    importlib.reload(sv)
-    return sv.app
+    app_mod = importlib.reload(sys.modules["api_service.server.app"])
+    return app_mod.app
 
 
 class TestVoiceConfigKeyPreservation:

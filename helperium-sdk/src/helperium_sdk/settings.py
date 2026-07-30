@@ -106,6 +106,12 @@ class DemoSettings:
         self.agent_max_turn_tokens: int = int(
             os.environ.get("AGENT_MAX_TURN_TOKENS", "8000")
         )
+        self.agent_max_tool_calls: int = int(
+            os.environ.get("AGENT_MAX_TOOL_CALLS", "10")
+        )
+        self.agent_fallback_max_messages: int = int(
+            os.environ.get("AGENT_FALLBACK_MAX_MESSAGES", "7")
+        )
 
         # ── Guardrails ──────────────────────────────────────────────────
         self.guardrail_enabled: bool = os.environ.get(
@@ -119,6 +125,35 @@ class DemoSettings:
         )
 
         # ── Spending Limits ─────────────────────────────────────────────
+        # ── MCP Client ─────────────────────────────────────────────────
+        self.mcp_max_consecutive_failures: int = int(
+            os.environ.get("MCP_MAX_CONSECUTIVE_FAILURES", "3")
+        )
+        self.mcp_circuit_breaker_timeout: float = float(
+            os.environ.get("MCP_CIRCUIT_BREAKER_TIMEOUT", "30.0")
+        )
+        self.mcp_gc_interval: float = float(
+            os.environ.get("MCP_GC_INTERVAL", "60.0")
+        )
+        self.mcp_max_idle_seconds: float = float(
+            os.environ.get("MCP_MAX_IDLE_SECONDS", "600.0")
+        )
+        self.mcp_lock_acquire_timeout: float = float(
+            os.environ.get("MCP_LOCK_ACQUIRE_TIMEOUT", "10.0")
+        )
+        self.mcp_tool_execution_timeout: float = float(
+            os.environ.get("MCP_TOOL_EXECUTION_TIMEOUT", "15.0")
+        )
+        self.mcp_sse_timeout: float = float(
+            os.environ.get("MCP_SSE_TIMEOUT", "10.0")
+        )
+        self.mcp_sse_read_timeout: float = float(
+            os.environ.get("MCP_SSE_READ_TIMEOUT", "1800.0")
+        )
+        self.mcp_session_init_timeout: float = float(
+            os.environ.get("MCP_SESSION_INIT_TIMEOUT", "15.0")
+        )
+
         self.spending_limit_enabled: bool = os.environ.get(
             "SPENDING_LIMIT_ENABLED", "true"
         ).lower() in ("true", "1", "yes")

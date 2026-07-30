@@ -210,8 +210,6 @@
       "path": "/students",
       "op": "strategy",
       "entity": "student",
-      "search_field": "full_name",
-      "query_param": "name",
       "strategy": "grep"
     },
     {
@@ -264,8 +262,6 @@
       "path": "/teachers",
       "op": "strategy",
       "entity": "teacher",
-      "search_field": "full_name",
-      "query_param": "name",
       "strategy": "grep"
     },
     {
@@ -284,7 +280,7 @@
   ],
   "custom_queries": {
     "student_grades": {
-      "sql": "SELECT g.id, g.student_id, g.discipline_id, COALESCE(d.name, 'Неизвестная дисциплина') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN disciplines d ON d.id = g.discipline_id WHERE g.student_id = ? ORDER BY g.date DESC, d.name ASC",
+      "sql": "SELECT g.id, g.student_id, g.discipline_id, COALESCE(d.name, '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u0434\u0438\u0441\u0446\u0438\u043f\u043b\u0438\u043d\u0430') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN disciplines d ON d.id = g.discipline_id WHERE g.student_id = ? ORDER BY g.date DESC, d.name ASC",
       "params": [
         "id"
       ],
@@ -310,7 +306,7 @@
         }
       },
       "max_rows": 500,
-      "description": "Оценки студента"
+      "description": "\u041e\u0446\u0435\u043d\u043a\u0438 \u0441\u0442\u0443\u0434\u0435\u043d\u0442\u0430"
     },
     "group_schedule": {
       "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id WHERE s.group_id = ?",
@@ -340,10 +336,10 @@
         }
       },
       "max_rows": 1000,
-      "description": "Расписание группы"
+      "description": "\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0433\u0440\u0443\u043f\u043f\u044b"
     },
     "all_grades": {
-      "sql": "SELECT g.id, g.student_id, COALESCE(s.name, 'Неизвестный студент') AS student_name, g.discipline_id, COALESCE(d.name, 'Неизвестная дисциплина') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN students s ON s.id = g.student_id LEFT JOIN disciplines d ON d.id = g.discipline_id ORDER BY g.date DESC LIMIT 80",
+      "sql": "SELECT g.id, g.student_id, COALESCE(s.name, '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0441\u0442\u0443\u0434\u0435\u043d\u0442') AS student_name, g.discipline_id, COALESCE(d.name, '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u0434\u0438\u0441\u0446\u0438\u043f\u043b\u0438\u043d\u0430') AS discipline_name, g.grade, g.date FROM grades g LEFT JOIN students s ON s.id = g.student_id LEFT JOIN disciplines d ON d.id = g.discipline_id ORDER BY g.date DESC LIMIT 80",
       "params": [],
       "result_mapping": {
         "id": {
@@ -371,7 +367,7 @@
         }
       },
       "max_rows": 80,
-      "description": "Последние 80 оценок"
+      "description": "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 80 \u043e\u0446\u0435\u043d\u043e\u043a"
     },
     "all_schedule": {
       "sql": "SELECT s.id, s.day, s.group_id, g.name AS group_name, g.speciality, s.lessons_json AS lessons FROM schedule s LEFT JOIN groups g ON g.id = s.group_id ORDER BY g.name, s.day",
@@ -400,7 +396,7 @@
         }
       },
       "max_rows": 5000,
-      "description": "Всё расписание"
+      "description": "\u0412\u0441\u0451 \u0440\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435"
     },
     "student_disciplines": {
       "sql": "SELECT d.id, d.name, d.description FROM disciplines d WHERE d.id IN (SELECT DISTINCT elem->>'discipline_id' FROM schedule s, jsonb_array_elements(s.lessons_json::jsonb) elem WHERE s.group_id = (SELECT group_id FROM students WHERE id = ?) AND elem->>'discipline_id' IS NOT NULL)",
@@ -419,7 +415,7 @@
         }
       },
       "max_rows": 100,
-      "description": "Дисциплины студента через его группу"
+      "description": "\u0414\u0438\u0441\u0446\u0438\u043f\u043b\u0438\u043d\u044b \u0441\u0442\u0443\u0434\u0435\u043d\u0442\u0430 \u0447\u0435\u0440\u0435\u0437 \u0435\u0433\u043e \u0433\u0440\u0443\u043f\u043f\u0443"
     }
   },
   "stats": {

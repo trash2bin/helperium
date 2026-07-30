@@ -122,9 +122,8 @@ Field types: `string | int | float | bool | json | datetime | date`
   "method": "GET",                     // GET | POST | PUT | PATCH | DELETE
   "path": "/students/{id}",            // supports {param} placeholders
   "op": "get_by_id",                   // operation type
-  "entity": "student",                 // entity name (required for get_by_id/find/list)
-  "search_field": "full_name",         // field to search on (required for find)
-  "query_param": "full_name",          // query param name for search value
+  "entity": "student",                 // entity name (required for get_by_id, strategy)
+  "strategy": "schema",               // search strategy: grep | filter | schema (required for strategy)
   "query_id": "student_grades",        // custom_queries key (required for custom_query)
   "description": "Returns a student by ID",
   "params": [
@@ -146,8 +145,7 @@ Field types: `string | int | float | bool | json | datetime | date`
 | `builtin_health` | `/health` — service + DB status | — |
 | `builtin_stats` | `/stats` — counters per entity | `stats` block |
 | `get_by_id` | Record by PK (`GET /{entity}/{id}`) | `entity` |
-| `find` | Search by field (`GET /{entity}?field=val`) | `entity`, `search_field` |
-| `list` | List all (`GET /{entity}`) | `entity` |
+| `strategy` | Strategy-based endpoint (grep/filter/schema) | `entity`, `strategy` |
 | `distinct` | Distinct values of a field | `entity` |
 | `count` | Count of records | `entity` |
 | `custom_query` | Whitelist SQL from `custom_queries[key]` | `query_id` |

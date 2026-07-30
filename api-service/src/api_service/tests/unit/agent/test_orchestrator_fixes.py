@@ -177,9 +177,9 @@ async def test_build_schema_cached_per_tenant(conv_manager):
     from .helpers import TestLLMProvider, llm_response
 
     # Monkey-patch _build_schema_message in stages
-    import api_service.agent.stages as stages_mod
+    import api_service.agent.stages.tool_discovery as td_mod
 
-    original = stages_mod._build_schema_message
+    original = td_mod._build_schema_message
     call_count = 0
 
     def counting_build_schema_message(schema: dict, tools: list | None = None) -> str:
@@ -187,7 +187,7 @@ async def test_build_schema_cached_per_tenant(conv_manager):
         call_count += 1
         return original(schema, tools)
 
-    stages_mod._build_schema_message = counting_build_schema_message
+    td_mod._build_schema_message = counting_build_schema_message
 
     try:
         schema_response = {
@@ -232,7 +232,7 @@ async def test_build_schema_cached_per_tenant(conv_manager):
         )
 
     finally:
-        stages_mod._build_schema_message = original
+        td_mod._build_schema_message = original
 
 
 @pytest.mark.asyncio
@@ -240,9 +240,9 @@ async def test_schema_cache_different_tenants_not_shared(conv_manager):
     """Different tenant_ids produce different cache entries."""
     from .helpers import TestLLMProvider, llm_response
 
-    import api_service.agent.stages as stages_mod
+    import api_service.agent.stages.tool_discovery as td_mod
 
-    original = stages_mod._build_schema_message
+    original = td_mod._build_schema_message
     call_count = 0
 
     def counting_build_schema_message(schema: dict, tools: list | None = None) -> str:
@@ -250,7 +250,7 @@ async def test_schema_cache_different_tenants_not_shared(conv_manager):
         call_count += 1
         return original(schema, tools)
 
-    stages_mod._build_schema_message = counting_build_schema_message
+    td_mod._build_schema_message = counting_build_schema_message
 
     try:
         schema_response = {
@@ -294,7 +294,7 @@ async def test_schema_cache_different_tenants_not_shared(conv_manager):
             f"expected ≥2 (separate tenants)"
         )
     finally:
-        stages_mod._build_schema_message = original
+        td_mod._build_schema_message = original
 
 
 # ── Test C: real-time provider fallback (no stale Router) ──────────────────────
@@ -307,7 +307,7 @@ async def test_provider_created_fresh_each_request_when_no_llm_client(
     """When no llm_client/llm_config/provider_priority is passed,
     _resolve_pool_or_env() is called fresh on every request."""
     from .helpers import TestLLMProvider, llm_response
-    import api_service.agent.orchestrator as orch
+    import api_service.agent.factory as fact
 
     call_count = 0
     created_providers = []
@@ -320,7 +320,7 @@ async def test_provider_created_fresh_each_request_when_no_llm_client(
         created_providers.append(prov)
         return prov
 
-    monkeypatch.setattr(orch, "_resolve_pool_or_env", counting_resolve)
+    monkeypatch.setattr(fact, "_resolve_pool_or_env", counting_resolve)
 
     mcp = FakeMCPClient(schema=None)
     # NOTE: no llm_client passed — will use _resolve_pool_or_env()
@@ -349,7 +349,7 @@ async def test_fallback_not_called_when_llm_client_explicit(monkeypatch, conv_ma
     """When llm_client is explicitly passed, _resolve_pool_or_env()
     should NOT be called."""
     from .helpers import TestLLMProvider, llm_response
-    import api_service.agent.orchestrator as orch
+    import api_service.agent.factory as fact
 
     call_count = 0
 
@@ -360,7 +360,7 @@ async def test_fallback_not_called_when_llm_client_explicit(monkeypatch, conv_ma
         prov.queue(llm_response.final("ok"))
         return prov
 
-    monkeypatch.setattr(orch, "_resolve_pool_or_env", counting_resolve)
+    monkeypatch.setattr(fact, "_resolve_pool_or_env", counting_resolve)
 
     mcp = FakeMCPClient(schema=None)
     explicit = TestLLMProvider(name="explicit")

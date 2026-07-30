@@ -7,51 +7,15 @@ corrupted-value handling.
 
 import json
 import sqlite3
-import tempfile
-from pathlib import Path
 
-import pytest
 from cryptography.fernet import Fernet
 
-import api_service.agent_store as agent_store_mod
-from api_service.agent_store import AgentStore
-
-# For encryption patching — functions live in agent_repository module
 import api_service.agent_repository as agent_repo_mod
+from api_service.tests.unit.conftest import SAMPLE_LLM, UPDATED_LLM
 
 # One-time Fernet key shared across all encryption tests
 TEST_KEY = Fernet.generate_key().decode()
 TEST_FERNET = Fernet(TEST_KEY.encode())
-
-
-# ── Shared data ──
-
-SAMPLE_LLM = {
-    "provider": "ollama",
-    "model": "qwen2.5:0.5b",
-    "temperature": 0.3,
-    "system_prompt": "You are a test assistant.",
-}
-
-UPDATED_LLM = {
-    "provider": "mistral",
-    "model": "mistral/mistral-small",
-    "temperature": 0.7,
-    "system_prompt": "You are an updated assistant.",
-}
-
-
-# ── Fixtures ──
-
-
-@pytest.fixture
-def agent_store():
-    """AgentStore backed by a temporary SQLite file."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        path = f.name
-    store = AgentStore(path)
-    yield store
-    Path(path).unlink(missing_ok=True)
 
 
 # ── Low-level encryption helpers ──
@@ -63,14 +27,14 @@ class TestEncryptDecryptDirect:
     def test_encrypt_without_key_noop(self, monkeypatch):
         """Without ENCRYPTION_KEY, encrypt/decrypt pass through unchanged."""
         monkeypatch.setattr(agent_repo_mod, "_FERNET", None)
-        assert agent_store_mod._encrypt_value("test") == "test"
-        assert agent_store_mod._decrypt_value("test") == "test"
+        assert agent_repo_mod._encrypt_value("test") == "test"
+        assert agent_repo_mod._decrypt_value("test") == "test"
 
     def test_encrypt_with_key_changes_value(self, monkeypatch):
         """With a key, encrypted output differs from input."""
         monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         original = json.dumps(SAMPLE_LLM, ensure_ascii=False)
-        encrypted = agent_store_mod._encrypt_value(original)
+        encrypted = agent_repo_mod._encrypt_value(original)
         assert encrypted != original
         # Fernet tokens always start with "gAAAAA"
         assert encrypted.startswith("gAAAAA")
@@ -79,31 +43,31 @@ class TestEncryptDecryptDirect:
         """With a key, encrypt then decrypt returns original."""
         monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         original = json.dumps(SAMPLE_LLM, ensure_ascii=False)
-        encrypted = agent_store_mod._encrypt_value(original)
-        decrypted = agent_store_mod._decrypt_value(encrypted)
+        encrypted = agent_repo_mod._encrypt_value(original)
+        decrypted = agent_repo_mod._decrypt_value(encrypted)
         assert decrypted == original
 
     def test_encrypt_none(self, monkeypatch):
         """_encrypt_value(None) returns None regardless of key."""
         monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
-        assert agent_store_mod._encrypt_value(None) is None
+        assert agent_repo_mod._encrypt_value(None) is None
 
     def test_decrypt_none(self, monkeypatch):
         """_decrypt_value(None) returns None regardless of key."""
         monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
-        assert agent_store_mod._decrypt_value(None) is None
+        assert agent_repo_mod._decrypt_value(None) is None
 
     def test_decrypt_corrupted_value_returns_none(self, monkeypatch):
         """With a key, corrupted ciphertext returns None."""
         monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
-        result = agent_store_mod._decrypt_value("invalid!@#")
+        result = agent_repo_mod._decrypt_value("invalid!@#")
         assert result is None
 
     def test_decrypt_corrupted_value_warns(self, monkeypatch, caplog):
         """With a key, corrupted ciphertext logs a warning."""
         monkeypatch.setattr(agent_repo_mod, "_FERNET", TEST_FERNET)
         with caplog.at_level("WARNING"):
-            agent_store_mod._decrypt_value("invalid!@#")
+            agent_repo_mod._decrypt_value("invalid!@#")
         assert len(caplog.records) >= 1
         assert "Failed to decrypt" in caplog.text
 

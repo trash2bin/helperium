@@ -181,3 +181,36 @@ class MCPToolProvider(Protocol):
     async def get_schema(self, tenant_ids) -> dict | None:  # noqa: ANN401
         """Return the LLM-friendly schema description for the tenant(s)."""
         ...
+
+
+class ErrorReporter(Protocol):
+    """Error classification boundary.
+
+    Responsible for turning raw exceptions into user-facing error messages
+    with proper localization.
+
+    Implementations: classify_error() from error_messages module.
+    """
+
+    def classify(self, exc: Exception, lang: str = "ru") -> str:
+        """Classify an exception into a user-facing error message."""
+        ...
+
+
+class SessionManager(Protocol):
+    """Session history management boundary.
+
+    Implementations: SessionStore.
+    """
+
+    async def get_history(self, session_id: str) -> list[dict]:
+        """Load conversation history for a session."""
+        ...
+
+    async def save_turn(self, session_id: str, messages: list[dict]) -> None:
+        """Persist one turn's messages into the session history."""
+        ...
+
+    def normalize(self, session_id: str) -> str:
+        """Normalize a session ID (e.g. strip prefixes, validate format)."""
+        ...

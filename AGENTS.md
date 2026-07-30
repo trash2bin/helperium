@@ -26,10 +26,28 @@ Search strategies (`data-service/internal/search/`): **grep** (multi-token AND, 
 LLMAgent (orchestrator)
   └── Pipeline: GuardInput → ToolDiscovery → LLMStage → ToolExecution (цикл)
                 → Fallback → GuardOutput → SaveHistory
-      каждое событие → SpendingMiddleware → BacklogMiddleware → TokenBudgetMiddleware
+      каждое событие → SpendingMiddleware → TokenBudgetMiddleware
 ```
 
+**Аудит api-service (2026-07-30):** Исправлены 12 проблем pipeline.
+- ✅ Exception-safe history — `SaveHistoryStage.force_save()` вызывается в finally при ошибках
+- ✅ Token budget pre-check — проверка ДО LLM call (LLMStage), а не после
+- ✅ classify_error — type-based (isinstance) вместо substring matching, устранены false positives
+- ✅ ErrorContext — все 5 stage'ов используют `with_stage()`, исправлен баг с immutable builder в ToolExecutionStage
+- ✅ LiteLLM cost — извлекается из `response.usage.cost` / `_hidden_params`, SpendingMiddleware теперь работает
+- ✅ Safety net — структурная проверка JSON вместо тупого `name+arguments in string`, устранены false positives
+- ✅ Spending persistence — JSON-файл с atomic write, перезапуск не теряет данные
+- ✅ Composite tenant spending — bad tenant не блокирует good tenant в multi-tenant запросе
+- ✅ Unicode homoglyph guard — таблица кириллических/украинских омоглифов, guard не bypass-ится
+
+**MCPClient audit (2026-07-30):**
+- ✅ Circuit breaker — 3+ consecutive failures → skip reconnect, half-open после 30s cooldown
+- ✅ TTL garbage collection — фоновый task закрывает SSE сессии idle > 10 мин
+- ✅ ProviderPool TOCTOU — `remove_worker()` async с `_lock`, корректировка `_rr_index`
+
 Protocol'ы: LLMProvider, ConversationStore, SpendingTracker, BacklogWriter, GuardChecker, MCPToolProvider (`agent/protocols.py`).
+
+> Мёртвый `AntiAbuseChecker` protocol удалён. `BacklogWriter` — sync (не async) — осознанно (local file writes).
 
 ## 🏗️ 2. Архитектура
 
@@ -90,9 +108,12 @@ Default `read_only: true`. Активация: `false` в конфиге, PUT /a
 ## 🧬 Verification
 
 ```
-Last verified: 2026-07-28 (commit 7167942f704e57d8a39f1df18c95fae9c0336b01)
+Last verified: 2026-07-30 (commit 1ea1a037e2cf167ba6d00f6d25095e9dc2a8ddf6, аудит api-service)
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
+
+Исправлено 12 из 14 найденных проблем (HIGH-1, HIGH-3, MEDIUM 1-8, LOW 1-3).
+HIGH-2 (backlog concurrent writes) не воспроизводится на тестах — отложен.
 ```
 
 > **Knowledge graph workflow, Cookbook, skills, agent rules, decision tree** — смотри [.pi/APPEND_SYSTEM.md](.pi/APPEND_SYSTEM.md)

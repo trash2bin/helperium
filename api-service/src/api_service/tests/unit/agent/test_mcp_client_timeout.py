@@ -41,8 +41,8 @@ async def _session_proxy(client: MCPClient, tenant_ids: list[str] | None = None)
 
 
 @pytest.mark.asyncio
-@patch("api_service.agent.mcp_client.LOCK_ACQUIRE_TIMEOUT", 0.05)
-@patch("api_service.agent.mcp_client.TOOL_EXECUTION_TIMEOUT", 5.0)
+@patch("helperium_sdk.settings.settings.mcp_lock_acquire_timeout", 0.05)
+@patch("helperium_sdk.settings.settings.mcp_tool_execution_timeout", 5.0)
 async def test_call_tool_lock_timeout():
     """call_tool should return error ToolResult when lock cannot be acquired."""
     client = MCPClient()
@@ -87,7 +87,7 @@ async def test_call_tool_lock_acquires_normally():
 
 
 @pytest.mark.asyncio
-@patch("api_service.agent.mcp_client.LOCK_ACQUIRE_TIMEOUT", 0.05)
+@patch("helperium_sdk.settings.settings.mcp_lock_acquire_timeout", 0.05)
 async def test_list_tools_lock_timeout():
     """list_tools should raise TimeoutError when lock cannot be acquired.
 

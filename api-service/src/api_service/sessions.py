@@ -6,13 +6,14 @@ import threading
 import time
 import sqlite3
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, Callable
+from pathlib import Path
 
 
 from helperium_sdk.settings import settings, project_root
 
 PROJECT_ROOT = project_root()
+
 
 logger = logging.getLogger("api_service.sessions")
 
@@ -55,18 +56,13 @@ class SessionStore:
         *,
         max_turns: int,
         max_content_chars: int,
-        legacy_memory_path: str | Path | None = None,
     ) -> None:
         self._connection_factory = connection_factory
         self.max_turns = max(1, max_turns)
         self.max_content_chars = max(1, max_content_chars)
-        self.legacy_memory_path = (
-            Path(legacy_memory_path) if legacy_memory_path else None
-        )
         self._lock = threading.RLock()
 
         self._init_schema()
-        self._migrate_legacy_memory()
 
     def history_messages(self, session_id: str) -> list[dict[str, Any]]:
         turns = self.get_turns(session_id)
@@ -153,36 +149,6 @@ class SessionStore:
                 """
             )
 
-    def _migrate_legacy_memory(self) -> None:
-        if not self.legacy_memory_path or not self.legacy_memory_path.exists():
-            return
-
-        with self._lock, self._connect() as conn:
-            has_turns = conn.execute("SELECT 1 FROM session_turns LIMIT 1").fetchone()
-            if has_turns:
-                return
-
-        try:
-            data = json.loads(self.legacy_memory_path.read_text(encoding="utf-8"))
-        except Exception:
-            logger.exception("Failed to read legacy agent memory")
-            return
-
-        if not isinstance(data, dict):
-            return
-
-        imported = 0
-        for session_id, turns in data.items():
-            if not isinstance(turns, list):
-                continue
-            for turn in turns[-self.max_turns :]:
-                if self._is_turn(turn):
-                    self.append_turn(str(session_id), turn)
-                    imported += 1
-
-        if imported:
-            logger.info("Imported %s turns from legacy agent memory", imported)
-
     def _prepare_turn(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         filtered: list[dict[str, Any]] = []
         for message in messages:
@@ -240,5 +206,4 @@ session_store = SessionStore(
     connection_factory=lambda: _create_sqlite_connection(settings.session_db_path),
     max_turns=settings.history_turns,
     max_content_chars=settings.history_content_chars,
-    legacy_memory_path=PROJECT_ROOT / ".agent_memory.json",
 )

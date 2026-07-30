@@ -6,11 +6,10 @@ import enum
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, NotRequired
 
+from .models import UsageInfo as _UsageInfoPydantic  # noqa: E402
+
 # Pydantic model re-exports — available for consumers alongside the
-# legacy TypedDict variants.  ``UsageInfo`` is not re-exported here
-# because ``types`` already defines a TypedDict variant with the same
-# name that is used internally; import ``PydanticUsageInfo`` explicitly
-# from ``models`` when the Pydantic version is needed.
+# legacy TypedDict variants.
 
 # Event types for AgentEvent
 EventType = Literal[
@@ -136,12 +135,6 @@ class MCPTool(TypedDict, total=False):
 
 
 # LLM response types
-class UsageInfo(TypedDict):
-    """Token usage information."""
-
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
 
 
 class LLMResponse(TypedDict):
@@ -151,7 +144,7 @@ class LLMResponse(TypedDict):
     content: str
     tool_calls: NotRequired[list[ToolCall]]
     reasoning_content: NotRequired[str]
-    _usage: NotRequired[UsageInfo]
+    _usage: NotRequired[_UsageInfoPydantic]
 
 
 # Agent event data types

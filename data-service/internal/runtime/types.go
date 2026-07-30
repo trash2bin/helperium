@@ -110,7 +110,7 @@ type ResultMappingField struct {
 
 // Endpoint — описание HTTP endpoint'а в конфиге.
 //
-// Op выбирает builtin-handler ("get_by_id", "find", "list",
+// Op выбирает builtin-handler ("get_by_id", "strategy",
 // "custom_query", "builtin_health"). Остальные поля описывают
 // привязку к Entity/CustomQuery.
 type Endpoint struct {
@@ -123,14 +123,8 @@ type Endpoint struct {
 	// Op — имя операции builtin-handler'а.
 	Op string
 
-	// Entity — публичное имя сущности (для op=get_by_id/find/list).
+	// Entity — публичное имя сущности (для op=get_by_id, strategy).
 	Entity string
-
-	// SearchField — публичное имя поля для поиска (для op=find).
-	SearchField string
-
-	// QueryParam — имя query-параметра (для op=find/list).
-	QueryParam string
 
 	// QueryID — идентификатор custom_query (для op=custom_query).
 	QueryID string

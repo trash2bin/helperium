@@ -3,6 +3,7 @@ package server_test
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 )
 
@@ -84,7 +85,7 @@ func TestNewRouterFromConfig_NotFound(t *testing.T) {
 func TestNewRouterFromConfig_FindStudent(t *testing.T) {
 	ts := newTestServer(t)
 
-	status, body := getJSON[[]map[string]any](t, ts.URL+"/students?full_name=%D0%98%D0%B2%D0%B0%D0%BD+%D0%9F%D0%B5%D1%82%D1%80%D0%BE%D0%B2+%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2%D0%B8%D1%87")
+	status, body := getJSON[[]map[string]any](t, ts.URL+"/students/search?search="+url.QueryEscape("Иван Петров Иванович"))
 
 	if status != 200 {
 		t.Errorf("expected 200, got %d; body=%v", status, body)
@@ -100,7 +101,7 @@ func TestNewRouterFromConfig_FindStudent(t *testing.T) {
 func TestNewRouterFromConfig_ListDisciplines(t *testing.T) {
 	ts := newTestServer(t)
 
-	status, body := getJSON[[]any](t, ts.URL+"/disciplines")
+	status, body := getJSON[[]map[string]any](t, ts.URL+"/disciplines")
 
 	if status != 200 {
 		t.Errorf("expected 200, got %d", status)

@@ -740,9 +740,8 @@
       "method": "GET",
       "path": "/catalog_brand",
       "op": "strategy",
+      "strategy": "schema",
       "entity": "catalog_brand",
-      "search_field": "name",
-      "query_param": "name",
       "description": "Searches catalog_brand by name. Returns all records when no query given."
     },
     {
@@ -770,9 +769,8 @@
       "method": "GET",
       "path": "/catalog_category",
       "op": "strategy",
+      "strategy": "schema",
       "entity": "catalog_category",
-      "search_field": "name",
-      "query_param": "name",
       "description": "Searches catalog_category by name. Returns all records when no query given."
     },
     {
@@ -786,9 +784,8 @@
       "method": "GET",
       "path": "/catalog_order",
       "op": "strategy",
+      "strategy": "schema",
       "entity": "catalog_order",
-      "search_field": "first_name",
-      "query_param": "first_name",
       "description": "Searches catalog_order by name. Returns all records when no query given."
     },
     {
@@ -802,9 +799,8 @@
       "method": "GET",
       "path": "/catalog_product",
       "op": "strategy",
+      "strategy": "schema",
       "entity": "catalog_product",
-      "search_field": "name",
-      "query_param": "name",
       "description": "Searches catalog_product by name. Returns all records when no query given."
     },
     {
@@ -818,9 +814,8 @@
       "method": "GET",
       "path": "/catalog_sitesettings",
       "op": "strategy",
+      "strategy": "schema",
       "entity": "catalog_sitesettings",
-      "search_field": "site_name",
-      "query_param": "site_name",
       "description": "Searches catalog_sitesettings by name. Returns all records when no query given."
     },
     {
