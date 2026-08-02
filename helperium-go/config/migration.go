@@ -6,8 +6,6 @@
 
 package config
 
-import "encoding/json"
-
 // CurrentConfigVersion is the latest config schema version.
 // Increment when introducing a breaking change to the config structure.
 const CurrentConfigVersion = 4
@@ -44,7 +42,6 @@ func (c *Config) Normalize() {
 //   - Relation.JunctionTable for many_to_many
 //   - EndpointParam.ArrayOf for array-type params
 //   - EndpointParam.EnumValues for enum params
-//   - ApprovedTools migrated from []string to []ApprovedTool
 func (c *Config) normalizeV1ToV2() {
 	// 1. Backfill Meta
 	if c.Meta == nil {
@@ -55,9 +52,8 @@ func (c *Config) normalizeV1ToV2() {
 	c.Meta.ConfigVersion = 2
 
 	// 2. Relations: JunctionTable — can't auto-detect, Validate checks
-	// 3. ApprovedTools: the custom UnmarshalJSON handles the legacy format
 
-	// 4. Bump version
+	// 3. Bump version
 	c.Version = 2
 }
 
@@ -131,39 +127,4 @@ type ConfigMeta struct {
 
 	// GeneratorVersion is the semver tag of helperium that generated this config.
 	GeneratorVersion string `json:"generator_version,omitempty"`
-}
-
-// ApprovedTool is a structured approval for a write-endpoint.
-// Supports both legacy []string format and expanded format with method scoping.
-type ApprovedTool struct {
-	// Endpoint is the path from endpoints[] (e.g. "/students").
-	Endpoint string `json:"endpoint"`
-
-	// Methods restricts which HTTP methods are approved.
-	// Empty or nil means ALL methods for this endpoint are approved.
-	Methods []HTTPMethod `json:"methods,omitempty"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler for backward compatibility.
-// Accepts both:
-//   - string: legacy format ("/students") → {endpoint: "/students"}
-//   - object: {endpoint: "/students", methods: ["POST"]}
-func (a *ApprovedTool) UnmarshalJSON(data []byte) error {
-	// Try string first (legacy format)
-	var s string
-	if err := json.Unmarshal(data, &s); err == nil {
-		a.Endpoint = s
-		a.Methods = nil
-		return nil
-	}
-
-	// Try object format
-	type alias ApprovedTool
-	var al alias
-	if err := json.Unmarshal(data, &al); err != nil {
-		return err
-	}
-	a.Endpoint = al.Endpoint
-	a.Methods = al.Methods
-	return nil
 }

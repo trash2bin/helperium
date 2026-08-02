@@ -150,11 +150,10 @@ func (cfg *Config) Validate() error   // для Load() — проверяет в
 | Секция | Зачем |
 |---|---|
 | `custom_queries{}` | JOIN, агрегаты, отчёты — бизнес-логика |
-| `endpoints[].method: POST/PUT/DELETE` | Write-операции (если `read_only: false`) |
+| `endpoints[].method: POST/PUT/DELETE` | Write-операции (если `read_only: false`; configgen их не генерирует) |
 | `endpoints[].description` | Уточнить описание для LLM |
 | `auth{}` | Row-level isolation |
 | `introspection{}` | `include_schemas`, `exclude_tables`, `skip_prefixes` |
-| `approved_tools[]` | Write-эндпоинты, разрешённые при `read_only: true` |
 
 ### 7. Что НЕЛЬЗЯ редактировать вручную (⚠️)
 

@@ -28,7 +28,6 @@ type TenantIntent struct {
 	DisabledDefaultEnumRules       []string
 
 	CustomQueries map[string]config.CustomQuery // ТОЛЬКО explicit (не FK-derived)
-	ApprovedTools []config.ApprovedTool
 
 	// Stats — кастомные счётчики для /stats. Generate() создаёт один counter
 	// на entity (buildCounters), но через PUT /admin/config можно задать
@@ -86,7 +85,6 @@ func ExtractIntent(cfg *config.Config) *TenantIntent {
 		EnumRules:                      cfg.EnumRules,
 		DisabledDefaultEnumRules:       cfg.DisabledDefaultEnumRules,
 		CustomQueries:                  explicit,
-		ApprovedTools:                  cfg.ApprovedTools,
 		Stats:                          cfg.Stats,
 		Introspection:                  cfg.Introspection,
 		Auth:                           cfg.Auth,
@@ -102,7 +100,7 @@ func ExtractIntent(cfg *config.Config) *TenantIntent {
 // Generate() регенерирует Meta/Version/Entities/Endpoints/MCPTools из схемы,
 // поэтому результат отличается от исходного конфига по этим полям (и не должен
 // совпадать — derived-часть всегда отражает текущую схему). Intent-поля
-// (DataSource/правила/кастомизации/explicit queries/Stats/ApprovedTools)
+// (DataSource/правила/кастомизации/explicit queries/Stats)
 // сохраняются идемпотентно. Сравнивать два конфига имеет смысл только по
 // intent-полям, не по полному JSON.
 func Hydrate(intent *TenantIntent, schema *datasource.Schema) *config.Config {
@@ -168,7 +166,6 @@ func Hydrate(intent *TenantIntent, schema *datasource.Schema) *config.Config {
 		result.CustomQueries[k] = v
 	}
 
-	result.ApprovedTools = intent.ApprovedTools
 	result.Introspection = intent.Introspection
 	result.Auth = intent.Auth
 	result.Server = intent.Server

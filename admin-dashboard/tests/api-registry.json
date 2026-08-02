@@ -33,8 +33,6 @@
   {"path": "/api/tenants/{id}/config", "method": "GET", "desc": "Конфиг тенанта"},
   {"path": "/api/tenants/{id}/config", "method": "PUT", "desc": "Обновить конфиг тенанта"},
   {"path": "/api/tenants/{id}/introspect", "method": "POST", "desc": "Интроспекция БД тенанта"},
-  {"path": "/api/tenants/{id}/tools/pending", "method": "GET", "desc": "Ожидающие тулы"},
-  {"path": "/api/tenants/{id}/tools/{toolName}/approve", "method": "POST", "desc": "Апрув тула"},
   {"path": "/api/tenants/{id}/manifest", "method": "GET", "desc": "MCP манифест"},
   {"path": "/api/rag/health", "method": "GET", "desc": "Здоровье RAG"},
   {"path": "/api/rag/config", "method": "GET", "desc": "RAG конфиг"},

@@ -115,12 +115,10 @@ function dashboard(): AnyRecord {
       events.on('tenant:selected', (data: unknown) => {
         const d = data as { id: string };
         self.refreshConfig(d.id);
-        self.loadPendingTools(d.id);
         self.loadManifest(d.id);
       });
 
       events.on('config:saved', () => {
-        self.loadPendingTools(self.selectedTenant);
         self.loadManifest(self.selectedTenant);
       });
 

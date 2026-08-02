@@ -28,7 +28,7 @@ func TestNewRouterFromConfig_InvalidEntity(t *testing.T) {
 	}
 
 	// TenantStore nil, adapter nil, db nil — мы тестируем только раннюю валидацию
-	_, err := server.NewRouterFromConfig(nil, cfg, nil, nil)
+	_, err := server.NewRouterFromConfig(nil, cfg, nil)
 	if err == nil {
 		t.Fatal("expected error for strategy with empty entity, got nil")
 	}
@@ -54,7 +54,7 @@ func TestNewRouterFromConfig_UnsupportedOp(t *testing.T) {
 		},
 	}
 
-	_, err := server.NewRouterFromConfig(nil, cfg, nil, nil)
+	_, err := server.NewRouterFromConfig(nil, cfg, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported op, got nil")
 	}
@@ -90,7 +90,7 @@ func TestNewRouterFromConfig_InvalidMethod(t *testing.T) {
 		},
 	}
 
-	_, err := server.NewRouterFromConfig(nil, cfg, nil, nil)
+	_, err := server.NewRouterFromConfig(nil, cfg, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported method, got nil")
 	}
@@ -117,7 +117,7 @@ func TestNewRouterFromConfig_CustomQueryNoQueryID(t *testing.T) {
 		},
 	}
 
-	_, err := server.NewRouterFromConfig(nil, cfg, nil, nil)
+	_, err := server.NewRouterFromConfig(nil, cfg, nil)
 	if err == nil {
 		t.Fatal("expected error for custom_query without query_id, got nil")
 	}
@@ -145,7 +145,7 @@ func TestNewRouterFromConfig_StrategyNoEntity(t *testing.T) {
 		},
 	}
 
-	_, err := server.NewRouterFromConfig(nil, cfg, nil, nil)
+	_, err := server.NewRouterFromConfig(nil, cfg, nil)
 	if err == nil {
 		t.Fatal("expected error for strategy with empty entity, got nil")
 	}
@@ -181,7 +181,7 @@ func TestNewRouterFromConfig_StrategyUnknown(t *testing.T) {
 		},
 	}
 
-	_, err := server.NewRouterFromConfig(nil, cfg, nil, nil)
+	_, err := server.NewRouterFromConfig(nil, cfg, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown strategy, got nil")
 	}
@@ -207,7 +207,7 @@ func TestNewRouterFromConfig_GetByIDNoEntity(t *testing.T) {
 		},
 	}
 
-	_, err := server.NewRouterFromConfig(nil, cfg, nil, nil)
+	_, err := server.NewRouterFromConfig(nil, cfg, nil)
 	if err == nil {
 		t.Fatal("expected error for get_by_id with empty entity, got nil")
 	}

@@ -107,7 +107,7 @@ Admin dashboard: `http://localhost:8085`
 
 1. **Tenants** — check client-name exists
 2. **Config** — verify LLM provider
-3. **Tools** — approve write-tools (disabled by default)
+3. **Tools** — verify MCP tools from manifest
 4. **Agents** — create agent, set system prompt
 5. **RAG** — upload documents, test search
 6. **Anti-Abuse** — tune RPS, burst, session budget
@@ -139,9 +139,6 @@ uv run agent-db e2e-mcp       # MCP tool isolation
 uv run agent-db e2e-full      # all three levels
 
 # Chat via web (http://localhost:8080) — check streaming, tool calling
-
-# Write-tools disabled by default
-curl http://localhost:8084/admin/tools/pending
 
 # Check logs for errors
 docker compose logs --tail 100 2>&1 | grep -i error
@@ -185,7 +182,7 @@ docker compose --profile prod up -d
 3. docker compose up -d
 4. docker compose --profile monitoring up -d   (Grafana :3000)
 5. uv run agent-db tenant register client-name
-6. Admin dashboard: upload RAG, create agent, approve tools
+6. Admin dashboard: upload RAG, create agent, check tools
 7. Widget: <script src="/embed/embed.js" data-agent="assistant">
 8. uv run agent-db e2e-full
 ```
@@ -312,7 +309,7 @@ uv run agent-rag-ingest import /path/to/doc.pdf -d client-name
 
 1. **Tenants** — проверить, что client-name создан
 2. **Config** — проверить LLM провайдер
-3. **Tools** — утвердить write-тулы (по умолчанию выключены)
+3. **Tools** — проверить MCP-тулы из манифеста
 4. **Agents** — создать агента, system prompt
 5. **RAG** — загрузить документы, проверить поиск
 6. **Anti-Abuse** — RPS, burst, session budget
@@ -344,9 +341,6 @@ uv run agent-db e2e-mcp       # изоляция MCP-тулов
 uv run agent-db e2e-full      # все три уровня
 
 # Чат через web (http://localhost:8080) — стриминг, tool calling
-
-# Write-тулы выключены по умолчанию
-curl http://localhost:8084/admin/tools/pending
 
 # Логи без ошибок
 docker compose logs --tail 100 2>&1 | grep -i error

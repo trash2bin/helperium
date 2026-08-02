@@ -63,7 +63,7 @@ Protocol'ы: LLMProvider, ConversationStore, SpendingTracker, BacklogWriter, Gua
 POST /admin/tenants → bootstrap; POST /admin/config/rewrite → интроспекция; `.data/tenants/{id}.json`.
 
 ### 2c. Config
-**Авто:** entities[], endpoints[], mcp_tools[], read_only: `true`. **Вручную:** custom_queries{}, auth{}, mcp_tools[].description, introspection{}, approved_tools[].
+**Авто:** entities[], endpoints[], mcp_tools[], read_only: `true`. **Вручную:** custom_queries{}, auth{}, mcp_tools[].description, introspection{}.
 **Strategy-эндпоинты:** `endpoints[].strategy = grep | filter | schema`.
 **Схема:** `helperium-go/config/types.go:Config`. [specs/config.schema.md](specs/config.schema.md), [config-migration.md](doc/agents/config-migration.md).
 
@@ -79,9 +79,6 @@ HTTP-матрица (11 каналов): [doc/api-flow.md](doc/api-flow.md). Д�
 
 ### 2f. Tenant Isolation — database-level · tool-level (`tenant-a__grep_products`) · session-level
 Tenant_id недоступен LLM как field__op; field whitelist по `findColumn()`; `exclude_from_search` для PII. [security-isolation.md](doc/agents/security-isolation.md).
-
-### 2h. Write-Tool Approval
-Default `read_only: true`. Активация: `false` в конфиге, PUT /admin/tenants/{id}/config, POST /admin/tools/{toolName}/approve.
 
 ### 2j/2k. Anti-Abuse
 3 уровня: JSON Schema (MCP gateway) → Server-side guard (limits, ReDoS, 30s timeout) → Empty Hints. [anti-abuse.md](doc/agents/anti-abuse.md), [tool-call-safety-layers.md](doc/agents/tool-call-safety-layers.md).
@@ -108,7 +105,7 @@ Default `read_only: true`. Активация: `false` в конфиге, PUT /a
 ## 🧬 Verification
 
 ```
-Last verified: 2026-08-01 (аудит data-service после рефакторинга + фиксы C1-C6, M1-M7, config v4)
+Last verified: 2026-08-02 (выпилка write-tool approval: удалены ApprovedTools/approve/pending из кода, UI и доков; 18/18 Go-пакетов, golangci-lint 0 issues, vitest 72/72, живой smoke-тест)
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
 

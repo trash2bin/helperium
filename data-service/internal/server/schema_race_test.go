@@ -30,7 +30,7 @@ func TestIntrospectedSchema_ConcurrentWriteRead(t *testing.T) {
 		t.Fatalf("AddTenant: %v", err)
 	}
 
-	router, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub, inst.ApprovedTools)
+	router, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub)
 	if err != nil {
 		t.Fatalf("NewRouterFromConfig: %v", err)
 	}

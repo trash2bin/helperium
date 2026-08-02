@@ -48,7 +48,6 @@ AppRegistry.register('config', {
       skipRules: cfg.skip_rules?.length || 0,
       displayPrefixes: cfg.display_prefixes?.join(', ') || '\u2014',
       customPlurals: cfg.custom_plurals ? Object.keys(cfg.custom_plurals).length : 0,
-      approvedTools: cfg.approved_tools?.length || 0,
     });
 
     return {

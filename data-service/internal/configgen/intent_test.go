@@ -65,7 +65,6 @@ func TestExtractIntent_Hydrate_RoundTrip(t *testing.T) {
 				ResultMapping: map[string]config.ResultMappingField{},
 			},
 		},
-		ApprovedTools: []config.ApprovedTool{{Endpoint: "/products"}},
 		Auth:          &config.AuthConfig{Strategy: config.AuthStrategyHeader},
 		Stats: &config.StatsConfig{Counters: []config.Counter{
 			{Name: "products_total", Entity: "products"},
@@ -122,10 +121,7 @@ func TestExtractIntent_Hydrate_RoundTrip(t *testing.T) {
 		t.Errorf("CustomShortNames lost in round-trip: %v", got.CustomShortNames)
 	}
 
-	// ApprovedTools, Auth.
-	if len(got.ApprovedTools) != 1 {
-		t.Errorf("ApprovedTools lost in round-trip: %+v", got.ApprovedTools)
-	}
+	// Auth.
 	if got.Auth == nil || got.Auth.Strategy != config.AuthStrategyHeader {
 		t.Errorf("Auth lost in round-trip: %+v", got.Auth)
 	}

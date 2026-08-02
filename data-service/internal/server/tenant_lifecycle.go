@@ -262,12 +262,8 @@ func (ts *TenantStore) ReloadTenant(ctx context.Context, tenantID string, config
 		return nil
 	}
 
-	// Build new router using existing connection, preserving approved tools
-	approvedTools := make(map[string]bool)
-	for _, p := range newCfg.ApprovedTools {
-		approvedTools[p.Endpoint] = true
-	}
-	newRouter, err := NewRouterFromConfig(ts, newCfg, inst.AdapterSub, approvedTools)
+	// Build new router using existing connection
+	newRouter, err := NewRouterFromConfig(ts, newCfg, inst.AdapterSub)
 	if err != nil {
 		return fmt.Errorf("reload tenant %q: build router: %w", tenantID, err)
 	}
@@ -276,7 +272,6 @@ func (ts *TenantStore) ReloadTenant(ctx context.Context, tenantID string, config
 	inst.Config = newCfg
 	inst.Router = newRouter
 	inst.ConfigPath = configPath
-	inst.ApprovedTools = approvedTools
 	ts.mu.Unlock()
 
 	slog.Info("tenant store: config reloaded",
@@ -341,12 +336,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	adapterSub := &runtime.InstrumentedAdapter{Conn: queryConn, Adp: adapter}
 
 	// Build router (no admin endpoints — those are on TenantStore)
-	// Build approved tools map from config
-	approvedTools := make(map[string]bool)
-	for _, p := range cfg.ApprovedTools {
-		approvedTools[p.Endpoint] = true
-	}
-	router, err := NewRouterFromConfig(ts, cfg, adapterSub, approvedTools)
+	router, err := NewRouterFromConfig(ts, cfg, adapterSub)
 	if err != nil {
 		_ = conn.Close()
 		if readonlyConn != nil {
@@ -368,6 +358,5 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 		Healthy:       true,
 		healthMu:      &sync.Mutex{},
 		schemaMu:      &sync.RWMutex{},
-		ApprovedTools: approvedTools,
 	}, nil
 }

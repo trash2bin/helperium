@@ -125,7 +125,7 @@ Composite mode allows a single SSE session to route across N tenants with prefix
 
 ## Security Model
 
-- **Read-only enforcement.** Write operations are blocked at the data-service level (config flag `read_only: true`). The MCP gateway simply doesn't register write tools when read_only is active. The write-tool approval workflow exists in the admin dashboard but is disabled by default and treated as an extension point rather than a core feature.
+- **Read-only enforcement.** Write operations are blocked at the data-service level (config flag `read_only: true`). The MCP gateway simply doesn't register write tools when read_only is active. Write-endpoints are never auto-generated; data access is read-only by construction.
 - **Test-Driven Development.** CI pipeline enforces a failing-test-first workflow. Test counts are not hardcoded in documentation; the pipeline reports current coverage dynamically.
 - **Pentest coverage.** A comprehensive security checklist is maintained in `doc/PENTEST-CHEK.md`. Each attack vector is tracked from initial failing test through remediation to passing state.
 - **Tenant isolation.** Verified at three layers under concurrent load in end-to-end tests.
@@ -180,7 +180,7 @@ The test suite covers unit, integration, and end-to-end scenarios across both Go
 
 Test counts are dynamic and reported by the pipeline. Run `make ci` locally or check the CI report for the current count. Key test areas:
 
-- `data-service`: CRUD, schema introspection, write-tool approval
+- `data-service`: CRUD, schema introspection, read-only enforcement
 - `rag`: chunking, embeddings, re-embedding pipeline
 - `demo/web`: reverse proxy, multi-tenant routing, SSE proxy
 - `helperium-sdk`: shared models, HTTP clients

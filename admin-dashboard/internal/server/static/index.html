@@ -46,7 +46,7 @@
         <a href="#" @click.prevent="page='config'; if (typeof refreshConfig==='function') refreshConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='config'}" x-show="selectedTenant">
           <span x-text="__('nav.config')"></span>
         </a>
-        <a href="#" @click.prevent="page='tools'; if (typeof refreshPendingTools==='function') refreshPendingTools(); if (typeof loadManifest==='function') loadManifest(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tools'}" x-show="selectedTenant">
+        <a href="#" @click.prevent="page='tools'; if (typeof loadManifest==='function') loadManifest(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tools'}" x-show="selectedTenant">
           <span x-text="__('nav.tools')"></span>
         </a>
         <a href="#" @click.prevent="page='rag'; if (typeof refreshRag==='function') refreshRag(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='rag'}">
@@ -285,7 +285,6 @@
                 <template x-if="computed.customPlurals > 0"><span class="badge" x-text="computed.customPlurals + ' plurals'"></span></template>
               </span>
             </div>
-            <div class="cfg-stat" x-show="computed.approvedTools > 0"><span class="cfg-label" x-text="__('config.approvedTools')"></span><span class="cfg-val" x-text="computed.approvedTools"></span></div>
           </div>
         </div>
 
@@ -526,11 +525,11 @@
             <h2><span x-text="__('page.tools.title')"></span>: <span class="highlight" x-text="selectedTenant"></span></h2>
           </div>
           <div class="page-header-right">
-            <button @click="loadManifest(); refreshPendingTools()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+            <button @click="loadManifest()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
           </div>
         </div>
 
-        <div x-show="!manifest && !pendingTools" class="card">
+        <div x-show="!manifest" class="card">
           <p x-text="__('tool.noTenantSelected')"></p>
         </div>
 
@@ -578,57 +577,13 @@
         </div>
         </template>
 
-        <!-- Read-only status + pending tools -->
+        <!-- Read-only status -->
         <div x-show="manifest" class="card" x-cloak>
           <h3 x-text="__('tool.accessMode')"></h3>
           <p>
             <span x-show="manifest?.data_source?.read_only !== false" style="color:#d29922;" x-text="__('config.readOnly')"></span>
             <span x-show="manifest?.data_source?.read_only === false" style="color:#3fb950;" x-text="__('config.readWrite')"></span>
-            —
-            <span x-show="pendingTools && pendingTools.mode === 'read_write'" x-text="__('tool.allWritesAllowed')"></span>
-            <span x-show="pendingTools && pendingTools.mode !== 'read_write'" x-text="__('tool.writesBlocked')"></span>
           </p>
-        </div>
-
-        <!-- Pending tools (read-only mode) -->
-        <div x-show="pendingTools && pendingTools.mode !== 'read_write' && pendingTools.tools && pendingTools.tools.length" class="card" x-cloak>
-          <h3 x-text="__('tool.pendingTitle')"></h3>
-          <table class="table">
-            <thead>
-              <tr>
-                <th x-text="__('label.tool')"></th>
-                <th x-text="__('label.method')"></th>
-                <th x-text="__('label.path')"></th>
-                <th x-text="__('label.status')"></th>
-                <th x-text="__('label.action')"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <template x-for="tool in pendingTools.tools" :key="tool.name">
-                <tr>
-                  <td x-text="tool.name"></td>
-                  <td><span class="method-badge" :class="'method-' + (tool.method || '').toLowerCase()" x-text="tool.method"></span></td>
-                  <td x-text="tool.path"></td>
-                  <td>
-                    <span x-show="tool.approved" class="badge badge-green" x-text="__('tool.approved')"></span>
-                    <span x-show="!tool.approved" class="badge badge-yellow" x-text="__('tool.pending')"></span>
-                  </td>
-                  <td>
-                    <button x-show="!tool.approved"
-                      @click="approveTool(tool.name)"
-                      class="btn btn-sm btn-primary" x-text="__('btn.approve')">
-                    </button>
-                    <span x-show="tool.approved" style="color:#8b949e;font-size:12px;">—</span>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- No pending tools -->
-        <div x-show="pendingTools && pendingTools.mode !== 'read_write' && (!pendingTools.tools || pendingTools.tools.length === 0)" class="card" x-cloak>
-          <p x-text="__('tool.noPending')"></p>
         </div>
       </div>
 

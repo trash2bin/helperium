@@ -444,7 +444,6 @@ func TestAuditResource_SlugTenant(t *testing.T) {
 		expected string
 	}{
 		{"/api/tenants/client-name/config", "tenant:client-name"},
-		{"/api/tenants/my_prod/tools/foo/approve", "tenant:my_prod"},
 		{"/api/tenants/tenant-123/introspect", "tenant:tenant-123"},
 		{"/api/agents/my-agent/abuse", "agent:my-agent"},
 		{"/api/llm-providers/my-provider/toggle", "llm-provider:my-provider"},

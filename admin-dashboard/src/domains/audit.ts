@@ -36,7 +36,6 @@ AppRegistry.register('audit', {
           'tenant.introspect': '🔍 ' + __('audit.tenantIntrospect'),
           'tenant.upload': '📤 ' + __('audit.tenantUpload'),
           'config.update': '⚙️ ' + __('audit.configUpdate'),
-          'tool.approve': '✅ ' + __('audit.toolApprove'),
           'rag.config.update': '📄 ' + __('audit.ragConfigUpdate'),
           'rag.doc.import': '📥 ' + __('audit.ragDocImport'),
           'rag.doc.upload': '📤 ' + __('audit.ragDocUpload'),

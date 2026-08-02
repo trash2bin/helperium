@@ -244,7 +244,7 @@ M7 — стабильный ID + миграция Reason→ID в normalizeV3ToV4
 | R1 | CRITICAL | grep `regex=true` на SQLite падает: modernc не регистрирует `regexp()` → "no such function: REGEXP". Тесты проверяли только SQL-структуру, не живой прогон | `registerSQLiteRegexp()` в sqlite_adapter.go (RegisterScalarFunction + sync.Once) + `TestConnect_RegexpFunction` |
 | R2 | CRITICAL | `mode=ro`/`immutable=1` DSN ломается: ensurePragmaParams добавляет `journal_mode(WAL)` (write) → "attempt to write a readonly database". readonly_dsn тенанты не стартуют | readOnlyDSNRe → только busy_timeout для read-only DSN + `TestConnect_ReadOnlyDSN_NoWAL` |
 | R3 | HIGH | OpenAPI filter рекламирует `sort_dir` (не существует — только sort_by с `-`), filter без `format` | убрать sort_dir, добавить format, sort_by doc с `-` |
-| R4 | MEDIUM | admin-хендлеры пишут inst.Config/Router/ApprovedTools БЕЗ ts.mu — гонка с ReloadTenant (data race) | approve-tool persistFn: снапшот под RLock, публикация под Lock; ConfigPath записи под Lock |
+| R4 | MEDIUM | admin-хендлеры пишут inst.Config/Router/ApprovedTools БЕЗ ts.mu — гонка с ReloadTenant (data race) | approve-tool persistFn: снапшот под RLock, публикация под Lock; ConfigPath записи под Lock (механика удалена позже — write-tools выпилены) |
 | R5 | MEDIUM | ReloadTenant игнорирует изменение DSN (валидирует dry-run, но не переподключается) | ReloadTenant: если DSN/Driver изменился → buildTenantInstance + подмена inst + close старых conn + `TestReloadTenant_DSNChanged_Reconnects` |
 | R6 | MEDIUM | M7 дрейф: resolveFieldRules НЕ дедуплицировал custom-правила с ID дефолтов → rewrite дублировал defaults (default×2, ×3) | dedup custom по ID против defaults + `TestResolveFieldRules_CustomDuplicateOfDefault_NoDrift` |
 | R7 | LOW | L10 контракт `\`: grep auto-escapes, filter raw — расхождение не задокументировано | cross-reference в adapter.go QuoteString |
@@ -257,6 +257,5 @@ M7 — стабильный ID + миграция Reason→ID в normalizeV3ToV4
 - L4 (health 2s window) — bounded, "unhealthy" не паника
 - C6 (stats fail-soft) — битый counter никогда не 500
 - L8 (переименование) — ноль старых вызовов
-- ApprovedTools pruning в rewrite — корректен (security-relevant)
 
 ### Итог: 754 (data-service) + 114 (helperium-go) = 868 тестов, -race чистый.

@@ -18,7 +18,7 @@ import (
 type AuditEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 	ActorRole string    `json:"actor_role"` // admin / viewer
-	Action    string    `json:"action"`      // tenant.create / config.update / tool.approve / ...
+	Action    string    `json:"action"`      // tenant.create / config.update / tenant.introspect / ...
 	Resource  string    `json:"resource"`    // tenant ID, agent name, path summary
 	Details   string    `json:"details,omitempty"` // человекочитаемый контекст
 }
@@ -291,7 +291,6 @@ var auditPatterns = map[string]string{
 	"tenants/{id}":                         "tenant.delete",
 	"tenants/{id}/config":                  "config.update",
 	"tenants/{id}/introspect":              "tenant.introspect",
-	"tenants/{id}/tools/{toolName}/approve": "tool.approve",
 	"tenants/upload-sqlite":                "tenant.upload",
 
 	"rag/config":                           "rag.config.update",

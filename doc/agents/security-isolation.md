@@ -5,7 +5,7 @@
 ## Data-service level
 `TenantStore` — изолированные конфиги и подключения для каждого tenant'а. `X-Tenant-ID` → выбор пула. Физическая изоляция (отдельный SQLite файл или PG схема/БД).
 
-**Write-tool approval:** read_only: true по умолчанию. Активация через `POST /admin/tools/{toolName}/approve`.
+**Read-only:** `read_only: true` по умолчанию; write-методы не регистрируются в роутере.
 
 **resolvePath() баг-фикс:** для `postgres://` DSN не склеивать с путём (см. `tenant.go:resolvePath()`).
 

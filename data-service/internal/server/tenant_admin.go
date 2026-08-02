@@ -26,13 +26,12 @@ import (
 
 // BuildAdminRouter creates the chi sub-router for /admin/* endpoints.
 func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath string, adminCtx *AdminContext, cfg *config.Config) http.Handler {
-	// H-3: единый роутер админки. Три пути записи конфига на диск:
+	// H-3: единый роутер админки. Два пути записи конфига на диск:
 	//   1. POST /admin/config (PUT-style)  — point-fix: пишет newCfg как есть (SaveTenantConfig).
 	//      Оператор может править Entities/Endpoints вручную — регенерация не выполняется.
 	//   2. POST /admin/config/rewrite      — регенерация: ExtractIntent → Hydrate(schema),
 	//      intent — единственный источник правды, Entities/Endpoints/MCPTools пересобираются.
-	//   3. POST /admin/tenants/{id}/tools/{tool}/approve — пишет только ApprovedTools (SaveTenantConfig).
-	//      Любые point-фиксы, внесённые через PUT/approve, НЕ переживают rewrite —
+	//      Любые point-фиксы, внесённые через PUT, НЕ переживают rewrite —
 	//      их надо повторять после rewrite (или хранить в intent-совместимых полях).
 	r := chi.NewRouter()
 
@@ -61,10 +60,6 @@ func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath s
 	if adapter != nil {
 		r.Get("/discover", ts.adminDiscoverHandler(adapter))
 	}
-
-	// Per-tenant tool management: read-only approval flow
-	r.Get("/tenants/{id}/tools/pending", ts.adminTenantPendingToolsHandler)
-	r.Post("/tenants/{id}/tools/{toolName}/approve", ts.adminTenantApproveToolHandler)
 
 	ts.adminRouter = r
 	return r
@@ -312,7 +307,7 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 	if targetPath == "" {
 		targetPath = ts.TenantConfigPath(inst.ID)
 	}
-	_, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub, nil)
+	_, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub)
 	if err != nil {
 		handlers.RespondError(w, http.StatusBadRequest, "build_error",
 			fmt.Sprintf("router build failed: %v", err))
@@ -523,25 +518,6 @@ func (ts *TenantStore) adminRewriteHandler(_ datasource.Adapter, _ string) http.
 		// explicit CustomQueries и т.д.), Hydrate генерирует Entities/Endpoints/MCPTools
 		// и возвращает их обратно. Так rewrite не теряет настройки.
 		newCfg := configgen.Hydrate(configgen.ExtractIntent(inst.Config), schema)
-		newCfg.ApprovedTools = inst.Config.ApprovedTools
-
-		// M-2: ApprovedTools могут устареть после rewrite (сущность переименована,
-		// эндпоинт удалён). Оставляем только те, что реально существуют в новых
-		// endpoints, и логируем отброшенные — это security-relevant (write-доступ).
-		epPaths := make(map[string]bool, len(newCfg.Endpoints))
-		for _, ep := range newCfg.Endpoints {
-			epPaths[ep.Path] = true
-		}
-		keptApproved := make([]config.ApprovedTool, 0, len(newCfg.ApprovedTools))
-		for _, a := range newCfg.ApprovedTools {
-			if epPaths[a.Endpoint] {
-				keptApproved = append(keptApproved, a)
-			} else {
-				slog.Warn("rewrite: dropping stale approved tool (endpoint no longer exists)",
-					"tenant", inst.ID, "endpoint", a.Endpoint)
-			}
-		}
-		newCfg.ApprovedTools = keptApproved
 
 		// Валидируем ДО записи на диск: если регенерация дала невалидный конфиг
 		// (напр. Stats.Counter ссылается на удалённую сущность), отдаём 400 и
@@ -656,7 +632,6 @@ func adminConfigResponseFromConfig(cfg *config.Config) adminConfigResponse {
 		SkipRules:                      cfg.SkipRules,
 		DisplayPrefixes:                cfg.DisplayPrefixes,
 		CustomPlurals:                  cfg.CustomPlurals,
-		ApprovedTools:                  cfg.ApprovedTools,
 		DisabledDefaultRules:           cfg.DisabledDefaultRules,
 		FilterableRules:                cfg.FilterableRules,
 		SearchableRules:                cfg.SearchableRules,
@@ -673,85 +648,4 @@ func (ts *TenantStore) SetHasAdmin(hasAdmin bool) {
 	ts.mu.Lock()
 	ts.hasAdmin = hasAdmin
 	ts.mu.Unlock()
-}
-
-// ── Per-Tenant Tool Approval Handlers ──
-
-// adminTenantPendingToolsHandler returns pending write tools for a specific tenant.
-// GET /admin/tenants/{id}/tools/pending
-func (ts *TenantStore) adminTenantPendingToolsHandler(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	inst, ok := ts.GetTenant(id)
-	if !ok {
-		handlers.RespondError(w, http.StatusNotFound, "not_found",
-			fmt.Sprintf("tenant %q not found", id))
-		return
-	}
-
-	approvedTools := inst.ApprovedTools
-	if approvedTools == nil {
-		approvedTools = make(map[string]bool)
-	}
-
-	adminPendingToolsHandler(inst.Config, approvedTools).ServeHTTP(w, r)
-}
-
-// adminTenantApproveToolHandler approves a write tool for a specific tenant.
-// POST /admin/tenants/{id}/tools/{toolName}/approve
-func (ts *TenantStore) adminTenantApproveToolHandler(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	inst, ok := ts.GetTenant(id)
-	if !ok {
-		handlers.RespondError(w, http.StatusNotFound, "not_found",
-			fmt.Sprintf("tenant %q not found", id))
-		return
-	}
-
-	// Create a persist function that saves the approved tools back to config
-	persistFn := func() error {
-		// Sync ApprovedTools map back to Config.ApprovedTools list.
-		// Читаем и пишем inst-поля под ts.mu (гонка с ReloadTenant, который
-		// перезаписывает Config/Router/ApprovedTools под ts.mu.Lock).
-		ts.mu.RLock()
-		approved := make(map[string]bool, len(inst.ApprovedTools))
-		for p := range inst.ApprovedTools {
-			approved[p] = true
-		}
-		paths := make([]config.ApprovedTool, 0, len(approved))
-		for p := range approved {
-			paths = append(paths, config.ApprovedTool{Endpoint: p})
-		}
-		cfg := inst.Config
-		ts.mu.RUnlock()
-
-		// Save to disk (вне лока — файловая операция).
-		newCfg := *cfg
-		newCfg.ApprovedTools = paths
-		savedPath := ts.SaveTenantConfig(id, &newCfg)
-		if savedPath == "" {
-			return fmt.Errorf("failed to save tenant config for %q", id)
-		}
-
-		// Rebuild router with updated approved tools (вне лока — дорого).
-		approvedTools := make(map[string]bool)
-		for _, p := range paths {
-			approvedTools[p.Endpoint] = true
-		}
-		newRouter, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub, approvedTools)
-		if err != nil {
-			return fmt.Errorf("rebuild router after approval: %w", err)
-		}
-
-		// Публикуем результат под ts.mu.Lock (атомарно для конкурентных читателей).
-		ts.mu.Lock()
-		inst.ConfigPath = savedPath
-		inst.Config = &newCfg
-		inst.Router = newRouter
-		inst.ApprovedTools = approvedTools
-		ts.mu.Unlock()
-
-		return nil
-	}
-
-	adminApproveToolHandler(inst.Config, inst.ApprovedTools, persistFn).ServeHTTP(w, r)
 }

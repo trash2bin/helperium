@@ -15,7 +15,7 @@
         <a href="#" @click.prevent="page='config'; if (typeof refreshConfig==='function') refreshConfig(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='config'}" x-show="selectedTenant">
           <span x-text="__('nav.config')"></span>
         </a>
-        <a href="#" @click.prevent="page='tools'; if (typeof refreshPendingTools==='function') refreshPendingTools(); if (typeof loadManifest==='function') loadManifest(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tools'}" x-show="selectedTenant">
+        <a href="#" @click.prevent="page='tools'; if (typeof loadManifest==='function') loadManifest(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='tools'}" x-show="selectedTenant">
           <span x-text="__('nav.tools')"></span>
         </a>
         <a href="#" @click.prevent="page='rag'; if (typeof refreshRag==='function') refreshRag(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='rag'}">

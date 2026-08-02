@@ -55,11 +55,11 @@ Helperium — self-hosted AI-агент, который подключается
 | **Condition-based Expression AST** (не RawWhere) | SQL injection prevention, tenant isolation, единый pipeline |
 | **Multi-tenant изоляция на 3 уровнях** | Data-level (файлы/схемы), tool-level (префиксы), session-level (X-Tenant-ID) |
 | **Search Strategies (grep/filter/schema) вместо единого search** | LLM проще понять отдельные тулы, безопаснее, эффективнее |
-| **Read-only по умолчанию** | Защита от случайной записи; write-tool approval как осознанный шаг |
+| **Read-only по умолчанию** | Защита от случайной записи; write-эндпоинты не генерируются вообще |
 
 ### 2.2. Принципы безопасности
 
-1. **Read-only по умолчанию** — write-операции блокируются на уровне data-service (ReadOnlyDB), MCP gateway не регистрирует write-тулы
+1. **Read-only по умолчанию** — write-операции блокируются на уровне data-service (ReadOnlyDB), MCP gateway не регистрирует write-тулы (их нет в конфиге)
 2. **Tenant ID не доступен LLM** — блокирован на уровне ParseRequest, инжектится сервером
 3. **Field whitelist на каждый вызов** — `findColumn()` проверяет все field-имена
 4. **PII/excluded поля не попадают в инструменты**
@@ -70,7 +70,7 @@ Helperium — self-hosted AI-агент, который подключается
 ### 2.3. Принципы конфигурации
 
 1. **Auto-generated config (configgen)** — entities, endpoints, MCP tools генерируются из интроспекции БД
-2. **Manual overrides** — только для custom_queries, описаний, auth, approved_tools
+2. **Manual overrides** — только для custom_queries, описаний, auth
 3. **Config migration chain** — `v0 → v1 → v2 ... → CurrentConfigVersion`, `Normalize()` идемпотентен
 4. **One source of truth** — `.data/tenants/{id}.json`, валидация в Go-типах, не во внешнем JSON Schema
 
@@ -127,7 +127,6 @@ Admin Dashboard :8085
   ├── data-service :8084 (admin API)
   │     ├── POST /admin/tenants            → создание tenant
   │     ├── POST /admin/config/rewrite     → интроспекция + авто-генерация
-  │     ├── POST /admin/tools/.../approve   → write-tool approval
   │     └── DELETE /admin/tenants/{id}     → удаление
   │
   ├── api-service :8081
@@ -334,7 +333,6 @@ Pipeline.run()
 - `custom_queries{}` — JOIN, агрегаты, отчёты
 - `endpoints[].description` — уточнить для LLM
 - `auth{}` — row-level isolation
-- `approved_tools[]` — write-эндпоинты разрешённые при read_only mode
 
 ### 5.3. Auth / Security
 

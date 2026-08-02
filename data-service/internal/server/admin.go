@@ -21,8 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
@@ -49,7 +47,6 @@ type adminConfigResponse struct {
 	SkipRules            []config.SkipRule             `json:"skip_rules,omitempty"`
 	DisplayPrefixes      []string                      `json:"display_prefixes,omitempty"`
 	CustomPlurals        map[string]string             `json:"custom_plurals,omitempty"`
-	ApprovedTools        []config.ApprovedTool         `json:"approved_tools,omitempty"`
 	DisabledDefaultRules []string                      `json:"disabled_default_rules,omitempty"`
 
 	// Field-level rules — те же поля, что в config.Config, чтобы админка
@@ -147,144 +144,4 @@ func archiveCurrentConfig(configPath string) error {
 
 	slog.Info("admin config: archived", "archive", archivePath)
 	return nil
-}
-
-// ── MCP Tool Management (read-only одобрение write-тулов) ──
-
-// adminPendingToolsHandler возвращает список write-эндпоинтов, ожидающих подтверждения.
-// approvedTools — map[endpointPath]bool для проверки утверждённых write-тулов.
-func adminPendingToolsHandler(cfg *config.Config, approvedTools map[string]bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		readOnly := cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly
-		if !readOnly {
-			handlers.RespondJSON(w, http.StatusOK, map[string]any{
-				"mode":  "read_write",
-				"tools": []string{},
-				"note":  "Read-only mode is OFF — all tools are active",
-			})
-			return
-		}
-
-		type pendingTool struct {
-			Name     string `json:"name"`
-			Method   string `json:"method"`
-			Path     string `json:"path"`
-			Approved bool   `json:"approved"`
-		}
-
-		if approvedTools == nil {
-			approvedTools = make(map[string]bool)
-		}
-
-		pending := make([]pendingTool, 0)
-		toolNames := deriveToolNames(cfg.Endpoints)
-		for _, ep := range cfg.Endpoints {
-			if isWriteMethod(ep.Method) {
-				name := toolNames[ep.Path]
-				pending = append(pending, pendingTool{
-					Name:     name,
-					Method:   string(ep.Method),
-					Path:     ep.Path,
-					Approved: approvedTools[ep.Path],
-				})
-			}
-		}
-
-		// Считаем approved и pending на месте
-		approvedCount := 0
-		pendingCount := 0
-		for _, t := range pending {
-			if t.Approved {
-				approvedCount++
-			} else {
-				pendingCount++
-			}
-		}
-
-		handlers.RespondJSON(w, http.StatusOK, map[string]any{
-			"mode":     "read_only",
-			"tools":    pending,
-			"approved": approvedCount,
-			"pending":  pendingCount,
-		})
-	}
-}
-
-// adminApproveToolHandler подтверждает write-тул для использования в read-only режиме.
-// approvedTools — map[endpointPath]bool, модифицируется на месте.
-// persistFn — опциональная функция для сохранения изменений (вызывается после добавления).
-func adminApproveToolHandler(cfg *config.Config, approvedTools map[string]bool, persistFn func() error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		toolName := chi.URLParam(r, "toolName")
-		if toolName == "" {
-			handlers.RespondError(w, http.StatusBadRequest, "missing_tool", "toolName is required")
-			return
-		}
-
-		// Находим endpoint по имени тула
-		toolNames := deriveToolNames(cfg.Endpoints)
-		var epPath string
-		for _, ep := range cfg.Endpoints {
-			name := toolNames[ep.Path]
-			if name == toolName && isWriteMethod(ep.Method) {
-				epPath = ep.Path
-				break
-			}
-		}
-
-		if epPath == "" {
-			handlers.RespondError(w, http.StatusNotFound, "tool_not_found",
-				fmt.Sprintf("write tool %q not found", toolName))
-			return
-		}
-
-		if approvedTools == nil {
-			approvedTools = make(map[string]bool)
-		}
-		approvedTools[epPath] = true
-
-		// Persist if callback provided
-		if persistFn != nil {
-			if err := persistFn(); err != nil {
-				slog.Warn("admin approve: failed to persist approvals", "error", err)
-			}
-		}
-
-		slog.Info("admin approve: write tool approved", "tool", toolName, "path", epPath)
-		handlers.RespondJSON(w, http.StatusOK, map[string]any{
-			"status": "approved",
-			"tool":   toolName,
-			"path":   epPath,
-		})
-	}
-}
-
-// deriveToolNames создаёт map[endpointPath]toolName для быстрого lookup'а.
-func deriveToolNames(endpoints []config.Endpoint) map[string]string {
-	names := make(map[string]string, len(endpoints))
-	for _, ep := range endpoints {
-		names[ep.Path] = deriveToolName(ep)
-	}
-	return names
-}
-
-// deriveToolName генерирует имя MCP-тула из endpoint'а.
-func deriveToolName(ep config.Endpoint) string {
-	switch ep.Op {
-	case config.OpBuiltinHealth:
-		return "health"
-	case config.OpBuiltinStats:
-		return "stats"
-	case config.OpGetByID:
-		return "get_" + ep.Entity
-	case config.OpStrategy:
-		return ep.Strategy + "_" + ep.Entity
-	case config.OpCustomQuery:
-		if ep.QueryID != "" {
-			return "query_" + ep.QueryID
-		}
-		return "query_" + strings.Trim(strings.ReplaceAll(strings.ReplaceAll(ep.Path, "{", ""), "}", ""), "/")
-	default:
-		return ""
-	}
 }

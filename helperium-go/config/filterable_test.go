@@ -4,8 +4,6 @@ import (
 	"testing"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestFieldRule_AllowNames(t *testing.T) {
 	r := FieldRule{AllowNames: []string{"price", "status"}}
 	tests := []struct {

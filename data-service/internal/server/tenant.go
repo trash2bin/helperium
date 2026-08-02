@@ -57,7 +57,6 @@ type TenantInstance struct {
 	healthMu           *sync.Mutex
 	Healthy            bool               // (guarded by healthMu) last health ping result
 	LastError          string             // (guarded by healthMu) last error message if unhealthy
-	ApprovedTools      map[string]bool    // approved write endpoints (key = path, set on load from cfg.ApprovedTools)
 	IntrospectedSchema *datasource.Schema // cached result of last Introspect (set by /admin/config/rewrite)
 
 	// schemaMu guards IntrospectedSchema: adminRewriteHandler writes it
@@ -250,7 +249,7 @@ func (ts *TenantStore) LoadTenantSchema(id string) (*datasource.Schema, error) {
 //
 // ⚠️ Использовать ТОЛЬКО там, где регенерация — буквально цель операции
 // (adminRewriteHandler). НЕ использовать как дефолтный "безопасный save"
-// для путей, которые пишут точечные правки (PUT /admin/config, approve-tool):
+// для путей, которые пишут точечные правки (PUT /admin/config):
 // Hydrate() перезапишет Entities/Endpoints/MCPTools/Stats.Counters из intent,
 // уничтожив ручные правки, не выраженные в intent (напр. Description эндпоинта).
 func (ts *TenantStore) RegenerateAndPersistTenantConfig(id string, cfg *config.Config) string {

@@ -210,7 +210,7 @@ the pipeline.
 | # | Change | Rationale |
 |---|--------|-----------|
 | 1 | Added `Meta` block | Track when/which version generated the config |
-| 2 | `ApprovedTools` `[]string` → `[]ApprovedTool` | Allow per-method approval, not just per-endpoint |
+| 2 | `ApprovedTools` `[]string` → `[]ApprovedTool` | Allow per-method approval, not just per-endpoint (удалено в v4.1 — write-tools выпилены) |
 | 3 | `Relation.JunctionTable` | Required for `many_to_many` (the old struct had no way to specify the junction table) |
 | 4 | `EndpointParam.ArrayOf`, `EndpointParam.EnumValues` | Better JSON Schema for MCP tool parameters |
 | 5 | `Version` check in `Validate()`: `== 1` → `== CurrentConfigVersion` | No more hardcoded `== 1` |
@@ -234,8 +234,6 @@ func (c *Config) normalizeV1ToV2() {
 
 That's it for the migration itself. The heavy lifting is done by:
 
-- **`ApprovedTool.UnmarshalJSON`** — reads both `"/path"` (legacy) and
-  `{"endpoint":"/path","methods":["POST"]}` formats automatically.
 - **`omitempty`** on every new field — old configs without them parse fine.
 
 ### Configgen changes
@@ -285,9 +283,6 @@ result := &config.Config{
         }
       ]
     }
-  ],
-  "approved_tools": [
-    { "endpoint": "/students", "methods": ["POST"] }
   ]
 }
 ```
@@ -304,10 +299,7 @@ go test ./config/... -run TestNormalize_V1toV2
 # 3. Configs with no version field (version=0) also work:
 go test ./config/... -run TestNormalize_VersionFromZero
 
-# 4. Legacy approved_tools format still parses:
-go test ./config/... -run TestApprovedTool
-
-# 5. All existing tests still pass:
+# 4. All existing tests still pass:
 go test ./config/...
 go test ./data-service/...
 go test ./mcp-gateway/...
@@ -476,7 +468,7 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 |---------|-------------|-------------|------|
 | 0 | Pre-history — no version field | — | — |
 | 1 | First explicit version | `version: 1` | `types.go` (original) |
-| 2 | **Current** (until strategy addition). Meta block, struct ApprovedTools, JunctionTable, ArrayOf, EnumValues | `meta`, `junction_table`, `array_of`, `enum_values`, `ApprovedTool` | `migration.go` |
+| 2 | **Current** (until strategy addition). Meta block, JunctionTable, ArrayOf, EnumValues | `meta`, `junction_table`, `array_of`, `enum_values` | `migration.go` |
 | 2 (post-strategy → v4) | Same version (`2`), no migration needed. `endpoints[].strategy` added with `omitempty`. v4: only `"grep"`, `"filter"`, `"schema"` are valid; `"search"` and `"simple"` removed. | `endpoints[].strategy` ("grep", "filter", "schema") | `types.go` |
 
 ### Where each version is produced

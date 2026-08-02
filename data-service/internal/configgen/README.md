@@ -6,23 +6,23 @@
 
 - `Generate(schema *datasource.Schema, cfg *config.Config) *config.Config` — `configgen.go:83`. Главный оркестратор.
 - `GenerateSchemaForLLM(schema, cfg) *SchemaForLLM` — `llm.go:83`. Обселиченное описание БД для system prompt.
-- `GenerateMCPTools(endpoints, entities, displayPrefixes, customPlurals, filterableRules...)` — `mcp.go:12`. Эндпоинты → MCP-манифест.
+- `GenerateMCPTools(endpoints, entities, displayPrefixes, customPlurals, filterableRules...)` — `mcp.go:14`. Эндпоинты → MCP-манифест.
 - `ExtractIntent(cfg) *TenantIntent` — `intent.go:66`. Полный конфиг → только намерения (правила, кастомизации, explicit custom queries).
 - `Hydrate(intent, schema) *config.Config` — `intent.go:108`. Intent + schema → полный конфиг (Entities/Endpoints/MCPTools пересобираются).
 - `DefaultSkipRules()` — `configgen.go:30`.
 
-Вызывается из: `server/tenant_admin.go:474` (adminRewriteHandler) и `cmd/server/main.go:238` (runDiscover). `ExtractIntent`/`Hydrate` — из `server/tenant_admin.go:521` (rewrite), `:615` (discover), `server/tenant.go:238` (PersistTenantConfig).
+Вызывается из: `server/tenant_admin.go:478` (adminRewriteHandler) и `cmd/server/main.go:238` (runDiscover). `ExtractIntent`/`Hydrate` — из `server/tenant_admin.go:525` (rewrite), `:621` (discover), `server/tenant.go:238` (PersistTenantConfig).
 
 ## Pipeline Generate (`configgen.go:83`)
 
 ```
 1. shouldSkip(schema.Tables)          — SkipRule фильтрация (configgen.go:57)
 2. tableToEntity(table)               — Table → Entity (entity.go:18)
-3. resolveFieldRules(defaults, disabled, custom) — FieldRules resolution (configgen.go:193)
-4. buildCRUDEndpoints(entities, rules) — REST endpoints (configgen.go:216)
-5. buildNavigationEndpoints(entities)  — FK → custom_queries (navigation.go:11)
-6. buildCounters(entities)             — stats counters (configgen.go:305)
-7. GenerateMCPTools(...)               — MCP manifest (mcp.go:12)
+3. resolveFieldRules(defaults, disabled, custom) — FieldRules resolution (configgen.go:206)
+4. buildCRUDEndpoints(entities, rules) — REST endpoints (configgen.go:257)
+5. buildNavigationEndpoints(entities)  — FK → custom_queries (navigation.go:20)
+6. buildCounters(entities)             — stats counters (configgen.go:346)
+7. GenerateMCPTools(...)               — MCP manifest (mcp.go:14)
 ```
 
 ## SkipRules (`configgen.go:30-57`)
@@ -40,7 +40,7 @@
 | `jobs`, `failed_jobs` | Laravel queue |
 | `schema_migrations`, `ar_internal_metadata` | Rails |
 
-`shouldSkip(name, rules, legacyPrefixes)` :57 — AND-матчинг непустых полей SkipRule. `SkipRule` — `helperium-go/config/types.go:534`.
+`shouldSkip(name, rules, legacyPrefixes)` :57 — AND-матчинг непустых полей SkipRule. `SkipRule` — `helperium-go/config/types.go:543`.
 
 Кастомизация: `cfg.SkipRules` (дополняет), `cfg.DisabledDefaultRules` (отключает по prefix).
 
@@ -48,8 +48,8 @@
 
 ### Механика
 
-- Тип `FieldRule` — `helperium-go/config/types.go:564`: AllowNames/AllowSuffix/AllowContains/BlockNames/BlockSuffix/BlockContains/Reason.
-- `Matches(name)` — `types.go:591`: Allow — OR (если непустые), Block — OR (вето).
+- Тип `FieldRule` — `helperium-go/config/types.go:565`: AllowNames/AllowSuffix/AllowContains/BlockNames/BlockSuffix/BlockContains/Reason.
+- `Matches(name)` — `types.go:584`: Allow — OR (если непустые), Block — OR (вето).
 - Дефолты и логика — `helperium-go/config/filterable.go`:
   - `DefaultFilterableFieldRules()` :9 — AllowNames: name, article, oem_number, description, price, old_price, category, brand, supplier, label, quantity, status, type, active.
   - `DefaultSearchableFieldRules()` :24 — block-only: `_image`, `_url`, image, thumbnail, json, seo.
@@ -57,11 +57,11 @@
   - `IsFilterableField(field, rules)` :54 — имплицитные правила (FK `*_id` кроме tenant_id, `*_date`, булы is_available/is_active) + конфигурируемые.
 - Прокси в configgen: `columns.go:12-14` (`DefaultFilterableFieldRules` и т.д.).
 
-### Resolution (`configgen.go:193`)
+### Resolution (`configgen.go:206`)
 
 `resolveFieldRules(defaults, disabledPrefixes, custom)` — дефолты минус отключённые (матч по Reason-префиксу, как SkipRule) плюс кастомные из конфига. Результат записывается обратно в `result.*Rules` для переживания reload.
 
-### Условная генерация эндпоинтов (`configgen.go:216 buildCRUDEndpoints`)
+### Условная генерация эндпоинтов (`configgen.go:257 buildCRUDEndpoints`)
 
 | Endpoint | Условие | Функция |
 |---|---|---|
@@ -108,17 +108,17 @@
 
 `TenantIntent` (:13) — единственный источник правды на диске: только намерения, без производного. `Entities/Endpoints/MCPTools/derived CustomQueries/Meta/Version` сюда НЕ входят — они вычислимы из intent + схемы БД через `Hydrate()`.
 
-- `ExtractIntent(cfg)` :66 — полный `config.Config` → `TenantIntent`: правила (FieldRules, DisabledDefault*), DisplayPrefixes, CustomPlurals/ShortNames, explicit `CustomQueries` (без FK-derived), ApprovedTools, Stats, Auth/Server/Introspection.
+- `ExtractIntent(cfg)` :66 — полный `config.Config` → `TenantIntent`: правила (FieldRules, DisabledDefault*), DisplayPrefixes, CustomPlurals/ShortNames, explicit `CustomQueries` (без FK-derived), Stats, Auth/Server/Introspection.
 - `DerivedCustomQueryKeys(entities)` :55 — ключи, которые генерит `buildNavigationEndpoints` (FK). Классификация explicit vs derived — по ключу из ТЕКУЩЕЙ схемы.
 - `Hydrate(intent, schema)` :108 — intent + schema → полный конфиг: `Generate(schema, genCfg)` + возврат intent-полей. Explicit queries мержатся после Generate; коллизия explicit/derived решается по SQL:
-  - SQL идентичен авто-паттерну (`SELECT t.* FROM {t} t WHERE t.{fk} = ?`) → это протухший derived (FK удалили, ключ выпал из набора) — отбрасывается (`intent.go:158-160`).
-  - SQL отличается → пользовательская кастомизация, сохраняется с warn (`intent.go:162-163`).
-  - `Stats.Counters` фильтруются по реально сгенерированным entities — counter на несуществующую сущность отбрасывается с warn (иначе `Config.Validate` убьёт конфиг, `intent.go:123-143`).
-- ⚠️ Edge case (закомментирован в `intent.go:46-54`): при удалении FK протухший авто-запрос остаётся в конфиге и классифицируется как explicit (ключа нет в новом derived-наборе) — переживает Hydrate до коллизии.
+  - SQL идентичен авто-паттерну (`SELECT t.* FROM {t} t WHERE t.{fk} = ?`) → это протухший derived (FK удалили, ключ выпал из набора) — отбрасывается (`intent.go:159-161`).
+  - SQL отличается → пользовательская кастомизация, сохраняется с warn (`intent.go:163`).
+  - `Stats.Counters` фильтруются по реально сгенерированным entities — counter на несуществующую сущность отбрасывается с warn (иначе `Config.Validate` убьёт конфиг, `intent.go:124-143`).
+- **Edge case** (закомментирован в `intent.go:46-54`): при удалении FK протухший авто-запрос остаётся в конфиге и классифицируется как explicit (ключа нет в новом derived-наборе) — переживает Hydrate до коллизии.
 
 ## Navigation (`navigation.go`)
 
-`buildNavigationEndpoints()` :11 — для каждого FK отношения создаёт:
+`buildNavigationEndpoints()` :20 — для каждого FK отношения создаёт:
 - queryID: `{child}_by_{parent}_{fk_col}`
 - SQL: `SELECT t.* FROM {child} t WHERE t.{fk_col} = ?`
 - endpoint: `GET /{parent}/{id}/{child}`, op custom_query

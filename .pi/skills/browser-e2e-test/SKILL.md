@@ -334,29 +334,6 @@ curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.lo
 curl -s http://127.0.0.1:8081/api/agents | python3 -m json.tool | head -20
 ```
 
-## 🛠️ Write-tool approval (per-tenant)
-
-Эндпоинты:
-
-```
-GET  /admin/tenants/{id}/tools/pending            — посмотреть pending write-tools
-POST /admin/tenants/{id}/tools/{toolName}/approve  — аппрувнуть write-tool
-```
-
-Через API проверить можно так:
-
-```bash
-# Получить список pending tools для tenant shop
-curl -s -H "Authorization: Bearer secret" \
-  http://127.0.0.1:8084/admin/tenants/shop/tools/pending
-
-# Аппрувнуть тул
-curl -s -X POST -H "Authorization: Bearer secret" \
-  http://127.0.0.1:8084/admin/tenants/shop/tools/list_products/approve
-```
-
-Approval'ы хранятся внутри tenant config'а в `.data/tenants/{id}.json` (поле `approved_tools`).
-
 ## 🔍 Диагностика
 
 ```js

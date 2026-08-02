@@ -154,17 +154,6 @@ func buildPaths() map[string]any {
 		withPathParam("id", "string", "Tenant ID"),
 		withResponse("ok", "#/components/schemas/RewriteResponse"))
 
-	addGet(paths, "/api/tenants/{id}/tools/pending", "tenants_tools_pending", "List pending tools for approval", "Data-Service",
-		withProxyTo("data-service"),
-		withPathParam("id", "string", "Tenant ID"),
-		withResponse("ok", "#/components/schemas/PendingToolsResponse"))
-
-	addPost(paths, "/api/tenants/{id}/tools/{toolName}/approve", "tenants_tools_approve", "Approve a write tool", "Data-Service",
-		withProxyTo("data-service"),
-		withPathParam("id", "string", "Tenant ID"),
-		withPathParam("toolName", "string", "Tool name to approve"),
-		withResponse("ok", "#/components/schemas/StatusResponse"))
-
 	addGet(paths, "/api/tenants/{id}/manifest", "tenants_manifest", "Get MCP manifest for tenant", "Data-Service",
 		withProxyTo("data-service"),
 		withPathParam("id", "string", "Tenant ID"),
@@ -440,24 +429,6 @@ func buildSchemas() map[string]any {
 		},
 
 		// ── Tools / Manifest ──
-		"PendingToolsResponse": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"tools": map[string]any{
-					"type": "array",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"name":      map[string]any{"type": "string"},
-							"approved":  map[string]any{"type": "boolean"},
-							"method":    map[string]any{"type": "string"},
-							"path":      map[string]any{"type": "string"},
-						},
-					},
-				},
-				"mode":      map[string]any{"type": "string", "description": "read_only | read_write"},
-			},
-		},
 		"ManifestResponse": map[string]any{
 			"type": "object",
 			"properties": map[string]any{

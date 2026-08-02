@@ -1,10 +1,9 @@
-// tools.ts — MCP tools approval & manifest
+// tools.ts — MCP tools manifest
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const w = window as any;
 
 AppRegistry.register('tools', {
   state: {
-    pendingTools: { tools: [], mode: 'read_only' },
     manifest: null,
   },
 
@@ -13,29 +12,10 @@ AppRegistry.register('tools', {
     const notify = () => w.Alpine.store('notify');
 
     return {
-      async loadPendingTools(this: any, tenantId: string) {
-        if (!tenantId) return;
-        try {
-          this.pendingTools = await api().get('/api/tenants/' + tenantId + '/tools/pending');
-        } catch (e: unknown) {
-          this.pendingTools = null;
-          notify().error(e instanceof Error ? e.message : String(e));
-        }
-      },
-
       async loadManifest(this: any, tenantId: string) {
         if (!tenantId) return;
         try { this.manifest = await api().get('/api/tenants/' + tenantId + '/manifest'); }
         catch { this.manifest = null; }
-      },
-
-      async approveTool(this: any, tenantId: string, toolName: string) {
-        if (!tenantId || !toolName) return;
-        try {
-          await api().post('/api/tenants/' + tenantId + '/tools/' + toolName + '/approve');
-          notify().success('Tool approved: ' + toolName);
-          await this.loadPendingTools(tenantId);
-        } catch (e: unknown) { notify().error(e instanceof Error ? e.message : String(e)); }
       },
 
       findEndpoint(this: any, endpointPath: string) {
@@ -45,8 +25,7 @@ AppRegistry.register('tools', {
         return null;
       },
 
-      refreshPendingTools(this: any) {
-        this.loadPendingTools(this.selectedTenant);
+      refreshManifest(this: any) {
         this.loadManifest(this.selectedTenant);
       },
 

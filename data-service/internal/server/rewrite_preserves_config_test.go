@@ -249,54 +249,6 @@ func TestRewrite_CustomQueries_Idempotent(t *testing.T) {
 
 func boolPtr(b bool) *bool { return &b }
 
-// TestRewrite_DropsStaleApprovedTools — M-2: approved write-тул на эндпоинт,
-// которого больше нет после rewrite, отбрасывается (security-relevant).
-func TestRewrite_DropsStaleApprovedTools(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "rewrite_approve.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if _, err := db.ExecContext(t.Context(),
-		`CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
-		_ = db.Close()
-		t.Fatalf("create table: %v", err)
-	}
-	_ = db.Close()
-
-	cfg := &config.Config{
-		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: dbPath, ReadOnly: boolPtr(true)},
-		// Approved write-тул на эндпоинт, которого НЕ будет в сгенерированном конфиге.
-		ApprovedTools: []config.ApprovedTool{{Endpoint: "/products/deleted_write"}},
-	}
-
-	ts := NewTenantStore(datasource.NewDefaultRegistry(), "")
-	ts.TenantsDir = t.TempDir()
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	if _, err := ts.AddTenant(ctx, "test-approve-stale", cfg, ""); err != nil {
-		t.Fatalf("AddTenant: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/admin/config/rewrite?tenant=test-approve-stale", nil)
-	req.Header.Set("X-Tenant-ID", "test-approve-stale")
-	rec := httptest.NewRecorder()
-	ts.adminRewriteHandler(nil, "")(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("rewrite: status %d, body %s", rec.Code, rec.Body.String())
-	}
-
-	inst, ok := ts.GetTenant("test-approve-stale")
-	if !ok {
-		t.Fatal("tenant not found")
-	}
-	for _, a := range inst.Config.ApprovedTools {
-		if a.Endpoint == "/products/deleted_write" {
-			t.Errorf("stale approved tool survived rewrite: %s", a.Endpoint)
-		}
-	}
-}
-
 func keys(m map[string]config.CustomQuery) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

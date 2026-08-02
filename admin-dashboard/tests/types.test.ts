@@ -24,8 +24,6 @@ import type {
   SkipRule,
   ComputedSummary,
   // Tools
-  PendingTools,
-  ToolInfo,
   ManifestData,
   ManifestEndpoint,
   // RAG
@@ -149,12 +147,9 @@ describe('Types — type-level contracts', () => {
       endpoints: [{ path: '/products', method: 'GET' }],
       mcp_tools: [{ name: 'find_products' }],
       custom_queries: { top_products: 'SELECT * FROM products LIMIT 10' },
-      approved_tools: [{ endpoint: 'create_product' }],
       disabled_default_rules: ['sqlite_'],
     };
     expect(cfg.version).toBe(1);
-    expect(cfg.approved_tools).toBeDefined();
-    expect(cfg.approved_tools![0].endpoint).toBe('create_product');
   });
 
   // ── SkipRule ──
@@ -177,20 +172,9 @@ describe('Types — type-level contracts', () => {
       skipRules: 2,
       displayPrefixes: 'catalog_',
       customPlurals: 0,
-      approvedTools: 1,
     };
     expect(s.entities).toBe(10);
     expect(s.poolSize).toBe(5);
-  });
-
-  // ── PendingTools / ToolInfo ──
-  it('PendingTools holds tools list and mode', () => {
-    const pt: PendingTools = {
-      tools: [{ name: 'create_product', approved: false }],
-      mode: 'read_only',
-    };
-    expect(pt.mode).toBe('read_only');
-    expect(pt.tools[0].approved).toBe(false);
   });
 
   // ── ManifestData / ManifestEndpoint ──
@@ -364,7 +348,7 @@ describe('Types — runtime structure checks', () => {
       'ApiResponse', 'DomainModule',
       'TenantInfo', 'DashboardData',
       'DataSourceConfig', 'EntityConfig', 'FieldConfig', 'EndpointConfig', 'McpToolConfig', 'TenantConfig', 'SkipRule', 'ComputedSummary',
-      'PendingTools', 'ToolInfo', 'ManifestData', 'ManifestEndpoint',
+      'ManifestData', 'ManifestEndpoint',
       'RagHealth', 'RagDoc', 'RagSettings', 'RagStats',
       'AgentInfo', 'VoiceConfig',
       'LlmConfig', 'LlmProvider', 'LlmProviderListResponse', 'LlmProviderListItem',

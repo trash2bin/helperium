@@ -208,10 +208,6 @@ type Config struct {
 	// Server — настройки HTTP-сервера (таймауты, лимиты). Опционально.
 	Server *ServerConfig `json:"server,omitempty"`
 
-	// ApprovedTools — список утверждённых write-эндпоинтов.
-	// v1: []string; v2: []ApprovedTool (читает оба формата через UnmarshalJSON).
-	ApprovedTools []ApprovedTool `json:"approved_tools,omitempty"`
-
 	// SkipRules — таблицы для исключения при генерации. Дополняет DefaultSkipRules.
 	SkipRules []SkipRule `json:"skip_rules,omitempty"`
 
@@ -834,18 +830,6 @@ func (c *Config) Validate() error {
 				errs = append(errs, fmt.Sprintf("auth.row_filters[%d].where: required", i))
 			} else if !isValidFilterExpression(rf.Where) {
 				errs = append(errs, fmt.Sprintf("auth.row_filters[%d].where: contains forbidden SQL construct", i))
-			}
-		}
-	}
-
-	// ── ApprovedTools ────────────────────────────────────────────────
-	for i, at := range c.ApprovedTools {
-		if at.Endpoint == "" {
-			errs = append(errs, fmt.Sprintf("approved_tools[%d].endpoint: required", i))
-		}
-		for j, m := range at.Methods {
-			if !m.Valid() {
-				errs = append(errs, fmt.Sprintf("approved_tools[%d].methods[%d]: unsupported %q", i, j, m))
 			}
 		}
 	}

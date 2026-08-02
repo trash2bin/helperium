@@ -38,7 +38,6 @@ AppRegistry.register('tenants', {
           if (this.selectedTenant === id) {
             this.selectedTenant = '';
             this.config = {};
-            this.pendingTools = null;
           }
           w.Alpine.store('notify').success('Tenant "' + id + '" deleted');
           w.Alpine.store('events').emit('tenant:deleted', { id });

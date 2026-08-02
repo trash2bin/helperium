@@ -57,7 +57,7 @@ func TestServeHTTP_NestedMCPschema_NoDeadlock(t *testing.T) {
 	inst.schemaMu.Unlock()
 
 	// Настоящий tenant-роутер с /mcp/schema.
-	router, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub, inst.ApprovedTools)
+	router, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub)
 	if err != nil {
 		t.Fatalf("NewRouterFromConfig: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestServeHTTP_OpenAPI_NestedResolve_NoDeadlock(t *testing.T) {
 		t.Fatalf("AddTenant: %v", err)
 	}
 
-	router, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub, inst.ApprovedTools)
+	router, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub)
 	if err != nil {
 		t.Fatalf("NewRouterFromConfig: %v", err)
 	}

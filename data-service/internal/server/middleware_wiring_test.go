@@ -56,7 +56,7 @@ func TestBodyLimitMiddleware_Wired_TenantRouter(t *testing.T) {
 	cfg := &config.Config{
 		Server: &config.ServerConfig{BodyLimitMB: &limitMB},
 	}
-	router, err := NewRouterFromConfig(ts, cfg, nil, nil)
+	router, err := NewRouterFromConfig(ts, cfg, nil)
 	if err != nil {
 		t.Fatalf("NewRouterFromConfig: %v", err)
 	}

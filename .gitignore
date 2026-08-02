@@ -93,6 +93,9 @@ test-results/
 playwright-report/
 .playwright-mcp
 
+# Admin audit logs (runtime artifact; dev spawns into internal/audit due to DATA_DIR path)
+admin-dashboard/internal/audit/
+
 # Symlinks to specs/
 api-service/specs
 /cmd

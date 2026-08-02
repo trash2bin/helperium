@@ -34,7 +34,7 @@ Admin Dashboard (:8085)
 | **📊 Дашборд** | `/` | Сводка: количество тенантов, статус data-service |
 | **🏪 Тенанты** | Tenants sidebar | Список тенантов, создание нового (SQLite upload / PostgreSQL DSN), удаление |
 | **⚙️ Конфиг** | Config sidebar | Просмотр/редактирование JSON-конфига тенанта, read-only toggle, интроспекция схемы |
-| **🛠️ Тулы** | Tools sidebar | MCP-манифест тенанта, подтверждение write-тулов в read-only режиме |
+| **🛠️ Тулы** | Tools sidebar | MCP-манифест тенанта, display names тулов |
 | **📄 RAG** | RAG sidebar | Загрузка документов (drag-and-drop), список, удаление, статус RAG сервиса |
 | **🤖 Агенты** | Agents sidebar | CRUD AI-агентов, привязка tenant'ов |
 | **🛡️ Anti-Abuse** | Anti-Abuse sidebar | Настройка anti-abuse engine + Emergency Presets (Normal/Cautious/Lockdown) |

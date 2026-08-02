@@ -25,8 +25,7 @@ import (
 //   - ts: TenantStore for resolving tenant state (mcp/schema, openapi.json)
 //   - cfg: the tenant's config
 //   - adapter: AdapterSubset for query builder and handlers (includes metrics/logging)
-//   - approvedTools: map of write endpoint paths that are approved in read-only mode
-func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.AdapterSubset, approvedTools map[string]bool) (http.Handler, error) {
+func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.AdapterSubset) (http.Handler, error) {
 	entities := runtime.ConfigToEntities(cfg.Entities)
 	customQueries := runtime.ConfigToCustomQueries(cfg.CustomQueries)
 
@@ -121,18 +120,14 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 	// NewRouterFromConfig does NOT register /admin/* — it is served by the top-level mount.
 
 	// Read-only guard: если DataSource.ReadOnly == true (по умолчанию),
-	// мутирующие методы (POST, PUT, PATCH, DELETE) не регистрируются,
-	// за исключением эндпоинтов, явно подтверждённых через admin API
-	// (POST /admin/tools/{toolName}/approve).
+	// мутирующие методы (POST, PUT, PATCH, DELETE) не регистрируются вовсе.
+	// Это единственный поведенческий фильтр — approve-механика удалена,
+	// write-тулы в конфиге не генерируются (configgen даёт только GET).
 	readOnly := false
 	if cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly {
 		readOnly = true
-		if approvedTools == nil {
-			approvedTools = make(map[string]bool)
-		}
-		slog.Info("read-only mode enabled — write methods are blocked by default",
-			"endpoints", len(cfg.Endpoints),
-			"approved_tools", len(approvedTools))
+		slog.Info("read-only mode enabled — write methods are blocked",
+			"endpoints", len(cfg.Endpoints))
 	}
 
 	// Build entity name map for strategy routing
@@ -150,16 +145,11 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 	}
 
 	for _, ep := range cfg.Endpoints {
-		// Read-only guard: пропускаем write-методы, если они не утверждены
+		// Read-only guard: пропускаем write-методы в read-only режиме
 		if readOnly && isWriteMethod(ep.Method) {
-			if approvedTools[ep.Path] {
-				slog.Debug("approved write endpoint allowed in read-only mode",
-					"method", ep.Method, "path", ep.Path, "op", ep.Op)
-			} else {
-				slog.Debug("skipping write endpoint in read-only mode",
-					"method", ep.Method, "path", ep.Path, "op", ep.Op)
-				continue
-			}
+			slog.Debug("skipping write endpoint in read-only mode",
+				"method", ep.Method, "path", ep.Path, "op", ep.Op)
+			continue
 		}
 
 		var h http.HandlerFunc

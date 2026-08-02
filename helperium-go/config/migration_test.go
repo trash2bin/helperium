@@ -185,81 +185,6 @@ func TestNormalize_PreservesExistingMeta(t *testing.T) {
 	}
 }
 
-// TestApprovedTool_UnmarshalJSON_String checks that legacy "/path" string format
-// is correctly parsed into ApprovedTool.
-func TestApprovedTool_UnmarshalJSON_String(t *testing.T) {
-	raw := []byte(`"/students"`)
-	var at config.ApprovedTool
-	if err := at.UnmarshalJSON(raw); err != nil {
-		t.Fatalf("UnmarshalJSON('/students'): %v", err)
-	}
-	if at.Endpoint != "/students" {
-		t.Errorf("Endpoint = %q, want %q", at.Endpoint, "/students")
-	}
-	if at.Methods != nil {
-		t.Errorf("Methods = %v, want nil (all methods)", at.Methods)
-	}
-}
-
-// TestApprovedTool_UnmarshalJSON_Object checks that the expanded format
-// {endpoint: "...", methods: [...]} is correctly parsed.
-func TestApprovedTool_UnmarshalJSON_Object(t *testing.T) {
-	raw := []byte(`{"endpoint":"/students","methods":["POST"]}`)
-	var at config.ApprovedTool
-	if err := at.UnmarshalJSON(raw); err != nil {
-		t.Fatalf("UnmarshalJSON(object): %v", err)
-	}
-	if at.Endpoint != "/students" {
-		t.Errorf("Endpoint = %q, want %q", at.Endpoint, "/students")
-	}
-	if len(at.Methods) != 1 {
-		t.Fatalf("len(Methods) = %d, want 1", len(at.Methods))
-	}
-	if string(at.Methods[0]) != "POST" {
-		t.Errorf("Methods[0] = %q, want %q", at.Methods[0], "POST")
-	}
-}
-
-// TestApprovedTool_UnmarshalJSON_LegacyArray loads a full config where
-// approved_tools is a []string (legacy format). config.Load should parse it
-// via ApprovedTool.UnmarshalJSON and produce valid []ApprovedTool entries.
-func TestApprovedTool_UnmarshalJSON_LegacyArray(t *testing.T) {
-	path := writeTempConfig(t, `{
-		"version": 2,
-		"data_source": { "driver": "sqlite", "dsn": ":memory:" },
-		"endpoints": [
-			{ "method": "GET", "path": "/a", "op": "builtin_health" },
-			{ "method": "GET", "path": "/b", "op": "builtin_health" }
-		],
-		"approved_tools": ["/a", "/b"]
-	}`)
-
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load() returned error: %v", err)
-	}
-
-	if len(cfg.ApprovedTools) != 2 {
-		t.Fatalf("len(ApprovedTools) = %d, want 2", len(cfg.ApprovedTools))
-	}
-
-	// Check first tool
-	if cfg.ApprovedTools[0].Endpoint != "/a" {
-		t.Errorf("ApprovedTools[0].Endpoint = %q, want %q",
-			cfg.ApprovedTools[0].Endpoint, "/a")
-	}
-	// Legacy format — Methods should be nil (all methods)
-	if cfg.ApprovedTools[0].Methods != nil {
-		t.Errorf("ApprovedTools[0].Methods = %v, want nil (legacy=all)", cfg.ApprovedTools[0].Methods)
-	}
-
-	// Check second tool
-	if cfg.ApprovedTools[1].Endpoint != "/b" {
-		t.Errorf("ApprovedTools[1].Endpoint = %q, want %q",
-			cfg.ApprovedTools[1].Endpoint, "/b")
-	}
-}
-
 // TestValidate_V2Config verifies that a valid v2 config passes Validate().
 func TestValidate_V2Config(t *testing.T) {
 	raw := []byte(`{
@@ -289,9 +214,6 @@ func TestValidate_V2Config(t *testing.T) {
 		],
 		"endpoints": [
 			{ "method": "GET", "path": "/students/{id}", "op": "get_by_id", "entity": "student" }
-		],
-		"approved_tools": [
-			{ "endpoint": "/students", "methods": ["POST"] }
 		]
 	}`)
 
@@ -360,19 +282,5 @@ func TestNormalize_NormalizeTwiceIsIdempotent(t *testing.T) {
 	if cfg.Version != versionAfterFirstNormalize {
 		t.Errorf("Version changed after second Normalize: %d → %d",
 			versionAfterFirstNormalize, cfg.Version)
-	}
-}
-
-// TestApprovedTool_UnmarshalJSON_EmptyString checks that an empty string
-// parses with an empty Endpoint (not panic).
-func TestApprovedTool_UnmarshalJSON_EmptyString(t *testing.T) {
-	raw := []byte(`""`)
-	var at config.ApprovedTool
-	if err := at.UnmarshalJSON(raw); err != nil {
-		t.Fatalf("UnmarshalJSON(empty string): %v", err)
-	}
-	// Empty string → empty Endpoint, not nil
-	if at.Endpoint != "" {
-		t.Errorf("Endpoint = %q, want empty string", at.Endpoint)
 	}
 }

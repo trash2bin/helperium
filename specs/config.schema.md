@@ -41,7 +41,6 @@ This file is documentation only.
     "body_limit_mb": 10,
     "max_concurrent": 100
   },
-  "approved_tools": [/* see below */],   // write-endpoints allowed in read-only mode
   "skip_rules": [],                      // tables to exclude from generation
   "disabled_default_rules": [],          // default skip rules to disable
   "display_prefixes": [],                // table name prefixes to strip in display names
@@ -214,28 +213,6 @@ Multi-tenancy isolation. Optional. Without it — no row-level filtering.
   ]
 }
 ```
-
----
-
-## approved_tools[]
-
-Write-endpoints approved in read-only mode. If `read_only: true` (default),
-only endpoints listed here accept POST/PUT/DELETE.
-
-Legacy format (`v1`, still accepted):
-```jsonc
-["/students", "/students/{id}"]
-```
-
-Current format (`v2`):
-```jsonc
-[
-  { "endpoint": "/students", "methods": ["POST"] },
-  { "endpoint": "/students/{id}", "methods": ["PUT", "DELETE"] }
-]
-```
-
-Empty `methods` means all methods for that endpoint are approved.
 
 ---
 
