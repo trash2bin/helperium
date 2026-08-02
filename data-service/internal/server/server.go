@@ -155,8 +155,10 @@ func (rl *adminRateLimiter) Allow() bool {
 
 // AdminRateLimitMiddleware возвращает middleware, ограничивающий частоту запросов
 // token bucket алгоритмом. Параметры читаются из env:
-//   ADMIN_RATE_LIMIT_RPS   — запросов в секунду (default 20)
-//   ADMIN_RATE_LIMIT_BURST — burst размер (default 50)
+//
+//	ADMIN_RATE_LIMIT_RPS   — запросов в секунду (default 20)
+//	ADMIN_RATE_LIMIT_BURST — burst размер (default 50)
+//
 // При превышении лимита возвращает 429 Too Many Requests с Retry-After.
 func AdminRateLimitMiddleware() func(http.Handler) http.Handler {
 	rps := resolveIntEnv("ADMIN_RATE_LIMIT_RPS", 0, 20)
@@ -258,6 +260,9 @@ func resolveIntEnv(key string, fallback int, defaultVal int) int {
 
 // configValue извлекает опциональное *int из Config через getter.
 func configValue(cfg *config.Config, getter func(*config.Config) *int) int {
+	if cfg == nil {
+		return 0
+	}
 	if v := getter(cfg); v != nil {
 		return *v
 	}
@@ -271,6 +276,11 @@ type contextKey string
 const (
 	correlationIDKey contextKey = "correlation_id"
 	tenantIDKey      contextKey = "tenant_id"
+	// tenantInstanceKey — зарезолвленный TenantInstance, положенный в контекст
+	// ServeHTTP (под ts.mu.RLock). Хендлеры внутри tenant-роутера читают его
+	// из контекста, а НЕ вызывают ts.resolveTenant(r) повторно — иначе
+	// повторный RLock из-под RLock → deadlock при queued writer'е.
+	tenantInstanceKey contextKey = "tenant_instance"
 )
 
 // TenantIDMiddleware извлекает tenant_id из заголовка (по конфигу auth.tenant_header).

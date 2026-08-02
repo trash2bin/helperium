@@ -10,7 +10,7 @@ import "encoding/json"
 
 // CurrentConfigVersion is the latest config schema version.
 // Increment when introducing a breaking change to the config structure.
-const CurrentConfigVersion = 3
+const CurrentConfigVersion = 4
 
 // Normalize upgrades the config to CurrentConfigVersion.
 // Fields that do not exist in older versions are backfilled with safe defaults.
@@ -28,6 +28,8 @@ func (c *Config) Normalize() {
 			c.normalizeV1ToV2()
 		case 2:
 			c.normalizeV2ToV3()
+		case 3:
+			c.normalizeV3ToV4()
 		default:
 			// Unknown version — pin to current and continue.
 			c.Version = CurrentConfigVersion
@@ -62,21 +64,52 @@ func (c *Config) normalizeV1ToV2() {
 // normalizeV2ToV3 upgrades v2 → v3 configs.
 //
 // Changes in v3:
-//   - Legacy op="find" and op="list" endpoints converted to op="strategy" with strategy="schema"
 //   - SearchField and QueryParam removed from Endpoint struct (no longer used)
+//   - Legacy op="find"/op="list" were previously converted to strategy (grep/filter);
+//     с v4 это больше НЕ поддерживается — конвертация убрана, такие эндпоинты
+//     остаются как есть и падают в Validate() (op: unsupported).
 func (c *Config) normalizeV2ToV3() {
-	for i := range c.Endpoints {
-		ep := &c.Endpoints[i]
-		switch ep.Op {
-		case "find", "list":
-			ep.Op = OpStrategy
-			ep.Strategy = "schema"
-		}
-	}
 	if c.Meta != nil {
 		c.Meta.ConfigVersion = 3
 	}
 	c.Version = 3
+}
+
+// normalizeV3ToV4 upgrades v3 → v4 configs.
+//
+// Changes in v4:
+//   - Legacy op="find"/op="list" endpoints are NO LONGER SUPPORTED: they are
+//     left untouched and fail Op.Valid() in Validate(). No conversion, no fallback.
+//   - FieldRule.ID introduced: disabled_default_filterable/searchable/enum_rules
+//     теперь матчатся по стабильному ID, а не по Reason-префиксу. Legacy
+//     Reason-префиксы конвертируются в ID, чтобы существующие конфиги не
+//     потеряли отключение правил.
+func (c *Config) normalizeV3ToV4() {
+	// Legacy Reason-префиксы → стабильные ID (см. FieldRule.ID в types.go).
+	legacyReasonToID := map[string]string{
+		"Common filterable":      "filterable.common",
+		"Image/SEO":              "searchable.block_image",
+		"Columns that typically": "enum.contains",
+	}
+	convert := func(disabled []string) []string {
+		out := make([]string, 0, len(disabled))
+		for _, d := range disabled {
+			if id, ok := legacyReasonToID[d]; ok {
+				out = append(out, id)
+			} else {
+				out = append(out, d) // кастомный/неизвестный — оставляем как есть
+			}
+		}
+		return out
+	}
+	c.DisabledDefaultFilterableRules = convert(c.DisabledDefaultFilterableRules)
+	c.DisabledDefaultSearchableRules = convert(c.DisabledDefaultSearchableRules)
+	c.DisabledDefaultEnumRules = convert(c.DisabledDefaultEnumRules)
+
+	if c.Meta != nil {
+		c.Meta.ConfigVersion = 4
+	}
+	c.Version = 4
 }
 
 // normalizeV0 handles version-0 configs (pre-schema-version configs).

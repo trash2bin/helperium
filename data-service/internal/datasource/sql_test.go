@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	_ "modernc.org/sqlite"
 	"github.com/trash2bin/helperium/data-service/internal/query"
 	"github.com/trash2bin/helperium/helperium-go/config"
+	_ "modernc.org/sqlite"
 )
 
 // TestSQLDataSource_Schema_Works verifies that the Schema() method
@@ -186,4 +186,52 @@ func fieldKeys(m map[string]FieldMeta) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// TestSQLDataSource_Schema_ClosesRows — B1: после Schema() пул не должен
+// держать открытые соединения (rows закрыты на всех путях, включая ошибки).
+func TestSQLDataSource_Schema_ClosesRows(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	_, err = db.Exec(`CREATE TABLE leak_probe (
+		id   TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		price INT DEFAULT 0,
+		score REAL
+	)`)
+	if err != nil {
+		t.Fatalf("CREATE TABLE: %v", err)
+	}
+	_, err = db.Exec(`INSERT INTO leak_probe VALUES ('a','Apple',100,1.5),('b','Banana',50,2.5)`)
+	if err != nil {
+		t.Fatalf("INSERT: %v", err)
+	}
+
+	adapter := &testQuerierAdapter{db: db}
+	entity := config.Entity{
+		Name:     "leak_probe",
+		Table:    "leak_probe",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeString, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+			{Name: "price", Column: "price", Type: config.FieldTypeInt},
+			{Name: "score", Column: "score", Type: config.FieldTypeFloat},
+		},
+	}
+	ds := NewSQLDataSource(db, adapter, []config.Entity{entity}, 0)
+
+	for i := 0; i < 5; i++ {
+		if _, err := ds.Schema(context.Background(), "leak_probe"); err != nil {
+			t.Fatalf("Schema iteration %d: %v", i, err)
+		}
+	}
+	// Все rows закрыты — пул не держит in-use соединений.
+	if inUse := db.Stats().InUse; inUse != 0 {
+		t.Errorf("InUse connections after Schema = %d, want 0 (rows leak)", inUse)
+	}
 }

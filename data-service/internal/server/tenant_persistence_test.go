@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // ── Config Persistence Unit Tests ──
@@ -95,10 +95,17 @@ func TestTenantStore_DeleteTenantConfig(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("{}"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	schemaPath := filepath.Join(tenantsDir, "to-delete.schema.json")
+	if err := os.WriteFile(schemaPath, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	ts.DeleteTenantConfig("to-delete")
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
-		t.Errorf("file should be deleted")
+		t.Errorf("config file should be deleted")
+	}
+	if _, err := os.Stat(schemaPath); !os.IsNotExist(err) {
+		t.Errorf("schema cache file should be deleted alongside config")
 	}
 
 	// Deleting non-existent should not error
@@ -401,4 +408,76 @@ func TestApprovedToolsInConfig(t *testing.T) {
 func readOnlyPtr() *bool {
 	v := true
 	return &v
+}
+
+// TestTenantStore_SaveTenantSchema_PersistsValidJSON (L3) — SaveTenantSchema
+// должен писать атомарно (temp + os.Rename) и результат должен быть валидным
+// JSON, читаемым LoadTenantSchema.
+func TestTenantStore_SaveTenantSchema_PersistsValidJSON(t *testing.T) {
+	ts := newTestTenantStore(t)
+	tenantsDir := t.TempDir()
+	ts.TenantsDir = tenantsDir
+
+	schema := &datasource.Schema{
+		Tables: []datasource.Table{
+			{
+				Name:       "products",
+				PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "INTEGER"},
+					{Name: "name", Type: "TEXT"},
+				},
+			},
+		},
+	}
+	ts.SaveTenantSchema("schema-persist", schema)
+
+	// Файл существует и валидный JSON.
+	schemaPath := ts.TenantSchemaPath("schema-persist")
+	data, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatalf("schema cache file not readable at %s: %v", schemaPath, err)
+	}
+	if len(data) == 0 {
+		t.Fatal("schema cache file is empty")
+	}
+	var loaded datasource.Schema
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("schema cache is not valid JSON: %v", err)
+	}
+	if len(loaded.Tables) != 1 || loaded.Tables[0].Name != "products" {
+		t.Errorf("unexpected loaded schema: %+v", loaded.Tables)
+	}
+
+	// Round-trip: LoadTenantSchema должен прочитать сохранённое без ошибок.
+	back, err := ts.LoadTenantSchema("schema-persist")
+	if err != nil {
+		t.Fatalf("LoadTenantSchema: %v", err)
+	}
+	if back == nil || len(back.Tables) != 1 || back.Tables[0].Name != "products" {
+		t.Errorf("round-trip schema mismatch: %+v", back)
+	}
+
+	// Атомарность: в директории не должно остаться temp-файлов.
+	entries, err := os.ReadDir(tenantsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".tmp") {
+			t.Errorf("temp file left behind (non-atomic write): %s", e.Name())
+		}
+	}
+}
+
+// TestTenantStore_SaveTenantSchema_NilSchema_NoWrite — nil-схема не должна
+// создавать файл.
+func TestTenantStore_SaveTenantSchema_NilSchema_NoWrite(t *testing.T) {
+	ts := newTestTenantStore(t)
+	ts.TenantsDir = t.TempDir()
+
+	ts.SaveTenantSchema("nil-schema", nil)
+	if _, err := os.Stat(ts.TenantSchemaPath("nil-schema")); !os.IsNotExist(err) {
+		t.Errorf("nil schema should not create a cache file")
+	}
 }

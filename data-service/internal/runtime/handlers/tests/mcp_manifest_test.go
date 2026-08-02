@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // TestMCPManifestHandler_WithTools — cfg.MCPTools уже заданы

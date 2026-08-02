@@ -1,6 +1,8 @@
 package search
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -9,6 +11,8 @@ import (
 
 	"github.com/trash2bin/helperium/data-service/internal/query"
 	"github.com/trash2bin/helperium/helperium-go/config"
+
+	_ "modernc.org/sqlite"
 )
 
 // =============================================================================
@@ -18,18 +22,28 @@ import (
 // testAdapter implements Adapter for SQLite-style quoting.
 type testAdapter struct{}
 
-func (testAdapter) QuoteIdentifier(name string) string     { return `"` + name + `"` }
-func (testAdapter) QuoteString(s string) string            { return escapeLikeSQL(s) }
-func (testAdapter) TranslatePlaceholder(index int) string   { return "?" }
-func (testAdapter) IsPostgres() bool                        { return false }
+// sqliteAdapter — Adapter для e2e-тестов на реальном in-memory sqlite.
+type sqliteAdapter struct {
+	db *sql.DB
+}
+
+func (a sqliteAdapter) QuoteIdentifier(name string) string       { return `"` + name + `"` }
+func (a sqliteAdapter) QuoteString(s string) string              { return escapeLikeSQL(s) }
+func (a sqliteAdapter) TranslatePlaceholder(index int) string    { return "?" }
+func (a sqliteAdapter) IsPostgres() bool                         { return false }
+
+func (testAdapter) QuoteIdentifier(name string) string    { return `"` + name + `"` }
+func (testAdapter) QuoteString(s string) string           { return escapeLikeSQL(s) }
+func (testAdapter) TranslatePlaceholder(index int) string { return "?" }
+func (testAdapter) IsPostgres() bool                      { return false }
 
 // testAdapterPG implements Adapter for PostgreSQL-style quoting.
 type testAdapterPG struct{}
 
-func (testAdapterPG) QuoteIdentifier(name string) string     { return `"` + name + `"` }
-func (testAdapterPG) QuoteString(s string) string            { return escapeLikeSQL(s) }
-func (testAdapterPG) TranslatePlaceholder(index int) string   { return fmt.Sprintf("$%d", index) }
-func (testAdapterPG) IsPostgres() bool                        { return true }
+func (testAdapterPG) QuoteIdentifier(name string) string    { return `"` + name + `"` }
+func (testAdapterPG) QuoteString(s string) string           { return escapeLikeSQL(s) }
+func (testAdapterPG) TranslatePlaceholder(index int) string { return fmt.Sprintf("$%d", index) }
+func (testAdapterPG) IsPostgres() bool                      { return true }
 
 func escapeLikeSQL(s string) string {
 	escaped := ""
@@ -54,9 +68,9 @@ func makeRequest(params map[string]string) *http.Request {
 
 // sampleEntity — a test entity with various field types.
 var sampleEntity = config.Entity{
-	Name:    "products",
-	Table:   "products",
-	IDColumn: "id",
+	Name:        "products",
+	Table:       "products",
+	IDColumn:    "id",
 	Description: "Product catalog",
 	Fields: []config.EntityField{
 		{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
@@ -83,7 +97,7 @@ type wrapAdapter struct {
 
 func (w wrapAdapter) TranslatePlaceholder(index int) string { return w.a.TranslatePlaceholder(index) }
 func (w wrapAdapter) QuoteIdentifier(name string) string    { return w.a.QuoteIdentifier(name) }
-func (w wrapAdapter) QuoteString(s string) string          { return w.a.QuoteString(s) }
+func (w wrapAdapter) QuoteString(s string) string           { return w.a.QuoteString(s) }
 
 // =============================================================================
 // Tests: GrepStrategy
@@ -140,7 +154,7 @@ func TestGrepStrategy_SimplePattern(t *testing.T) {
 
 	// Single token → LIKE on all string fields, OR between them.
 	// SQLite test adapter (non-Postgres) wraps with COLLATE NOCASE for cyrillic support.
-	wantSQL := `SELECT "id", "name" FROM "products" WHERE ("name" COLLATE NOCASE LIKE ?) OR ("description" COLLATE NOCASE LIKE ?) OR ("category" COLLATE NOCASE LIKE ?) LIMIT ?`
+	wantSQL := `SELECT "id", "name" FROM "products" WHERE ("name" COLLATE NOCASE LIKE ? ESCAPE '\') OR ("description" COLLATE NOCASE LIKE ? ESCAPE '\') OR ("category" COLLATE NOCASE LIKE ? ESCAPE '\') LIMIT ?`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q\nwant %q", sql, wantSQL)
 	}
@@ -164,7 +178,7 @@ func TestGrepStrategy_MultiTokenPattern(t *testing.T) {
 
 	// Two tokens → AND inside each field, OR between fields.
 	// SQLite adapter wraps with COLLATE NOCASE for cyrillic support.
-	expectedSubstr := "(\"name\" COLLATE NOCASE LIKE ? AND \"name\" COLLATE NOCASE LIKE ?)"
+	expectedSubstr := "(\"name\" COLLATE NOCASE LIKE ? ESCAPE '\\' AND \"name\" COLLATE NOCASE LIKE ? ESCAPE '\\')"
 	if !contains(sql, expectedSubstr) {
 		t.Errorf("SQL missing AND clause for multi-token: %q", sql)
 	}
@@ -210,8 +224,8 @@ func TestGrepStrategy_RegexInvert(t *testing.T) {
 		t.Fatalf("buildSQL: unexpected error: %v", err)
 	}
 
-	if !contains(sql, "!REGEXP") {
-		t.Errorf("Regex invert should use !REGEXP, got: %q", sql)
+	if !contains(sql, "NOT REGEXP") {
+		t.Errorf("Regex invert should use NOT REGEXP (not invalid !REGEXP), got: %q", sql)
 	}
 }
 
@@ -372,6 +386,204 @@ func TestGrepStrategy_Invert(t *testing.T) {
 	// Invert with COLLATE NOCASE for SQLite: "name" COLLATE NOCASE NOT LIKE ?
 	if !contains(sql, "NOT LIKE") && !contains(sql, "COLLATE NOCASE") {
 		t.Errorf("Invert should produce NOT LIKE, got: %q", sql)
+	}
+}
+
+// TestGrepStrategy_Invert_DeMorgan_SQLStructure — M1: invert для multi-token/
+// multi-field должен инвертировать AND↔OR (Де Морган), а не только оператор.
+//
+// Non-invert: (name LIKE t1 AND name LIKE t2) OR (desc LIKE t1 AND desc LIKE t2) OR (cat ...)
+// Invert:     (name NOT LIKE t1 OR name NOT LIKE t2) AND (desc NOT LIKE t1 OR desc NOT LIKE t2) AND (...)
+func TestGrepStrategy_Invert_DeMorgan_SQLStructure(t *testing.T) {
+	s := NewGrepStrategy("id", "name")
+	r := makeRequest(map[string]string{"pattern": "oil brake", "invert": "true"})
+	plan, err := s.ParseRequest(r, sampleEntity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest: unexpected error: %v", err)
+	}
+
+	sql, _, err := buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: unexpected error: %v", err)
+	}
+
+	// Внутри поля токены через OR (было AND).
+	if !strings.Contains(sql, `NOT LIKE ? ESCAPE '\' OR "name" COLLATE NOCASE NOT LIKE`) {
+		t.Errorf("tokens inside field should be OR-joined under invert: %s", sql)
+	}
+	// Между полями — AND (было OR).
+	if !strings.Contains(sql, `") AND ("description")`) && !strings.Contains(sql, `) AND ("description"`) {
+		t.Errorf("fields should be AND-joined under invert: %s", sql)
+	}
+}
+
+// TestGrepStrategy_Invert_DeMorgan_Regex — M1: regex-invert для multi-field.
+// Non-invert: (f1 ~ p OR f2 ~ p); Invert: (f1 !~ p AND f2 !~ p).
+func TestGrepStrategy_Invert_DeMorgan_Regex(t *testing.T) {
+	s := NewGrepStrategy("id", "name")
+	r := makeRequest(map[string]string{"pattern": "^ABC", "regex": "true", "invert": "true"})
+	plan, err := s.ParseRequest(r, sampleEntity, testAdapterPG{})
+	if err != nil {
+		t.Fatalf("ParseRequest: unexpected error: %v", err)
+	}
+
+	sql, _, err := buildSQL(plan, testAdapterPG{})
+	if err != nil {
+		t.Fatalf("buildSQL: unexpected error: %v", err)
+	}
+
+	// PG: !~ между полями через AND (не OR). Каждое поле — свой placeholder.
+	if !strings.Contains(sql, `"name" !~ $1 AND "description" !~ $2`) {
+		t.Errorf("regex invert should AND-join fields with !~: %s", sql)
+	}
+}
+
+// TestGrepStrategy_Invert_DeMorgan_SqliteSemantics — M1: e2e-проверка семантики
+// на in-memory sqlite: invert=true, pattern='oil brake' → возвращаются строки,
+// НЕ содержащие оба токена; строка с обоими исключается.
+func TestGrepStrategy_Invert_DeMorgan_SqliteSemantics(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck
+	db.SetMaxOpenConns(1)
+
+	_, err = db.ExecContext(context.Background(), `
+		CREATE TABLE products (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL
+		);
+		INSERT INTO products VALUES (1, 'oil filter');
+		INSERT INTO products VALUES (2, 'brake pads');
+		INSERT INTO products VALUES (3, 'oil brake combo');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entity := config.Entity{
+		Name:     "products",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+		},
+	}
+
+	s := NewGrepStrategy("id", "name")
+	r := makeRequest(map[string]string{"pattern": "oil brake", "invert": "true", "fields": "name"})
+	plan, err := s.ParseRequest(r, entity, sqliteAdapter{db: db})
+	if err != nil {
+		t.Fatalf("ParseRequest: %v", err)
+	}
+
+	sql, args, err := buildSQL(plan, sqliteAdapter{db: db})
+	if err != nil {
+		t.Fatalf("buildSQL: %v", err)
+	}
+
+	rows, err := db.QueryContext(context.Background(), sql, args...)
+	if err != nil {
+		t.Fatalf("query: %v (sql=%s)", err, sql)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+
+	// invert: строки, НЕ содержащие оба токена → 1 ('oil filter'), 2 ('brake pads');
+	// 3 ('oil brake combo') исключается.
+	if len(ids) != 2 || !containsInt(ids, 1) || !containsInt(ids, 2) || containsInt(ids, 3) {
+		t.Errorf("invert semantics wrong: got ids %v, want [1 2] (3 excluded)", ids)
+	}
+}
+
+func containsInt(s []int, v int) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// TestGrepStrategy_SearchableRules_BlockedFieldsExcluded — M3(a): searchableRules
+// блокируют поля в runtime grep (image/seo не ищутся), зеркально генерации.
+func TestGrepStrategy_SearchableRules_BlockedFieldsExcluded(t *testing.T) {
+	entity := config.Entity{
+		Name:     "products",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+			{Name: "image", Column: "image", Type: config.FieldTypeString},
+			{Name: "seo_title", Column: "seo_title", Type: config.FieldTypeString},
+		},
+	}
+
+	s := NewGrepStrategy("id", "name", config.DefaultSearchableFieldRules()...)
+	r := makeRequest(map[string]string{"pattern": "x"})
+	plan, err := s.ParseRequest(r, entity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest: %v", err)
+	}
+
+	sql, _, err := buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: %v", err)
+	}
+
+	if strings.Contains(sql, `"image"`) {
+		t.Errorf("grep should not search blocked field image: %s", sql)
+	}
+	if strings.Contains(sql, `"seo_title"`) {
+		t.Errorf("grep should not search blocked field seo_title: %s", sql)
+	}
+	if !strings.Contains(sql, `"name"`) {
+		t.Errorf("grep should search allowed field name: %s", sql)
+	}
+}
+
+// TestGrepStrategy_CustomFields_BlockedExcluded — M3(a): fields=image должен
+// скипнуть заблокированное поле и упасть на разрешённые (или fallback).
+func TestGrepStrategy_CustomFields_BlockedExcluded(t *testing.T) {
+	entity := config.Entity{
+		Name:     "products",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+			{Name: "image", Column: "image", Type: config.FieldTypeString},
+		},
+	}
+
+	s := NewGrepStrategy("id", "name", config.DefaultSearchableFieldRules()...)
+	// fields=image — заблокировано → fallback на разрешённые (name).
+	r := makeRequest(map[string]string{"pattern": "x", "fields": "image"})
+	plan, err := s.ParseRequest(r, entity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest: %v", err)
+	}
+	sql, _, err := buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: %v", err)
+	}
+	if strings.Contains(sql, `"image"`) {
+		t.Errorf("blocked field image must not be searched: %s", sql)
+	}
+	if !strings.Contains(sql, `"name"`) {
+		t.Errorf("fallback should search allowed field name: %s", sql)
 	}
 }
 

@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/configgen"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // MCPManifestHandler возвращает манифест MCP-инструментов,
@@ -29,7 +29,9 @@ func MCPManifestHandler(cfg *config.Config) http.HandlerFunc {
 	if customPlurals == nil {
 		customPlurals = make(map[string]string)
 	}
-	tools := configgen.GenerateMCPTools(cfg.Endpoints, cfg.Entities, displayPrefixes, customPlurals)
+	tools := configgen.GenerateMCPTools(cfg.Endpoints, cfg.Entities, displayPrefixes, customPlurals,
+		configgen.ResolveFieldRules(configgen.DefaultFilterableFieldRules(), cfg.DisabledDefaultFilterableRules, cfg.FilterableRules),
+		configgen.ResolveFieldRules(configgen.DefaultSearchableFieldRules(), cfg.DisabledDefaultSearchableRules, cfg.SearchableRules))
 	// Определяем read-only режим
 	readOnly := cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly
 

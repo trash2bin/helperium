@@ -1,358 +1,226 @@
-# Search Strategies — Поисковый движок data-service (v4)
+# Search Strategies — data-service
+
+Поисковый движок data-service: стратегии grep/filter/schema поверх Expression AST → SQL.
 
 ## Архитектура
 
 ```
-LLM Tool Call (MCP / HTTP)
-       │
-       ▼
-DataSource interface              ← единый слой абстракции
-  ├── Search(ctx, q)              — grep_{entity}: text search
-  ├── Filter(ctx, q)              — filter_{entity}: field filters
-  ├── GetByID(ctx, entity, id)    — get_{entity}
-  ├── Count(ctx, q)               — count_{entity}
-  ├── Distinct(ctx, entity, col)  — distinct_{entity}
-  └── Schema(ctx, entity)         — schema_{entity}: metadata discovery
-       │
-       ▼
-SQLDataSource (sql.go)            ← реализация через query.Engine
-       │
-       ▼
-query.Engine (builder.go)         ← Expression AST → SQL
-       │
-       ▼
-ReadOnlyDB                        ← урезанный *sql.DB (только SELECT)
-       │
-       ▼
-DB.QueryContext(sql, args...)
+LLM tool_call (MCP) → api-service → mcp-gateway → HTTP GET /{entity}/{strategy}
+  → runtime/handlers/strategy_handler.go:30 NewStrategyHandler
+    → search.Strategy.ParseRequest() → query.QueryPlan
+      → query.Engine.Build() → SQL+args
+        → datasource.ReadOnlyConn → DB
 ```
 
-### Ключевые изменения против v3
-
-| Было | Стало | Причина |
-|---|---|---|
-| RawWhere (строковая конкатенация) | **Condition-based** (Expression AST) | Безопасность, tenant isolation |
-| `search_{entity}` (grep+filter) | **Нет** — только grep / filter отдельно | LLM проще понять отдельные тулы |
-| Strategy interface как entry | **DataSource interface** | Подготовка к не-SQL бэкендам |
-| RawWhere tenant isolation (костыль) | **Condition-based tenant filter** | Гарантированная изоляция |
-| Ошибки БД наружу | **Generic error + structured log** | Безопасность |
+Schema-стратегия идёт отдельным путём: `runtime/handlers/schema_handler.go:22` работает напрямую с БД, без Engine.
 
 ## Пакеты
 
 ```
-data-service/internal/
-├── datasource/                   — DataSource abstraction
-│   ├── datasource.go              DataSource interface, Query, Result, SchemaInfo
-│   ├── sql.go                     SQLDataSource — реализация через query.Engine
-│   ├── readonly.go                ReadOnlyDB — безопасная обёртка *sql.DB
-│   └── audit.go                   AuditRecorder no-op interface
-│
-├── query/                        — Expression-based SQL engine
-│   ├── expression.go              QueryPlan, Condition, Operator, EmptyHint
-│   ├── builder.go                 Engine.Build() / BuildCount()
-│   └── format.go                  Response formatting
-│
-├── search/                       — Search strategies (HTTP-level)
-│   ├── strategy.go                Strategy interface + Adapter wrapper
-│   ├── strategy_common.go         Общие утилиты (parse*, tokenize, findColumn...)
-│   ├── grep.go                    GrepStrategy — grep_{entity}
-│   ├── filter.go                  FilterStrategy — filter_{entity}
-│   └── schema.go                  SchemaStrategy — schema_{entity}
-│
-├── runtime/handlers/             — HTTP handlers
-│   ├── strategy_handler.go        Generic handler for grep/filter strategies (legacy Strategy interface)
-│   ├── schema_handler.go          Handler for schema_{entity} via legacy SchemaStrategy (StrategySchemaHandler)
-│   └── datasource_handler.go      Handler for schema_{entity} via DataSource interface (SchemaHandler)
-│
-└── server/                       — Router + middleware
-    └── endpoint_builder.go        Routes from config → handlers
+internal/search/              стратегии
+  strategy.go                 Strategy interface (:16), Adapter (:46), NewAdapter (:67)
+  strategy_common.go          parseLimitParam (:74), parseOffset (:90), parseFormat (:103),
+                              parseOrder (:119), selectClause (:157), tokenize (:49), parseBoolParam (:63)
+  grep.go                     GrepStrategy (:38)
+  filter.go                   FilterStrategy (:33)
+  schema.go                   SchemaStrategy (:25)
+
+internal/query/               Expression AST → SQL
+  expression.go               QueryPlan (:10), Condition (:55), Operator (:75), OrderClause (:90)
+  builder.go                  Engine.Build (:43), BuildCount (:50), RenderConditions (:124)
+  format.go                   SearchResult (:4), FormatRows (:32)
+
+internal/runtime/handlers/    HTTP-обработчики
+  strategy_handler.go         NewStrategyHandler (:30), collectEmptyHint (:147), insertTenantBeforeLimit (:207)
+  schema_handler.go           NewStrategySchemaHandler (:22), distinctValues (:101), fieldStats (:148)
+  row_filter.go               tenantFilter (:22)
 ```
 
-## Query Engine (`data-service/internal/query/`)
+## Strategy interface (`search/strategy.go:16`)
 
-### QueryPlan — полное описание SELECT-запроса
+```go
+type Strategy interface {
+    Name() string
+    ToolName(entity config.Entity) string
+    ToolDescription(entity config.Entity) string
+    ToolParams(entity config.Entity) []config.EndpointParam
+    ParseRequest(r *http.Request, entity config.Entity, a Adapter) (*query.QueryPlan, error)
+    EntityIDCol() string
+    EntityNameCol() string
+}
+```
+
+## QueryPlan и Condition (`query/expression.go`)
 
 ```go
 type QueryPlan struct {
-    Select    SelectClause     // какие колонки
-    From      string           // квотированное имя таблицы
-    Where     []Condition      // AND-список условий (Condition-based, без RawWhere)
-    Order     []OrderClause    // сортировка
-    Limit     int              // hard cap 100
+    Select    SelectClause     // колонки
+    From      string           // квотированная таблица
+    Where     []Condition      // AND-условия (filter)
+    RawWhere  string           // сырое WHERE (grep multi-token AND)
+    RawWhereArgs []any
+    Order     []OrderClause
+    Limit     int              // cap 100
     Offset    int
     Format    ResponseFormat   // compact | full | count
 }
-```
 
-> **RawWhere больше нет.** Все условия проходят через Condition-based Engine.
-> Это гарантирует единый SQL pipeline и корректную tenant isolation.
-
-### Condition — одно условие WHERE
-
-```go
 type Condition struct {
-    Field    string      // квотированное имя колонки
-    Operator Operator    // Eq, Neq, Lt, Gt, Lte, Gte, Like, ILike, NotLike, Regex, In, Between
-    Value    any         // скалярное значение
-    Values   []any       // для IN / Between
-    Not      bool        // NOT-флаг (invert)
+    Field    string
+    Operator Operator
+    Value    any
+    Values   []any      // для IN / Between
+    Not      bool
 }
 ```
 
-### Операторы и их SQL
+Операторы (`expression.go:75-86`, рендер — `builder.go:156-300 renderCondition`):
 
-| Operator | SQLite | PostgreSQL |
+| Operator | SQL (обычный) | SQL при `Not: true` |
 |---|---|---|
-| `OpEq` | `col = ?` | `col = $1` |
-| `OpNeq` | `col != ?` | `col != $1` |
-| `OpLt` | `col < ?` | `col < $1` |
-| `OpGt` | `col > ?` | `col > $1` |
-| `OpLike` | `col LIKE ?` | `col LIKE $1` |
-| `OpILike` | `col LIKE ?` (SQLite LIKE ASCII-only CI) / `col COLLATE NOCASE` | `col ILIKE $1` |
-| `OpRegex` | `col REGEXP ?` | `col ~ $1` |
-| `OpIn` | `col IN (?, ?, ?)` | `col IN ($1, $2, $3)` |
-| `OpBetween` | `col BETWEEN ? AND ?` | `col BETWEEN $1 AND $2` |
+| `OpEq` | `col = ?` | `col <> ?` (инверсия, а не невалидный `NOT =`; builder.go:161-164) |
+| `OpNeq` | `col != ?` | `col = ?` (двойное отрицание; builder.go:171-174) |
+| `OpLt` | `col < ?` | `col >= ?` |
+| `OpGt` | `col > ?` | `col <= ?` |
+| `OpLte` | `col <= ?` | `col > ?` |
+| `OpGte` | `col >= ?` | `col < ?` |
+| `OpLike` | `col LIKE ? ESCAPE '\\'` | `col NOT LIKE ? ESCAPE '\\'` |
+| `OpILike` | `ILIKE` (PG) / `LIKE COLLATE NOCASE` (SQLite) | `NOT ILIKE` / `NOT LIKE` |
+| `OpNotLike` | `col NOT LIKE ? ESCAPE '\\'` | — (сам по себе отрицание) |
+| `OpRegex` | `REGEXP` (SQLite) / `~` (PG) | `NOT REGEXP` (SQLite) / `!~` (PG) (builder.go:288-300) |
+| `OpIn` | `col IN (?, ?, ?)` | `col NOT IN (?, ?, ?)` |
+| `OpBetween` | `col BETWEEN ? AND ?` | `col NOT BETWEEN ? AND ?` |
 
-### EmptyHint — подсказка LLM при пустом результате
+**ESCAPE `'\\'` обязателен** для всех LIKE-операторов (builder.go:232, :251, :261, :274): `QuoteString` экранирует `%`/`_` обратным слэшем, и без ESCAPE-клаузы экранирование не работает — в SQLite `\` трактуется как литерал, `%` остаётся wildcard'ом, данные с `%`/`_` в значении не находятся (и DoS-защита неэффективна). `RawValue: true` (filter `__like`) — значение без экранирования, wildcard'ы пользователя работают как есть.
 
-```go
-type EmptyHint struct {
-    SuggestedAction string              // "Use schema_{entity}() to discover values"
-    AvailableValues map[string][]string // {brand: [Brembo, Bosch], category: [Brakes]}
-}
-```
+Конструкторы: `expression.go:102-159` (`Eq/Neq/Lt/Lte/Gt/Gte/Like/ILike/Regex/NotLike/In/Between`).
 
-Возвращается в JSON-ответе **только когда total == 0**, чтобы LLM не зацикливалась.
+**RawWhere используется только в grep** (`grep.go:243-244`): multi-token AND по полям собирается строкой `(col1 LIKE ? AND col1 LIKE ?) OR (col2 LIKE ? ...)`, т.к. это не выражается через []Condition. Filter — полностью Condition-based.
 
-## Инструменты, которые видит LLM
+**Count для RawWhere+tenant строится из оригинального плана** (`strategy_handler.go:128-139`): `SELECT COUNT(*) FROM t WHERE (RawWhere) AND tenant`, а не через `countQueryWithArgs` от tenant-обёрнутого SQL. Старый путь ломал SQL (`strings.Index(" FROM ")` брал внутреннее FROM подзапроса, `LastIndex(" LIMIT ")` резал всё после LIMIT включая `) AS _t WHERE ...` → незакрытая скобка → total=-1 у каждого grep в multi-tenant). Тот же блок: inner-подзапрос для tenant-фильтра включает `tenant_id` в проекцию (`ensureColumn`), иначе внешний `WHERE` не видит колонку и SQLite молча возвращает 0 строк. Регресс: `tenant_count_regression_test.go`.
 
-| Инструмент | Назначение | LLM-friendly name |
-|---|---|---|
-| grep_{entity} | Текстовый поиск (multi-token AND, multi-field OR) | `grep_products` |
-| filter_{entity} | Точная фильтрация (field__gt/lt/like/in) | `filter_orders` |
-| get_{entity} | Получение записи по ID | `get_product` |
-| count_{entity} | Количество записей с фильтрами | `count_products` |
-| distinct_{entity} | Уникальные значения колонки | `distinct_brands` |
-| schema_{entity} | Discovery: мета-информация о сущности | `schema_products` |
+## GrepStrategy (`search/grep.go:38`)
 
-### Рекомендуемый workflow для LLM
+Multi-token AND внутри поля, OR между полями. Лимиты в `NewGrepStrategy()` :42-45:
 
-```
-Шаг 1: schema_{entity}()
-  → {total: 35, fields: {brand: ["Brembo", "Bosch"], category: ["Brakes"]}}
-  ✓ 1 запрос, <5ms, узнаёт структуру
+| Лимит | Значение |
+|---|---|
+| maxRegexLen | 200 (ReDoS) |
+| maxTokens | 10 |
+| maxPatternLen | 500 |
 
-Шаг 2: distinct_{entity}(column="brand")
-  → ["Brembo", "Bosch", "TRW"]
-  ✓ Быстрый discovery значений
+`ToolParams()` :75 — `pattern` (required), `limit` (1-100, default 10), `fields`.
+`ParseRequest()` :91 — проверка длины pattern :99, regex длины :109.
 
-Шаг 3: grep_{entity}(pattern="Brembo", limit=10)
-  → Результаты или total=0 с подсказкой
+HTTP-параметры (не все в JSON Schema): `pattern`, `ignore_case`, `fields`, `invert`, `regex`, `limit`, `offset`, `format`, `sort_by`.
 
-[Если пусто]:
-  → empty_hint: "Try schema_{entity}() to discover available values"
-```
+Tenant isolation: `tenant_id` нельзя искать (grep.go:130, :147-150).
 
-## GrepStrategy — grep_{entity}
+## FilterStrategy (`search/filter.go:33`)
 
-Аналог GNU grep для БД. Multi-token AND, multi-field OR.
+`NewFilterStrategy(idCol, nameCol, filterableRules ...config.FieldRule)` :33.
 
-**MCP параметры:**
+Лимиты: maxFilterValueLen=200 (:26), maxInValues=50 (:28), maxFilters=15 (:44).
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `pattern` | string | **REQUIRED.** Поисковый запрос. Multi-word = AND токенов |
-| `ignore_case` | bool | CI поиск (default: true) |
-| `fields` | string | Поля через запятую (default: все string кроме tenant_id/excluded) |
-| `invert` | bool | NOT (исключить совпадения) |
-| `regex` | bool | Regex-режим (default: false) |
-| `limit` | int | Max результатов (1-100, default: 10) |
-| `offset` | int | Пагинация |
-| `format` | string | "compact" или "full" (default: compact) |
-| `sort_by` | string | Поле сортировки, "-field" для DESC |
+`ToolParams()` :86 — поля через `config.IsFilterableField()` :99 (см. FieldRules в configgen/README.md).
 
-**Token search (multi-word):**
-```
-grep_products(pattern="глушители авто")
-  → tokens: ["глушител", "авто"]
-  → WHERE (name ILIKE '%глушител%' AND name ILIKE '%авто%')
-     OR (description ILIKE '%глушител%' AND description ILIKE '%авто%')
-```
+`ParseRequest()` :165. Операторы (HTTP-параметр `{field}__op`):
 
-### Пустой результат
+| Параметр | Поведение |
+|---|---|
+| `{field}` | exact (eq) |
+| `{field}__neq` | not equal |
+| `{field}__gt/__gte/__lt/__lte` | сравнения |
+| `{field}__like` | LIKE с `%` (wildcard'ы пользователя; `\` — escape-символ: `50\%` = literal `50%`) |
+| `{field}__in` | IN (comma-list, max 50) |
+| `limit`/`offset`/`sort_by`/`format` | пагинация |
+
+Проверки: длина значения :217-253, maxFilters :299, maxInValues :269. `tenant_id` недоступен (:188, :205).
+
+## SchemaStrategy (`search/schema.go:25`)
+
+- `ToolParams()` :48 — nil (без параметров).
+- `ParseRequest()` :54 — nil (не использует Engine).
+- `FormatFields()` :79 — строковое описание полей.
+
+Обработка: `schema_handler.go:22`. Ответ:
 
 ```json
 {
-  "total": 0,
-  "empty_hint": {
-    "suggested_action": "Try schema_products() to discover available values, then retry.",
-    "available_values": {"brand": ["Brembo", "Bosch"], "category": ["Brakes"]}
-  }
-}
-```
-
-## FilterStrategy — filter_{entity}
-
-Фильтрация с компараторами (Django ORM-like).
-
-**MCP параметры:**
-
-| Параметр | Тип | Описание |
-|---|---|---|
-| `{field}` | varies | Exact match |
-| `{field}__gt` | number | Больше |
-| `{field}__gte` | number | Больше или равно |
-| `{field}__lt` | number | Меньше |
-| `{field}__lte` | number | Меньше или равно |
-| `{field}__like` | string | LIKE с `%` wildcard |
-| `{field}__in` | comma-list | IN (a, b, c) |
-| `{field}__neq` | varies | Not equal |
-| `limit` | int | Max результатов (1-100, default: 10) |
-| `offset` | int | Пагинация |
-| `sort_by` | string | Сортировка, "-field" для DESC |
-| `format` | string | "compact" или "full" |
-
-**Примеры:**
-```
-filter_orders(status=shipped)                              # exact
-filter_orders(total__gt=5000, status=shipped)              # comparison + exact
-filter_orders(status__in=new,processing,shipped)            # IN
-```
-
-## SchemaStrategy — schema_{entity}
-
-Один вызов — вся мета-информация о сущности. Заменяет несколько distinct + count.
-
-**MCP параметры:** нет (всегда полный ответ)
-
-**Ответ:**
-```json
-{
-  "entity": "product",
+  "entity": "auto_parts",
   "total": 35,
   "fields": {
-    "brand": {"type": "string", "distinct": ["Brembo", "Bosch", "TRW"]},
-    "category": {"type": "string", "distinct": ["Brakes", "Engine"]},
-    "price": {"type": "float", "min": 100, "max": 45000, "avg": 8500},
-    "stock": {"type": "int", "min": 0, "max": 500}
+    "brand_id": {"type": "int", "min": 1, "max": 5, "avg": 2.75},
+    "category": {"type": "string", "distinct": ["Выхлопная система", "Фильтры"]},
+    "price": {"type": "float", "min": 380, "max": 45000, "avg": 7466}
   }
 }
 ```
 
-**Производительность:** 1 SQL запрос. Для SQLite с индексами — <5ms на 100k строк.
+- `distinctValues()` :101 — до 20 значений (`LIMIT 20`).
+- `fieldStats()` :148 — min/max/avg.
+- Tenant-фильтр передаётся в оба.
+- Distinct-значения типизированы: `distinct.go:11 columnFieldType` берёт тип колонки из `entity.Fields` (fallback `"string"`), сканирование в `any` + `runtime.CoerceNative(raw, fieldType)` (distinct.go:83-86) — числа/булы возвращаются как числа/булы, а не строки (старый код сканировал в `sql.NullString` и терял тип).
 
-## Безопасность (Security)
+## EmptyHint — подсказка LLM при пустом результате
 
-### 1. Tenant isolation — enforced на уровне DataSource
+`strategy_handler.go:147 collectEmptyHint` — при `total==0` собирает до 5 distinct-значений на string-поле (`LIMIT 5`, :175) и возвращает:
 
-`tenant_id` **никогда** не доступен LLM как field__op параметр:
-- `case "tenant_id": continue` в ParseRequest grep + filter
-- `f.Column == "tenant_id"` guard после fieldMap lookup
-- TenantID добавляется в Query **только сервером** из контекста аутентификации
+```json
+{
+  "suggested_action": "Try schema_auto_parts() to discover available values, then retry with exact values.",
+  "available_values": {"category": ["Выхлопная система", "Фильтры", "Электрика"]}
+}
+```
 
-### 2. Field whitelist — на каждый вызов
+## Tenant isolation
 
-`findColumn()` / `entity.FindColumn()` проверяет что field-имя существует в схеме:
-- grep: `stringFields(entity)` — только string-поля из схемы
-- filter: `fieldMap[f.Name]` — незнакомые ключи тихо скипаются
-- distinct: `entity.FindColumn(column)` — 400 если колонки нет
-- sort_by: `findColumn(entity, fieldName)` — тихо скипает незнакомые
+- `tenantFilter()` (`row_filter.go:22`) — вставляет WHERE из `auth.RowFilters` по entity, `:tenant_id` → нативный плейсхолдер.
+- Для Condition-based (filter): `strategy_handler.go` добавляет ` AND tenant...` через `insertTenantBeforeLimit` (:207).
+- Для RawWhere (grep): `SELECT * FROM (raw) WHERE tenant...` (subquery wrap, tenant_id добавляется в проекцию inner-подзапроса).
+- `tenant_id` исключён из LLM-параметров (grep.go:130, :150; filter.go:188, :205).
+- **Count:** `tenant_id` исключён из фильтров — `count.go:37-42` (HIGH-15-fix: раньше `count?tenant_id=<чужой>` давал посчитать записи чужого тенанта; `tenant_id` добавлен в skip системных параметров count.go:53).
+- **/stats:** tenant-фильтр применяется к каждому counter — `stats.go:36-42` (раньше `GET /stats` отдавал глобальные счётчики по всем тенантам).
+- **Gap:** при отсутствии `auth.row_filters` для сущности фильтр не применяется. Регресс: `row_filter_security_test.go`.
+- Ошибки count-запроса логируются, а не глотаются: `runCountQuery` возвращает `-1` только при реальной ошибке SQL/scan (pagination.go:100-115).
 
-### 3. PII/excluded поля
-
-Поле с флагом `exclude_from_search` не попадает ни в один инструмент:
-- Не участвует в grep (текстовом поиске)
-- Не участвует в filter
-- Не участвует в distinct
-- Не участвует в schema
-
-### 4. Read-only DB
-
-`ReadOnlyDB` — отдельный тип, разрешающий **только SELECT**:
-- QueryContext / QueryRowContext — без Exec, без Prepare write
-- Проверка при старте: CREATE TEMP TABLE → если успешно, СУБД не read-only
-
-### 5. Hard limits
+## Лимиты (сводно)
 
 | Limit | Значение | Где |
 |---|---|---|
-| maxLimit | **100** (было 1000) | parseLimitParam |
-| maxPatternLen | **500** (было 2000) | grep constructor |
-| maxRegexLen | 200 | grep |
-| maxTokens | 10 | grep |
-| maxFilters | 15 | filter |
-| maxTotalConditions | 25 | query engine |
-| maxFilterValueLen | 200 | filter |
-| maxInValues | 50 | filter |
-| statement timeout | 30s configurable | handlers.Context |
+| maxLimit | 100 | strategy_common.go:83 |
+| maxPatternLen | 500 | grep.go:45 |
+| maxRegexLen | 200 | grep.go:42 |
+| maxTokens | 10 | grep.go:43 |
+| maxFields | 20 | grep.go:44 |
+| maxFilters | 15 | filter.go:44 |
+| maxInValues | 50 | filter.go:28 |
+| maxFilterValueLen | 200 | filter.go:26 |
+| distinct в schema | 20 | schema_handler.go:101-102 |
+| distinct в distinct-эндпоинте | 50 | distinct.go:58 (`LIMIT 50`) |
+| distinct в EmptyHint | 5 | strategy_handler.go:175 (`LIMIT 5`) |
+| query timeout | 30s | endpoint_builder.go (QUERY_TIMEOUT_SECONDS) |
 
-### 6. Санитизация ошибок
+## MCP-тулы
 
-```
-DB error → slog.ErrorContext(ctx, "DB error", "err", err, "tenant", tid, "entity", ent)
-HTTP response → {"error": "query_failed", "message": "Query execution failed. Check field names via schema tool."}
-```
+Параметры тулов генерируют стратегии через `ToolParams()` (search/strategy.go:32), не из дискового конфига. Манифест — `runtime/handlers/mcp_manifest.go:20` (runtime из cfg.Endpoints).
 
-### 7. Audit
-
-`AuditRecorder` — опциональный, no-op по умолчанию. При подключении логирует:
-- Tool name, entity, tenant_id
-- Параметры запроса
-- Количество возвращённых строк
-- Длительность (ms)
-- Ошибки
-
-## MCP Tool Generation
-
-Манифест генерируется через `configgen.GenerateMCPTools()`. Для каждой entity
-создаются инструменты на основе её endpoints:
-
-| Endpoint type | MCP tool | Генерируется из |
+| Strategy | MCP tool | Параметры |
 |---|---|---|
-| `grep` | `grep_{entity}` | `search.NewGrepStrategy()` |
-| `filter` | `filter_{entity}` | `search.NewFilterStrategy()` |
-| `schema` | `schema_{entity}` | `search.NewSchemaStrategy()` |
-| `get_by_id` | `get_{entity}` | configgen direct |
-| `count` | `count_{entity}` | configgen direct |
-| `distinct` | `distinct_{entity}` | configgen direct |
+| grep | `grep_{entity}` | pattern (required), limit, fields |
+| filter | `filter_{entity}` | поля по IsFilterableField + операторы |
+| schema | `schema_{entity}` | нет |
 
-## DataSource Interface (для не-SQL бэкендов)
-
-```go
-type DataSource interface {
-    Type() string
-    Search(ctx, q *Query) (*Result, error)
-    Filter(ctx, q *Query) (*Result, error)
-    GetByID(ctx, entity, id any) (*Record, error)
-    Count(ctx, q *Query) (int64, error)
-    Distinct(ctx, entity, column string) ([]string, error)
-    Schema(ctx, entity string) (*SchemaInfo, error)
-    Close() error
-}
-```
-
-Чтобы добавить новый бэкенд (CRM, NoSQL, API):
-1. Реализовать `DataSource` interface
-2. Зарегистрировать в `TenantStore`
-3. Всё остальное (endpoint_builder, configgen, MCP) не трогать
-
-## Тестирование
+## Тесты
 
 ```bash
-go test ./data-service/internal/query/...     # ~37 тестов engine
-go test ./data-service/internal/search/...    # ~60 тестов стратегий
-go test ./data-service/...                    # ~613 тестов всего
+go test ./data-service/internal/query/...     # engine
+go test ./data-service/internal/search/...    # стратегии
+go test ./data-service/internal/runtime/handlers/ -run TestTenantFilter -v   # tenant isolation
 ```
 
-### Основные пакеты тестов
+## Related
 
-| Пакет | Тестов | Что покрывают |
-|---|---|---|
-| `query/...` | ~37 | Engine.Build/BuildCount, renderCondition, все операторы |
-| `search/grep_test.go` | ~26 | token search, regex, invert, multi-field, empty pattern, security limits |
-| `search/filter_test.go` | ~26 | exact, comparison, like, in, skipPK, limit/offset/sort, format |
-| `search/schema_test.go` | ~10 | distinct values, min/max/avg, total count |
-| `configgen/...` | ~12 | config generation, MCP tool count, PG integration |
-| `runtime/handlers/...` | ~50+ | strategy handler, HTTP integration, tenant isolation |
----
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+- `data-service/README.md` — обзор сервиса
+- `data-service/internal/configgen/README.md` — FieldRules, генерация тулов
+- `doc/api-flow.md` — HTTP-матрица

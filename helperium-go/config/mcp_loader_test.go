@@ -40,8 +40,8 @@ func TestMCPLoad_ValidConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
-	if cfg.Version != 3 {
-		t.Errorf("Version = %d, want 3", cfg.Version)
+	if cfg.Version != 4 {
+		t.Errorf("Version = %d, want 4", cfg.Version)
 	}
 	if cfg.DataSource.Driver != config.DriverSQLite {
 		t.Errorf("DataSource.Driver = %q, want %q", cfg.DataSource.Driver, config.DriverSQLite)

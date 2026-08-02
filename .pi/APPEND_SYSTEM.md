@@ -63,25 +63,6 @@
 ### git-commit
 Только по явному запросу. Не пушит.
 
-### api-service audit (2026-07-30)
-Проведён глубокий аудит api-service через subagent'ы. Исправлено 12 проблем:
-
-| # | Область | Фикс |
-|---|---|---|
-| 🔴 HIGH-1 | Pipeline exception safety | `SaveHistoryStage.force_save()` в finally при ошибке |
-| 🔴 HIGH-3 | Dead protocol | Удалён мёртвый `AntiAbuseChecker` protocol из protocols.py |
-| 🟡 MEDIUM | classify_error | Type-based (isinstance) вместо substring matching |
-| 🟡 MEDIUM | ErrorContext coverage | Все 5 stage'ов + фикс immutable builder бага в ToolExecutionStage |
-| 🟡 MEDIUM | Circuit breaker MCP | 3+ failures → skip reconnect, half-open после 30s |
-| 🟡 MEDIUM | TTL GC MCP | Background task закрывает SSE сессии idle > 10 мин |
-| 🟡 MEDIUM | ProviderPool TOCTOU | `remove_worker()` async + `_lock` + `_rr_index` correction |
-| 🟡 MEDIUM | TokenBudget pre-check | Проверка ДО LLM call в LLMStage.run() |
-| 🟡 MEDIUM | Spending persistence | JSON-файл с atomic write, перезапуск без потерь |
-| 🟡 MEDIUM | Composite tenant DOS | Bad tenant не блокирует good tenant в multi-tenant запросе |
-| 🟢 LOW | LiteLLM cost | Извлекается из response, SpendingMiddleware работает |
-| 🟢 LOW | Safety net false positive | Структурная json.loads проверка, не тупой `in` |
-| 🟢 LOW | Unicode homoglyph guard | Таблица омоглифов, guard не bypass-ится |
-
 **Не воспроизводится:** HIGH-2 (backlog concurrent writes) — per-session lock стоит добавить при performance-тестах.
 
 Все фиксы сделаны TDD: сначала падающие тесты, потом код. 60+ тестов покрывают эти кейсы.

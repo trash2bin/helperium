@@ -34,7 +34,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -43,12 +42,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
-	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
-	"github.com/trash2bin/helperium/helperium-go/pkg/tracing"
 	"github.com/trash2bin/helperium/data-service/internal/configgen"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/server"
+	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
+	"github.com/trash2bin/helperium/helperium-go/pkg/tracing"
 )
 
 const defaultConfigPath = "specs/config.example.json"
@@ -151,10 +150,8 @@ func main() {
 
 	// Build admin router (requires introspection adapter)
 	adapter, _ := registry.Get(string(cfg.DataSource.Driver))
-	var atomicRouter atomic.Value
 	adminCtx := &server.AdminContext{
-		ConfigPath:   absCfgPath,
-		AtomicRouter: &atomicRouter,
+		ConfigPath: absCfgPath,
 	}
 	adminRouter := store.BuildAdminRouter(adapter, absCfgPath, adminCtx, cfg)
 
@@ -185,6 +182,8 @@ func main() {
 	rootRouter.Use(tracing.Middleware)
 	rootRouter.Use(server.StructuredLoggingMiddleware)
 	rootRouter.Use(server.TenantIDMiddleware("X-Tenant-ID"))
+	// Глобальный лимит одновременных запросов (cfg.Server.MaxConcurrent / DS_MAX_CONCURRENT).
+	rootRouter.Use(server.ThrottleMiddleware(server.ResolveMaxConcurrent(cfg)))
 	rootRouter.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	// Mount admin endpoints separately to avoid routing conflicts

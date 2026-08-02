@@ -69,7 +69,9 @@ func NewAdapter(inner query.AdapterSubset) Adapter {
 	return &adapterWrapper{inner: inner, isPostgres: pg}
 }
 
-func (w *adapterWrapper) QuoteIdentifier(name string) string     { return w.inner.QuoteIdentifier(name) }
-func (w *adapterWrapper) QuoteString(s string) string            { return w.inner.QuoteString(s) }
-func (w *adapterWrapper) TranslatePlaceholder(index int) string  { return w.inner.TranslatePlaceholder(index) }
-func (w *adapterWrapper) IsPostgres() bool                        { return w.isPostgres }
+func (w *adapterWrapper) QuoteIdentifier(name string) string { return w.inner.QuoteIdentifier(name) }
+func (w *adapterWrapper) QuoteString(s string) string        { return w.inner.QuoteString(s) }
+func (w *adapterWrapper) TranslatePlaceholder(index int) string {
+	return w.inner.TranslatePlaceholder(index)
+}
+func (w *adapterWrapper) IsPostgres() bool { return w.isPostgres }

@@ -15,9 +15,10 @@ import (
 // Supports field__op syntax: {field}__eq, {field}__gt, {field}__like, etc.
 // Short form {field} = exact match (eq).
 type FilterStrategy struct {
-	idCol      string
-	nameCol    string
-	maxFilters int
+	idCol           string
+	nameCol         string
+	maxFilters      int
+	filterableRules []config.FieldRule
 }
 
 const (
@@ -28,11 +29,20 @@ const (
 )
 
 // NewFilterStrategy creates a FilterStrategy.
-func NewFilterStrategy(idCol, nameCol string) *FilterStrategy {
+// filterableRules — опционально: если не переданы, используются DefaultFilterableFieldRules().
+func NewFilterStrategy(idCol, nameCol string, filterableRules ...config.FieldRule) *FilterStrategy {
+	rules := config.DefaultFilterableFieldRules()
+	if len(filterableRules) > 0 {
+		rules = filterableRules
+	}
+	if rules == nil {
+		rules = config.DefaultFilterableFieldRules()
+	}
 	return &FilterStrategy{
-		idCol:      idCol,
-		nameCol:    nameCol,
-		maxFilters: 15,
+		idCol:           idCol,
+		nameCol:         nameCol,
+		maxFilters:      15,
+		filterableRules: rules,
 	}
 }
 
@@ -76,7 +86,7 @@ func (s *FilterStrategy) ToolDescription(entity config.Entity) string {
 func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam {
 	f := false
 
-	// Build a param for each non-PK field.
+	// Build a param for each non-PK field that is actually filterable.
 	params := make([]config.EndpointParam, 0, len(entity.Fields)*4+3)
 
 	for _, field := range entity.Fields {
@@ -85,6 +95,9 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 		}
 		if field.ExcludeFromSearch {
 			continue // PII/excluded: не участвует в фильтрации
+		}
+		if !config.IsFilterableField(field, s.filterableRules) {
+			continue // Delegate to config.IsFilterableField (implicit rules + configurable FieldRules)
 		}
 
 		pt := fieldTypeToParamType(field.Type)
@@ -98,8 +111,9 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 			Description: fmt.Sprintf("Filter by exact '%s' value.", field.Name),
 		})
 
-		// Comparison operators for numeric fields.
-		if field.Type == config.FieldTypeInt || field.Type == config.FieldTypeFloat {
+		// Comparison operators for numeric fields (skip FK — exact match only).
+		isFK := strings.HasSuffix(field.Name, "_id")
+		if !isFK && (field.Type == config.FieldTypeInt || field.Type == config.FieldTypeFloat) {
 			for _, op := range []struct{ suffix, desc string }{
 				{"__gt", "greater than"},
 				{"__gte", "greater than or equal"},
@@ -141,7 +155,7 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 	// Limit param (offset, sort_by, format still work in ParseRequest but are not in schema)
 	params = append(params, config.EndpointParam{
 		Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: &f,
-		Description: "Max results (1-1000, default: 20).",
+		Description: "Max results (1-100, default: 20).",
 	})
 
 	return params
@@ -156,6 +170,12 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 	for _, f := range entity.Fields {
 		if f.ExcludeFromSearch {
 			continue // PII/excluded: не участвует в фильтрации
+		}
+		// M3: FieldRules enforced в runtime — зеркально ToolParams. Иначе
+		// заблокированное админом поле (block_names/suffix/contains) можно
+		// фильтровать напрямую через HTTP, минуя ограничение.
+		if !config.IsFilterableField(f, s.filterableRules) {
+			continue
 		}
 		fieldMap[f.Name] = f
 	}
@@ -240,6 +260,14 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 			}
 			// RawValue=true: user provides their own % wildcards.
 			// OpILike for proper case-insensitive search (cyrillic support).
+			//
+			// ⚠️ Контракт (L10): значение идёт сырым и обёрнуто ESCAPE '\' в SQL
+			// (query_builder.go). % и _ — wildcard'ы пользователя; литеральный
+			// backslash ВАЖНО не экранируется и поэтому становится escape-символом:
+			//   field__like=50\%  →  literal "50%"
+			//   field__like=C\_   →  literal "C_"
+			// Искать строку с backslash как таковым нельзя без двойного \\ —
+			// это осознанный tradeoff (пользователь управляет wildcard'ами).
 			conditions = append(conditions, query.Condition{
 				Field:    qName,
 				Operator: query.OpILike,
@@ -292,12 +320,12 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 	}
 
 	return &query.QueryPlan{
-		Select:  selectClause(entity, q, a),
-		From:    a.QuoteIdentifier(entity.Table),
-		Where:   conditions,
-		Limit:   parseLimitParam(q, 10),
-		Offset:  parseOffset(q),
-		Order:   parseOrder(q, entity, a),
-		Format:  parseFormat(q),
+		Select: selectClause(entity, q, a),
+		From:   a.QuoteIdentifier(entity.Table),
+		Where:  conditions,
+		Limit:  parseLimitParam(q, 10),
+		Offset: parseOffset(q),
+		Order:  parseOrder(q, entity, a),
+		Format: parseFormat(q),
 	}, nil
 }

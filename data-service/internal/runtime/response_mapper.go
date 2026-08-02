@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"math"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // MapRow сканирует одну строку *sql.Rows в map[string]any с публичными
@@ -157,6 +161,56 @@ func coerceValue(val, typ string) any {
 	}
 }
 
+// safeFloatToInt64 безопасно приводит float64 к int64: дробная часть и
+// выход за диапазон int64 НЕ замалчиваются — возвращаем (0, false).
+// int64(95.7)→95 и int64(1e300)→saturate были тихими искажениями данных.
+func safeFloatToInt64(v float64) (int64, bool) { // Диапазон: float64(math.MaxInt64) == 2^63 (округление), поэтому верхняя
+	// граница — float64(math.MaxInt64) (2^63) уже вне int64.
+	if v < math.MinInt64 || v >= float64(math.MaxInt64) {
+		return 0, false
+	}
+	if math.Trunc(v) != v {
+		return 0, false
+	}
+	return int64(v), true
+}
+
+// normalizeDateTime приводит строку даты/времени к RFC3339.
+// Поддерживаемые форматы: RFC3339 (уже канонический), sqlite-стиль
+// "2006-01-02 15:04:05", date "2006-01-02". Неизвестный формат — ok=false.
+func normalizeDateTime(s string) (string, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", false
+	}
+	// Layout'ы с таймзоной идут ПЕРВЫМИ (иначе "+00:00" останется хвостом,
+	// а "15:04:05.123+00:00" не распарсится без таймзоны в layout).
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02T15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05Z07:00",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, trimmed); err == nil {
+			return t.UTC().Format(time.RFC3339), true
+		}
+	}
+	return "", false
+}
+
+// CoerceNative — экспортированная обёртка над coerceNative для использования
+// в пакете handlers (distinct/schema-хендлеры приводят значения колонок
+// к типам из конфига, а не отдают строки).
+func CoerceNative(val any, typ string) any {
+	return coerceNative(val, typ)
+}
+
 // coerceNative приводит нативное значение (int64, float64, bool, string)
 // к ожидаемому типу из конфига. Если значение уже правильного типа —
 // возвращает как есть. Это позволяет JSON-маршаллеру сериализовать
@@ -172,7 +226,13 @@ func coerceNative(val any, typ string) any {
 		case int64:
 			return v
 		case float64:
-			return int64(v)
+			if n, ok := safeFloatToInt64(v); ok {
+				return n
+			}
+			// Дробь или out-of-range: не кастуем молча — возвращаем float64.
+			slog.Warn("coerce: float value cannot be safely cast to int, keeping float64",
+				"value", v)
+			return v
 		case string:
 			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 				return n
@@ -226,7 +286,22 @@ func coerceNative(val any, typ string) any {
 		return val
 
 	case "datetime", "date":
-		// Pass through as-is — the adapter already returns a string or time.Time
+		// Канонический RFC3339: драйверы отдают по-разному (sqlite — string
+		// "2006-01-02 15:04:05", pgx — time.Time). Нормализуем к единому формату.
+		switch v := val.(type) {
+		case time.Time:
+			return v.UTC().Format(time.RFC3339)
+		case string:
+			if norm, ok := normalizeDateTime(v); ok {
+				return norm
+			}
+			return v
+		case []byte:
+			if norm, ok := normalizeDateTime(string(v)); ok {
+				return norm
+			}
+			return v
+		}
 		return val
 
 	default:

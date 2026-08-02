@@ -360,24 +360,22 @@ class TestGrepWithRequired:
 
 
 class TestAllToolsHaveRequiredGuard:
-    """Тулы, которые должны иметь required параметры: get_*, grep_*, relationship (*_by_*).
+    """Тулы, которые должны иметь required параметры: get_*, grep_*.
 
-    filter_*, find_*, schema_*, count_*, distinct_* — легитимно без required:
+    filter_*, schema_*, count_*, distinct_* — легитимно без required:
     - filter_{entity}() — LLM передаёт field__op параметры, ни один не обязателен
-    - find_{entity}() — backward compat, параметры опциональны
     - schema_{entity}() — без параметров (discovery)
     - count_{entity}() — без параметров (everything)
     - distinct_{entity}() — column опционален (по умолч. nameCol)
     """
 
     def test_grep_and_get_have_required_param(self, tenant_context):
-        """У get_*, grep_*, *_by_* есть required параметры."""
+        """У get_*, grep_* есть required параметры."""
         tid, tools = tenant_context
         bad = []
         for t in tools:
             name = t["name"]
-            # Только get_*, grep_*, и relationship (*_by_*) должны иметь required
-            if not (name.startswith("get_") or name.startswith("grep_") or "_by_" in name):
+            if not (name.startswith("get_") or name.startswith("grep_")):
                 continue
             params = t.get("params", [])
             required = [p["name"] for p in params if p.get("required")]
@@ -498,3 +496,33 @@ class TestNoLegacyTools:
         assert len(schema_tools) >= 1, f"Нет schema_* тулов среди: {names}"
 
         print(f"  ✅ Тулы: {len(grep_tools)} grep, {len(filter_tools)} filter, {len(schema_tools)} schema")
+
+    def test_filter_tool_params_sane(self, tenant_context):
+        """filter_* тулы должны иметь разумное кол-во params (<50, не 116)."""
+        tid, tools = tenant_context
+        filter_tools = [t for t in tools if t["name"].startswith("filter_")]
+        assert len(filter_tools) >= 1, "Нет filter_* тулов"
+
+        for t in filter_tools:
+            n = len(t.get("params", []))
+            assert n < 50, (
+                f"{t['name']} has {n} params — слишком много для LLM (ожидается <50)\n"
+                f"  Параметры: {[p['name'] for p in t.get('params', [])]}"
+            )
+            assert n >= 1, (
+                f"{t['name']} имеет 0 params — должен быть хотя бы limit"
+            )
+        print(f"  ✅ Filter params: {[f'{t["name"]}: {len(t.get("params", []))} params' for t in filter_tools]}")
+
+    def test_tools_have_display_name(self, tenant_context):
+        """strategy-тулы (grep_*, filter_*, schema_*) должны иметь display_name."""
+        tid, tools = tenant_context
+        for t in tools:
+            name = t["name"]
+            if name.startswith(("grep_", "filter_", "schema_", "get_")):
+                dn = t.get("display_name", "")
+                assert dn, (
+                    f"{name} должен иметь display_name\n"
+                    f"  Полный tool: {json.dumps(t, indent=2)[:500]}"
+                )
+        print(f"  ✅ Все strategy-тулы имеют display_name")

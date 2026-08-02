@@ -1,11 +1,23 @@
 package handlers
 
 import (
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
+
+	"github.com/trash2bin/helperium/data-service/internal/runtime"
 )
+
+// columnFieldType возвращает тип колонки из entity.Fields по имени колонки.
+func columnFieldType(entity runtime.Entity, column string) string {
+	for _, f := range entity.Fields {
+		if f.Column == column || f.Name == column {
+			return f.Type
+		}
+	}
+	return "string"
+}
 
 // DistinctHandler обрабатывает GET /entity/distinct?column=status.
 // Возвращает уникальные значения указанной колонки (максимум 50).
@@ -31,13 +43,14 @@ func DistinctHandler(c *Context, entityName string) http.HandlerFunc {
 			return
 		}
 
-		// Проверяем что колонка существует в entity
+		// Проверяем что колонка существует в entity и находим её тип.
 		foundCol := entity.FindColumn(column)
 		if foundCol == "" {
 			RespondError(w, http.StatusBadRequest, "invalid_column",
 				fmt.Sprintf("column %q not found in entity %q", column, entityName))
 			return
 		}
+		fieldType := columnFieldType(entity, foundCol)
 
 		translate := asPlaceholderFunc(c.Adapter)
 
@@ -49,10 +62,17 @@ func DistinctHandler(c *Context, entityName string) http.HandlerFunc {
 			c.Adapter.QuoteIdentifier(foundCol),
 		)
 
-		// Добавляем tenant-фильтр
+		// Добавляем tenant-фильтр ПЕРЕД LIMIT (после ORDER BY):
+		// "... LIMIT 50 AND tenant..." — невалидный SQL.
+		// existingArgCount=0: в query нет плейсхолдеров, кроме tenant.
 		tenantWhere, tenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), 0, translate)
 		if tenantWhere != "" {
-			query += " AND " + tenantWhere
+			upper := strings.ToUpper(query)
+			if limIdx := strings.LastIndex(upper, " LIMIT "); limIdx >= 0 {
+				query = query[:limIdx] + " AND " + tenantWhere + query[limIdx:]
+			} else {
+				query += " AND " + tenantWhere
+			}
 		}
 
 		rows, err := c.DB.QueryContext(qCtx, query, tenantArgs...)
@@ -64,25 +84,26 @@ func DistinctHandler(c *Context, entityName string) http.HandlerFunc {
 		}
 		defer rows.Close() //nolint:errcheck
 
-		var values []string
+		var values []any
 		for rows.Next() {
-			var val sql.NullString
-			if err := rows.Scan(&val); err != nil {
+			var raw any
+			if err := rows.Scan(&raw); err != nil {
+				slog.Warn("distinct: scan error", "err", err, "entity", entityName, "column", column)
 				continue
 			}
-			if val.Valid {
-				values = append(values, val.String)
+			if raw != nil {
+				values = append(values, runtime.CoerceNative(raw, fieldType))
 			}
 		}
 		if values == nil {
-			values = []string{}
+			values = []any{}
 		}
 
 		RespondJSON(w, http.StatusOK, map[string]any{
-			"column":  column,
-			"entity":  entityName,
-			"values":  values,
-			"count":   len(values),
+			"column":    column,
+			"entity":    entityName,
+			"values":    values,
+			"count":     len(values),
 			"truncated": len(values) >= 50,
 		})
 	}

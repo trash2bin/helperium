@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/search"
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
@@ -56,7 +57,7 @@ func (h *StrategySchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 		switch f.Type {
 		case config.FieldTypeString:
-			vals := h.distinctValues(r.Context(), qTable, qCol, tenantWhere, tenantArgs)
+			vals := h.distinctValues(r.Context(), qTable, qCol, tenantWhere, tenantArgs, f.Type)
 			fields[f.Name] = map[string]any{
 				"type":     "string",
 				"distinct": vals,
@@ -77,7 +78,7 @@ func (h *StrategySchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 			}
 
 		case config.FieldTypeBool:
-			vals := h.distinctValues(r.Context(), qTable, qCol, tenantWhere, tenantArgs)
+			vals := h.distinctValues(r.Context(), qTable, qCol, tenantWhere, tenantArgs, f.Type)
 			fields[f.Name] = map[string]any{
 				"type":     "bool",
 				"distinct": vals,
@@ -98,7 +99,8 @@ func (h *StrategySchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 }
 
 // distinctValues returns up to 20 distinct values for a column.
-func (h *StrategySchemaHandler) distinctValues(rctx context.Context, qTable, qCol, tenantWhere string, tenantArgs []any) []string {
+// Возвращает значения, приведённые к типу колонки (не строки).
+func (h *StrategySchemaHandler) distinctValues(rctx context.Context, qTable, qCol, tenantWhere string, tenantArgs []any, fieldType config.FieldType) []any {
 	query := fmt.Sprintf("SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL ORDER BY %s LIMIT 20",
 		qCol, qTable, qCol, qCol)
 	if tenantWhere != "" {
@@ -112,36 +114,21 @@ func (h *StrategySchemaHandler) distinctValues(rctx context.Context, qTable, qCo
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var vals []string
+	var vals []any
 	for rows.Next() {
-		var val nullableString
-		if err := rows.Scan(&val); err != nil {
+		var raw any
+		if err := rows.Scan(&raw); err != nil {
+			slog.Warn("schema distinct: scan error", "err", err, "entity", h.entity.Name, "column", qCol)
 			continue
 		}
-		if val.valid {
-			vals = append(vals, val.value)
+		if raw != nil {
+			vals = append(vals, runtime.CoerceNative(raw, string(fieldType)))
 		}
 	}
 	if vals == nil {
-		vals = []string{}
+		vals = []any{}
 	}
 	return vals
-}
-
-// nullableString is a simple nullable string scanner.
-type nullableString struct {
-	value string
-	valid bool
-}
-
-func (ns *nullableString) Scan(src any) error {
-	if src == nil {
-		ns.valid = false
-		return nil
-	}
-	ns.valid = true
-	ns.value = fmt.Sprintf("%v", src)
-	return nil
 }
 
 // fieldStats returns min/max/avg for a numeric field.

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
@@ -29,22 +30,42 @@ func StatsHandler(c *Context, cfg *config.Config) http.HandlerFunc {
 				sql = fmt.Sprintf("%s WHERE %s", sql, counter.Filter)
 			}
 
+			// Tenant-фильтр (row-level isolation): как в count.go/get_by_id.go/strategy.
+			// Без него в multi-tenant конфиге /stats отдавал глобальные счётчики
+			// по всем тенантам (cross-tenant leak).
+			translate := asPlaceholderFunc(c.Adapter)
+			tenantWhere, tenantArgs := tenantFilter(counter.Entity, c.Auth, c.tenantID(r), 0, translate)
+			if tenantWhere != "" {
+				if counter.Filter != "" {
+					sql = fmt.Sprintf("%s AND %s", sql, tenantWhere)
+				} else {
+					sql = fmt.Sprintf("%s WHERE %s", sql, tenantWhere)
+				}
+			}
+
 			qCtx, qCancel := c.queryCtx(r)
 			if qCancel != nil {
 				defer qCancel()
 			}
-			rows, err := c.DB.QueryContext(qCtx, sql)
+			args := tenantArgs
+			rows, err := c.DB.QueryContext(qCtx, sql, args...)
 			if err != nil {
-				RespondError(w, http.StatusInternalServerError, "db_error", "failed to count "+counter.Entity)
-				return
+				// Fail-soft: один битый counter (например, RowFilter на несуществующую
+				// колонку) НЕ должен ронять весь /stats. Логируем и пропускаем —
+				// остальные счётчики считаем.
+				slog.Error("stats: counter query failed, skipping",
+					"counter", counter.Name, "entity", counter.Entity,
+					"tenant", c.tenantID(r), "err", err, "sql", sql)
+				continue
 			}
 
 			var count int
 			if rows.Next() {
 				if err := rows.Scan(&count); err != nil {
 					_ = rows.Close()
-					RespondError(w, http.StatusInternalServerError, "scan_error", "failed to scan count for "+counter.Entity)
-					return
+					slog.Error("stats: counter scan failed, skipping",
+						"counter", counter.Name, "entity", counter.Entity, "err", err)
+					continue
 				}
 			}
 			_ = rows.Close()

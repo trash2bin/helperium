@@ -8,15 +8,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/trash2bin/helperium/data-service/internal/configgen"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
 	"github.com/trash2bin/helperium/data-service/internal/search"
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // NewRouterFromConfig creates a chi router from a tenant config.
@@ -62,6 +62,8 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 	r.Use(RequestIDMiddleware)
 	r.Use(StructuredLoggingMiddleware)
 	r.Use(chimw.Timeout(time.Duration(ResolveRequestTimeout(cfg)) * time.Second))
+	// Ограничиваем размер тела write-эндпоинтов (PUT/POST/PATCH).
+	r.Use(BodyLimitMiddleware(ResolveBodyLimit(cfg)))
 
 	// Multi-tenancy: X-Tenant-ID middleware (when auth is configured)
 	if cfg.Auth != nil && cfg.Auth.Strategy == config.AuthStrategyHeader {
@@ -82,18 +84,32 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 	// MCP-схема — обселиченное описание БД для LLM-агента
 	// (требуется предварительный introspect через POST /admin/config/rewrite)
 	r.Get("/mcp/schema", func(w http.ResponseWriter, r *http.Request) {
-		inst := ts.resolveTenant(r)
+		// inst обычно зарезолвлен в ServeHTTP и лежит в контексте (под ts.mu.RLock) —
+		// это закрывает deadlock (вложенный RLock из-под RLock).
+		// Fallback: ts.resolveTenant(r) для прямых вызовов роутера (тесты,
+		// встраивание) — там внешнего RLock нет, повторный RLock безопасен.
+		inst, _ := r.Context().Value(tenantInstanceKey).(*TenantInstance)
+		if inst == nil {
+			inst = ts.resolveTenant(r)
+		}
 		if inst == nil {
 			handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
 				"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
 			return
 		}
-		if inst.IntrospectedSchema == nil {
+		// Читаем схему под schemaMu — adminRewriteHandler пишет её из другого goroutine.
+		// check + read + GenerateSchemaForLLM в одной критической секции, чтобы
+		// nil-check и разыменование были атомарны.
+		inst.schemaMu.RLock()
+		schema := inst.IntrospectedSchema
+		if schema == nil {
+			inst.schemaMu.RUnlock()
 			handlers.RespondError(w, http.StatusServiceUnavailable, "schema_not_available",
 				"schema not yet introspected — please call POST /admin/config/rewrite first")
 			return
 		}
-		result := configgen.GenerateSchemaForLLM(inst.IntrospectedSchema, inst.Config)
+		result := configgen.GenerateSchemaForLLM(schema, inst.Config)
+		inst.schemaMu.RUnlock()
 		handlers.RespondJSON(w, http.StatusOK, result)
 	})
 
@@ -171,9 +187,27 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 				var strategy search.Strategy
 				switch ep.Strategy {
 				case "grep":
-					strategy = search.NewGrepStrategy(idCol, nameCol)
+					// Кастомные SearchableRules/DisabledDefaultSearchableRules ДОЛЖНЫ
+					// доходить до runtime-стратегии (M3): иначе grep ищет по image/seo,
+					// которые админ заблокировал при генерации.
+					searchableRules := configgen.ResolveFieldRules(
+						configgen.DefaultSearchableFieldRules(),
+						cfg.DisabledDefaultSearchableRules,
+						cfg.SearchableRules,
+					)
+					strategy = search.NewGrepStrategy(idCol, nameCol, searchableRules...)
 				case "filter":
-					strategy = search.NewFilterStrategy(idCol, nameCol)
+					// Кастомные FilterableRules/DisabledDefaultFilterableRules ДОЛЖНЫ доходить
+					// до runtime-стратегии, иначе filter-эндпоинт принимает поля, которые
+					// пользователь явно заблокировал (и не видит добавленные).
+					// cfg.FilterableRules уже содержит resolved правила после Generate,
+					// но для прямого PUT без регенерации — пересчитываем через ResolveFieldRules.
+					filterableRules := configgen.ResolveFieldRules(
+						configgen.DefaultFilterableFieldRules(),
+						cfg.DisabledDefaultFilterableRules,
+						cfg.FilterableRules,
+					)
+					strategy = search.NewFilterStrategy(idCol, nameCol, filterableRules...)
 				default:
 					return nil, fmt.Errorf("endpoint %q: unknown strategy %q", ep.Path, ep.Strategy)
 				}

@@ -1,342 +1,326 @@
-# Data Service — Config-Driven REST API для произвольных БД
+# Data Service
 
-**Назначение:** Универсальный HTTP-прокси к клиентским БД. Схема БД описывается JSON-конфигом → автогенерируются REST эндпоинты, MCP-тулы, OpenAPI. Никакого доменного кода.
+Config-driven HTTP-доступ к клиентским БД. Схема описывается JSON-конфигом, из него собираются REST-эндпоинты, MCP-манифест и OpenAPI. Доменного кода нет.
 
-**Цель:** Горизонтально масштабируемый stateless сервис — добавление инстансов за балансировщиком, каждый tenant изолирован (свои пул коннектов, роутер, конфиг).
+Go/chi, порт 8084.
 
----
+## Входные точки
 
-## Архитектура (30 сек)
+- `cmd/server/main.go:56` — `main()`. Флаги: `--discover` (интроспекция → конфиг в stdout), `--config` (путь к JSON). Env: `PORT`, `DS_CONFIG`, `LOG_LEVEL`, `ADMIN_TOKEN`, `TENANTS_DIR`, `QUERY_TIMEOUT_SECONDS`.
+- `cmd/server/main.go:239` — `runDiscover()`, CLI-режим интроспекции.
+- `cmd/server/main.go:305` — `watchConfig()`, hot-reload конфига по fsnotify с дебаунсом 500ms.
 
-```
-config.json → chi Router → TenantStore (per-tenant Router)
-                │
-                ├─ /{entity}/{id}        → get_by_id
-                ├─ /{entity}?search=...  → find (legacy, name-based)
-                ├─ /{entity}             → list (legacy)
-                ├─ /{entity}/grep        → grep strategy (multi-token AND text search)
-                ├─ /{entity}/filter      → filter strategy (field__op)
-                ├─ /{entity}/count       → count with filters
-                ├─ /{entity}/distinct    → unique values for enum columns
-                ├─ /{entity}/schema      → schema discovery (total, distinct, min/max)
-                ├─ /{entity}/{id}/...    → custom_query (whitelist SELECT)
-                ├─ /docs                 → Swagger UI
-                ├─ /openapi.json         → OpenAPI 3.1 spec
-                ├─ /mcp/manifest         → runtime MCP tools generation
-                ├─ /mcp/schema           → introspected DB schema for LLM
-                ├─ /health, /stats       → builtin
-                └─ /admin/*              → tenant CRUD, config hot-reload, discover
-```
-
-**Структура пакетов (`internal/`):**
+## Пакеты
 
 ```
-internal/
-├── configgen/                  # Генерация конфига из интроспекции БД
-│   ├── configgen.go            # Оркестратор Generate, SkipRule, CRUD-endpoints
-│   ├── columns.go              # Семантический анализ колонок (isNameField, findSearchField)
-│   ├── entity.go               # datasource.Table → config.Entity
-│   ├── naming.go               # Форматирование имён (pluralize, titleCase, toolDisplayName)
-│   ├── navigation.go           # FK → custom_queries + navigation endpoints
-│   ├── llm.go                  # SchemaForLLM — system prompt для агента
-│   └── mcp.go                  # GenerateMCPTools — MCP-манифест
-├── datasource/                 # Adapter interface (SQLite, PG, MySQL в перспективе)
-│   └── tests/                  # black-box adapter тесты
-├── openapigen/                 # Runtime OpenAPI 3.1 генерация из конфига
-├── query/                      # Expression-based query engine (Condition AST → SQL)
-│   ├── expression.go           # QueryPlan, Condition, Operator, EmptyHint — типы
-│   ├── builder.go              # Engine.Build / BuildCount — Condition AST → SQL+args
-│   ├── format.go               # SearchResult, FormatRows (compact/full/count)
-│   └── builder_test.go         # white-box тесты query builder'а
-├── runtime/                    # Query builder + typed response mapper
-│   ├── instrumented_adapter.go # Conn+Adapter → AdapterSubset с опциональными метриками
-│   ├── handlers/               # 16 хендлеров (см. Архитектура ниже)
-│   │   └── tests/              # black-box handler тесты
-│   └── tests/                  # black-box query builder тесты
-├── search/                     # Search strategies (v4): единый Strategy interface
-│   ├── strategy.go             # Strategy, Adapter interfaces
-│   ├── grep.go                 # GrepStrategy — текст. поиск (multi-token AND, regex, LIKE)
-│   ├── filter.go               # FilterStrategy — field-based field__op фильтрация
-│   ├── schema.go               # SchemaStrategy — мета-инфо для LLM discovery
-│   ├── strategy_common.go      # Общие утилиты (parseLimitParam, tokenize, regexOp и др.)
-│   └── *_test.go               # white-box тесты стратегий
-└── server/                     # HTTP server, middleware, TenantStore
-    ├── tenant.go               # TenantInstance, TenantStore, ServeHTTP, config persistence
-    ├── tenant_admin.go         # admin-хендлеры (CRUD tenant'ов, rewrite, reload)
-    ├── tenant_health.go        # HealthCheck, multiTenantHealthHandler
-    ├── tenant_lifecycle.go     # AddTenant, RemoveTenant, ReloadTenant, buildTenantInstance
-    ├── server.go               # Middleware (Recovery, RequestID, StructuredLogging, RateLimit)
-    ├── endpoint_builder.go     # NewRouterFromConfig — сборка chi-роутера из конфига
-    ├── admin.go                # Admin API handlers (config CRUD, tool approval)
-    ├── swagger.go              # Swagger UI (GET /docs) + OpenAPI (GET /openapi.json)
-    └── tests/                  # black-box scenario/integration тесты
+cmd/server/                    main, discover, watchConfig
+internal/configgen/            генерация конфига из datasource.Schema; intent.go (ExtractIntent/Hydrate)
+internal/datasource/           Conn/Adapter интерфейсы + драйверы (sqlite, postgres) + readonly
+internal/query/                Expression AST → SQL (Engine)
+internal/runtime/              AdapterSubset, EntityResolver, HTTP-хендлеры
+internal/search/               стратегии grep/filter/schema (Strategy interface)
+internal/server/               TenantStore, роутер, middleware, admin API
+internal/openapigen/           runtime-генерация OpenAPI 3.1 из cfg.Endpoints
 ```
 
-### Search Strategies (v4)
+## datasource — интерфейсы и драйверы
 
-6 стратегий через единый `search.Strategy` interface:
+### Conn / Adapter (`internal/datasource/adapter.go`)
 
-| Стратегия | HTTP path | MCP tool | Описание для LLM |
-|-----------|-----------|----------|------------------|
-| `grep` | `/{entity}/grep` | `grep_{entity}` | Multi-token AND текст. поиск (LIKE/ILIKE, regex, ignore_case, invert по полям) |
-| `filter` | `/{entity}/filter` | `filter_{entity}` | Field-based field__op: `{field}__gt`, `__like`, `__in` и т.д. |
-| `get_by_id` | `/{entity}/{id}` | `get_{entity}` | Получение записи по PK |
-| `count` | `/{entity}/count` | `count_{entity}` | Количество записей с фильтрами |
-| `distinct` | `/{entity}/distinct` | `distinct_{entity}` | Уникальные значения колонки |
-| `schema` | `/{entity}/schema` | `schema_{entity}` | Мета-инфо: total, distinct values, min/max/avg для LLM discovery |
+- `Conn` (:30) — `QueryRowContext / QueryContext / ExecContext / PingContext / Close`.
+- `Adapter` (:46) — `Driver()`, `Connect()`, `Introspect()`, `TranslatePlaceholder()`, `QuoteIdentifier()`.
+- `Schema/Table/Column/ForeignKey` (:81-124) — результат интроспекции.
 
-**Flow:**
+### Драйверы
 
-```
-LLM Tool Call (MCP / HTTP)
-       │
-       ▼
-search.Strategy interface     ← grep, filter, schema имплементации
-  └── ParseRequest(r, entity, adapter)  →  query.QueryPlan
-       │
-       ▼
-query.Engine.Build(plan)      ← Condition AST → нативный SQL
-       │
-       ▼
-ReadOnlyDB                    ← урезанный *sql.DB (только SELECT)
-       │
-       ▼
-query.FormatRows              ← SearchResult (Total, Data/Preview, EmptyHint)
-```
+- `sqlite_adapter.go:27` — `SqliteAdapter`. modernc.org/sqlite (без CGO). `Connect()` :42: WAL, `synchronous=NORMAL`, `busy_timeout=5000`, `SetMaxOpenConns(2)`, `PRAGMA foreign_keys=ON` (и через DSN-параметры `_pragma=...` :90 — применяются к каждому коннекту). `Introspect()` :127 через sqlite_master + PRAGMA. `mapSQLiteType()` :292.
+- `postgres_adapter.go:40` — `PostgresAdapter`. pgx/v5 через database/sql. `Introspect()` :126 — 4 запроса (таблицы, колонки+PK, описания, FK). `TranslatePlaceholder()` :82 — `?` → `$N`. `QuoteIdentifier()` :93 — двойные кавычки, экранирует `"` в сегментах. `mapPostgresType()` :377.
+- `registry.go:13` — `NewDefaultRegistry()`: реестр драйверов по имени.
 
-**EmptyHint:** При `total==0` стратегии возвращают подсказку LLM с доступными значениями:
-```json
-{"suggested_action": "Try schema_products() to discover available values",
- "available_values": {"brand": ["Brembo", "Bosch"]}}
-```
+### ReadOnly (`internal/datasource/readonly.go`)
 
-**Принцип:** white-box тесты (`package xxx`) остаются рядом с исходным кодом, black-box тесты (`package xxx_test`) вынесены в `tests/` внутри каждого пакета для чистоты иерархии.
+- `ReadOnlyDB` (:11) — обёртка над `*sql.DB`, только SELECT. `NewReadOnlyDB()` :16 проверяет при старте, что write падает.
+- `ReadOnlyConn` (:41) — обёртка над `Conn`. `ExecContext()` :62 всегда возвращает ошибку. Используется для code-level гарантии: data path не пишет в БД.
 
----
+### DataSource (абстракция для не-SQL бэкендов, `internal/datasource/datasource.go`)
 
-## Multi-Tenancy (Strict Mode, фаза 3.7)
+- `DataSource` interface (:21) — `Search / Filter / GetByID / Count / Distinct / Schema / Close`.
+- `SQLDataSource` (`sql.go:27`) — реализация поверх query.Engine. `NewSQLDataSource()` :42.
+- **Важно:** `Search/Filter/GetByID/Count/Distinct` в SQLDataSource — заглушки (`sql.go:74-94`), возвращают не-implemented. Реально работают только `Schema()` :118. HTTP-стратегии идут через `search.Strategy`, не через DataSource.
 
-- **TenantStore** — мапа `tenant_id → TenantInstance{Config, Conn, Router, ConfigPath, ...}` (разбит на 8 файлов: `tenant.go` + `tenant_admin.go` + `tenant_health.go` + `tenant_lifecycle.go` + `server.go` + `endpoint_builder.go` + `admin.go` + `swagger.go`)
-- **Strict**: запрос **обязателен** `X-Tenant-ID` или `?tenant=` → иначе `404 tenant_not_found`
-- **Изоляция**: у каждого tenant свой пул коннектов, роутер, конфиг
-- **Admin API** (`Authorization: Bearer $ADMIN_TOKEN`):
-  - `POST /admin/tenants` — добавить tenant на лету
-  - `GET /admin/tenants` — список + health
-  - `GET /admin/tenants/{id}` — детали tenant'а
-  - `POST /admin/config` — обновить конфиг текущего tenant'а
-  - `POST /admin/config/reload` — hot reload без рестарта процесса
-  - `POST /admin/config/rewrite` — интроспекция БД → перезапись конфига
-  - `GET /admin/config` — текущий конфиг (DSN скрыт)
-  - `GET /admin/config/versions` — история версий конфига
-  - `DELETE /admin/tenants/{id}` — graceful drain (закрыть пул, удалить из мапы, стереть конфиг с диска)
-  - `GET /admin/tenants/{id}/tools/pending` — ожидающие подтверждения write-тулы
-  - `POST /admin/tenants/{id}/tools/{toolName}/approve` — подтвердить write-тул
-  - `GET /admin/discover` — интроспекция схемы (с `X-Tenant-ID`)
-- **Health**: single-tenant `{"status":"ok","db":"ok"}` | multi-tenant `{"status":"degraded","tenants":[...]}`
+## query — Expression AST → SQL (`internal/query/`)
 
-### Tenant Config Persistence
+- `expression.go:10` — `QueryPlan`: Select, From, Where []Condition, RawWhere, Order, Limit, Offset, Format.
+- `expression.go:55` — `Condition`: Field, Operator, Value, Values, Not.
+- `expression.go:72` — `Operator`: Eq, Neq, Lt, Gt, Lte, Gte, Like, ILike, NotLike, Regex, In, Between.
+- `expression.go:102-159` — конструкторы `Eq/Neq/Lt/Lte/Gt/Gte/Like/ILike/Regex/NotLike/In/Between`.
+- `builder.go:35` — `NewEngine(adapter)`. `Build()` :43, `BuildCount()` :50, `build()` :54, `RenderConditions()` :124, `renderCondition()` :156.
+- `renderCondition()` :156 — инверсии операторов при `c.Not`: `OpEq+Not → "<>"` (:164), `OpRegex+Not → NOT REGEXP / !~`. Раньше `notPrefix="NOT "` давал невалидный SQL `"x" NOT = ?` (закреплён тестом как ожидание — переписан).
+- LIKE/ILIKE/NOT LIKE — `ESCAPE '\'` (:232, :251, :261, :274): `QuoteString` экранирует `%`/`_` обратным слэшем, без ESCAPE-клаузы экранирование не работает (в SQLite `\` — литерал, wildcard оставался активным → данные с `%`/`_` не находились).
+- `format.go:4` — `SearchResult`. `FormatRows()` :32 — compact/full/count форматы.
+- **RawWhere остался в grep** (`search/grep.go:252-253`): multi-token AND собирается строкой. Tenant-фильтр для RawWhere — обёртка в подзапрос (`strategy_handler.go:235 insertTenantBeforeLimit`).
 
-Все tenant'ы, добавленные через admin API, автоматически сохраняются на диск.
-После перезапуска data-service читает конфиги из файловой системы и восстанавливает tenant'ов.
+## search — стратегии (`internal/search/`)
 
-**Директория хранения:** `$TENANTS_DIR` (по умолчанию `.data/tenants/` относительно корня проекта).
-Каждый tenant — отдельный JSON-файл:
+### Strategy interface (`strategy.go:16`)
 
-```
-.data/tenants/
-├── default.json          # Bootstrap-tenant из --config
-├── shop.json             # Добавлен через POST /admin/tenants
-└── my-client.json        # Добавлен через UI admin-dashboard
-```
-
-**Жизненный цикл:**
-
-```
-POST /admin/tenants   ──→  AddTenant() + SaveTenantConfig(id, cfg)  ──→  .data/tenants/{id}.json
-POST /admin/config    ──→  update + reload  ──→  SaveTenantConfig(id, cfg)  ──→  перезаписан
-POST /admin/config/rewrite ──→  introspect → generate → save ──→  SaveTenantConfig(id, cfg)  ──→  обновлён
-DELETE /admin/tenants ──→  RemoveTenant() + DeleteTenantConfig(id)  ──→  файл удалён
-
-Startup               ──→  os.ReadDir(.data/tenants/) → config.Load() → AddTenant()  ──→  восстановлен
-```
-
-**Механизм:** три публичных метода `TenantStore` отвечают за запись/чтение/удаление:
-
-| Метод | Назначение |
-|---|---|
-| `SaveTenantConfig(id, cfg) string` | Маршалит конфиг в JSON и пишет в `.data/tenants/{id}.json`. Возвращает полный путь. |
-| `TenantConfigPath(id) string` | Возвращает ожидаемый путь для tenant'а: `.data/tenants/{id}.json`. Создаёт директорию если нужно. |
-| `DeleteTenantConfig(id)` | Удаляет файл конфига с диска. Игнорирует `ENOENT` (уже удалён). |
-
-Все admin-хендлеры пишут ТОЛЬКО через `SaveTenantConfig()` — никаких inline `os.WriteFile`.
-
----
-
-## Конфиг (Source of Truth)
-
-```json
-{
-  "version": 1,
-  "data_source": { "driver": "sqlite|postgres", "dsn": "${DB_PATH:-file.db}", "pool_size": 10, "read_only": true },
-  "entities": [{ "name": "student", "table": "students", "id_column": "id", "fields": [...] }],
-  "endpoints": [{ "method": "GET", "path": "/students/{id}", "op": "get_by_id", "entity": "student" }],
-  "custom_queries": { "student_grades": { "sql": "SELECT ... WHERE student_id = ?", "params": ["id"], "max_rows": 500 }},
-  "stats": { "counters": [{ "name": "students", "entity": "student" }] }
+```go
+type Strategy interface {
+    Name() string
+    ToolName(entity config.Entity) string
+    ToolDescription(entity config.Entity) string
+    ToolParams(entity config.Entity) []config.EndpointParam
+    ParseRequest(r *http.Request, entity config.Entity, a Adapter) (*query.QueryPlan, error)
+    EntityIDCol() string
+    EntityNameCol() string
 }
 ```
 
-**Генерация:** `--discover` / `POST /admin/config/rewrite` — интроспекция схемы через configgen → entities + endpoints + MCP tools.
+- `Adapter` (:46) — `QuoteIdentifier / QuoteString / TranslatePlaceholder / IsPostgres`.
+- `NewAdapter(inner query.AdapterSubset)` :67 — мост runtime.AdapterSubset → search.Adapter.
 
----
+### GrepStrategy (`grep.go:38`)
 
-## Быстрый старт
+Multi-token AND по полям, OR между полями. Лимиты в `NewGrepStrategy()` :42-45:
+- `maxRegexLen=200` (ReDoS), `maxTokens=10`, `maxPatternLen=500`.
+
+`ToolParams()` :75 — `pattern` (required), `limit` (1-100, default 10), `fields`.
+`ParseRequest()` :91 — проверка длины :99, regex :109, token search :220+.
+
+Параметры MCP: `pattern`, `ignore_case`, `fields`, `invert`, `regex`, `limit`, `offset`, `format`, `sort_by` (последние не в JSON Schema).
+
+### FilterStrategy (`filter.go:33`)
+
+`NewFilterStrategy(idCol, nameCol string, filterableRules ...config.FieldRule)` :33. Лимиты:
+- `maxFilterValueLen=200` (:26), `maxInValues=50` (:28), `maxFilters=15` (:44).
+
+`ToolParams()` :86 — фильтрует поля через `config.IsFilterableField(field, s.filterableRules)` :99.
+`ParseRequest()` :165 — exact / `__gt` / `__gte` / `__lt` / `__lte` / `__like` / `__in` / `__neq`; maxFilters :299, maxInValues :269.
+
+### SchemaStrategy (`schema.go:25`)
+
+`ToolParams()` :48 — nil (без параметров). `ParseRequest()` :54 — nil (не использует Engine; handler работает напрямую с БД). `FormatFields()` :79.
+
+## runtime — типы и хендлеры
+
+### Типы (`internal/runtime/types.go`)
+
+- `AdapterSubset` (:140) — урезанный Conn+Adapter: QueryContext, QuoteIdentifier, TranslatePlaceholder, PingContext.
+- `Entity/EntityField` (:34/:60), `CustomQuery` (:85), `Endpoint` (:116).
+- `EntityResolver` (`entity_resolver.go:23 NewEntityResolver`, `Resolve` :38, `ColumnFor` :48) — резолв entity по имени.
+
+### HTTP-хендлеры (`internal/runtime/handlers/`)
+
+| Файл | Функция | Назначение |
+|---|---|---|
+| `get_by_id.go:9` | `GetByIDHandler` | `GET /{entity}/{id}` |
+| `count.go:17` | `CountHandler` | `GET /{entity}/count` |
+| `distinct.go:15` | `DistinctHandler` | `GET /{entity}/distinct?column=` |
+| `custom_query.go:19` | `CustomQueryHandler` | `GET /{parent}/{id}/{child}` (whitelist SELECT) |
+| `stats.go:11` | `StatsHandler` | `GET /stats` — count по `Stats.Counters` из конфига (с tenant-фильтром, см. ниже) |
+| `strategy_handler.go:30` | `NewStrategyHandler` | grep/filter стратегии (collectEmptyHint :175, insertTenantBeforeLimit :235) |
+| `schema_handler.go:23` | `NewStrategySchemaHandler` | schema стратегия |
+| `mcp_manifest.go:20` | `MCPManifestHandler` | `GET /mcp/manifest` |
+| `context.go:40-63` | `queryCtx` :40 / `tenantID` :48 / `RespondJSON` :56 / `RespondError` :63 | общие утилиты |
+
+### Tenant-фильтр (`row_filter.go`)
+
+- `tenantFilter()` :22 — вставляет `WHERE` из `auth.RowFilters` по entity. Возвращает `("", nil)` если: auth nil, Strategy != header, tenantID пуст, нет RowFilter для сущности.
+- `insertTenantBeforeLimit()` (`strategy_handler.go:235`) — перестановка args: WHERE + tenant + LIMIT/OFFSET.
+- `/stats` (`stats.go:36`): `StatsHandler` вызывает `tenantFilter` для каждого counter — иначе в multi-tenant `/stats` отдавал глобальные счётчики (cross-tenant leak). `tenantWhere` конкатенируется поверх `counter.Filter`.
+- `CountHandler` (`count.go:37-42`): `tenant_id` исключён из fieldMap и из системных параметров (:54) — HIGH-15 fix, защита от фильтрации по чужому tenant_id.
+- **Security Gap:** при `AuthStrategyHeader` без настроенных `RowFilters` — tenant-фильтр не применяется, запрос вернёт все строки. Регресс-тест: `row_filter_security_test.go`.
+
+### Schema handler (`schema_handler.go`)
+
+`distinctValues()` :103 (до 20 значений), `fieldStats()` :135 (min/max/avg). Обходит tenantWhere через параметры.
+
+### Маппинг значений (`response_mapper.go`)
+
+- `coerceNative()` :210 — приведение значения к типу колонки из конфига. Для `int`: `safeFloatToInt64()` :167 — при дробном или out-of-range значении НЕ кастует молча, а возвращает float64 с `slog.Warn` (раньше `int64(95.7)` → 95 тихо).
+- `datetime`/`date` (:280-289) — канонический `RFC3339`: `time.Time` → `UTC().Format(RFC3339)`, строка → `normalizeDateTime()` :181 (sqlite-формат `"2006-01-02 15:04:05"`, date `"2006-01-02"`). Раньше формат зависел от драйвера (sqlite — string, pgx — time.Time).
+- `DistinctHandler` (`distinct.go:26`): типизированное сканирование через `columnFieldType()` :12 — числовые колонки отдают числа, bool — bool (раньше всё `sql.NullString` → строки).
+
+## server — TenantStore, роутер, middleware
+
+### TenantStore (`tenant.go`)
+
+- `TenantInstance` (:40) — ID, Config, Conn, ReadonlyConn, Adapter, Router, ApprovedTools, IntrospectedSchema. Доп. поля синхронизации: `healthMu` (Healthy/LastError), `schemaMu` (RWMutex для IntrospectedSchema), `removing` (atomic.Bool — RemoveTenant в процессе).
+- `TenantStore` (:65) — мапа id→instance, RWMutex. `ServeHTTP` :267 — роутинг по X-Tenant-ID (держит RLock через `resolveTenantAndLock` на весь запрос).
+- `resolveTenantAndLock()` :322 — резолв с удержанием RLock на весь запрос (закрывает TOCTOU с ReloadTenant/RemoveTenant). `resolveTenant()` :304 — без лока (для admin-хендлеров, с проверкой `removing`).
+- `NewTenantStore(registry, tenantsDir)` :78.
+- Персистентность: `SaveTenantConfig()` :115 — **атомарная запись** (temp-файл + `os.Rename`, битый JSON невозможен), `DeleteTenantConfig()` :244 — удаляет и `{id}.json`, и `{id}.schema.json`, `TenantConfigPath()` :90. Директория `$TENANTS_DIR` (default `.data/tenants/`).
+- Schema cache: `TenantSchemaPath()` :169, `SaveTenantSchema()` :177, `LoadTenantSchema()` :196 (нет файла → (nil, nil)), `PersistTenantConfig()` :225 — регенерирует Entities/Endpoints из intent+закэшированной схемы (fallback: сохраняет как есть).
+
+### Lifecycle (`tenant_lifecycle.go`)
+
+| Функция | Строка | Назначение |
+|---|---|---|
+| `AddTenant` | :42 | Открыть соединение, собрать роутер, зарегистрировать (double-check закрывает оба пула при дубликате) |
+| `RemoveTenant` | :85 | **Двухфазный drain**: (1) под Lock удалить из мапы + `removing.Store(true)` → новые запросы 404; (2) `drainTenantConns` :113 — SetMaxIdleConns(0) + poll `Stats().InUse==0` (лимит 2s, fallback grace period); (3) `closeTenantConns` :162 — закрыть оба пула |
+| `GetTenant` | :179 | По id |
+| `ListTenants` | :187 | Все |
+| `ReloadTenant` | :202 | Пересобрать роутер из обновлённого конфига (под Lock, гонка закрыта `resolveTenantAndLock`) |
+| `buildTenantInstance` | :244 | Создание instance: Conn → ReadOnlyConn, ApprovedTools из cfg, инициализация healthMu/schemaMu |
+
+### Admin API (`tenant_admin.go:28 BuildAdminRouter`)
+
+Маршруты: `POST /admin/tenants` :48, `GET /admin/tenants` :49, `GET /admin/tenants/{id}` :50, `DELETE /admin/tenants/{id}` :51, `GET /admin/config` :54, `POST /admin/config` :55, `POST /admin/config/reload` :56, `GET /admin/config/versions` :57, `POST /admin/config/rewrite` :58, `GET /admin/discover` :62, `GET /admin/tenants/{id}/tools/pending` :66, `POST /admin/tenants/{id}/tools/{toolName}/approve` :67.
+
+Auth: `AdminAuthMiddleware` (`admin.go:83`), rate limit (`tenant_admin.go:45`).
+
+### Middleware (`server.go`)
+
+- `RequestIDMiddleware` :28, `StructuredLoggingMiddleware` :42, `RecoveryMiddleware` :70, `BodyLimitMiddleware` :90, `AdminRateLimitMiddleware` :163, `ThrottleMiddleware` :184, `TenantIDMiddleware` :283 (кладёт X-Tenant-ID в context).
+- Конфигурация из cfg: `ResolveRequestTimeout` :208 (30s), `ResolveBodyLimit` :221, `ResolveMaxConcurrent` :235. `configValue()` :262 — nil-safe для cfg.
+- **Подключены:** `BodyLimitMiddleware` в admin-роутере (`tenant_admin.go:44`) и tenant-роутере (`endpoint_builder.go:66`); `ThrottleMiddleware` в rootRouter (`cmd/server/main.go:186`). Раньше были только определения — теперь закрывают OOM на `/admin/*` и лимит конкурентности.
+
+### Роутер из конфига (`endpoint_builder.go:29 NewRouterFromConfig`)
+
+- Read-only guard: :116-147 — при `ReadOnly=true` write-методы (POST/PUT/PATCH/DELETE) не регистрируются (:147), кроме `approvedTools[ep.Path]`.
+- Маршрутизация стратегий: :150+ — grep/filter через `search.NewGrepStrategy()/NewFilterStrategy()`, schema через `handlers.NewSchemaHandler` (DataSource) или fallback `NewStrategySchemaHandler`.
+- `isWriteMethod()` :257.
+
+## configgen — генерация конфига (`internal/configgen/`)
+
+### Pipeline
+
+```
+datasource.Adapter.Introspect() → Schema
+  → configgen.Generate(schema, cfg) (configgen.go:83)
+    → shouldSkip (SkipRule) → entities
+    → resolveFieldRules (FieldRules) → filterable/searchable/enum
+    → buildCRUDEndpoints → REST endpoints
+    → buildNavigationEndpoints (FK) → custom_queries
+    → GenerateMCPTools → MCP manifest
+```
+
+### Generate (`configgen.go:83`)
+
+- SkipRules: `DefaultSkipRules()` :30 (sqlite_/pg_/auth_/django_/migrations/documents и т.д.), кастомные из cfg.
+- ReadOnly форс: :115-116 — если nil, ставит `&true`.
+- FieldRules: `resolveFieldRules()` :201 — Defaults − DisabledDefault + Custom.
+- Условные эндпоинты `buildCRUDEndpoints()` :224:
+  - count — если `hasDataFields` (columns.go:70)
+  - grep — если `hasSearchableFields` (columns.go:18)
+  - filter — если `hasFilterableFields` (columns.go:51)
+  - schema — всегда
+  - distinct — если enum-поля (findEnumColumnsFromEntity columns.go:81)
+- `buildCounters()` :313.
+
+### Intent round-trip (`intent.go`)
+
+- `TenantIntent` :13 — только намерения: DataSource, правила (FieldRules/DisabledDefault*), CustomShortNames, explicit CustomQueries, ApprovedTools, Stats, Introspection, Auth, Server. Без Entities/Endpoints/MCPTools/derived CustomQueries — они вычислимы через Hydrate.
+- `ExtractIntent(cfg)` :66 — выделяет интенты из полного `config.Config`, исключая FK-derived запросы (`DerivedCustomQueryKeys` :55).
+- `Hydrate(intent, schema)` :108 — собирает полный `config.Config` из intent + свежей схемы (Generate + возврат explicit queries/Stats/ApprovedTools).
+- Вызывается из: `tenant_admin.go:521` (rewrite), `tenant_admin.go:615` (discover), `tenant.go:238` (PersistTenantConfig).
+
+### FieldRules (прокси в `columns.go:12-14` → `helperium-go/config/filterable.go`)
+
+- `DefaultFilterableFieldRules()` (filterable.go:9) — AllowNames: name, article, oem_number, description, price, old_price, category, brand, supplier, label, quantity, status, type, active.
+- `DefaultSearchableFieldRules()` (filterable.go:24) — block-only: `_image`, `_url`, image, thumbnail, json, seo.
+- `DefaultEnumFieldRules()` (filterable.go:36) — AllowContains: status, type, role, city, country.
+- `IsFilterableField()` (filterable.go:54) — имплицитные правила (FK `*_id` кроме tenant_id, `*_date`, is_available/is_active) + конфигурируемые.
+- Тип `FieldRule` — `helperium-go/config/types.go:564`, `Matches()` :591.
+- Runtime использует resolved правила: `mcp_manifest.go:33` и `endpoint_builder.go:190` вызывают `configgen.ResolveFieldRules(...)` (ранее кастомные FilterableRules/DisabledDefault* не доходили до runtime — всегда дефолты).
+
+### MCP tools (`mcp.go`)
+
+- `GenerateMCPTools()` :12 — эндпоинты → тулы.
+- `strategyToMCPTool()` :137 — grep/filter/schema тулы с параметрами из `Strategy.ToolParams()`.
+- `deriveToolParams()` :93, `extractPathParams()` :118.
+
+### SchemaForLLM (`llm.go`)
+
+- `SchemaForLLM` :15, `LLMEntity` :26, `FilterGroup` :49, `FilterField` :58, `LLMRelation` :68.
+- `GenerateSchemaForLLM()` :83 — обселиченное описание БД для system prompt (без SQL).
+
+### Naming (`naming.go`)
+
+`DefaultDisplayPrefixes()` :12, `shortBusinessName()` :19, `titleCase()` :48, `shortColumnName()` :56, `pluralizeEntity()` :67, `toolDisplayName()` :107.
+
+## openapigen — OpenAPI 3.1 runtime (`internal/openapigen/openapigen.go`)
+
+- `Generate()` :19 — из cfg.Endpoints на каждый запрос.
+- `buildPaths()` :394, `buildComponents()` :645, `entitySchema()` :726, `openapiType()` :749, `operationID()` :768.
+
+## Конфиг
+
+```json
+{
+  "version": 3,
+  "data_source": { "driver": "sqlite|postgres", "dsn": "...", "read_only": true },
+  "entities": [...],
+  "endpoints": [...],
+  "custom_queries": {...},
+  "auth": { "strategy": "header", "tenant_header": "X-Tenant-ID", "row_filters": [...] },
+  "filterable_rules": [...], "searchable_rules": [...], "enum_rules": [...],
+  "skip_rules": [...], "disabled_default_rules": [...],
+  "custom_short_names": {...}
+}
+```
+
+Типы: `helperium-go/config/types.go:176 Config`, `:290 Entity`, `:254 DataSourceConfig`, `:512 AuthConfig`, `:564 FieldRule`.
+
+## Запуск
 
 ```bash
-# Сборка
-cd data-service && go build -o bin/data-service ./cmd/server/
-
-# Dev SQLite (из корня проекта)
+go build -o bin/data-service ./cmd/server/
 ./bin/data-service --config specs/config.example.json
+```
 
-# Dev PostgreSQL
-docker compose up -d db
-./bin/data-service --config specs/config.postgres.json
-
-# Smoke-test
-curl -s http://127.0.0.1:8084/health                    # {"status":"ok"}
+Smoke:
+```bash
+curl -s http://127.0.0.1:8084/health
 curl -s -H "X-Tenant-ID: default" http://127.0.0.1:8084/students
 curl -s -H "Authorization: Bearer secret" http://127.0.0.1:8084/admin/tenants
 ```
 
-**Env vars:** `DS_CONFIG`, `PORT` (8084), `LOG_LEVEL` (info/debug/warn/error), `ADMIN_TOKEN` (обязателен для admin).
-
----
-
-## Драйверы БД
-
-### SQLite (`sqlite_adapter.go`)
-- Чистый Go через `modernc.org/sqlite` (без CGO)
-- WAL mode + `synchronous=NORMAL` — ~2x write throughput при той же durability
-- `busy_timeout=5000` — конкурентные запросы ждут до 5s вместо `"database is locked"`
-- `SetMaxOpenConns(2)` — конкурентное чтение под WAL
-- `PRAGMA foreign_keys=ON` — проверка целостности FK
-
-### PostgreSQL (`postgres_adapter.go`)
-- pgx/v5 через `database/sql` stdlib (без pgxpool)
-- Интроспекция: **4 запроса вместо 4N+1** (один JOIN для колонок + PK, один для описаний, один для FK, один для списка таблиц)
-- Надёжный маппинг типов из `data_type` в generic-типы (TypeInt/TypeFloat/TypeString/TypeBool/TypeJSON/TypeDatetime/TypeDate)
-
-### InstrumentedAdapter (`runtime/instrumented_adapter.go`)
-- Единый wrapper `Conn + Adapter → runtime.AdapterSubset`
-- Заменил дубли `ConnAdapter` (tenant.go) + `metricsAdapter` (endpoint_builder.go)
-- Опциональные метрики времени выполнения запросов
-
----
-
-## Сценарии (Test DB Factory)
-
-`testdata/scenarios/<name>/` содержат pre-built `data.db` для Go-тестов.
-
-| Сценарий | Драйвер | Назначение |
-|---|---|---|
-| `sqlite-testseed` | SQLite | Базовый смоук (13 entities) |
-| `postgres-testseed` | PG | Cross-driver parity |
-| `big-testseed` | SQLite | Load test (500 students, 4000 grades) |
-| `shop` | SQLite | Сторонняя БД (FK lookups) |
-
----
-
-## Тестирование
+## Тесты
 
 ```bash
-# Все go-тесты (см. `make ci` — количество тестов динамическое)
 go test ./... -count=1
-
-# White-box тесты (рядом с кодом)
-go test ./internal/server/... ./internal/runtime/... ./internal/datasource/ ./internal/configgen/... -count=1
-
-# Black-box тесты (в tests/)
-go test ./internal/server/tests/ ./internal/runtime/tests/ ./internal/runtime/handlers/tests/ ./internal/datasource/tests/ -count=1
-
-# Race detector
 go test -race ./... -count=3
-
-# Cross-driver parity (PG)
-docker compose up -d db
-AGENT_TUTOR_TEST_PG=1 go test ./internal/server/tests/ -v
 ```
 
----
+E2E (из корня проекта):
+```bash
+./scripts/dev.sh start
+ADMIN_TOKEN=secret .venv/bin/python -m pytest tests/e2e/test_mcp_validation.py -v
+ADMIN_TOKEN=secret .venv/bin/python -m pytest tests/e2e/test_data_isolation.py -v
+```
 
-## Security & Hardening
+## Связь с сервисами
 
-- Только SELECT, prepared statements (`?` / `$1`), `max_rows` обязателен для custom_query
-- `read_only: true` по умолчанию: configgen.Generate() форсирует `ReadOnly = &true` если nil
-  (вручную можно выставить `false` через config.json; см. `configgen.go:114`)
-- ReadOnlyConn обёртка (`datasource.NewReadOnlyConn`) блокирует `ExecContext` на уровне Go
-- Banned SQL: `;`, `--`, `/*`, DDL/DML ключевые слова в `counter.Filter`
-- Валидация через Go-типы (`helperium-go/config/types.go`), JSON Schema не используется
-- Защита от SQL injection в `counter.Filter` — `isValidFilterExpression()` блокирует `;`, `--`, DDL/DML
-- Content-Type: `application/json` для всех ответов (включая error recovery)
-- Per-query timeout: 30s (`QUERY_TIMEOUT_SECONDS`)
-- Data race protection: `healthMu sync.Mutex` в TenantInstance, `atomic.Int32` в ThrottleMiddleware
-- Data race protection: `healthMu sync.Mutex` в TenantInstance, `atomic.Int32` в ThrottleMiddleware
+Полная HTTP-матрица: `doc/api-flow.md`. Ключевые каналы:
 
----
-
-## Horizontal Scalability
-
-- **Stateless**: никакого локального состояния сессии
-- **Tenant isolation**: каждый tenant = независимый `*sql.DB` + `chi.Router`
-- **Config hot-reload**: `POST /admin/config/reload` без рестарта
-- **Shared-nothing**: добавление инстансов за LB требует только shared config store
-
----
-
-## Skip Rules (почему таблицы не генерируются)
-
-Configgen.DefaultSkipRules() исключает таблицы по prefix/contains MatchRule:
-
-| Prefix | Причина |
-|--------|--------|
-| `sqlite_`, `pg_`, `information_schema` | Системные таблицы СУБД |
-| `auth_`, `django_`, `migrations`, `jobs` | Django/Laravel framework internals |
-| `documents` | Helperium RAG: внутренние чанки документов |
-| `schema_migrations`, `ar_internal_metadata` | Rails ActiveRecord metadata |
-
-**Кастомизация:** `skip_rules[]` в config.json (дополняет default), `disabled_default_rules[]` (отключает default по prefix).
-Подробно: [doc/agents/search-strategies.md](doc/agents/search-strategies.md).
-
----
-
-## Ссылки по теме
-
-- [AGENTS.md](../AGENTS.md) — общая архитектура, data flow
-- [doc/agents/search-strategies.md](../doc/agents/search-strategies.md) — Search Strategies v4 детально
-- [doc/agents/adapter-pattern.md](../doc/agents/adapter-pattern.md) — DataSource interface и адаптеры
-- [doc/agents/tenant-lifecycle.md](../doc/agents/tenant-lifecycle.md) — Tenant CRUD, persistence
-- [specs/config.schema.md](../specs/config.schema.md) — полная схема config.json
-
-## Связь с остальными сервисами
-
-| Сервис | Порт | Контракт |
+| Канал | Откуда → Куда | Контракт |
 |---|---|---|
-| **mcp-gateway** | 8083 | `GET /mcp/manifest` (с `X-Tenant-ID`) → runtime MCP tools;
-  все data-запросы от LLM через MCP-тулы → data-service HTTP |
-| **api-service** | 8081 | Получает данные через mcp-gateway (не напрямую);
-  embed-виджет, оркестратор, LiteLLM |
-| **admin-dashboard** | 8085 | `/admin/*` (tenant CRUD, config, tools approval);
-  прямые запросы к data-service для данных |
+| MCP tool backend | mcp-gateway → data-service | `GET /mcp/manifest` (кэш 30s в `mcp-gateway/internal/httpclient/client.go:206-248`), затем `GET /{endpoint}` для каждого тула |
+| LLM chat | api-service → mcp-gateway → data-service | api-service НЕ ходит напрямую; через mcp-gateway JSON-RPC → HTTP |
+| Admin | admin-dashboard → data-service | `/admin/*` (tenant CRUD, rewrite, tools approval), `Authorization: Bearer {admin_token}` |
+| Dev proxy | demo-web → data-service | `GET /{entity}` `/grep` `/filter` `/count`, `GET /mcp/manifest`, `GET /health` |
+| Schema для LLM | data-service `GET /mcp/schema` → mcp-gateway → api-service | `configgen.GenerateSchemaForLLM` → system prompt |
 
----
+### mcp-gateway → data-service (детально)
 
-## Troubleshooting
+Источник: `mcp-gateway/internal/httpclient/client.go`.
 
-| Симптом | Причина | Фикс |
-|---|---|---|
-| `bind: address already in use` | Порт 8084 занят | `lsof -ti:8084 \| xargs kill -9` |
-| `config: load "...": no such file` | Не тот cwd | Запуск из корня проекта |
-| `ADMIN_TOKEN not configured` / 401 | Токен mismatch | `export ADMIN_TOKEN=secret` |
-| PG `connection refused` | Colima PG упал | `pg_isready -h localhost -p 5432` |
----
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+- `FetchConfigWithTenant(tenantID)` → `GET /mcp/manifest` — загружает манифест, кэширует 30s per tenant.
+- `Call(ctx, endpoint, params)` → `GET /{endpoint}` — выполняет data-запрос (get/grep/filter/schema/count/distinct).
+- Манифест генерируется runtime из cfg.Endpoints (`mcp_manifest.go:20`), не из дискового cfg.MCPTools.
+- При rewrite конфига mcp-gateway инвалидирует кэш.
+- `X-Tenant-ID: a,b` → composite mode, тулы с префиксом `{tenant}__grep_x`.
+
+## Security
+
+- Только SELECT, prepared statements (`?`/`$1`), `max_rows` для custom_query.
+- `read_only: true` по умолчанию (`configgen.go:115`), write-методы не регистрируются (`endpoint_builder.go:138`).
+- `ReadOnlyConn` блокирует `ExecContext` (`readonly.go:62`).
+- Field whitelist: `Entity.FindColumn()` (`types.go:325`), незнакомые поля тихо скипаются.
+- Tenant isolation: `tenant_id` не доступен LLM (grep.go:130, filter.go:205); `tenantFilter` из auth.RowFilters; `/stats` (`stats.go:36`) и `count` (`count.go:37-42`) тоже применяют tenant-фильтр / исключают tenant_id.
+- Body-лимит и конкурентность: `BodyLimitMiddleware` подключён в admin- (`tenant_admin.go:44`) и tenant-роутере (`endpoint_builder.go:66`), `ThrottleMiddleware` в rootRouter (`cmd/server/main.go:186`).
+- Лимиты: стратегии (grep/filter) режут limit до 100 (`parseLimitParam` strategy_common.go:84), общий пагинационный — до 1000 (`readPagination` pagination.go:16), maxPatternLen=500, maxRegexLen=200, maxTokens=10, maxFilters=15, maxInValues=50, maxFilterValueLen=200.
+- Per-query timeout: 30s (`QUERY_TIMEOUT_SECONDS`).
+- Ошибки БД → generic message + structured log (без утечки деталей).
+- **Известный gap:** RowFilters не обязателен при AuthStrategyHeader — без него tenant-изоляции нет. Регресс-тест: `runtime/handlers/row_filter_security_test.go`.

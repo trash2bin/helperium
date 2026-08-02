@@ -47,8 +47,8 @@ func TestLoad_GoodConfig(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.Version != 3 {
-		t.Errorf("Version = %d, want 3", cfg.Version)
+	if cfg.Version != 4 {
+		t.Errorf("Version = %d, want 4", cfg.Version)
 	}
 
 	// DataSource.

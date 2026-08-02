@@ -27,7 +27,7 @@ func TestSetHasAdmin(t *testing.T) {
 
 func TestAdminConfigResponseFromConfig(t *testing.T) {
 	cfg := &config.Config{
-		Version: 3,
+		Version: 4,
 		DataSource: config.DataSourceConfig{
 			Driver: "sqlite",
 			DSN:    "file:test.db",
@@ -37,8 +37,8 @@ func TestAdminConfigResponseFromConfig(t *testing.T) {
 		},
 	}
 	resp := adminConfigResponseFromConfig(cfg)
-	if resp.Version != 3 {
-		t.Errorf("Version = %d, want 3", resp.Version)
+	if resp.Version != 4 {
+		t.Errorf("Version = %d, want 4", resp.Version)
 	}
 	if resp.Driver != "sqlite" {
 		t.Errorf("Driver = %q, want 'sqlite'", resp.Driver)
@@ -54,11 +54,11 @@ func TestTenantHealthRace(t *testing.T) {
 	inst := &TenantInstance{
 		ID: "test-tenant",
 		Config: &config.Config{
-			Version: 1,
+			Version:    1,
 			DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
 		},
 		CreatedAt: time.Now(),
-		healthMu: &sync.Mutex{},
+		healthMu:  &sync.Mutex{},
 	}
 
 	var wg sync.WaitGroup
@@ -99,11 +99,11 @@ func TestTenantHealthRaceViaResponse(t *testing.T) {
 	inst := &TenantInstance{
 		ID: "test-tenant",
 		Config: &config.Config{
-			Version: 1,
+			Version:    1,
 			DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
 		},
 		CreatedAt: time.Now(),
-		healthMu: &sync.Mutex{},
+		healthMu:  &sync.Mutex{},
 	}
 
 	var wg sync.WaitGroup
@@ -148,12 +148,13 @@ func TestTenantHealth_CopyValueRace(t *testing.T) {
 		},
 		CreatedAt: time.Now(),
 		Healthy:   true,
-		healthMu: &sync.Mutex{},
+		healthMu:  &sync.Mutex{},
 	}
-	// Copy by dereference — this copies the struct INCLUDING the mutex.
-	// With sync.Mutex (value): copy gets its own mutex → race on shared fields.
-	// With *sync.Mutex (pointer): copy shares the same mutex → safe.
-	copy := *inst
+	// Проверяем, что healthMu (указатель на mutex) разделяется между инстансом
+	// и «копией» — при healthMu *sync.Mutex обе горутины используют ОДИН mutex,
+	// гонки нет. При healthMu sync.Mutex (значение) копия получила бы отдельный
+	// mutex и тест поймал бы гонку под -race.
+	copy := struct{ healthMu *sync.Mutex }{healthMu: inst.healthMu}
 
 	var shared int
 	var wg sync.WaitGroup
@@ -181,11 +182,11 @@ func TestTenantHealthRaceDirectAccess(t *testing.T) {
 	inst := &TenantInstance{
 		ID: "test-tenant",
 		Config: &config.Config{
-			Version: 1,
+			Version:    1,
 			DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
 		},
 		CreatedAt: time.Now(),
-		healthMu: &sync.Mutex{},
+		healthMu:  &sync.Mutex{},
 	}
 
 	var wg sync.WaitGroup

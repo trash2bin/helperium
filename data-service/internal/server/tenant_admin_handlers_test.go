@@ -13,8 +13,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	_ "modernc.org/sqlite"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // newTenantAdminTestStore creates a TenantStore with one registered tenant for admin tests.
@@ -159,7 +159,7 @@ func TestTenantAdmin_RemoveTenant_Success(t *testing.T) {
 	ts := newTenantAdminTestStore(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	_, err := ts.AddTenant(ctx, "to-remove", &config.Config{
-		Version: 1,
+		Version:    1,
 		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: ":memory:"},
 	}, "")
 	cancel()

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // TestGenerate проверяет, что configgen генерирует валидный конфиг
@@ -54,8 +54,8 @@ func TestGenerate(t *testing.T) {
 		DataSource: ds,
 	})
 
-	if cfg.Version != 3 {
-		t.Errorf("expected version 3, got %d", cfg.Version)
+	if cfg.Version != 4 {
+		t.Errorf("expected version 4, got %d", cfg.Version)
 	}
 	if len(cfg.Entities) != 3 {
 		t.Fatalf("expected 3 entities, got %d", len(cfg.Entities))
@@ -135,7 +135,7 @@ func TestGenerate(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal config: %v", err)
 	}
-	if decoded.Version != 3 {
+	if decoded.Version != 4 {
 		t.Errorf("roundtrip version mismatch")
 	}
 }
@@ -535,20 +535,22 @@ func TestGenerate_BoolFilterParams(t *testing.T) {
 		paramMap[p.Name] = p.Type
 	}
 
-	// Bool columns should have bool type
+	// Bool columns: is_active (business flag) should be present;
+	// is_promo (marketing noise) should be filtered out.
 	if paramMap["is_active"] != config.ParamTypeBool {
 		t.Errorf("expected is_active to be bool, got %s", paramMap["is_active"])
 	}
-	if paramMap["is_promo"] != config.ParamTypeBool {
-		t.Errorf("expected is_promo to be bool, got %s", paramMap["is_promo"])
+	if _, ok := paramMap["is_promo"]; ok {
+		t.Errorf("expected is_promo to be excluded from filter params (marketing flag)")
 	}
 
-	// Date/datetime should be string (ISO-8601)
-	if paramMap["created_at"] != config.ParamTypeString {
-		t.Errorf("expected created_at to be string, got %s", paramMap["created_at"])
+	// System datetime/date fields are excluded from MCP tool schema
+	// to keep the param list lean. Use distinct_* or schema_* for discovery.
+	if _, ok := paramMap["created_at"]; ok {
+		t.Errorf("expected created_at to be excluded from filter params (system field)")
 	}
-	if paramMap["deleted_at"] != config.ParamTypeString {
-		t.Errorf("expected deleted_at to be string, got %s", paramMap["deleted_at"])
+	if _, ok := paramMap["deleted_at"]; ok {
+		t.Errorf("expected deleted_at to be excluded from filter params (system field)")
 	}
 }
 
@@ -609,6 +611,56 @@ func TestGenerate_DualFKCollision(t *testing.T) {
 
 // TestGenerate_NoCustomQueryMCPTool проверяет, что для стратегий с grep/filter/schema
 // relationship-тулы (_by_*) не генерируются.
+func TestGenerate_DisplayNameOnStrategyTools(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{{
+			Name:       "catalog_product",
+			PrimaryKey: []string{"id"},
+			Columns: []datasource.Column{
+				{Name: "id", Type: "int"},
+				{Name: "name", Type: "string"},
+				{Name: "price", Type: "float"},
+				{Name: "category_id", Type: "int"},
+			},
+		}},
+	}
+
+	cfg := Generate(schema, &config.Config{
+		DataSource:      config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+		DisplayPrefixes: []string{"catalog_"},
+		CustomPlurals:   map[string]string{"catalog_product": "products"},
+	})
+
+	for _, tool := range cfg.MCPTools {
+		switch {
+		case strings.HasPrefix(tool.Name, "grep_"):
+			if tool.DisplayName == "" {
+				t.Errorf("grep tool %q must have non-empty DisplayName", tool.Name)
+			} else {
+				t.Logf("  %s → display_name=%q", tool.Name, tool.DisplayName)
+			}
+		case strings.HasPrefix(tool.Name, "filter_"):
+			if tool.DisplayName == "" {
+				t.Errorf("filter tool %q must have non-empty DisplayName", tool.Name)
+			} else {
+				t.Logf("  %s → display_name=%q", tool.Name, tool.DisplayName)
+			}
+		case strings.HasPrefix(tool.Name, "schema_"):
+			if tool.DisplayName == "" {
+				t.Errorf("schema tool %q must have non-empty DisplayName", tool.Name)
+			} else {
+				t.Logf("  %s → display_name=%q", tool.Name, tool.DisplayName)
+			}
+		case strings.HasPrefix(tool.Name, "get_"):
+			// get_* уже имел display_name — проверяем не сломался
+			if tool.DisplayName == "" {
+				t.Errorf("get tool %q must have non-empty DisplayName", tool.Name)
+			}
+		}
+	}
+}
+
 func TestGenerate_NoCustomQueryMCPTool(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
@@ -688,4 +740,328 @@ func entityNames(entities []config.Entity) []string {
 		names[i] = e.Name
 	}
 	return names
+}
+
+// TestDefaultFilterableFieldRules проверяет, что дефолтные правила фильтруемых полей
+// содержат ожидаемые имена.
+func TestDefaultFilterableFieldRules(t *testing.T) {
+	rules := DefaultFilterableFieldRules()
+	if len(rules) == 0 {
+		t.Fatal("expected non-empty DefaultFilterableFieldRules")
+	}
+
+	// Проверяем, что ключевые поля проходят
+	testFields := []struct {
+		name  string
+		match bool
+	}{
+		{"name", true},
+		{"price", true},
+		{"status", true},
+		{"unknown_field", false},
+	}
+
+	for _, tc := range testFields {
+		matched := false
+		for _, r := range rules {
+			if r.Matches(tc.name) {
+				matched = true
+				break
+			}
+		}
+		if matched != tc.match {
+			t.Errorf("DefaultFilterableFieldRules: %s match=%v, want %v", tc.name, matched, tc.match)
+		}
+	}
+}
+
+// TestDefaultSearchableFieldRules проверяет, что дефолтные правила поисковых полей
+// блокируют image/seo/json и пропускают обычные строковые поля.
+func TestDefaultSearchableFieldRules(t *testing.T) {
+	rules := DefaultSearchableFieldRules()
+	if len(rules) == 0 {
+		t.Fatal("expected non-empty DefaultSearchableFieldRules")
+	}
+
+	testFields := []struct {
+		name  string
+		block bool
+	}{
+		{"name", false}, // обычное поле — не блокируется
+		{"description", false},
+		{"article", false},
+		{"main_image", true},   // _image suffix — блокируется
+		{"photo_url", true},    // _url suffix — блокируется
+		{"seo_title", true},    // seo contains — блокируется
+		{"product_json", true}, // json contains — блокируется
+		{"image", true},        // exact name match
+		{"thumbnail", true},    // exact name match
+	}
+
+	for _, tc := range testFields {
+		// All DefaultSearchableFieldRules are block-only (empty Allow*).
+		// Matches returns false when blocked by any rule.
+		blocked := false
+		for _, r := range rules {
+			if !r.Matches(tc.name) {
+				blocked = true
+				break
+			}
+		}
+		if blocked != tc.block {
+			t.Errorf("DefaultSearchableFieldRules: %s blocked=%v, want %v", tc.name, blocked, tc.block)
+		}
+	}
+}
+
+// TestDefaultEnumFieldRules проверяет дефолтные правила enum-полей.
+func TestDefaultEnumFieldRules(t *testing.T) {
+	rules := DefaultEnumFieldRules()
+	if len(rules) == 0 {
+		t.Fatal("expected non-empty DefaultEnumFieldRules")
+	}
+
+	testFields := []struct {
+		name  string
+		match bool
+	}{
+		{"order_status", true},
+		{"product_type", true},
+		{"user_role", true},
+		{"city", true},
+		{"country", true},
+		{"name", false},
+		{"price", false},
+	}
+
+	for _, tc := range testFields {
+		matched := false
+		for _, r := range rules {
+			if r.Matches(tc.name) {
+				matched = true
+				break
+			}
+		}
+		if matched != tc.match {
+			t.Errorf("DefaultEnumFieldRules: %s match=%v, want %v", tc.name, matched, tc.match)
+		}
+	}
+}
+
+// TestResolveFieldRules проверяет resolveFieldRules helper.
+func TestResolveFieldRules(t *testing.T) {
+	defaults := DefaultFilterableFieldRules()
+
+	// Без disabled и custom — как defaults
+	result := resolveFieldRules(defaults, nil, nil)
+	if len(result) != 1 {
+		t.Errorf("expected 1 rule (no changes), got %d", len(result))
+	}
+
+	// С disabled — фильтруем по Reason
+	result = resolveFieldRules(defaults, []string{"filterable.common"}, nil)
+	if len(result) != 0 {
+		t.Errorf("expected 0 rules (disabled), got %d", len(result))
+	}
+
+	// С custom — дополняем
+	custom := []config.FieldRule{
+		{AllowNames: []string{"rating", "discount"}, Reason: "Custom fields"},
+	}
+	result = resolveFieldRules(defaults, nil, custom)
+	if len(result) != 2 {
+		t.Errorf("expected 2 rules (default + custom), got %d: %v", len(result), result)
+	}
+	// Последнее правило — custom
+	if len(result[1].AllowNames) != 2 || result[1].AllowNames[0] != "rating" {
+		t.Errorf("expected custom rule with [rating, discount], got %v", result[1].AllowNames)
+	}
+}
+
+// TestResolveFieldRules_ExactIDMatch — disabled матчится по полному ID,
+// не по префиксу/Reason (M7).
+func TestResolveFieldRules_ExactIDMatch(t *testing.T) {
+	defaults := DefaultFilterableFieldRules()
+
+	// Префикс ID "filterable" НЕ отключает "filterable.common" (exact match).
+	result := resolveFieldRules(defaults, []string{"filterable"}, nil)
+	if len(result) != 1 {
+		t.Errorf("expected 1 rule (prefix does not disable), got %d", len(result))
+	}
+
+	// Полный ID отключает.
+	result = resolveFieldRules(defaults, []string{"filterable.common"}, nil)
+	if len(result) != 0 {
+		t.Errorf("expected 0 rules (exact ID disables), got %d", len(result))
+	}
+
+	// Перефразировка Reason не ломает отключение (матч по ID).
+	reworded := []config.FieldRule{{ID: "filterable.common", Reason: "Другое описание", AllowNames: []string{"name"}}}
+	result = resolveFieldRules(reworded, []string{"filterable.common"}, nil)
+	if len(result) != 0 {
+		t.Errorf("expected 0 rules (ID match works despite reworded Reason), got %d", len(result))
+	}
+}
+
+// TestResolveFieldRules_DisabledFieldRules_Idempotent — дрейф-тест (M7):
+// resolved-дефолт с ID, попавший в custom при следующем rewrite, должен
+// отфильтровываться по disabled ID — иначе дефолт растёт поверх себя
+// (rewrite1→default×2, rewrite2→default×3).
+func TestResolveFieldRules_DisabledFieldRules_Idempotent(t *testing.T) {
+	defaults := DefaultFilterableFieldRules()
+	disabled := []string{"filterable.common"}
+
+	// Первый rewrite: Generate персистит resolved-список (default × 1).
+	result1 := resolveFieldRules(defaults, disabled, nil)
+	if len(result1) != 0 {
+		t.Fatalf("expected 0 rules after first resolve (disabled), got %d", len(result1))
+	}
+
+	// Симуляция Hydrate: resolved-список (включая дефолт, если бы он не был
+	// отфильтрован) передаётся как custom. Здесь дефолт уже отфильтрован,
+	// но проверим идиоматично: если custom содержит resolved-дефолт с ID —
+	// он отфильтровывается, не дублируется.
+	resolvedDefault := append([]config.FieldRule{}, defaults...)
+	result2 := resolveFieldRules(defaults, disabled, resolvedDefault)
+	if len(result2) != 0 {
+		t.Errorf("M7 drift: expected 0 rules (resolved default in custom filtered by ID), got %d: %v", len(result2), result2)
+	}
+
+	// Контроль: без disabled custom-правило сохраняется.
+	custom := []config.FieldRule{{ID: "custom.rating", AllowNames: []string{"rating"}}}
+	result3 := resolveFieldRules(defaults, disabled, custom)
+	if len(result3) != 1 || result3[0].ID != "custom.rating" {
+		t.Errorf("expected custom rule kept, got %v", result3)
+	}
+}
+
+// TestResolveFieldRules_CustomDuplicateOfDefault_NoDrift — M7: custom-правило
+// с ID, совпадающим с дефолтным, НЕ должно дублироваться при повторных
+// resolve. Сценарий rewrite-дрейфа: Generate пишет resolved (defaults+custom)
+// в конфиг → Hydrate передаёт как custom → defaults растут поверх себя.
+func TestResolveFieldRules_CustomDuplicateOfDefault_NoDrift(t *testing.T) {
+	defaults := DefaultFilterableFieldRules()
+	if len(defaults) == 0 {
+		t.Fatal("no default filterable rules")
+	}
+
+	// Симуляция первого rewrite: resolved = defaults + custom.
+	custom := []config.FieldRule{
+		{ID: "filterable.rating", AllowNames: []string{"rating"}}, // дубликат дефолта
+		{ID: "custom.myrule", AllowNames: []string{"score"}},      // настоящее custom
+	}
+
+	// resolve без disabled.
+	resolved := resolveFieldRules(defaults, nil, custom)
+
+	// Дефолтов должно быть ровно по одному (не два).
+	defaultCount := 0
+	for _, r := range resolved {
+		if r.ID == "filterable.common" {
+			defaultCount++
+		}
+	}
+	if defaultCount != 1 {
+		t.Errorf("M7 drift: default rule present %d times, want 1: %v", defaultCount, resolved)
+	}
+
+	// custom.myrule должен сохраниться.
+	customKept := false
+	for _, r := range resolved {
+		if r.ID == "custom.myrule" {
+			customKept = true
+		}
+	}
+	if !customKept {
+		t.Errorf("custom rule custom.myrule should be kept, got %v", resolved)
+	}
+
+	// Идемпотентность: повторный resolve с resolved-as-custom не растёт.
+	resolved2 := resolveFieldRules(defaults, nil, resolved)
+	if len(resolved2) != len(resolved) {
+		t.Errorf("M7 drift on 2nd resolve: %d → %d rules", len(resolved), len(resolved2))
+	}
+}
+
+func TestGenerate_WithFieldRules(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{Name: "products", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "int"},
+					{Name: "name", Type: "string"},
+					{Name: "rating", Type: "float"},
+					{Name: "internal_note", Type: "string"},
+				}},
+		},
+	}
+
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+		FilterableRules: []config.FieldRule{
+			{AllowNames: []string{"rating"}, Reason: "Custom filterable: rating"},
+		},
+	})
+
+	// Проверяем, что filter_products сгенерирован (rating — filterable)
+	var hasFilter bool
+	for _, ep := range cfg.Endpoints {
+		if ep.Strategy == "filter" && ep.Entity == "products" {
+			hasFilter = true
+			break
+		}
+	}
+	if !hasFilter {
+		t.Error("expected filter_products endpoint — rating is filterable")
+	}
+
+	// Проверяем, что grep_products сгенерирован (name — string)
+	var hasGrep bool
+	for _, ep := range cfg.Endpoints {
+		if ep.Strategy == "grep" && ep.Entity == "products" {
+			hasGrep = true
+			break
+		}
+	}
+	if !hasGrep {
+		t.Error("expected grep_products endpoint — name is string")
+	}
+}
+
+// TestGenerate_DisabledFieldRules проверяет отключение дефолтных FieldRules.
+func TestGenerate_DisabledFieldRules(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{Name: "products", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "int"},
+					{Name: "name", Type: "string"},
+					{Name: "price", Type: "float"},
+					{Name: "brand_id", Type: "int"},
+				}},
+		},
+	}
+
+	cfg := Generate(schema, &config.Config{
+		DataSource:                     config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+		DisabledDefaultFilterableRules: []string{"filterable.common"},
+	})
+
+	// brand_id — FK, implicitly filterable (not from rules)
+	// name, price — NOT filterable because we disabled the default rule
+	// So filter endpoint should still exist because brand_id works implicitly
+	var hasFilter bool
+	for _, ep := range cfg.Endpoints {
+		if ep.Strategy == "filter" && ep.Entity == "products" {
+			hasFilter = true
+			break
+		}
+	}
+	if !hasFilter {
+		t.Error("expected filter_products endpoint — brand_id is implicit FK")
+	}
+
+	t.Logf("✅ filter_products endpoint present despite disabled default filterable rules")
 }

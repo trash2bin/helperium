@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
@@ -49,42 +50,63 @@ func TestNormalize_V1toV2(t *testing.T) {
 	}
 }
 
-// TestNormalize_V2toV3 verifies that v2 configs with legacy find/list endpoints
-// are migrated to op=strategy, strategy=schema.
-func TestNormalize_V2toV3(t *testing.T) {
+// TestLegacyFindListOps_Rejected — v4: legacy op="find"/op="list" endpoints
+// are no longer converted to strategies; Normalize leaves them untouched and
+// Validate rejects them as unsupported. Старые конфиги с find/list не загрузятся.
+func TestLegacyFindListOps_Rejected(t *testing.T) {
 	tests := []struct {
-		name      string
-		inputOp   string
-		wantOp    config.Op
-		wantStrat string
+		name string
+		op   string
+		ver  int
 	}{
-		{"find becomes strategy", "find", config.OpStrategy, "schema"},
-		{"list becomes strategy", "list", config.OpStrategy, "schema"},
-		{"strategy unchanged", "strategy", config.OpStrategy, "grep"},
-		{"get_by_id untouched", "get_by_id", config.OpGetByID, "grep"},
+		{"find v2", "find", 2},
+		{"list v2", "list", 2},
+		{"find v3", "find", 3},
+		{"list v3", "list", 3},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeTempConfig(t, fmt.Sprintf(`{
-				"version": 2,
+				"version": %d,
 				"data_source": {"driver": "sqlite", "dsn": ":memory:"},
 				"entities": [{"name": "student", "table": "students", "id_column": "id",
 					"fields": [{"name": "id", "column": "id", "type": "string", "nullable": false}]}],
-				"endpoints": [{"method": "GET", "path": "/students", "op": %q, "entity": "student", "strategy": "grep"}]
-			}`, tt.inputOp))
+				"endpoints": [{"method": "GET", "path": "/students", "op": %q, "entity": "student"}]
+			}`, tt.ver, tt.op))
 
 			cfg, err := config.Load(path)
-			if err != nil {
-				t.Fatalf("Load: %v", err)
+			if err == nil {
+				t.Fatalf("Load(legacy op=%q) = nil error, want validation error", tt.op)
 			}
-			if cfg.Endpoints[0].Op != tt.wantOp {
-				t.Errorf("Op = %v, want %v", cfg.Endpoints[0].Op, tt.wantOp)
+			if !strings.Contains(err.Error(), `op: unsupported "`+tt.op+`"`) {
+				t.Errorf("error = %q, want op: unsupported %q", err.Error(), tt.op)
 			}
-			if cfg.Endpoints[0].Strategy != tt.wantStrat {
-				t.Errorf("Strategy = %q, want %q", cfg.Endpoints[0].Strategy, tt.wantStrat)
+			if cfg != nil {
+				t.Errorf("cfg = %+v, want nil on validation error", cfg)
 			}
 		})
+	}
+}
+
+// TestLegacyFindListOps_NotConverted — Normalize() не должен конвертировать
+// op=find/list в strategy (v4: legacy unsupported).
+func TestLegacyFindListOps_NotConverted(t *testing.T) {
+	cfg := &config.Config{
+		Version: 3,
+		Endpoints: []config.Endpoint{
+			{Method: config.MethodGET, Path: "/a", Op: "find"},
+			{Method: config.MethodGET, Path: "/b", Op: "list"},
+		},
+	}
+	cfg.Normalize()
+	if cfg.Version != config.CurrentConfigVersion {
+		t.Errorf("Version = %d, want %d", cfg.Version, config.CurrentConfigVersion)
+	}
+	if cfg.Endpoints[0].Op != "find" || cfg.Endpoints[0].Strategy != "" {
+		t.Errorf("endpoints[0] converted: op=%q strategy=%q, want find + empty", cfg.Endpoints[0].Op, cfg.Endpoints[0].Strategy)
+	}
+	if cfg.Endpoints[1].Op != "list" || cfg.Endpoints[1].Strategy != "" {
+		t.Errorf("endpoints[1] converted: op=%q strategy=%q, want list + empty", cfg.Endpoints[1].Op, cfg.Endpoints[1].Strategy)
 	}
 }
 

@@ -100,3 +100,52 @@ func TestValidate_StatsCounterFilter_RejectsForbiddenSQL(t *testing.T) {
 		t.Errorf("expected no validation error for filterless counter, got: %v", err)
 	}
 }
+
+// TestValidate_RowFilterWhere_RejectsForbiddenSQL — C6: RowFilter.Where с
+// инъекцией должен валиться в Validate (как counter.Filter).
+func TestValidate_RowFilterWhere_RejectsForbiddenSQL(t *testing.T) {
+	invalidJSON := []byte(`{
+		"version": 1,
+		"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+		"entities": [{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}],
+		"auth": {
+			"strategy": "header",
+			"row_filters": [{"entity": "users", "where": "1=1; DROP TABLE users"}]
+		}
+	}`)
+	if err := Validate(invalidJSON); err == nil {
+		t.Error("expected validation error for row_filter with DROP, got nil")
+	}
+}
+
+// TestValidate_RowFilterWhere_AcceptSafe — безопасный RowFilter проходит.
+func TestValidate_RowFilterWhere_AcceptSafe(t *testing.T) {
+	validJSON := []byte(`{
+		"version": 1,
+		"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+		"entities": [{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}],
+		"auth": {
+			"strategy": "header",
+			"row_filters": [{"entity": "users", "where": "tenant_id = :tenant_id"}]
+		}
+	}`)
+	if err := Validate(validJSON); err != nil {
+		t.Errorf("expected no validation error for safe row_filter, got: %v", err)
+	}
+}
+
+// TestValidate_RowFilterEntity_NotFound — RowFilter на несуществующую сущность → ошибка.
+func TestValidate_RowFilterEntity_NotFound(t *testing.T) {
+	invalidJSON := []byte(`{
+		"version": 1,
+		"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+		"entities": [{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}],
+		"auth": {
+			"strategy": "header",
+			"row_filters": [{"entity": "ghosts", "where": "tenant_id = :tenant_id"}]
+		}
+	}`)
+	if err := Validate(invalidJSON); err == nil {
+		t.Error("expected validation error for row_filter on unknown entity, got nil")
+	}
+}

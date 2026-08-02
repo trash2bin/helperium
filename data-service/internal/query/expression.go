@@ -72,18 +72,18 @@ type Condition struct {
 type Operator int
 
 const (
-	OpEq       Operator = iota // =
-	OpNeq                      // !=
-	OpLt                       // <
-	OpGt                       // >
-	OpLte                      // <=
-	OpGte                      // >=
-	OpLike                     // LIKE
-	OpILike                    // ILIKE (Postgres) / LIKE (SQLite)
-	OpNotLike                  // NOT LIKE
-	OpRegex                    // REGEXP (SQLite) / ~ (Postgres)
-	OpIn                       // IN (...)
-	OpBetween                  // BETWEEN x AND y
+	OpEq      Operator = iota // =
+	OpNeq                     // !=
+	OpLt                      // <
+	OpGt                      // >
+	OpLte                     // <=
+	OpGte                     // >=
+	OpLike                    // LIKE
+	OpILike                   // ILIKE (Postgres) / LIKE (SQLite)
+	OpNotLike                 // NOT LIKE
+	OpRegex                   // REGEXP (SQLite) / ~ (Postgres)
+	OpIn                      // IN (...)
+	OpBetween                 // BETWEEN x AND y
 )
 
 // OrderClause — элемент ORDER BY.

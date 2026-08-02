@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/trash2bin/helperium/data-service/internal/openapigen"
 	"github.com/trash2bin/helperium/helperium-go/pkg/cors"
 	"github.com/trash2bin/helperium/helperium-go/pkg/swaggerui"
-	"github.com/trash2bin/helperium/data-service/internal/openapigen"
 )
 
 const (
@@ -53,7 +53,15 @@ func SwaggerHandler(w http.ResponseWriter, r *http.Request) {
 // If no tenant is provided, returns a system-only spec (health, stats, admin).
 func NewOpenAPIHandler(ts *TenantStore, hasAdmin bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		inst := ts.resolveTenant(r)
+		// Внутри tenant-роутера inst лежит в контексте (зарезолвлен в ServeHTTP
+		// под RLock) — читаем отсюда, без повторного resolveTenant (иначе
+		// вложенный RLock → deadlock). Fallback: ts.resolveTenant(r) для прямых
+		// вызовов роутера (тесты) и system-level (/openapi.json из rootRouter,
+		// где inst нет в контексте) → system-only spec.
+		inst, _ := r.Context().Value(tenantInstanceKey).(*TenantInstance)
+		if inst == nil {
+			inst = ts.resolveTenant(r)
+		}
 		if inst == nil {
 			spec := openapigen.GenerateSystemSpec("http://127.0.0.1:8084", "Data Service", "0.2.0", hasAdmin)
 			w.Header().Set("Content-Type", "application/json")

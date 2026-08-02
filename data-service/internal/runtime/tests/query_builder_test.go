@@ -3,6 +3,7 @@ package runtime_test
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -162,7 +163,7 @@ func TestBuildFind(t *testing.T) {
 	wantSubstrs := []string{
 		`SELECT "id", "email", "created_at"`,
 		`FROM "customers"`,
-		`WHERE "email" LIKE ?`,
+		`WHERE "email" LIKE ? ESCAPE '\'`,
 	}
 	for _, s := range wantSubstrs {
 		if !strings.Contains(q.SQL, s) {
@@ -172,6 +173,95 @@ func TestBuildFind(t *testing.T) {
 
 	if len(q.Args) != 1 || q.Args[0] != "%x@y.com%" {
 		t.Errorf("Args = %v, want [%%x@y.com%%]", q.Args)
+	}
+}
+
+// TestBuildFind_LikeEscapingWorksEndToEnd — поведенческая проверка фикса
+// LIKE-экранирования: значение с литеральными %/_ должно находиться ТОЛЬКО
+// при работающей ESCAPE-клаузе (без неё в SQLite \ — литерал, % остаётся
+// wildcard'ом и точный поиск не срабатывает).
+func TestBuildFind_LikeEscapingWorksEndToEnd(t *testing.T) {
+	// Собственная in-memory SQLite: вставка строки с литеральными %/_.
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO customers (id, email) VALUES (1, 'discount_100%_off@shop.example')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	adapter := &testAdapter{db: db}
+	b := runtime.NewBuilder(adapter)
+	// Ищем подстроку "100%_off" — в LIKE она экранируется в \%\_,
+	// и с ESCAPE '\\' должна матчиться буквально.
+	q, err := b.BuildFind(customerEntity(), "email", "100%_off")
+	if err != nil {
+		t.Fatalf("BuildFind: unexpected error: %v", err)
+	}
+	if !strings.Contains(q.SQL, "ESCAPE '\\'") {
+		t.Errorf("BuildFind SQL should contain ESCAPE clause: %q", q.SQL)
+	}
+
+	rows, err := adapter.QueryContext(context.Background(), q.SQL, q.Args...)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 row (literal %%/_), got %d", count)
+	}
+}
+
+// TestBuildFilter_LikeEscapingWorksEndToEnd — M2: BuildFilter с op="like"
+// тоже должен иметь ESCAPE-клаузу (раньше escapeReplacer экранировал %/_,
+// но без ESCAPE '\\' в SQLite \ — литерал → точный поиск ломался).
+func TestBuildFilter_LikeEscapingWorksEndToEnd(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO customers (id, email) VALUES (1, 'discount_100%_off@shop.example'), (2, 'plain@example.com')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	adapter := &testAdapter{db: db}
+	b := runtime.NewBuilder(adapter)
+
+	q, err := b.BuildFilter(customerEntity(), []string{"email"}, []any{"100%_off"}, []string{"like"})
+	if err != nil {
+		t.Fatalf("BuildFilter: %v", err)
+	}
+	if !strings.Contains(q.SQL, "ESCAPE '\\'") {
+		t.Errorf("BuildFilter SQL should contain ESCAPE clause: %q", q.SQL)
+	}
+
+	rows, err := adapter.QueryContext(context.Background(), q.SQL, q.Args...)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		count++
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 row (literal %%/_), got %d", count)
 	}
 }
 
@@ -273,12 +363,126 @@ func TestBuildCustomQuery_ArgCountMismatch(t *testing.T) {
 	}
 }
 
+// pgAdapterForTest — AdapterSubset с placeholder'ами PostgreSQL ($1, $2...).
+// Нужен для проверки замены ? → $N без задевания '?' в строковых литералах.
+type pgAdapterForTest struct{}
+
+func (pgAdapterForTest) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return nil, nil
+}
+func (pgAdapterForTest) QuoteIdentifier(name string) string { return `"` + name + `"` }
+func (pgAdapterForTest) TranslatePlaceholder(index int) string {
+	return "$" + strconv.Itoa(index)
+}
+func (pgAdapterForTest) PingContext(ctx context.Context) error { return nil }
+
+// TestBuildCustomQuery_QuestionMarkInLiteral — '?' внутри строкового литерала
+// НЕ должен заменяться на placeholder (баг: strings.Index находил первый '?').
+//
+// SQL: SELECT * FROM t WHERE note = 'what?' AND id = ?
+// Единственный placeholder — id; '?' внутри 'what?' остаётся литералом.
+func TestBuildCustomQuery_QuestionMarkInLiteral(t *testing.T) {
+	b := runtime.NewBuilder(pgAdapterForTest{})
+	cq := runtime.CustomQuery{
+		SQL:    `SELECT * FROM t WHERE note = 'what?' AND id = ?`,
+		Params: []string{"id"},
+		ResultMapping: map[string]runtime.ResultMappingField{
+			"id": {Type: "int"},
+		},
+	}
+	q, err := b.BuildCustomQuery(cq, []any{42})
+	if err != nil {
+		t.Fatalf("BuildCustomQuery: unexpected error: %v", err)
+	}
+	want := `SELECT * FROM t WHERE note = 'what?' AND id = $1`
+	if q.SQL != want {
+		t.Errorf("SQL = %q, want %q", q.SQL, want)
+	}
+	if len(q.Args) != 1 || q.Args[0] != 42 {
+		t.Errorf("Args = %v, want [42]", q.Args)
+	}
+}
+
+// TestBuildCustomQuery_EscapedQuote — одинарные кавычки в литерале (” — эскейп
+// внутри SQL) не должны ломать парсинг placeholder'ов.
+func TestBuildCustomQuery_EscapedQuote(t *testing.T) {
+	b := runtime.NewBuilder(pgAdapterForTest{})
+	cq := runtime.CustomQuery{
+		SQL:    `SELECT * FROM t WHERE name = 'O''Brien' AND id = ?`,
+		Params: []string{"id"},
+		ResultMapping: map[string]runtime.ResultMappingField{
+			"id": {Type: "int"},
+		},
+	}
+	q, err := b.BuildCustomQuery(cq, []any{7})
+	if err != nil {
+		t.Fatalf("BuildCustomQuery: unexpected error: %v", err)
+	}
+	want := `SELECT * FROM t WHERE name = 'O''Brien' AND id = $1`
+	if q.SQL != want {
+		t.Errorf("SQL = %q, want %q", q.SQL, want)
+	}
+}
+
 // =============================================================================
 // Tests: isValidSelect validation (via BuildCustomQuery public API).
 // =============================================================================
 //
 // isValidSelect — unexported, тестируем через BuildCustomQuery:
 // невалидный SQL → BuildCustomQuery возвращает error, валидный — успех.
+
+// TestBuildCustomQuery_JSONBOperator — M4: PG JSONB-операторы '?', '?|', '?&'
+// вне строк не заменяются на placeholder'ы (data ? 'key' → data ? 'key', не data $1 'key').
+func TestBuildCustomQuery_JSONBOperator(t *testing.T) {
+	b := runtime.NewBuilder(pgAdapterForTest{})
+	cq := runtime.CustomQuery{
+		SQL:    `SELECT * FROM t WHERE data ? 'key' AND data ?| array['a','b'] AND id = ?`,
+		Params: []string{"id"},
+	}
+	q, err := b.BuildCustomQuery(cq, []any{42})
+	if err != nil {
+		t.Fatalf("BuildCustomQuery: unexpected error: %v", err)
+	}
+	want := `SELECT * FROM t WHERE data ? 'key' AND data ?| array['a','b'] AND id = $1`
+	if q.SQL != want {
+		t.Errorf("SQL = %q, want %q", q.SQL, want)
+	}
+}
+
+// TestBuildCustomQuery_Comment — M4: '?' в комментариях (-- и /* */) не заменяется.
+func TestBuildCustomQuery_Comment(t *testing.T) {
+	b := runtime.NewBuilder(pgAdapterForTest{})
+	cq := runtime.CustomQuery{
+		SQL:    "SELECT * FROM t -- comment ? here\nWHERE id = ? /* block ? comment */ AND name = 'a?b'",
+		Params: []string{"id"},
+	}
+	q, err := b.BuildCustomQuery(cq, []any{5})
+	if err != nil {
+		t.Fatalf("BuildCustomQuery: unexpected error: %v", err)
+	}
+	want := "SELECT * FROM t -- comment ? here\nWHERE id = $1 /* block ? comment */ AND name = 'a?b'"
+	if q.SQL != want {
+		t.Errorf("SQL = %q, want %q", q.SQL, want)
+	}
+}
+
+// TestBuildCustomQuery_DollarQuote — M4: '?' в PG dollar-строках ($$...$$, $tag$...$tag$)
+// не заменяется на placeholder.
+func TestBuildCustomQuery_DollarQuote(t *testing.T) {
+	b := runtime.NewBuilder(pgAdapterForTest{})
+	cq := runtime.CustomQuery{
+		SQL:    `SELECT * FROM t WHERE note = $$text ? with ?$$ AND id = $tag$also ? here$tag$ AND id2 = ?`,
+		Params: []string{"id2"},
+	}
+	q, err := b.BuildCustomQuery(cq, []any{9})
+	if err != nil {
+		t.Fatalf("BuildCustomQuery: unexpected error: %v", err)
+	}
+	want := `SELECT * FROM t WHERE note = $$text ? with ?$$ AND id = $tag$also ? here$tag$ AND id2 = $1`
+	if q.SQL != want {
+		t.Errorf("SQL = %q, want %q", q.SQL, want)
+	}
+}
 
 // TestBuildCustomQuery_RejectsNonSelect — INSERT, DELETE, DROP должны
 // давать ошибку "must be a SELECT statement".

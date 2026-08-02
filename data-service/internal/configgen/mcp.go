@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/search"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // GenerateMCPTools creates compact MCP tools from endpoints with LLM-friendly descriptions.
-func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, displayPrefixes []string, customPlurals map[string]string) []config.MCPTool {
+// filterableRules/searchableRules — resolved FieldRules для стратегий (явные слайсы,
+// т.к. Go не позволяет два variadic в одной сигнатуре).
+func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, displayPrefixes []string, customPlurals map[string]string, filterableRules []config.FieldRule, searchableRules []config.FieldRule) []config.MCPTool {
 	entityMap := make(map[string]*config.Entity, len(entities))
 	for i := range entities {
 		entityMap[entities[i].Name] = &entities[i]
@@ -35,7 +37,7 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 			if entCfg == nil {
 				continue
 			}
-			tool := strategyToMCPTool(ep.Strategy, *entCfg, ep.Path)
+			tool := strategyToMCPTool(ep.Strategy, *entCfg, ep.Path, displayPrefixes, customPlurals, filterableRules, searchableRules)
 			if tool != nil {
 				tools = append(tools, *tool)
 			}
@@ -69,7 +71,6 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 				"Count %s matching filters. Returns {entity, count}. Fast and token-cheap.",
 				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
 			displayName = toolDisplayName(string(config.OpCount), ep.Entity, displayPrefixes, customPlurals)
-
 
 		}
 
@@ -134,16 +135,16 @@ func extractPathParams(path string) []string {
 
 // strategyToMCPTool создаёт MCPTool для strategy-эндпоинта, используя
 // методы стратегии для генерации имени, описания и параметров.
-func strategyToMCPTool(strategyName string, entity config.Entity, epPath string) *config.MCPTool {
+func strategyToMCPTool(strategyName string, entity config.Entity, epPath string, displayPrefixes []string, customPlurals map[string]string, filterableRules []config.FieldRule, searchableRules []config.FieldRule) *config.MCPTool {
 	idCol := entity.IDColumnOrDefault()
 	nameCol := entity.FirstStringFieldColumn()
 
 	var strategy search.Strategy
 	switch strategyName {
 	case "grep":
-		strategy = search.NewGrepStrategy(idCol, nameCol)
+		strategy = search.NewGrepStrategy(idCol, nameCol, searchableRules...)
 	case "filter":
-		strategy = search.NewFilterStrategy(idCol, nameCol)
+		strategy = search.NewFilterStrategy(idCol, nameCol, filterableRules...)
 	case "schema":
 		strategy = search.NewSchemaStrategy(idCol, nameCol)
 
@@ -151,8 +152,11 @@ func strategyToMCPTool(strategyName string, entity config.Entity, epPath string)
 		return nil
 	}
 
+	displayName := toolDisplayName(strategyName, entity.Name, displayPrefixes, customPlurals)
+
 	return &config.MCPTool{
 		Name:        strategy.ToolName(entity),
+		DisplayName: displayName,
 		Description: strategy.ToolDescription(entity),
 		Params:      strategy.ToolParams(entity),
 		Endpoint:    epPath,

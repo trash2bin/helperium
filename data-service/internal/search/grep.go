@@ -13,7 +13,12 @@ import (
 //
 // LLM-facing name: grep_{entity}
 // Parameters: pattern (required), ignore_case (default true), fields, invert,
-// regex, limit (default 10, max 1000), offset, format, sort_by.
+// regex, limit (default 10, max 100), offset, format, sort_by.
+//
+// invert — Де Морган: NOT(строка содержит ВСЕ токены) = строка НЕ содержит
+// ХОТЯ БЫ ОДИН токен. Для одного токена invert = NOT LIKE (исключает строки
+// с этим токеном). Не путать с "исключить строки, содержащие любой токен"
+// (это NOT LIKE каждого токена через AND — здесь НЕ так).
 type GrepStrategy struct {
 	// ── Security limits ────────────────────────────────────────────────
 	// maxRegexLen — максимальная длина regex-паттерна (ReDoS защита).
@@ -25,24 +30,37 @@ type GrepStrategy struct {
 	// maxPatternLen — максимальная длина строки pattern.
 	maxPatternLen int
 
+	// searchableRules — FieldRules, блокирующие поиск по нежелательным
+	// полям (image/seo/json и т.п.). Применяются в ParseRequest к дефолтному
+	// набору и к custom fields (M3: рантайм-ограничение, зеркально генерации).
+	searchableRules []config.FieldRule
+
 	// idCol — имя ID-колонки для compact format.
 	idCol string
 	// nameCol — имя name-колонки для compact format.
 	nameCol string
 }
 
-// NewGrepStrategy creates a GrepStrategy.
-// idCol and nameCol are used for compact format output.
 // NewGrepStrategy creates a GrepStrategy with security limits.
 // idCol and nameCol are used for compact format output.
-func NewGrepStrategy(idCol, nameCol string) *GrepStrategy {
+// searchableRules — опционально: FieldRules, блокирующие поля для поиска.
+// Если не переданы — используются DefaultSearchableFieldRules().
+func NewGrepStrategy(idCol, nameCol string, searchableRules ...config.FieldRule) *GrepStrategy {
+	rules := config.DefaultSearchableFieldRules()
+	if len(searchableRules) > 0 {
+		rules = searchableRules
+	}
+	if rules == nil {
+		rules = config.DefaultSearchableFieldRules()
+	}
 	return &GrepStrategy{
-		idCol:      idCol,
-		nameCol:    nameCol,
-		maxRegexLen:  200,  // ReDoS защита: макс 200 символов
-		maxTokens:    10,   // макс 10 токенов
-		maxFields:    20,   // макс 20 полей
-		maxPatternLen: 500, // макс длина pattern
+		idCol:           idCol,
+		nameCol:         nameCol,
+		maxRegexLen:     200, // ReDoS защита: макс 200 символов
+		maxTokens:       10,  // макс 10 токенов
+		maxFields:       20,  // макс 20 полей
+		maxPatternLen:   500, // макс длина pattern
+		searchableRules: rules,
 	}
 }
 
@@ -133,15 +151,19 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 				if f.ExcludeFromSearch {
 					continue
 				}
+				// M3: searchableRules блокируют нежелательные поля (image/seo/json)
+				if !isSearchableField(f, s.searchableRules) {
+					continue
+				}
 				searchFields = append(searchFields, f)
 			}
 		}
 		if len(searchFields) == 0 {
 			// Fallback на все string поля, если указанные не найдены.
-			searchFields = stringFields(entity)
+			searchFields = stringFields(entity, s.searchableRules...)
 		}
 	} else {
-		searchFields = stringFields(entity)
+		searchFields = stringFields(entity, s.searchableRules...)
 	}
 
 	// Tenant isolation: нельзя искать по tenant_id
@@ -181,10 +203,21 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 	phIdx := 1
 
 	if regex {
-		// Regex: весь pattern как одно выражение, OR по полям.
+		// Regex: весь pattern как одно выражение по полям.
+		// Non-invert: (f1 ~ p OR f2 ~ p); Invert (Де Морган): (f1 !~ p AND f2 !~ p).
 		reOp := regexOp(a)
 		if invert {
-			reOp = "!" + reOp
+			// Инверсия regex-оператора: SQLite "NOT REGEXP", Postgres "!~".
+			// Невалидный "!REGEXP" / "NOT ~" не используем.
+			if a.IsPostgres() {
+				reOp = "!~"
+			} else {
+				reOp = "NOT REGEXP"
+			}
+		}
+		join := " OR "
+		if invert {
+			join = " AND " // Де Морган: NOT(A OR B) = A' AND B'
 		}
 		fieldClauses := make([]string, 0, len(searchFields))
 		for _, f := range searchFields {
@@ -194,7 +227,7 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 			fieldClauses = append(fieldClauses, qName+" "+reOp+" "+ph)
 			args = append(args, pattern)
 		}
-		whereParts = append(whereParts, "("+strings.Join(fieldClauses, " OR ")+")")
+		whereParts = append(whereParts, "("+strings.Join(fieldClauses, join)+")")
 	} else {
 		// LIKE / ILIKE: multi-token AND внутри одного поля, OR между полями.
 		//
@@ -214,6 +247,18 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 		if invert {
 			likeOp = "NOT " + likeOp
 		}
+		// ESCAPE '\\' обязателен: токены экранированы через QuoteString (\%/\_),
+		// без ESCAPE-клаузы (SQLite) \ — литерал, %/_ остаются wildcard'ами.
+		likeEscape := " ESCAPE '\\'"
+
+		// Де Морган при invert: NOT(f1 LIKE t1 AND f1 LIKE t2) = f1 NOT LIKE t1 OR f1 NOT LIKE t2;
+		// NOT((f1...) OR (f2...)) = (f1...) AND (f2...).
+		tokenJoin := " AND "
+		fieldJoin := " OR "
+		if invert {
+			tokenJoin = " OR "
+			fieldJoin = " AND "
+		}
 
 		fieldClauses := make([]string, 0, len(searchFields))
 		for _, f := range searchFields {
@@ -227,25 +272,25 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 				val := "%" + escaped + "%"
 				ph := a.TranslatePlaceholder(phIdx)
 				phIdx++
-				tokenClauses = append(tokenClauses, qName+" "+likeOp+" "+ph)
+				tokenClauses = append(tokenClauses, qName+" "+likeOp+" "+ph+likeEscape)
 				args = append(args, val)
 			}
-			// AND всех токенов внутри поля.
-			fieldClauses = append(fieldClauses, "("+strings.Join(tokenClauses, " AND ")+")")
+			// AND (invert: OR) всех токенов внутри поля.
+			fieldClauses = append(fieldClauses, "("+strings.Join(tokenClauses, tokenJoin)+")")
 		}
-		// OR между полями.
-		whereParts = append(whereParts, strings.Join(fieldClauses, " OR "))
+		// OR (invert: AND) между полями.
+		whereParts = append(whereParts, strings.Join(fieldClauses, fieldJoin))
 	}
 
 	plan := &query.QueryPlan{
-		Select:      selectClause(entity, q, a),
-		From:        a.QuoteIdentifier(entity.Table),
-		RawWhere:    strings.Join(whereParts, " AND "),
+		Select:       selectClause(entity, q, a),
+		From:         a.QuoteIdentifier(entity.Table),
+		RawWhere:     strings.Join(whereParts, " AND "),
 		RawWhereArgs: args,
-		Limit:       parseLimitParam(q, 10),
-		Offset:      parseOffset(q),
-		Order:       parseOrder(q, entity, a),
-		Format:      parseFormat(q),
+		Limit:        parseLimitParam(q, 10),
+		Offset:       parseOffset(q),
+		Order:        parseOrder(q, entity, a),
+		Format:       parseFormat(q),
 	}
 	return plan, nil
 }

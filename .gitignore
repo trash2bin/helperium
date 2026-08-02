@@ -100,3 +100,6 @@ api-service/specs
 # tp and js
 node_modules/
 coverage.out
+
+# Go vendor dir (local build artifact)
+vendor/

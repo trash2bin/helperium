@@ -10,10 +10,10 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/query"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/search"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // TestNewStrategyHandler_TenantFilterCountCorrect is an integration test
@@ -92,9 +92,9 @@ func TestNewStrategyHandler_TenantFilterCountCorrect(t *testing.T) {
 
 	// ─── Test tenant-a: should see 1 row (id=1), total=1 ─────────────
 	ctxA := &Context{
-		DB:      adapter,
-		Adapter: adapter,
-		Builder: builder,
+		DB:       adapter,
+		Adapter:  adapter,
+		Builder:  builder,
 		Resolver: resolver,
 		Auth: &config.AuthConfig{
 			Strategy: config.AuthStrategyHeader,
@@ -136,9 +136,9 @@ func TestNewStrategyHandler_TenantFilterCountCorrect(t *testing.T) {
 
 	// ─── Test tenant-b: should see 1 row (id=3), total=1 ─────────────
 	ctxB := &Context{
-		DB:      adapter,
-		Adapter: adapter,
-		Builder: builder,
+		DB:       adapter,
+		Adapter:  adapter,
+		Builder:  builder,
 		Resolver: resolver,
 		Auth: &config.AuthConfig{
 			Strategy: config.AuthStrategyHeader,
@@ -230,9 +230,9 @@ func TestNewStrategyHandler_TenantFilterNoConditions(t *testing.T) {
 	strategy := search.NewFilterStrategy("id", "name")
 
 	ctx := &Context{
-		DB:      adapter,
-		Adapter: adapter,
-		Builder: builder,
+		DB:       adapter,
+		Adapter:  adapter,
+		Builder:  builder,
 		Resolver: resolver,
 		Auth: &config.AuthConfig{
 			Strategy: config.AuthStrategyHeader,

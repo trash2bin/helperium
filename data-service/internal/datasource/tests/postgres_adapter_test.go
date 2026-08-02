@@ -45,6 +45,10 @@ func TestPostgresAdapter_QuoteIdentifier(t *testing.T) {
 		{"order line", `"order line"`},
 		{"customer_id", `"customer_id"`},
 		{"", `""`},
+		// A1: кавычка внутри сегмента экранируется удвоением.
+		{"a\"b", `"a""b"`},
+		// schema-qualified: каждый сегмент экранируется отдельно.
+		{"public.we\"ird", `"public"."we""ird"`},
 	}
 	for _, c := range cases {
 		if got := a.QuoteIdentifier(c.in); got != c.want {

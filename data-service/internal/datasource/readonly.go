@@ -6,6 +6,10 @@ import (
 	"fmt"
 )
 
+// Deprecated: ReadOnlyDB не используется в runtime. Реальный read-only путь —
+// ReadOnlyConn (обёртка над Conn, ExecContext всегда ошибка). Сохранён для
+// обратной совместимости/тестов.
+//
 // ReadOnlyDB — обёртка над *sql.DB, которая разрешает только SELECT.
 // Предотвращает случайное использование write-пула в read-only контексте.
 type ReadOnlyDB struct {

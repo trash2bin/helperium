@@ -7,49 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/go-chi/chi/v5"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
-
-// ── adminConfigReloadHandler ──
-
-func TestAdminConfigReloadHandler_ReloadFnNil(t *testing.T) {
-	ctx := &AdminContext{ReloadFn: nil}
-	handler := adminConfigReloadHandler(ctx)
-	req := httptest.NewRequest(http.MethodPost, "/admin/config/reload", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", rec.Code)
-	}
-	var body map[string]string
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if body["error"] != "reload_disabled" {
-		t.Errorf("expected reload_disabled error, got %q", body["error"])
-	}
-}
-
-func TestAdminConfigReloadHandler_Success(t *testing.T) {
-	reloadCalled := false
-	ctx := &AdminContext{
-		ReloadFn: func(path string) error {
-			reloadCalled = true
-			return nil
-		},
-	}
-	handler := adminConfigReloadHandler(ctx)
-	req := httptest.NewRequest(http.MethodPost, "/admin/config/reload", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !reloadCalled {
-		t.Error("reloadFn should have been called")
-	}
-}
 
 // ── adminPendingToolsHandler ──
 

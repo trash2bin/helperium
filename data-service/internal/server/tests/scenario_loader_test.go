@@ -15,9 +15,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/server"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // loadScenario opens a pre-built data.db from a scenario directory.

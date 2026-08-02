@@ -13,13 +13,13 @@ type AuditRecorder interface {
 
 // ToolCallRecord — запись одного вызова LLM-инструмента.
 type ToolCallRecord struct {
-	ToolName    string
-	Entity      string
-	TenantID    string
-	Params      map[string]any
+	ToolName     string
+	Entity       string
+	TenantID     string
+	Params       map[string]any
 	RowsReturned int
-	DurationMs  int64
-	Error       string
+	DurationMs   int64
+	Error        string
 }
 
 // NoopAuditRecorder — пустая имплементация AuditRecorder.

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // URLParamFunc извлекает параметр пути из запроса.

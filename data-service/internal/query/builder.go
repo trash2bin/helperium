@@ -90,8 +90,8 @@ func (e *Engine) build(plan QueryPlan, count bool) (sql string, args []any, err 
 		b.WriteString(strings.Join(conds, " AND "))
 	}
 
-	// 4. ORDER BY
-	if len(plan.Order) > 0 {
+	// 4. ORDER BY (skip for count)
+	if !count && len(plan.Order) > 0 {
 		ords := make([]string, 0, len(plan.Order))
 		for _, o := range plan.Order {
 			if o.Desc {
@@ -104,14 +104,14 @@ func (e *Engine) build(plan QueryPlan, count bool) (sql string, args []any, err 
 		b.WriteString(strings.Join(ords, ", "))
 	}
 
-	// 5. LIMIT / OFFSET
-	if plan.Limit > 0 {
+	// 5. LIMIT / OFFSET (skip for count)
+	if !count && plan.Limit > 0 {
 		b.WriteString(" LIMIT ")
 		b.WriteString(e.adapter.TranslatePlaceholder(phIdx))
 		args = append(args, plan.Limit)
 		phIdx++
 	}
-	if plan.Offset > 0 {
+	if !count && plan.Offset > 0 {
 		b.WriteString(" OFFSET ")
 		b.WriteString(e.adapter.TranslatePlaceholder(phIdx))
 		args = append(args, plan.Offset)
@@ -154,41 +154,61 @@ func (e *Engine) buildColumnList(cols []string) string {
 
 // renderCondition превращает одно Condition в SQL-фрагмент + args.
 func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error) {
-	notPrefix := ""
-	if c.Not {
-		notPrefix = "NOT "
-	}
-
 	switch c.Operator {
 	case OpEq:
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + "= " + ph, []any{c.Value}, nil
+		// Инверсия равенства — <>, а не невалидный "NOT =".
+		op := "="
+		if c.Not {
+			op = "<>"
+		}
+		return c.Field + " " + op + " " + ph, []any{c.Value}, nil
 
 	case OpNeq:
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + "!= " + ph, []any{c.Value}, nil
+		// "NOT !=" — двойное отрицание, семантически "=".
+		if c.Not {
+			return c.Field + " = " + ph, []any{c.Value}, nil
+		}
+		return c.Field + " != " + ph, []any{c.Value}, nil
 
 	case OpLt:
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + "< " + ph, []any{c.Value}, nil
+		op := "<"
+		if c.Not {
+			op = ">="
+		}
+		return c.Field + " " + op + " " + ph, []any{c.Value}, nil
 
 	case OpGt:
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + "> " + ph, []any{c.Value}, nil
+		op := ">"
+		if c.Not {
+			op = "<="
+		}
+		return c.Field + " " + op + " " + ph, []any{c.Value}, nil
 
 	case OpLte:
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + "<= " + ph, []any{c.Value}, nil
+		op := "<="
+		if c.Not {
+			op = ">"
+		}
+		return c.Field + " " + op + " " + ph, []any{c.Value}, nil
 
 	case OpGte:
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + ">= " + ph, []any{c.Value}, nil
+		op := ">="
+		if c.Not {
+			op = "<"
+		}
+		return c.Field + " " + op + " " + ph, []any{c.Value}, nil
 
 	case OpLike:
 		s, ok := c.Value.(string)
@@ -201,7 +221,15 @@ func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error)
 		}
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + "LIKE " + ph, []any{val}, nil
+		// NOT + LIKE → NOT LIKE (валидно); "NOT"-префикс для LIKE допустим.
+		// ESCAPE '\' обязателен: QuoteString экранирует %/_ обратным слэшем,
+		// без ESCAPE-клаузы экранирование не работает (в SQLite \ — литерал,
+		// % остаётся wildcard'ом → данные не находятся, DoS-защита неэффективна).
+		op := "LIKE"
+		if c.Not {
+			op = "NOT LIKE"
+		}
+		return c.Field + " " + op + " " + ph + " ESCAPE '\\'", []any{val}, nil
 
 	case OpILike:
 		s, ok := c.Value.(string)
@@ -216,13 +244,21 @@ func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error)
 		*phIdx++
 		if e.isPostgres {
 			// Postgres has native ILIKE — case-insensitive for all Unicode.
-			return c.Field + " " + notPrefix + "ILIKE " + ph, []any{val}, nil
+			op := "ILIKE"
+			if c.Not {
+				op = "NOT ILIKE"
+			}
+			return c.Field + " " + op + " " + ph + " ESCAPE '\\'", []any{val}, nil
 		}
 		// SQLite: LIKE is case-insensitive only for ASCII (A-Z).
 		// Cyrillic and other Unicode needs COLLATE NOCASE for true
 		// case-insensitive search.
 		fieldExpr := c.Field + " COLLATE NOCASE"
-		return fieldExpr + " " + notPrefix + "LIKE " + ph, []any{val}, nil
+		op := "LIKE"
+		if c.Not {
+			op = "NOT LIKE"
+		}
+		return fieldExpr + " " + op + " " + ph + " ESCAPE '\\'", []any{val}, nil
 
 	case OpNotLike:
 		s, ok := c.Value.(string)
@@ -235,7 +271,7 @@ func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error)
 		}
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " NOT LIKE " + ph, []any{val}, nil
+		return c.Field + " NOT LIKE " + ph + " ESCAPE '\\'", []any{val}, nil
 
 	case OpRegex:
 		s, ok := c.Value.(string)
@@ -244,11 +280,18 @@ func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error)
 		}
 		ph := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		op := "REGEXP"
 		if e.isPostgres {
-			op = "~"
+			// Postgres: ~ / !~ (оператор отрицания существует как токен).
+			if c.Not {
+				return c.Field + " !~ " + ph, []any{s}, nil
+			}
+			return c.Field + " ~ " + ph, []any{s}, nil
 		}
-		return c.Field + " " + notPrefix + op + " " + ph, []any{s}, nil
+		// SQLite: REGEXP / NOT REGEXP.
+		if c.Not {
+			return c.Field + " NOT REGEXP " + ph, []any{s}, nil
+		}
+		return c.Field + " REGEXP " + ph, []any{s}, nil
 
 	case OpIn:
 		if len(c.Values) == 0 {
@@ -259,7 +302,10 @@ func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error)
 			phs[i] = e.adapter.TranslatePlaceholder(*phIdx)
 			*phIdx++
 		}
-		return c.Field + " " + notPrefix + "IN (" + strings.Join(phs, ", ") + ")", c.Values, nil
+		if c.Not {
+			return c.Field + " NOT IN (" + strings.Join(phs, ", ") + ")", c.Values, nil
+		}
+		return c.Field + " IN (" + strings.Join(phs, ", ") + ")", c.Values, nil
 
 	case OpBetween:
 		if len(c.Values) != 2 {
@@ -269,7 +315,10 @@ func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error)
 		*phIdx++
 		ph2 := e.adapter.TranslatePlaceholder(*phIdx)
 		*phIdx++
-		return c.Field + " " + notPrefix + "BETWEEN " + ph1 + " AND " + ph2, []any{c.Values[0], c.Values[1]}, nil
+		if c.Not {
+			return c.Field + " NOT BETWEEN " + ph1 + " AND " + ph2, []any{c.Values[0], c.Values[1]}, nil
+		}
+		return c.Field + " BETWEEN " + ph1 + " AND " + ph2, []any{c.Values[0], c.Values[1]}, nil
 
 	default:
 		return "", nil, fmt.Errorf("unknown operator %d", c.Operator)

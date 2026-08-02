@@ -90,15 +90,23 @@ func (PostgresAdapter) TranslatePlaceholder(index int) string {
 // "public.customers" становится буквальным именем, а не
 // public.customers (schema.table). Квоты делаем для schema-qualified
 // таблиц, а также для надёжности имён с пробелами / спецсимволами.
+//
+// Контракт: имя приходит из интроспекции (schema.table) или из конфига
+// НАТИВНЫМ именем БЕЗ кавычек. Имена колонок с точкой внутри (foo.bar)
+// трактуются как schema-qualified и квотируются по сегментам — если колонка
+// реально называется "foo.bar", укажи её в конфиге уже квотированной.
 func (PostgresAdapter) QuoteIdentifier(name string) string {
+	// Экранируем двойные кавычки внутри сегментов (" → "") до квотирования,
+	// иначе имя из интроспекции вида a"; DROP TABLE x; -- выходит из кавычек.
+	escape := func(seg string) string { return strings.ReplaceAll(seg, `"`, `""`) }
 	if strings.Contains(name, ".") {
 		parts := strings.Split(name, ".")
 		for i, p := range parts {
-			parts[i] = `"` + p + `"`
+			parts[i] = `"` + escape(p) + `"`
 		}
 		return strings.Join(parts, ".")
 	}
-	return `"` + name + `"`
+	return `"` + escape(name) + `"`
 }
 
 // Introspect читает метаданные схемы через information_schema + pg_catalog.
@@ -287,8 +295,8 @@ func (PostgresAdapter) Introspect(ctx context.Context, database Conn) (*Schema, 
 
 	// Группируем колонки по таблицам
 	type tblBuilder struct {
-		columns   []Column
-		pkCols    []string
+		columns []Column
+		pkCols  []string
 	}
 	tblMap := make(map[string]*tblBuilder)
 	for _, c := range colRefs {

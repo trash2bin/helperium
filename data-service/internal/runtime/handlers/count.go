@@ -12,7 +12,7 @@ import (
 //
 // Пример: GET /orders/count?status=new → {"count": 42}
 //
-// Используй вместо find_*, когда нужно узнать КОЛИЧЕСТВО записей,
+// Используй вместо grep_*/filter_*, когда нужно узнать КОЛИЧЕСТВО записей,
 // а не сами данные — это быстрее и дешевле по токенам.
 func CountHandler(c *Context, entityName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -33,10 +33,13 @@ func CountHandler(c *Context, entityName string) http.HandlerFunc {
 		var filterVals []any
 		var filterOps []string
 
-		// Build set of filterable field names (non-PK)
+		// Build set of filterable field names (non-PK).
+		// HIGH-15-fix: tenant_id исключается — это системная колонка изоляции,
+		// её нельзя использовать как пользовательский фильтр (иначе можно
+		// посчитать записи чужого тенанта). Сравни: filter.go:250-253.
 		fieldMap := make(map[string]struct{}, len(entity.Fields))
 		for _, f := range entity.Fields {
-			if !f.PrimaryKey {
+			if !f.PrimaryKey && f.Column != "tenant_id" {
 				fieldMap[f.Name] = struct{}{}
 			}
 		}
@@ -47,8 +50,8 @@ func CountHandler(c *Context, entityName string) http.HandlerFunc {
 			}
 			val := vals[0]
 
-			// Skip system params
-			if key == "limit" || key == "offset" || key == "sort_by" || key == "format" {
+			// Skip system params (включая tenant_id — HIGH-15: защита от утечки)
+			if key == "limit" || key == "offset" || key == "sort_by" || key == "format" || key == "tenant_id" {
 				continue
 			}
 
@@ -132,11 +135,11 @@ func CountHandler(c *Context, entityName string) http.HandlerFunc {
 		var count int
 		if rows.Next() {
 			if err := rows.Scan(&count); err != nil {
-			slog.Error("Scan error in count", "err", err, "tenant", c.tenantID(r), "entity", entityName)
-			RespondError(w, http.StatusInternalServerError, "scan_error",
-				"Query execution failed.")
-			return
-		}
+				slog.Error("Scan error in count", "err", err, "tenant", c.tenantID(r), "entity", entityName)
+				RespondError(w, http.StatusInternalServerError, "scan_error",
+					"Query execution failed.")
+				return
+			}
 		}
 
 		RespondJSON(w, http.StatusOK, map[string]any{

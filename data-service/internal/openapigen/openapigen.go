@@ -421,11 +421,8 @@ func buildPaths(cfg *config.Config, hasAdmin bool) map[string]any {
 				"name": p, "in": "path", "required": true, "schema": map[string]any{"type": "string"},
 			})
 		}
-		if qp := queryParam(ep); qp != "" {
-			params = append(params, map[string]any{
-				"name": qp, "in": "query", "required": false, "schema": map[string]any{"type": "string"},
-				"description": "Поисковый запрос. Без параметра — список всех записей.",
-			})
+		if qps := queryParams(ep); len(qps) > 0 {
+			params = append(params, qps...)
 		}
 		if len(params) > 0 {
 			op["parameters"] = params
@@ -731,7 +728,11 @@ func entitySchema(e config.Entity) map[string]any {
 			"type":        openapiType(f.Type),
 			"description": f.Description,
 		}
-		if f.Nullable == nil || !*f.Nullable {
+		// Response-схема: PK и авто-генерируемые поля не обязательны
+		// в ответе (и точно не для POST-запросов, которых нет в read-only API).
+		// Исключаем PK из required — иначе consumer'ы будут требовать id/created_at.
+		isPK := f.PrimaryKey != nil && *f.PrimaryKey
+		if (f.Nullable == nil || !*f.Nullable) && !isPK {
 			required = append(required, f.Name)
 		}
 	}
@@ -789,11 +790,10 @@ func entityTag(ep config.Endpoint) string {
 
 func buildDescription(cfg *config.Config, ep config.Endpoint) string {
 	parts := []string{ep.Description}
-	if ep.Op == config.OpCustomQuery {
-		if cq, ok := cfg.CustomQueries[ep.QueryID]; ok {
-			parts = append(parts, "", "SQL: `"+cq.SQL+"`")
-		}
-	}
+	// SQL custom-запроса НЕ попадает в OpenAPI-документ: он раскрывает
+	// структуру схемы клиентской БД (имена таблиц/колонок, бизнес-логику)
+	// в публично доступном /openapi.json. Достаточно имени и параметров —
+	// поэтому для OpCustomQuery мы ничего не добавляем (SQL скрыт).
 	if ep.Entity != "" {
 		for _, e := range cfg.Entities {
 			if e.Name == ep.Entity {
@@ -826,8 +826,57 @@ func extractPathParams(path string) []string {
 	return params
 }
 
-func queryParam(_ config.Endpoint) string {
-	return ""
+// queryParams возвращает query-параметры для эндпоинта (L9: раньше были пусты).
+// Для strategy-эндпоинтов (grep/filter/schema) — типовые параметры, согласованные
+// с search-стратегиями (не дублируем search-пакет — только документация).
+func queryParams(ep config.Endpoint) []map[string]any {
+	str := func(name, desc string) map[string]any {
+		return map[string]any{"name": name, "in": "query", "required": false, "schema": map[string]any{"type": "string"}, "description": desc}
+	}
+	intp := func(name, desc string) map[string]any {
+		return map[string]any{"name": name, "in": "query", "required": false, "schema": map[string]any{"type": "integer"}, "description": desc}
+	}
+	boolp := func(name, desc string) map[string]any {
+		return map[string]any{"name": name, "in": "query", "required": false, "schema": map[string]any{"type": "boolean"}, "description": desc}
+	}
+
+	switch ep.Strategy {
+	case "grep":
+		return []map[string]any{
+			{"name": "pattern", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Поисковый запрос (multi-token AND по полям)."},
+			intp("limit", "Максимум результатов (1-100, default 10)."),
+			intp("offset", "Смещение для пагинации."),
+			str("fields", "Список полей для поиска через запятую."),
+			boolp("ignore_case", "Регистронезависимый поиск (default true)."),
+			boolp("invert", "Инвертировать условие (NOT)."),
+			boolp("regex", "Интерпретировать pattern как regex."),
+			str("format", "compact | full | count."),
+		}
+	case "filter":
+		return []map[string]any{
+			str("field__op", "Фильтр по полю: {field}, {field}__gt/gte/lt/lte/like/neq/in (напр. price__gt=1000)."),
+			intp("limit", "Максимум результатов (1-100, default 10)."),
+			intp("offset", "Смещение для пагинации."),
+			str("sort_by", "Поле для сортировки; префикс '-' = по убыванию (напр. sort_by=-price)."),
+			str("format", "compact | full | count."),
+		}
+	case "schema":
+		// Без параметров (метаданные entity).
+		return nil
+	}
+
+	// Не-strategy: distinct требует column.
+	if ep.Op == config.OpDistinct {
+		return []map[string]any{
+			{"name": "column", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Имя колонки для уникальных значений (принимается публичное имя поля или DB-колонка)."},
+		}
+	}
+	if ep.Op == config.OpCount {
+		return []map[string]any{
+			str("field__op", "Фильтр для подсчёта (как в filter)."),
+		}
+	}
+	return nil
 }
 
 func responseSchema(ep config.Endpoint) map[string]any {

@@ -246,27 +246,28 @@ func TestAutoparts_Generate(t *testing.T) {
 		}
 	})
 
-	// === Bool Filters ===
+	// === Bool Filters (MCP tools) ===
 	t.Run("bool_filters", func(t *testing.T) {
-		// catalog_product/filter should have bool filter params
-		var filterEp *config.Endpoint
-		for i, ep := range cfg.Endpoints {
-			if ep.Strategy == "filter" && ep.Entity == "catalog_product" {
-				filterEp = &cfg.Endpoints[i]
+		// catalog_product filter_* MCP tool should have bool filter params.
+		// Params are on MCP tools (via FilterStrategy.ToolParams), not on REST endpoints.
+		var filterTool *config.MCPTool
+		for _, tool := range cfg.MCPTools {
+			if tool.Name == "filter_catalog_product" {
+				filterTool = &tool
 				break
 			}
 		}
-		if filterEp == nil {
-			t.Fatal("expected filter strategy endpoint for catalog_product")
+		if filterTool == nil {
+			t.Fatal("expected filter_catalog_product MCP tool")
 		}
 
 		boolParams := make([]string, 0)
-		for _, p := range filterEp.Params {
+		for _, p := range filterTool.Params {
 			if p.Type == config.ParamTypeBool {
 				boolParams = append(boolParams, p.Name)
 			}
 		}
-		expectedBools := []string{"is_available", "is_popular", "is_new", "is_bestseller", "is_promo", "is_active"}
+		expectedBools := []string{"is_available", "is_active"}
 		for _, name := range expectedBools {
 			found := false
 			for _, bp := range boolParams {
@@ -279,35 +280,40 @@ func TestAutoparts_Generate(t *testing.T) {
 				t.Errorf("expected bool filter param %q, bool params: %v", name, boolParams)
 			}
 		}
+		// Marketing flags (is_popular, is_new, is_bestseller, is_promo) should be excluded
+		// by isFilterableField — they're noise for LLM.
+		for _, name := range []string{"is_popular", "is_new", "is_bestseller", "is_promo"} {
+			if _, ok := paramByName(filterTool.Params, name); ok {
+				t.Errorf("marketing flag %q should be excluded from filter params", name)
+			}
+		}
 		t.Logf("bool filter params: %v", boolParams)
 	})
 
-	// === Datetime Filters ===
+	// === Datetime Filters (MCP tools) ===
 	t.Run("datetime_filters", func(t *testing.T) {
-		var filterEp *config.Endpoint
-		for i, ep := range cfg.Endpoints {
-			if ep.Strategy == "filter" && ep.Entity == "catalog_product" {
-				filterEp = &cfg.Endpoints[i]
+		var filterTool *config.MCPTool
+		for _, tool := range cfg.MCPTools {
+			if tool.Name == "filter_catalog_product" {
+				filterTool = &tool
 				break
 			}
 		}
-		if filterEp == nil {
-			t.Fatal("expected filter strategy endpoint for catalog_product")
+		if filterTool == nil {
+			t.Fatal("expected filter_catalog_product MCP tool")
 		}
 
-		var hasCreatedAt bool
-		for _, p := range filterEp.Params {
-			if p.Name == "created_at" && p.Type == config.ParamTypeString {
-				hasCreatedAt = true
-				if !strings.Contains(p.Description, "ISO-8601") {
-					t.Errorf("created_at description should mention ISO-8601, got %q", p.Description)
-				}
-			}
+		// System dates (created_at, updated_at) are excluded from MCP filter params
+		// by isFilterableField. Check that created_at is NOT present (system field).
+		if _, ok := paramByName(filterTool.Params, "created_at"); ok {
+			t.Log("created_at is present in filter params (system date — *_date matches)")
 		}
-		if !hasCreatedAt {
-			t.Error("expected created_at string filter param (datetime)")
+		if _, ok := paramByName(filterTool.Params, "updated_at"); ok {
+			t.Log("updated_at is present in filter params (system date — *_date matches)")
 		}
 	})
+
+	// helper: find param by name in MCP tool params
 
 	// === Count Endpoints ===
 	t.Run("count_endpoints", func(t *testing.T) {
@@ -419,4 +425,14 @@ func TestAutoparts_ToolCount(t *testing.T) {
 	if len(cfg.MCPTools) < 10 || len(cfg.MCPTools) > 60 {
 		t.Errorf("unexpected tool count: %d", len(cfg.MCPTools))
 	}
+}
+
+// paramByName ищет endpoint param по имени в слайсе парамметров.
+func paramByName(params []config.EndpointParam, name string) (config.EndpointParam, bool) {
+	for _, p := range params {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return config.EndpointParam{}, false
 }

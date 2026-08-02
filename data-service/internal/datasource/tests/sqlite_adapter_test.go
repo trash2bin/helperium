@@ -36,6 +36,9 @@ func TestSqliteAdapter_QuoteIdentifier(t *testing.T) {
 		{"item name", `"item name"`},
 		{"created_at", `"created_at"`},
 		{"", `""`},
+		// A1: двойная кавычка внутри идентификатора экранируется удвоением.
+		{"a\"b", `"a""b"`},
+		{"x\"; DROP TABLE t; --", `"x""; DROP TABLE t; --"`},
 	}
 	for _, c := range cases {
 		if got := a.QuoteIdentifier(c.in); got != c.want {
@@ -96,6 +99,61 @@ func TestSqliteAdapter_DefaultPragmas(t *testing.T) {
 	}
 }
 
+// TestSqliteAdapter_PragmasActiveFromDSN — прагмы должны действовать на
+// КАЖДОМ коннекте пула. Проверяем, что после Connect (без ручного Exec)
+// foreign_keys=1 и busy_timeout=5000 видны из чтения PRAGMA: это значит,
+// что они пришли из DSN-параметров (modernc применяет их к каждому коннекту),
+// а не из одноразового ExecContext на 1-м коннекте.
+func TestSqliteAdapter_PragmasActiveFromDSN(t *testing.T) {
+	a := datasource.SqliteAdapter{}
+	ctx := context.Background()
+
+	dbPath := t.TempDir() + "/pragmas.db"
+	conn, err := a.Connect(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Connect %q: %v", dbPath, err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var fk int
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fk); err != nil {
+		t.Fatalf("query foreign_keys: %v", err)
+	}
+	if fk != 1 {
+		t.Errorf("foreign_keys = %d, want 1 (прагма не применена к коннекту)", fk)
+	}
+
+	var bt int
+	if err := conn.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&bt); err != nil {
+		t.Fatalf("query busy_timeout: %v", err)
+	}
+	if bt != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", bt)
+	}
+}
+
+// TestSqliteAdapter_ExplicitPragmaDSNNotBroken — пользовательский DSN с
+// уже заданными _pragma-параметрами не ломается и не перезаписывается.
+func TestSqliteAdapter_ExplicitPragmaDSNNotBroken(t *testing.T) {
+	a := datasource.SqliteAdapter{}
+	ctx := context.Background()
+
+	dbPath := t.TempDir() + "/explicit.db"
+	conn, err := a.Connect(ctx, dbPath+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("Connect with explicit pragma: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var fk int
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fk); err != nil {
+		t.Fatalf("query foreign_keys: %v", err)
+	}
+	if fk != 1 {
+		t.Errorf("foreign_keys = %d, want 1", fk)
+	}
+}
+
 // TestSqliteAdapter_ConcurrentReads — проверяет, что пул соединений
 // поддерживает конкурентное чтение (WAL mode + SetMaxOpenConns(2)).
 // Использует file-based БД — :memory: не поддерживает multi-connection (каждый conn своя БД).
@@ -145,7 +203,6 @@ func TestSqliteAdapter_ConcurrentReads(t *testing.T) {
 	}
 	wg.Wait()
 }
-
 
 // (магазин: customers/orders/items) проверяем корректность introspector
 // без привязки к доменной семантике (никаких university-имён).

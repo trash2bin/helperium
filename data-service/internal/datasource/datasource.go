@@ -123,9 +123,9 @@ type SchemaInfo struct {
 
 // FieldMeta — описание одного поля.
 type FieldMeta struct {
-	Type     string    `json:"type"`
-	Distinct []string  `json:"distinct,omitempty"`
-	Min      *float64  `json:"min,omitempty"`
-	Max      *float64  `json:"max,omitempty"`
-	Avg      *float64  `json:"avg,omitempty"`
+	Type     string   `json:"type"`
+	Distinct []string `json:"distinct,omitempty"`
+	Min      *float64 `json:"min,omitempty"`
+	Max      *float64 `json:"max,omitempty"`
+	Avg      *float64 `json:"avg,omitempty"`
 }

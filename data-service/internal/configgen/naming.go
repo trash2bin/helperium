@@ -15,10 +15,21 @@ func DefaultDisplayPrefixes() []string {
 
 // shortBusinessName отрезает префикс (catalog_, auth_, django_) и
 // возвращает читаемое имя.
-func shortBusinessName(name string, displayPrefixes []string) string {
+// customShortNames имеет высший приоритет (из конфига).
+func shortBusinessName(name string, displayPrefixes []string, customShortNames map[string]string) string {
+	// CustomShortNames — первый приоритет (полное имя)
+	if cn, ok := customShortNames[name]; ok {
+		return cn
+	}
+
 	for _, pfx := range displayPrefixes {
 		if strings.HasPrefix(name, pfx) {
 			result := strings.TrimPrefix(name, pfx)
+			// CustomShortNames — первый приоритет (короткое имя)
+			if cn, ok := customShortNames[result]; ok {
+				return cn
+			}
+			// Fallback: хардкор
 			if result == "cartitem" {
 				return "Cart item"
 			}
@@ -28,15 +39,18 @@ func shortBusinessName(name string, displayPrefixes []string) string {
 			return titleCase(result)
 		}
 	}
+
+	// Попробовать полным именем (без префикса) — на случай если cfg.CustomShortNames не пуст
 	return titleCase(name)
 }
 
-// titleCase capitalises the first letter of an ASCII string.
+// titleCase capitalises the first letter of a string (unicode-safe).
 func titleCase(s string) string {
 	if s == "" {
 		return ""
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	r := []rune(s)
+	return strings.ToUpper(string(r[0])) + string(r[1:])
 }
 
 // shortColumnName делает snake_case колонку читаемой для LLM.
@@ -107,6 +121,12 @@ func toolDisplayName(op, entityName string, displayPrefixes []string, customPlur
 		return fmt.Sprintf("Count %s", plural)
 	case string(config.OpDistinct):
 		return fmt.Sprintf("Distinct %s", plural)
+	case "grep":
+		return fmt.Sprintf("Search %s", plural)
+	case "filter":
+		return fmt.Sprintf("Filter %s", plural)
+	case "schema":
+		return fmt.Sprintf("Schema of %s", short)
 	default:
 		return ""
 	}

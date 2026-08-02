@@ -9,14 +9,24 @@ type AdapterToQuery struct {
 	Inner AdapterSubset
 }
 
-func (a *AdapterToQuery) TranslatePlaceholder(index int) string { return a.Inner.TranslatePlaceholder(index) }
-func (a *AdapterToQuery) QuoteIdentifier(name string) string    { return a.Inner.QuoteIdentifier(name) }
+func (a *AdapterToQuery) TranslatePlaceholder(index int) string {
+	return a.Inner.TranslatePlaceholder(index)
+}
+func (a *AdapterToQuery) QuoteIdentifier(name string) string { return a.Inner.QuoteIdentifier(name) }
 
-// QuoteString escapes LIKE special chars '%' and '_'.
+// QuoteString escapes LIKE special chars '%', '_' and the escape char itself
+// ('\'). Согласовано с ESCAPE '\\' клаузой, которую builder добавляет к
+// каждому LIKE: без экранирования '\' пользовательский ввод вида "\\%"
+// даст литеральный '\' + wildcard '%' и сломает точный поиск.
+//
+// ⚠️ Отличие от filter __like (search/filter.go): там RawValue=true и ввод
+// НЕ экранируется — пользователь сам управляет wildcard'ами, а '\' в его
+// значении становится escape-символом. Здесь (grep-токены) '\' экранируется
+// автоматически. Два разных контракта '\' — grep: auto-escaped; filter: raw.
 func (a *AdapterToQuery) QuoteString(s string) string {
 	escaped := ""
 	for _, c := range s {
-		if c == '%' || c == '_' {
+		if c == '%' || c == '_' || c == '\\' {
 			escaped += "\\"
 		}
 		escaped += string(c)

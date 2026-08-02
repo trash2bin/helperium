@@ -24,9 +24,10 @@ func (postgresAdapter) TranslatePlaceholder(index int) string { return fmt.Sprin
 func (postgresAdapter) QuoteIdentifier(name string) string    { return `"` + name + `"` }
 func (postgresAdapter) QuoteString(s string) string           { return escapeLike(s) }
 
-// escapeLike — экранирует '%' и '_' в LIKE-паттернах (для SQLite/Postgres).
+// escapeLike — экранирует '%', '_' и сам '\' в LIKE-паттернах
+// (для SQLite/Postgres), согласовано с ESCAPE '\\' клаузой в builder.
 func escapeLike(s string) string {
-	return strings.NewReplacer("%", "\\%", "_", "\\_").Replace(s)
+	return strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(s)
 }
 
 // =============================================================================
@@ -93,7 +94,7 @@ func TestBuild_Like(t *testing.T) {
 		t.Fatalf("Build: unexpected error: %v", err)
 	}
 
-	wantSQL := `SELECT * FROM "customers" WHERE "email" LIKE ?`
+	wantSQL := `SELECT * FROM "customers" WHERE "email" LIKE ? ESCAPE '\'`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
@@ -116,7 +117,7 @@ func TestBuild_Like_EscapesWildcards(t *testing.T) {
 		t.Fatalf("Build: unexpected error: %v", err)
 	}
 
-	wantSQL := `SELECT * FROM "items" WHERE "name" LIKE ?`
+	wantSQL := `SELECT * FROM "items" WHERE "name" LIKE ? ESCAPE '\'`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
@@ -140,7 +141,7 @@ func TestBuild_ILike_SQLite(t *testing.T) {
 	}
 
 	// SQLite: ILIKE → "email" COLLATE NOCASE LIKE ? for cyrillic support
-	wantSQL := `SELECT * FROM "customers" WHERE "email" COLLATE NOCASE LIKE ?`
+	wantSQL := `SELECT * FROM "customers" WHERE "email" COLLATE NOCASE LIKE ? ESCAPE '\'`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
@@ -165,7 +166,7 @@ func TestBuild_ILike_Postgres(t *testing.T) {
 	}
 
 	// Postgres: ILIKE native
-	wantSQL := `SELECT * FROM "customers" WHERE "email" ILIKE $1`
+	wantSQL := `SELECT * FROM "customers" WHERE "email" ILIKE $1 ESCAPE '\'`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
@@ -401,7 +402,8 @@ func TestBuild_NotFlag(t *testing.T) {
 		t.Fatalf("Build: unexpected error: %v", err)
 	}
 
-	wantSQL := `SELECT * FROM "users" WHERE "active" NOT = $1`
+	// NOT = невалиден; инверсия Eq — это <>. ("active" <> $1)
+	wantSQL := `SELECT * FROM "users" WHERE "active" <> $1`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
@@ -470,7 +472,7 @@ func TestBuild_NotLike(t *testing.T) {
 		t.Fatalf("Build: unexpected error: %v", err)
 	}
 
-	wantSQL := `SELECT * FROM "items" WHERE "name" NOT LIKE ?`
+	wantSQL := `SELECT * FROM "items" WHERE "name" NOT LIKE ? ESCAPE '\'`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
@@ -502,12 +504,13 @@ func TestBuildCount(t *testing.T) {
 	}
 
 	// BuildCount заменяет колонки на COUNT(*) и сохраняет WHERE.
-	wantSQL := `SELECT COUNT(*) FROM "customers" WHERE "status" = ? ORDER BY "id" DESC LIMIT ?`
+	// ORDER BY, LIMIT, OFFSET НЕ включаются в COUNT запрос.
+	wantSQL := `SELECT COUNT(*) FROM "customers" WHERE "status" = ?`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
-	if len(args) != 2 || args[0] != "active" || args[1] != 10 {
-		t.Errorf("Args = %v, want [active, 10]", args)
+	if len(args) != 1 || args[0] != "active" {
+		t.Errorf("Args = %v, want [active]", args)
 	}
 }
 
@@ -790,11 +793,73 @@ func TestBuild_NotFlag_Neq(t *testing.T) {
 		t.Fatalf("Build: unexpected error: %v", err)
 	}
 
-	// NOT != — двойное отрицание, но синтаксически корректно
-	wantSQL := `SELECT * FROM "t" WHERE "x" NOT != ?`
+	// NOT != (двойное отрицание) — семантически "=". Невалидный "NOT !=" заменяем.
+	wantSQL := `SELECT * FROM "t" WHERE "x" = ?`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q, want %q", sql, wantSQL)
 	}
+}
+
+func TestBuild_NotFlag_InvertsComparators(t *testing.T) {
+	// Инверсия компараторов: Not+Lt→>=<=... без NOT-префикса (невалидного).
+	cases := []struct {
+		name   string
+		op     Operator
+		value  any
+		wantOp string
+	}{
+		{"lt", OpLt, 10, ">="},
+		{"gt", OpGt, 10, "<="},
+		{"lte", OpLte, 10, ">"},
+		{"gte", OpGte, 10, "<"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			eng := NewEngine(sqliteAdapter{})
+			c := Condition{Field: `"x"`, Operator: tc.op, Value: tc.value, Not: true}
+			plan := QueryPlan{From: `"t"`, Where: []Condition{c}}
+			sql, _, err := eng.Build(plan)
+			if err != nil {
+				t.Fatalf("Build: unexpected error: %v", err)
+			}
+			wantSQL := `SELECT * FROM "t" WHERE "x" ` + tc.wantOp + ` ?`
+			if sql != wantSQL {
+				t.Errorf("SQL = %q, want %q", sql, wantSQL)
+			}
+		})
+	}
+}
+
+func TestBuild_NotFlag_Regexp(t *testing.T) {
+	// Not+Regexp: SQLite "NOT REGEXP", Postgres "!~". Оба валидны.
+	t.Run("sqlite", func(t *testing.T) {
+		eng := NewEngine(sqliteAdapter{})
+		c := Regexp(`"code"`, "^ABC")
+		c.Not = true
+		plan := QueryPlan{From: `"items"`, Where: []Condition{c}}
+		sql, _, err := eng.Build(plan)
+		if err != nil {
+			t.Fatalf("Build: unexpected error: %v", err)
+		}
+		wantSQL := `SELECT * FROM "items" WHERE "code" NOT REGEXP ?`
+		if sql != wantSQL {
+			t.Errorf("SQL = %q, want %q", sql, wantSQL)
+		}
+	})
+	t.Run("postgres", func(t *testing.T) {
+		eng := NewEngine(postgresAdapter{})
+		c := Regexp(`"code"`, "^ABC")
+		c.Not = true
+		plan := QueryPlan{From: `"items"`, Where: []Condition{c}}
+		sql, _, err := eng.Build(plan)
+		if err != nil {
+			t.Fatalf("Build: unexpected error: %v", err)
+		}
+		wantSQL := `SELECT * FROM "items" WHERE "code" !~ $1`
+		if sql != wantSQL {
+			t.Errorf("SQL = %q, want %q", sql, wantSQL)
+		}
+	})
 }
 
 // =============================================================================
@@ -936,7 +1001,7 @@ func TestRenderConditions_WithILike_SQLite(t *testing.T) {
 	}
 
 	// SQLite: COLLATE NOCASE LIKE
-	want := `"name" COLLATE NOCASE LIKE ?`
+	want := `"name" COLLATE NOCASE LIKE ? ESCAPE '\'`
 	if where != want {
 		t.Errorf("where = %q, want %q", where, want)
 	}
@@ -954,7 +1019,7 @@ func TestRenderConditions_WithILike_Postgres(t *testing.T) {
 		t.Fatalf("RenderConditions: unexpected error: %v", err)
 	}
 
-	want := `"email" ILIKE $1`
+	want := `"email" ILIKE $1 ESCAPE '\'`
 	if where != want {
 		t.Errorf("where = %q, want %q", where, want)
 	}

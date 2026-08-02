@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/server"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // TestNewRouterFromConfig_InvalidEntity — strategy без entity → ошибка
@@ -18,10 +18,10 @@ func TestNewRouterFromConfig_InvalidEntity(t *testing.T) {
 		},
 		Endpoints: []config.Endpoint{
 			{
-				Path:       "/students",
-				Op:         "strategy",
-				Strategy:   "grep",
-				Method:     "GET",
+				Path:     "/students",
+				Op:       "strategy",
+				Strategy: "grep",
+				Method:   "GET",
 				// Entity is empty — should trigger error
 			},
 		},
@@ -136,10 +136,10 @@ func TestNewRouterFromConfig_StrategyNoEntity(t *testing.T) {
 		},
 		Endpoints: []config.Endpoint{
 			{
-				Path:       "/students/search",
-				Op:         "strategy",
-				Strategy:   "grep",
-				Method:     "GET",
+				Path:     "/students/search",
+				Op:       "strategy",
+				Strategy: "grep",
+				Method:   "GET",
 				// Entity is empty — should trigger error
 			},
 		},
@@ -164,11 +164,11 @@ func TestNewRouterFromConfig_StrategyUnknown(t *testing.T) {
 		},
 		Endpoints: []config.Endpoint{
 			{
-				Path:       "/students",
-				Op:         "strategy",
-				Strategy:   "nonexistent_strategy",
-				Entity:     "student",
-				Method:     "GET",
+				Path:     "/students",
+				Op:       "strategy",
+				Strategy: "nonexistent_strategy",
+				Entity:   "student",
+				Method:   "GET",
 			},
 		},
 		Entities: []config.Entity{

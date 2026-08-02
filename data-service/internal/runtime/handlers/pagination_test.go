@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -81,6 +82,56 @@ func TestAppendPagination(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("appendPagination(%q, %d, %d) = %q, want %q",
 					tt.sql, tt.limit, tt.offset, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadPagination_OffsetCapped(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		wantLimit  int
+		wantOffset int
+	}{
+		{
+			name:       "huge offset capped at 100000",
+			query:      "offset=99999999",
+			wantLimit:  defaultLimit,
+			wantOffset: 100000,
+		},
+		{
+			name:       "regular offset preserved",
+			query:      "offset=50",
+			wantLimit:  defaultLimit,
+			wantOffset: 50,
+		},
+		{
+			name:       "no offset defaults to 0",
+			query:      "",
+			wantLimit:  defaultLimit,
+			wantOffset: 0,
+		},
+		{
+			name:       "negative offset defaults to 0",
+			query:      "offset=-5",
+			wantLimit:  defaultLimit,
+			wantOffset: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest("GET", "/test?"+tt.query, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			limit, offset := readPagination(req)
+			if limit != tt.wantLimit {
+				t.Errorf("readPagination limit = %d, want %d", limit, tt.wantLimit)
+			}
+			if offset != tt.wantOffset {
+				t.Errorf("readPagination offset = %d, want %d", offset, tt.wantOffset)
 			}
 		})
 	}

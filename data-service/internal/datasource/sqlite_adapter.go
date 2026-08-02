@@ -16,12 +16,52 @@ package datasource
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
+	"sync"
 
-	_ "modernc.org/sqlite" // pure-Go SQLite driver
+	sqlite "modernc.org/sqlite" // pure-Go SQLite driver
 )
+
+// regexpOnce гарантирует однократную регистрацию SQL-функции regexp() для
+// драйвера modernc.org/sqlite. Без неё grep strategy с regex=true падает
+// на живой БД: "no such function: REGEXP" (SQLite не включает regexp()
+// по умолчанию, в отличие от PostgreSQL).
+var regexpOnce sync.Once
+
+// registerSQLiteRegexp регистрирует скалярную функцию regexp(pattern, value),
+// семантически эквивалентную PG regexp-оператору. Обёртка поверх regexp.MatchString
+// с ReDoS-защитой: длина pattern уже ограничена maxRegexLen в grep strategy
+// (200 символов), но дополнительно лимитируем глубину/время через регулярное
+// выражение с модификатором (?i) при необходимости — здесь держим простой путь.
+func registerSQLiteRegexp() {
+	regexpOnce.Do(func() {
+		err := sqlite.RegisterScalarFunction("regexp", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			if len(args) != 2 {
+				return nil, fmt.Errorf("regexp: expected 2 args, got %d", len(args))
+			}
+			pattern, ok := args[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("regexp: pattern must be string")
+			}
+			value, ok := args[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("regexp: value must be string")
+			}
+			matched, err := regexp.MatchString(pattern, value)
+			if err != nil {
+				return nil, err
+			}
+			return matched, nil
+		})
+		if err != nil {
+			slog.Warn("sqlite: failed to register regexp function", "error", err)
+		}
+	})
+}
 
 // SqliteAdapter — реализация Adapter для SQLite (modernc.org/sqlite).
 type SqliteAdapter struct{}
@@ -44,12 +84,26 @@ func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 		return nil, fmt.Errorf("sqlite: empty DSN")
 	}
 
+	// ВАЖНО: DSN с '?' в имени файла не поддерживается — modernc.org/sqlite
+	// трактует '?' как начало query-строки, путь обрезается. Если файл содержит
+	// '?', используй file:-URI с %3F (file:reports%3F2024.db) или переименуй файл.
+
 	slog.Info("sqlite: opening connection", "dsn", dsn)
+
+	// Прагмы через DSN-параметры (_pragma=...), а не только через ExecContext:
+	// ExecContext-PRAGMA применяется к ОДНОМУ коннекту пула (тому, что его выполнил),
+	// второй коннект (SetMaxOpenConns(2)) остаётся без foreign_keys/busy_timeout.
+	// modernc.org/sqlite применяет _pragma к КАЖДОМУ открываемому коннекту.
+	dsn = ensurePragmaParams(dsn)
 
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: failed to open %q: %w", dsn, err)
 	}
+
+	// Регистрируем regexp() для modernc (без неё grep regex=true падает).
+	// Глобальная регистрация в драйвере — идемпотентна через regexpOnce.
+	registerSQLiteRegexp()
 
 	// WAL mode поддерживает конкурентных читателей, поэтому пул увеличен до 2.
 	// busy_timeout=5000 позволяет запросу подождать блокировки до 5 секунд
@@ -61,19 +115,24 @@ func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 		return nil, fmt.Errorf("sqlite: ping failed for %q: %w", dsn, err)
 	}
 
-	// Устанавливаем прагмы явно через Exec, т.к. DSN-параметры работают
-	// не со всеми драйверами (modernc.org/sqlite vs mattn/go-sqlite3).
-	// WAL + synchronous=NORMAL даёт ~2x write throughput при той же durability.
-	// busy_timeout даёт конкурентным запросам дождаться блокировки.
-	// foreign_keys=on включает проверку целостности внешних ключей.
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=NORMAL",
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA foreign_keys=ON",
-	} {
-		if _, err := conn.ExecContext(ctx, pragma); err != nil {
-			slog.Warn("sqlite: pragma failed (non-fatal)", "pragma", pragma, "error", err)
+	// Дублируем прагмы через Exec для DSN, где _pragma не применился
+	// (некоторые драйверы/форматы DSN). На 1-м коннекте это no-op,
+	// на остальных — fallback. Основное обеспечение — DSN-параметры выше.
+	//
+	// M5: если DSN УЖЕ содержит _pragma= (явные прагмы пользователя) —
+	// Exec-fallback НЕ выполняем: он применился бы только к 1-му коннекту
+	// пула и перебил явные настройки (напр. foreign_keys(0) → ON), а 2-й
+	// коннект остался бы без прагм вовсе → рассинхрон в рамках пула.
+	if !strings.Contains(dsn, "_pragma=") {
+		for _, pragma := range []string{
+			"PRAGMA journal_mode=WAL",
+			"PRAGMA synchronous=NORMAL",
+			"PRAGMA busy_timeout=5000",
+			"PRAGMA foreign_keys=ON",
+		} {
+			if _, err := conn.ExecContext(ctx, pragma); err != nil {
+				slog.Warn("sqlite: pragma failed (non-fatal)", "pragma", pragma, "error", err)
+			}
 		}
 	}
 
@@ -82,11 +141,44 @@ func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 	return &SqliteConn{conn: conn}, nil
 }
 
+// pragmaParams — прагмы, добавляемые к каждому DSN как параметры modernc
+// (применяются ко ВСЕМ коннектам пула, в отличие от ExecContext-PRAGMA).
+// journal_mode(WAL) — write-операция: НЕ добавляется к read-only DSN
+// (mode=ro / immutable=1) — на read-only БД WAL-переключение даёт
+// "attempt to write a readonly database".
+var pragmaParams = "_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+
+// readOnlyDSNRe — маркеры read-only DSN в modernc.org/sqlite URI.
+var readOnlyDSNRe = regexp.MustCompile(`(^|&|\?)mode=ro(&|$)|immutable=1`)
+
+// ensurePragmaParams добавляет _pragma параметры в DSN, если их там ещё нет.
+// Не трогает DSN с уже заданными _pragma (приоритет у явных параметров).
+// Для read-only DSN (mode=ro/immutable=1) write-прагмы (journal_mode WAL)
+// пропускаются — они несовместимы с read-only файлом БД (см. pragmaParams).
+func ensurePragmaParams(dsn string) string {
+	if strings.Contains(dsn, "_pragma=") {
+		return dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	if readOnlyDSNRe.MatchString(dsn) {
+		// Read-only: только безопасные (read) прагмы.
+		return dsn + sep + "_pragma=busy_timeout(5000)"
+	}
+	return dsn + sep + pragmaParams
+}
+
 // TranslatePlaceholder — SQLite нативно использует '?'.
 func (SqliteAdapter) TranslatePlaceholder(index int) string { return "?" }
 
 // QuoteIdentifier — двойные кавычки (ANSI SQL).
-func (SqliteAdapter) QuoteIdentifier(name string) string { return `"` + name + `"` }
+// Двойная кавычка внутри имени экранируется удвоением (" → ""),
+// иначе имя вида a"; DROP TABLE x; -- выходит из кавычек (SQL-инъекция).
+func (SqliteAdapter) QuoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 
 // Introspect читает метаданные схемы через sqlite_master + PRAGMA.
 //

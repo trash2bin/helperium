@@ -13,64 +13,66 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
-	"github.com/trash2bin/helperium/data-service/internal/datasource"
-	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // AdminContext — состояние, нужное admin-endpoint'ам для операций с конфигом.
+// Поля, которые использовались только мёртвыми package-level обработчиками
+// (AtomicRouter, Adapter, DB, Router, ReloadFn), удалены вместе с ними.
 type AdminContext struct {
-	ConfigPath   string
-	AtomicRouter *atomic.Value
-	Adapter      datasource.Adapter
-	DB           runtime.AdapterSubset
-	Router       runtime.AdapterSubset // same as DB; separate for clarity
-
-	// reloadFn — колбэк для hot reload (из main.go).
-	// Вызывается после записи нового конфига на диск, чтобы атомарно
-	// перестроить роутер.
-	ReloadFn func(configPath string) error
+	ConfigPath string
 }
 
 // adminConfigResponse — DTO для GET /admin/config (DSN скрыт).
 type adminConfigResponse struct {
-	Version       int                           `json:"version"`
-	Driver        config.Driver                 `json:"driver"`
-	DataSource    *adminDataSourceResponse      `json:"data_source,omitempty"`
-	Entities      []config.Entity               `json:"entities,omitempty"`
-	Endpoints     []config.Endpoint             `json:"endpoints,omitempty"`
-	CustomQueries map[string]config.CustomQuery `json:"custom_queries,omitempty"`
-	Stats         *config.StatsConfig           `json:"stats,omitempty"`
-	Auth          *config.AuthConfig            `json:"auth,omitempty"`
-	MCPTools      []config.MCPTool              `json:"mcp_tools,omitempty"`
-	Introspection *config.IntrospectionConfig   `json:"introspection,omitempty"`
-	SkipRules           []config.SkipRule             `json:"skip_rules,omitempty"`
-	DisplayPrefixes     []string                    `json:"display_prefixes,omitempty"`
-	CustomPlurals       map[string]string             `json:"custom_plurals,omitempty"`
-	ApprovedTools       []config.ApprovedTool       `json:"approved_tools,omitempty"`
-	DisabledDefaultRules []string                     `json:"disabled_default_rules,omitempty"`
+	Version              int                           `json:"version"`
+	Driver               config.Driver                 `json:"driver"`
+	DataSource           *adminDataSourceResponse      `json:"data_source,omitempty"`
+	Entities             []config.Entity               `json:"entities,omitempty"`
+	Endpoints            []config.Endpoint             `json:"endpoints,omitempty"`
+	CustomQueries        map[string]config.CustomQuery `json:"custom_queries,omitempty"`
+	Stats                *config.StatsConfig           `json:"stats,omitempty"`
+	Auth                 *config.AuthConfig            `json:"auth,omitempty"`
+	MCPTools             []config.MCPTool              `json:"mcp_tools,omitempty"`
+	Introspection        *config.IntrospectionConfig   `json:"introspection,omitempty"`
+	SkipRules            []config.SkipRule             `json:"skip_rules,omitempty"`
+	DisplayPrefixes      []string                      `json:"display_prefixes,omitempty"`
+	CustomPlurals        map[string]string             `json:"custom_plurals,omitempty"`
+	ApprovedTools        []config.ApprovedTool         `json:"approved_tools,omitempty"`
+	DisabledDefaultRules []string                      `json:"disabled_default_rules,omitempty"`
+
+	// Field-level rules — те же поля, что в config.Config, чтобы админка
+	// могла их читать и возвращать в PUT без потерь (round-trip).
+	FilterableRules                []config.FieldRule `json:"filterable_rules,omitempty"`
+	SearchableRules                []config.FieldRule `json:"searchable_rules,omitempty"`
+	EnumRules                      []config.FieldRule `json:"enum_rules,omitempty"`
+	DisabledDefaultFilterableRules []string           `json:"disabled_default_filterable_rules,omitempty"`
+	DisabledDefaultSearchableRules []string           `json:"disabled_default_searchable_rules,omitempty"`
+	DisabledDefaultEnumRules       []string           `json:"disabled_default_enum_rules,omitempty"`
+	CustomShortNames               map[string]string  `json:"custom_short_names,omitempty"`
 }
 
-// adminDataSourceResponse — часть конфига без DSN.
+// adminDataSourceResponse — часть конфига.
+// DSN намеренно не отдаётся в DTO (секрет); вместо него HasReadonlyDSN.
+// ReadonlyDSN отдаётся целиком: он нужен админке для round-trip PUT, и
+// админка уже авторизована (AdminAuthMiddleware + Bearer-токен).
 type adminDataSourceResponse struct {
-	Driver        config.Driver `json:"driver"`
-	PoolSize      *int          `json:"pool_size,omitempty"`
-	ReadOnly      *bool         `json:"read_only,omitempty"`
-	HasReadonlyDSN bool         `json:"has_readonly_dsn"`
+	Driver         config.Driver `json:"driver"`
+	PoolSize       *int          `json:"pool_size,omitempty"`
+	ReadOnly       *bool         `json:"read_only,omitempty"`
+	ReadonlyDSN    string        `json:"readonly_dsn,omitempty"`
+	HasReadonlyDSN bool          `json:"has_readonly_dsn"`
 }
 
 // ── Auth middleware ──
@@ -113,183 +115,17 @@ func AdminAuthMiddleware(next http.Handler) http.Handler {
 
 // ── Handlers ──
 
-// adminConfigHandler возвращает текущий конфиг без DSN.
-func adminConfigHandler(cfg *config.Config) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		resp := adminConfigResponse{
-			Version:       cfg.Version,
-			Driver:        cfg.DataSource.Driver,
-			DataSource:    responseFromDataSource(cfg.DataSource),
-			Entities:      cfg.Entities,
-			Endpoints:     cfg.Endpoints,
-			CustomQueries: cfg.CustomQueries,
-			Stats:         cfg.Stats,
-			Auth:          cfg.Auth,
-			MCPTools:      cfg.MCPTools,
-			Introspection: cfg.Introspection,
-		}
-		handlers.RespondJSON(w, http.StatusOK, resp)
-	}
-}
-
 func responseFromDataSource(ds config.DataSourceConfig) *adminDataSourceResponse {
 	return &adminDataSourceResponse{
-		Driver:          ds.Driver,
-		PoolSize:        ds.PoolSize,
-		ReadOnly:        ds.ReadOnly,
-		HasReadonlyDSN:  ds.ReadonlyDSN != "",
-	}
-}
-
-// adminConfigUpdateHandler принимает новый конфиг JSON, валидирует,
-// сохраняет на диск, инициирует hot reload.
-func adminConfigUpdateHandler(ctx *AdminContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. Read raw body
-		var raw json.RawMessage
-		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
-			handlers.RespondError(w, http.StatusBadRequest, "invalid_json",
-				fmt.Sprintf("failed to parse body: %v", err))
-			return
-		}
-
-		// 2. Parse into config (no envsubst — admin sends final values)
-		var newCfg config.Config
-		if err := json.Unmarshal(raw, &newCfg); err != nil {
-			handlers.RespondError(w, http.StatusBadRequest, "invalid_config",
-				fmt.Sprintf("failed to unmarshal config: %v", err))
-			return
-		}
-
-		// 3. Validate via Go types (no external schema file needed)
-		if err := config.Validate(raw); err != nil {
-			handlers.RespondError(w, http.StatusBadRequest, "validation_error",
-				fmt.Sprintf("config validation failed: %v", err))
-			return
-		}
-
-		// 4. Try to build router (dry-run — ловим runtime ошибки)
-		if _, err := buildRouterFromConfig(&newCfg, ctx); err != nil {
-			handlers.RespondError(w, http.StatusBadRequest, "build_error",
-				fmt.Sprintf("router build failed: %v", err))
-			return
-		}
-
-		// 5. Сохраняем текущий конфиг как версию (backup)
-		if err := archiveCurrentConfig(ctx.ConfigPath); err != nil {
-			slog.Warn("admin config: failed to archive current config", "error", err)
-			// Не фатально — продолжаем
-		}
-
-		// 6. Записываем новый конфиг на диск
-		prettyJSON, err := json.MarshalIndent(newCfg, "", "  ")
-		if err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "marshal_error",
-				fmt.Sprintf("failed to marshal config: %v", err))
-			return
-		}
-		if err := os.WriteFile(ctx.ConfigPath, prettyJSON, 0644); err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "write_error",
-				fmt.Sprintf("failed to write config: %v", err))
-			return
-		}
-
-		slog.Info("admin config: written to disk", "path", ctx.ConfigPath)
-
-		// 7. Hot reload — перестроить роутер
-		if ctx.ReloadFn != nil {
-			if err := ctx.ReloadFn(ctx.ConfigPath); err != nil {
-				handlers.RespondError(w, http.StatusInternalServerError, "reload_error",
-					fmt.Sprintf("config saved but reload failed: %v", err))
-				return
-			}
-		} else {
-			slog.Warn("admin config: no reload function set — config saved but router not rebuilt")
-		}
-
-		handlers.RespondJSON(w, http.StatusOK, map[string]any{
-			"status":    "applied",
-			"path":      ctx.ConfigPath,
-			"entities":  len(newCfg.Entities),
-			"endpoints": len(newCfg.Endpoints),
-		})
-	}
-}
-
-// adminConfigReloadHandler force-перезагружает конфиг с диска.
-func adminConfigReloadHandler(ctx *AdminContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if ctx.ReloadFn == nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "reload_disabled",
-				"reload function not configured")
-			return
-		}
-
-		if err := ctx.ReloadFn(ctx.ConfigPath); err != nil {
-			handlers.RespondError(w, http.StatusInternalServerError, "reload_error",
-				fmt.Sprintf("reload failed: %v", err))
-			return
-		}
-
-		handlers.RespondJSON(w, http.StatusOK, map[string]string{
-			"status": "reloaded",
-			"path":   ctx.ConfigPath,
-		})
-	}
-}
-
-// adminConfigVersionsHandler возвращает список версий конфига (backup'ов).
-func adminConfigVersionsHandler(ctx *AdminContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		versionsDir := filepath.Join(filepath.Dir(ctx.ConfigPath), "config_versions")
-		entries, err := os.ReadDir(versionsDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				handlers.RespondJSON(w, http.StatusOK, []string{})
-				return
-			}
-			handlers.RespondError(w, http.StatusInternalServerError, "readdir_error",
-				fmt.Sprintf("failed to read versions: %v", err))
-			return
-		}
-
-		type versionInfo struct {
-			Name    string `json:"name"`
-			Size    int64  `json:"size_bytes"`
-			ModTime string `json:"mod_time"`
-		}
-
-		versions := make([]versionInfo, 0, len(entries))
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasPrefix(e.Name(), "config.") {
-				continue
-			}
-			info, err := e.Info()
-			if err != nil {
-				continue
-			}
-			versions = append(versions, versionInfo{
-				Name:    e.Name(),
-				Size:    info.Size(),
-				ModTime: info.ModTime().UTC().Format(time.RFC3339),
-			})
-		}
-
-		// Most recent first
-		sort.Slice(versions, func(i, j int) bool {
-			return versions[i].Name > versions[j].Name
-		})
-
-		handlers.RespondJSON(w, http.StatusOK, versions)
+		Driver:         ds.Driver,
+		PoolSize:       ds.PoolSize,
+		ReadOnly:       ds.ReadOnly,
+		ReadonlyDSN:    ds.ReadonlyDSN,
+		HasReadonlyDSN: ds.ReadonlyDSN != "",
 	}
 }
 
 // ── Helpers ──
-
-// buildRouterFromConfig собирает роутер из конфига (dry-run).
-func buildRouterFromConfig(cfg *config.Config, ctx *AdminContext) (http.Handler, error) {
-	return NewRouterFromConfig(nil, cfg, ctx.DB, nil)
-}
 
 // archiveCurrentConfig сохраняет текущий config.json как config.{ts}.json.
 func archiveCurrentConfig(configPath string) error {

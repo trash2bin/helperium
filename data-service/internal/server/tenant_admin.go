@@ -26,10 +26,22 @@ import (
 
 // BuildAdminRouter creates the chi sub-router for /admin/* endpoints.
 func (ts *TenantStore) BuildAdminRouter(adapter datasource.Adapter, configPath string, adminCtx *AdminContext, cfg *config.Config) http.Handler {
+	// H-3: единый роутер админки. Три пути записи конфига на диск:
+	//   1. POST /admin/config (PUT-style)  — point-fix: пишет newCfg как есть (SaveTenantConfig).
+	//      Оператор может править Entities/Endpoints вручную — регенерация не выполняется.
+	//   2. POST /admin/config/rewrite      — регенерация: ExtractIntent → Hydrate(schema),
+	//      intent — единственный источник правды, Entities/Endpoints/MCPTools пересобираются.
+	//   3. POST /admin/tenants/{id}/tools/{tool}/approve — пишет только ApprovedTools (SaveTenantConfig).
+	//      Любые point-фиксы, внесённые через PUT/approve, НЕ переживают rewrite —
+	//      их надо повторять после rewrite (или хранить в intent-совместимых полях).
 	r := chi.NewRouter()
 
 	// All admin endpoints require ADMIN_TOKEN
 	r.Use(AdminAuthMiddleware)
+	// Ограничиваем размер тела (POST /tenants, /config, /config/rewrite читают
+	// тело в память целиком). До фикса middleware был определён, но не подключён →
+	// OOM-риск на неограниченном теле. Лимит из cfg.Server.BodyLimitMB / env DS_BODY_LIMIT_MB.
+	r.Use(BodyLimitMiddleware(ResolveBodyLimit(cfg)))
 	r.Use(AdminRateLimitMiddleware())
 
 	// Tenant management
@@ -93,6 +105,37 @@ func tenantResponseFromInstance(inst *TenantInstance) tenantResponse {
 	}
 }
 
+// snapshotTenantResponse builds a tenantResponse for the given id while holding
+// ts.mu.RLock for the whole read, so a concurrent ReloadTenant (which swaps
+// inst.Config under ts.mu.Lock) cannot race with the Config-field reads.
+func (ts *TenantStore) snapshotTenantResponse(id string) (tenantResponse, bool) {
+	ts.mu.RLock()
+	inst, ok := ts.tenants[id]
+	if !ok || inst.Config == nil {
+		ts.mu.RUnlock()
+		return tenantResponse{}, false
+	}
+	driver := string(inst.Config.DataSource.Driver)
+	entities := len(inst.Config.Entities)
+	endpoints := len(inst.Config.Endpoints)
+	ts.mu.RUnlock()
+
+	inst.healthMu.Lock()
+	healthy := inst.Healthy
+	lastErr := inst.LastError
+	inst.healthMu.Unlock()
+
+	return tenantResponse{
+		ID:        inst.ID,
+		Driver:    driver,
+		Entities:  entities,
+		Endpoints: endpoints,
+		Healthy:   healthy,
+		Error:     lastErr,
+		CreatedAt: inst.CreatedAt.UTC().Format(time.RFC3339),
+	}, true
+}
+
 func (ts *TenantStore) adminAddTenantHandler(w http.ResponseWriter, r *http.Request) {
 	var req addTenantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -137,7 +180,9 @@ func (ts *TenantStore) adminAddTenantHandler(w http.ResponseWriter, r *http.Requ
 	// Persist config to TenantsDir (canonical location)
 	persistedPath := ts.SaveTenantConfig(req.ID, &cfg)
 	if persistedPath != "" {
+		ts.mu.Lock()
 		inst.ConfigPath = persistedPath
+		ts.mu.Unlock()
 	}
 
 	handlers.RespondJSON(w, http.StatusCreated, map[string]any{
@@ -177,9 +222,11 @@ func (ts *TenantStore) adminRemoveTenantHandler(w http.ResponseWriter, r *http.R
 
 func (ts *TenantStore) adminListTenantsHandler(w http.ResponseWriter, r *http.Request) {
 	instances := ts.ListTenants()
-	resp := make([]tenantResponse, len(instances))
-	for i, inst := range instances {
-		resp[i] = tenantResponseFromInstance(inst)
+	resp := make([]tenantResponse, 0, len(instances))
+	for _, inst := range instances {
+		if tr, ok := ts.snapshotTenantResponse(inst.ID); ok {
+			resp = append(resp, tr)
+		}
 	}
 	handlers.RespondJSON(w, http.StatusOK, map[string]any{"tenants": resp})
 }
@@ -192,7 +239,13 @@ func (ts *TenantStore) adminGetTenantHandler(w http.ResponseWriter, r *http.Requ
 			fmt.Sprintf("tenant %q not found", id))
 		return
 	}
-	handlers.RespondJSON(w, http.StatusOK, tenantResponseFromInstance(inst))
+	tr, ok := ts.snapshotTenantResponse(inst.ID)
+	if !ok {
+		handlers.RespondError(w, http.StatusNotFound, "not_found",
+			fmt.Sprintf("tenant %q not found", id))
+		return
+	}
+	handlers.RespondJSON(w, http.StatusOK, tr)
 }
 
 func (ts *TenantStore) adminConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +292,15 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 		raw = json.RawMessage(merged)
 	}
 
+	// Merge ReadonlyDSN так же: если входящий конфиг не содержит readonly_dsn
+	// (GET-ответ мог его не отдать или админ не менял), сохраняем прежний.
+	// Без этого PUT с любым телом стирал readonly_dsn (тихая потеря read-only пула).
+	if newCfg.DataSource.ReadonlyDSN == "" && inst.Config.DataSource.ReadonlyDSN != "" {
+		newCfg.DataSource.ReadonlyDSN = inst.Config.DataSource.ReadonlyDSN
+		merged, _ := json.Marshal(newCfg)
+		raw = json.RawMessage(merged)
+	}
+
 	// Validate via Go types
 	if err := config.Validate(raw); err != nil {
 		handlers.RespondError(w, http.StatusBadRequest, "validation_error", err.Error())
@@ -257,10 +319,27 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Архив текущей версии перед перезаписью — иначе /admin/config/versions
+	// всегда пуст (архивирует только мёртвый пакетный admin.go handler).
+	// Путь берём из inst.ConfigPath или канонического пути тенанта.
+	currentPath := inst.ConfigPath
+	if currentPath == "" {
+		currentPath = ts.TenantConfigPath(inst.ID)
+	}
+	if currentPath != "" {
+		if _, err := os.Stat(currentPath); err == nil {
+			if err := archiveCurrentConfig(currentPath); err != nil {
+				slog.Warn("admin config: archive before update failed", "tenant", inst.ID, "error", err)
+			}
+		}
+	}
+
 	// Persist via TenantStore (always writes to TenantsDir)
 	persistedPath := ts.SaveTenantConfig(inst.ID, &newCfg)
 	if persistedPath != "" {
+		ts.mu.Lock()
 		inst.ConfigPath = persistedPath
+		ts.mu.Unlock()
 	}
 
 	// Reload tenant
@@ -296,7 +375,21 @@ func (ts *TenantStore) adminConfigReloadHandler(w http.ResponseWriter, r *http.R
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	if err := ts.ReloadTenant(ctx, inst.ID, ""); err != nil {
+	// ReloadTenant требует валидный путь к файлу конфига. Если inst.ConfigPath
+	// ещё не задан (тенант добавлен с пустым configPath) — берём канонический
+	// путь из TenantsDir. Раньше сюда передавалась пустая строка, и каждый
+	// reload падал с 500 (load "": no such file).
+	configPath := inst.ConfigPath
+	if configPath == "" {
+		configPath = ts.TenantConfigPath(inst.ID)
+	}
+	if configPath == "" {
+		handlers.RespondError(w, http.StatusInternalServerError, "reload_error",
+			"tenant config path is not configured")
+		return
+	}
+
+	if err := ts.ReloadTenant(ctx, inst.ID, configPath); err != nil {
 		handlers.RespondError(w, http.StatusInternalServerError, "reload_error", err.Error())
 		return
 	}
@@ -347,6 +440,41 @@ func (ts *TenantStore) adminConfigVersionsHandler(w http.ResponseWriter, r *http
 	handlers.RespondJSON(w, http.StatusOK, versions)
 }
 
+// logEndpointCustomizationsDropped логирует endpoint-level кастомизации
+// (Description/Params), которые rewrite перезапишет авто-версиями из Hydrate.
+// Intent не несёт endpoint-level правок — это осознанный tradeoff (M-1), но
+// потеря должна быть видна в логах. Сравниваем описание до/после регенерации.
+func logEndpointCustomizationsDropped(tenantID string, old []config.Endpoint, schema *datasource.Schema) {
+	// Старые описания по path.
+	oldDesc := make(map[string]string, len(old))
+	oldParams := make(map[string]int, len(old))
+	for _, ep := range old {
+		oldDesc[ep.Path] = ep.Description
+		oldParams[ep.Path] = len(ep.Params)
+	}
+
+	// Новые описания из intent (без интроспекции — используем текущие entities
+	// конфига, которые Hydrate перегенерирует из intent+схемы). Приближение:
+	// для rewrite мы не можем дёшево сгенерить новые endpoints здесь (это делает
+	// Hydrate в adminRewriteHandler), поэтому сигнализируем только фактом
+	// ручных правок в старом конфиге, которые будут перезаписаны.
+	// Полная сверка возможна после Hydrate в caller'е.
+	_ = schema
+	manual := 0
+	for path, desc := range oldDesc {
+		if desc != "" {
+			manual++
+			slog.Info("rewrite: endpoint has custom description, will be regenerated from intent",
+				"tenant", tenantID, "path", path)
+		}
+	}
+	_ = oldParams
+	if manual > 0 {
+		slog.Warn("rewrite: N endpoint descriptions will be overwritten by auto-generated ones",
+			"tenant", tenantID, "count", manual)
+	}
+}
+
 func (ts *TenantStore) adminRewriteHandler(_ datasource.Adapter, _ string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		inst := ts.resolveTenant(r)
@@ -377,27 +505,53 @@ func (ts *TenantStore) adminRewriteHandler(_ datasource.Adapter, _ string) http.
 			return
 		}
 
-		// Cache schema for /mcp/schema endpoint
+		// Cache schema for /mcp/schema endpoint + persist для RegenerateAndPersistTenantConfig.
+		// Запись под schemaMu — /mcp/schema читает это поле из другого goroutine.
+		inst.schemaMu.Lock()
 		inst.IntrospectedSchema = schema
+		inst.schemaMu.Unlock()
+		ts.SaveTenantSchema(inst.ID, schema)
 
-		// Cache schema for /mcp/schema endpoint
-		inst.IntrospectedSchema = schema
+		// M-1: rewrite пересобирает эндпоинты из intent — ручные endpoint-level
+		// правки (Description, Params) не входят в intent и будут стёрты.
+		// Это осознанный tradeoff (intent не несёт endpoint-level кастомизаций),
+		// но фиксируем в лог, чтобы потерю было видно.
+		logEndpointCustomizationsDropped(inst.ID, inst.Config.Endpoints, schema)
 
-		genCfg := &config.Config{
-			DataSource:          inst.Config.DataSource,
-			SkipRules:           inst.Config.SkipRules,
-			DisplayPrefixes:     inst.Config.DisplayPrefixes,
-			CustomPlurals:       inst.Config.CustomPlurals,
-			DisabledDefaultRules: inst.Config.DisabledDefaultRules,
-		}
-		newCfg := configgen.Generate(schema, genCfg)
-
-		// Preserve custom configgen fields on the generated config
-		newCfg.SkipRules = genCfg.SkipRules
-		newCfg.DisplayPrefixes = genCfg.DisplayPrefixes
-		newCfg.CustomPlurals = genCfg.CustomPlurals
-		newCfg.DisabledDefaultRules = genCfg.DisabledDefaultRules
+		// Пересборка из intent (единственного источника правды) + свежей схемы.
+		// ExtractIntent вытаскивает все кастомизации (FieldRules, CustomShortNames,
+		// explicit CustomQueries и т.д.), Hydrate генерирует Entities/Endpoints/MCPTools
+		// и возвращает их обратно. Так rewrite не теряет настройки.
+		newCfg := configgen.Hydrate(configgen.ExtractIntent(inst.Config), schema)
 		newCfg.ApprovedTools = inst.Config.ApprovedTools
+
+		// M-2: ApprovedTools могут устареть после rewrite (сущность переименована,
+		// эндпоинт удалён). Оставляем только те, что реально существуют в новых
+		// endpoints, и логируем отброшенные — это security-relevant (write-доступ).
+		epPaths := make(map[string]bool, len(newCfg.Endpoints))
+		for _, ep := range newCfg.Endpoints {
+			epPaths[ep.Path] = true
+		}
+		keptApproved := make([]config.ApprovedTool, 0, len(newCfg.ApprovedTools))
+		for _, a := range newCfg.ApprovedTools {
+			if epPaths[a.Endpoint] {
+				keptApproved = append(keptApproved, a)
+			} else {
+				slog.Warn("rewrite: dropping stale approved tool (endpoint no longer exists)",
+					"tenant", inst.ID, "endpoint", a.Endpoint)
+			}
+		}
+		newCfg.ApprovedTools = keptApproved
+
+		// Валидируем ДО записи на диск: если регенерация дала невалидный конфиг
+		// (напр. Stats.Counter ссылается на удалённую сущность), отдаём 400 и
+		// НЕ трогаем файл — иначе получим half-applied состояние (файл новый,
+		// а reload/restart подхватит его и тенант умрёт).
+		if err := newCfg.Validate(); err != nil {
+			handlers.RespondError(w, http.StatusBadRequest, "invalid_generated_config",
+				fmt.Sprintf("rewrite produced invalid config: %v", err))
+			return
+		}
 
 		// Save tenant config to canonical location (TenantsDir/{id}.json)
 		persistedPath := ts.SaveTenantConfig(inst.ID, newCfg)
@@ -407,7 +561,9 @@ func (ts *TenantStore) adminRewriteHandler(_ datasource.Adapter, _ string) http.
 			return
 		}
 		// Update instance config path so future writes go to the right file
+		ts.mu.Lock()
 		inst.ConfigPath = persistedPath
+		ts.mu.Unlock()
 
 		// Reload
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -458,14 +614,11 @@ func (ts *TenantStore) adminDiscoverHandler(_ datasource.Adapter) http.HandlerFu
 			return
 		}
 
-		genCfg := &config.Config{
-			DataSource:          inst.Config.DataSource,
-			SkipRules:           inst.Config.SkipRules,
-			DisplayPrefixes:     inst.Config.DisplayPrefixes,
-			CustomPlurals:       inst.Config.CustomPlurals,
-			DisabledDefaultRules: inst.Config.DisabledDefaultRules,
-		}
-		cfg := configgen.Generate(schema, genCfg)
+		// L-4: discover — read-only, но кэшируем свежую схему, чтобы
+		// RegenerateAndPersistTenantConfig не регенерировал из устаревшего кэша.
+		ts.SaveTenantSchema(inst.ID, schema)
+
+		cfg := configgen.Hydrate(configgen.ExtractIntent(inst.Config), schema)
 
 		slog.Info("config generated via /admin/discover",
 			"entities", len(cfg.Entities),
@@ -490,21 +643,28 @@ func (ts *TenantStore) adminDiscoverHandler(_ datasource.Adapter) http.HandlerFu
 // adminConfigResponseFromConfig converts config.Config to admin-safe DTO.
 func adminConfigResponseFromConfig(cfg *config.Config) adminConfigResponse {
 	return adminConfigResponse{
-		Version:        cfg.Version,
-		Driver:         cfg.DataSource.Driver,
-		DataSource:     responseFromDataSource(cfg.DataSource),
-		Entities:       cfg.Entities,
-		Endpoints:      cfg.Endpoints,
-		CustomQueries:  cfg.CustomQueries,
-		Stats:          cfg.Stats,
-		Auth:           cfg.Auth,
-		MCPTools:       cfg.MCPTools,
-		Introspection:  cfg.Introspection,
-		SkipRules:      cfg.SkipRules,
-		DisplayPrefixes: cfg.DisplayPrefixes,
-		CustomPlurals:  cfg.CustomPlurals,
-		ApprovedTools:  cfg.ApprovedTools,
-		DisabledDefaultRules: cfg.DisabledDefaultRules,
+		Version:                        cfg.Version,
+		Driver:                         cfg.DataSource.Driver,
+		DataSource:                     responseFromDataSource(cfg.DataSource),
+		Entities:                       cfg.Entities,
+		Endpoints:                      cfg.Endpoints,
+		CustomQueries:                  cfg.CustomQueries,
+		Stats:                          cfg.Stats,
+		Auth:                           cfg.Auth,
+		MCPTools:                       cfg.MCPTools,
+		Introspection:                  cfg.Introspection,
+		SkipRules:                      cfg.SkipRules,
+		DisplayPrefixes:                cfg.DisplayPrefixes,
+		CustomPlurals:                  cfg.CustomPlurals,
+		ApprovedTools:                  cfg.ApprovedTools,
+		DisabledDefaultRules:           cfg.DisabledDefaultRules,
+		FilterableRules:                cfg.FilterableRules,
+		SearchableRules:                cfg.SearchableRules,
+		EnumRules:                      cfg.EnumRules,
+		DisabledDefaultFilterableRules: cfg.DisabledDefaultFilterableRules,
+		DisabledDefaultSearchableRules: cfg.DisabledDefaultSearchableRules,
+		DisabledDefaultEnumRules:       cfg.DisabledDefaultEnumRules,
+		CustomShortNames:               cfg.CustomShortNames,
 	}
 }
 
@@ -549,31 +709,46 @@ func (ts *TenantStore) adminTenantApproveToolHandler(w http.ResponseWriter, r *h
 
 	// Create a persist function that saves the approved tools back to config
 	persistFn := func() error {
-		// Sync ApprovedTools map back to Config.ApprovedTools list
-		paths := make([]config.ApprovedTool, 0, len(inst.ApprovedTools))
+		// Sync ApprovedTools map back to Config.ApprovedTools list.
+		// Читаем и пишем inst-поля под ts.mu (гонка с ReloadTenant, который
+		// перезаписывает Config/Router/ApprovedTools под ts.mu.Lock).
+		ts.mu.RLock()
+		approved := make(map[string]bool, len(inst.ApprovedTools))
 		for p := range inst.ApprovedTools {
+			approved[p] = true
+		}
+		paths := make([]config.ApprovedTool, 0, len(approved))
+		for p := range approved {
 			paths = append(paths, config.ApprovedTool{Endpoint: p})
 		}
-		inst.Config.ApprovedTools = paths
+		cfg := inst.Config
+		ts.mu.RUnlock()
 
-		// Persist to disk via SaveTenantConfig
-		savedPath := ts.SaveTenantConfig(id, inst.Config)
+		// Save to disk (вне лока — файловая операция).
+		newCfg := *cfg
+		newCfg.ApprovedTools = paths
+		savedPath := ts.SaveTenantConfig(id, &newCfg)
 		if savedPath == "" {
 			return fmt.Errorf("failed to save tenant config for %q", id)
 		}
-		inst.ConfigPath = savedPath
 
-		// Rebuild router with updated approved tools
+		// Rebuild router with updated approved tools (вне лока — дорого).
 		approvedTools := make(map[string]bool)
-		for _, p := range inst.Config.ApprovedTools {
+		for _, p := range paths {
 			approvedTools[p.Endpoint] = true
 		}
-		newRouter, err := NewRouterFromConfig(ts, inst.Config, inst.AdapterSub, approvedTools)
+		newRouter, err := NewRouterFromConfig(ts, &newCfg, inst.AdapterSub, approvedTools)
 		if err != nil {
 			return fmt.Errorf("rebuild router after approval: %w", err)
 		}
+
+		// Публикуем результат под ts.mu.Lock (атомарно для конкурентных читателей).
+		ts.mu.Lock()
+		inst.ConfigPath = savedPath
+		inst.Config = &newCfg
 		inst.Router = newRouter
 		inst.ApprovedTools = approvedTools
+		ts.mu.Unlock()
 
 		return nil
 	}

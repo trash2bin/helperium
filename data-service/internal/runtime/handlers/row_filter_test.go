@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 func TestTenantFilter(t *testing.T) {

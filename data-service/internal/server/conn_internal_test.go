@@ -45,11 +45,11 @@ func (m *mockConn) ExecContext(ctx context.Context, query string, args ...any) (
 	return nil, nil
 }
 func (m *mockConn) PingContext(ctx context.Context) error { return nil }
-func (m *mockConn) Close() error                         { return nil }
+func (m *mockConn) Close() error                          { return nil }
 
 type mockAdapterForConn struct{}
 
-func (m *mockAdapterForConn) Driver() string                     { return "mock" }
+func (m *mockAdapterForConn) Driver() string                      { return "mock" }
 func (m *mockAdapterForConn) QuoteIdentifier(name string) string  { return `"` + name + `"` }
 func (m *mockAdapterForConn) TranslatePlaceholder(idx int) string { return "$3" }
 func (m *mockAdapterForConn) Connect(ctx context.Context, dsn string) (datasource.Conn, error) {

@@ -156,7 +156,7 @@ func TestFilterStrategy_LikeOp(t *testing.T) {
 		t.Fatalf("buildSQL: unexpected error: %v", err)
 	}
 
-	wantSQL := `SELECT "id", "name" FROM "products" WHERE "name" COLLATE NOCASE LIKE ? LIMIT ?`
+	wantSQL := `SELECT "id", "name" FROM "products" WHERE "name" COLLATE NOCASE LIKE ? ESCAPE '\' LIMIT ?`
 	if sql != wantSQL {
 		t.Errorf("SQL = %q\nwant %q", sql, wantSQL)
 	}
@@ -521,22 +521,22 @@ func TestFilterSecurity_MaxFilters_Exceeded(t *testing.T) {
 
 	// 16 filter conditions — should exceed maxFilters=15
 	params := map[string]string{
-		"name":          "a",
-		"name__like":    "b",
-		"name__neq":     "c",
-		"name__in":      "d",
-		"description":   "e",
+		"name":              "a",
+		"name__like":        "b",
+		"name__neq":         "c",
+		"name__in":          "d",
+		"description":       "e",
 		"description__like": "f",
 		"description__neq":  "g",
 		"description__in":   "h",
-		"category":      "i",
-		"category__like": "j",
-		"category__neq":  "k",
-		"category__in":   "l",
-		"price":         "1",
-		"price__gt":     "2",
-		"price__gte":    "3",
-		"price__lt":     "4",
+		"category":          "i",
+		"category__like":    "j",
+		"category__neq":     "k",
+		"category__in":      "l",
+		"price":             "1",
+		"price__gt":         "2",
+		"price__gte":        "3",
+		"price__lt":         "4",
 	}
 	r := makeRequest(params)
 	_, err := s.ParseRequest(r, sampleEntity, testAdapter{})
@@ -553,21 +553,21 @@ func TestFilterSecurity_MaxFilters_EdgeCase15(t *testing.T) {
 
 	// Exactly 15 filter conditions — should be allowed
 	params := map[string]string{
-		"name":          "a",
-		"name__like":    "b",
-		"name__neq":     "c",
-		"name__in":      "d",
-		"description":   "e",
+		"name":              "a",
+		"name__like":        "b",
+		"name__neq":         "c",
+		"name__in":          "d",
+		"description":       "e",
 		"description__like": "f",
 		"description__neq":  "g",
 		"description__in":   "h",
-		"category":      "i",
-		"category__like": "j",
-		"category__neq":  "k",
-		"category__in":   "l",
-		"price":         "1",
-		"price__gt":     "2",
-		"price__gte":    "3",
+		"category":          "i",
+		"category__like":    "j",
+		"category__neq":     "k",
+		"category__in":      "l",
+		"price":             "1",
+		"price__gt":         "2",
+		"price__gte":        "3",
 	}
 	r := makeRequest(params)
 	plan, err := s.ParseRequest(r, sampleEntity, testAdapter{})
@@ -577,6 +577,157 @@ func TestFilterSecurity_MaxFilters_EdgeCase15(t *testing.T) {
 	if plan == nil {
 		t.Fatal("Expected non-nil plan")
 	}
+}
+
+// ── Noise entity для тестов фильтрации мусора ───────────────────────────────
+
+var noiseEntity = config.Entity{
+	Name:     "products",
+	Table:    "products",
+	IDColumn: "id",
+	Fields: []config.EntityField{
+		{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+		{Name: "name", Column: "name", Type: config.FieldTypeString},
+		{Name: "price", Column: "price", Type: config.FieldTypeFloat},
+		{Name: "category_id", Column: "category_id", Type: config.FieldTypeInt},
+		{Name: "brand_id", Column: "brand_id", Type: config.FieldTypeInt},
+		{Name: "is_available", Column: "is_available", Type: config.FieldTypeBool},
+		{Name: "description", Column: "description", Type: config.FieldTypeString},
+		{Name: "seo_title", Column: "seo_title", Type: config.FieldTypeString},             // ← noise
+		{Name: "seo_description", Column: "seo_description", Type: config.FieldTypeString}, // ← noise
+		{Name: "views_count", Column: "views_count", Type: config.FieldTypeInt},            // ← noise
+		{Name: "weight_kg", Column: "weight_kg", Type: config.FieldTypeFloat},              // ← noise
+		{Name: "dimensions", Column: "dimensions", Type: config.FieldTypeString},           // ← noise
+		{Name: "image", Column: "image", Type: config.FieldTypeString},                     // ← noise
+		{Name: "created_at", Column: "created_at", Type: config.FieldTypeDatetime},         // ← noise
+		{Name: "is_popular", Column: "is_popular", Type: config.FieldTypeBool},             // ← noise
+		{Name: "is_new", Column: "is_new", Type: config.FieldTypeBool},                     // ← noise
+		{Name: "warranty_months", Column: "warranty_months", Type: config.FieldTypeInt},    // ← noise
+	},
+}
+
+func TestFilterStrategy_IsFilterableField_NoiseExcluded(t *testing.T) {
+	// Проверяем что бизнес-поля есть, а мусор — выкинут.
+	// isFilterableField — unexported, проверяем косвенно через ToolParams.
+	s := NewFilterStrategy("id", "name")
+	params := s.ToolParams(noiseEntity)
+
+	paramNames := make(map[string]bool)
+	for _, p := range params {
+		paramNames[p.Name] = true
+	}
+
+	// Должны быть
+	for _, name := range []string{"name", "name__in", "description", "price", "price__gt",
+		"category_id", "category_id__in", "brand_id", "brand_id__in",
+		"is_available", "is_available__in", "limit"} {
+		if !paramNames[name] {
+			t.Errorf("Missing expected param: %s", name)
+		}
+	}
+
+	// Не должны быть
+	for _, name := range []string{"seo_title", "seo_description", "views_count",
+		"weight_kg", "dimensions", "image", "created_at",
+		"is_popular", "is_new", "warranty_months"} {
+		if paramNames[name] {
+			t.Errorf("Noise field should be excluded: %s", name)
+		}
+	}
+
+	// FK поля не должны иметь __gt/__lt
+	for _, suffix := range []string{"__gt", "__lt", "__gte", "__lte"} {
+		if paramNames["category_id"+suffix] {
+			t.Errorf("FK field category_id should not have comparison op: %s", suffix)
+		}
+	}
+}
+
+func TestFilterStrategy_ToolParams_CountSanity(t *testing.T) {
+	// 17 полей в noiseEntity (включая PK). После фильтрации:
+	// PK (id) → скип
+	// noise (seo, views, weight, dims, image, created, is_popular, is_new, warranty) → скип (9 шт)
+	// filterable: name, price, category_id, brand_id, is_available, description = 6
+	// Каждое: exact + __in = 2; price: +4 comparison (__gt/gte/lt/lte);
+	//   name/description: +1 __like; category_id/brand_id/is_available: FK/bool — без comparison
+	// Итого: 6*2 + 2 + 2 + 1 = ~17 params + limit = ~18
+	// Просто проверяем что меньше 30 (было бы ~70+ с мусором)
+	s := NewFilterStrategy("id", "name")
+	params := s.ToolParams(noiseEntity)
+
+	if len(params) >= 30 {
+		t.Errorf("ToolParams should filter noise fields: got %d params, want < 30", len(params))
+	}
+	if len(params) < 5 {
+		t.Errorf("ToolParams should still have business params: got %d, want >= 5", len(params))
+	}
+	t.Logf("noiseEntity filter params: %d (was ~70+ before fix)", len(params))
+}
+
+func TestFilterStrategy_IsFilterable_DateField(t *testing.T) {
+	// * _date поля должны проходить через isFilterableField (бизнес-даты).
+	// created_at/updated_at/deleted_at НЕ проходят — это системные поля.
+	entity := config.Entity{
+		Name:     "orders",
+		Table:    "orders",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "shipped_date", Column: "shipped_date", Type: config.FieldTypeString},   // бизнес-дата
+			{Name: "delivery_date", Column: "delivery_date", Type: config.FieldTypeString}, // бизнес-дата
+			{Name: "created_at", Column: "created_at", Type: config.FieldTypeDatetime},     // системная
+			{Name: "updated_at", Column: "updated_at", Type: config.FieldTypeDatetime},     // системная
+		},
+	}
+
+	s := NewFilterStrategy("id", "name")
+	params := s.ToolParams(entity)
+	paramNames := make(map[string]bool)
+	for _, p := range params {
+		paramNames[p.Name] = true
+	}
+
+	// Бизнес-даты должны быть
+	for _, name := range []string{"shipped_date", "shipped_date__in", "delivery_date", "delivery_date__in"} {
+		if !paramNames[name] {
+			t.Errorf("Business date field should be filterable: %s", name)
+		}
+	}
+
+	// Системные даты — нет
+	for _, name := range []string{"created_at", "created_at__in", "updated_at", "updated_at__in"} {
+		if paramNames[name] {
+			t.Errorf("System datetime field should be excluded: %s", name)
+		}
+	}
+}
+
+func TestFilterStrategy_ToolParams_NoFilterableFields(t *testing.T) {
+	// Entity с одними PK + системными полями — filter не должен падать,
+	// но params будут содержать только limit.
+	entity := config.Entity{
+		Name:     "logs",
+		Table:    "logs",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "seo_title", Column: "seo_title", Type: config.FieldTypeString},     // noise
+			{Name: "created_at", Column: "created_at", Type: config.FieldTypeDatetime}, // system
+			{Name: "weight_kg", Column: "weight_kg", Type: config.FieldTypeFloat},      // noise
+		},
+	}
+
+	s := NewFilterStrategy("id", "name")
+	params := s.ToolParams(entity)
+
+	// Должен быть только limit — других полей нет
+	if len(params) != 1 {
+		t.Errorf("Expected only limit param for entity with no filterable fields, got %d: %v", len(params), params)
+	}
+	if len(params) > 0 && params[0].Name != "limit" {
+		t.Errorf("Expected only 'limit' param, got %q", params[0].Name)
+	}
+	t.Logf("entity with only noise fields → %d params (just limit)", len(params))
 }
 
 // =============================================================================
@@ -613,8 +764,8 @@ type mockAdapter struct {
 }
 
 func (m *mockAdapter) TranslatePlaceholder(i int) string { return m.ph }
-func (m *mockAdapter) QuoteIdentifier(s string) string    { return `"` + s + `"` }
-func (m *mockAdapter) QuoteString(s string) string        { return s }
+func (m *mockAdapter) QuoteIdentifier(s string) string   { return `"` + s + `"` }
+func (m *mockAdapter) QuoteString(s string) string       { return s }
 
 // =============================================================================
 // Tests: GrepStrategy — Postgres placeholders
@@ -644,5 +795,33 @@ func TestGrepStrategy_PostgresPlaceholders(t *testing.T) {
 	}
 	if len(args) == 0 {
 		t.Errorf("Expected args, got none")
+	}
+}
+
+// TestFilterStrategy_ParseRequest_RespectsFilterableRules — M3(b): ParseRequest
+// должен применять filterableRules (как ToolParams). Заблокированное поле
+// block-only правилом не фильтруется через HTTP.
+func TestFilterStrategy_ParseRequest_RespectsFilterableRules(t *testing.T) {
+	blockRule := config.FieldRule{BlockNames: []string{"category"}}
+	s := NewFilterStrategy("id", "name", blockRule)
+
+	// category заблокирован → 0 conditions → "at least one filter parameter".
+	r := makeRequest(map[string]string{"category": "x"})
+	if _, err := s.ParseRequest(r, sampleEntity, testAdapter{}); err == nil {
+		t.Fatal("expected error for blocked field category, got nil")
+	}
+
+	// name разрешён (block-only правило не трогает его).
+	r2 := makeRequest(map[string]string{"name": "x"})
+	if _, err := s.ParseRequest(r2, sampleEntity, testAdapter{}); err != nil {
+		t.Errorf("expected OK for allowed field name, got: %v", err)
+	}
+
+	// Зеркальность: ToolParams тоже не содержит category.
+	params := s.ToolParams(sampleEntity)
+	for _, p := range params {
+		if p.Name == "category" {
+			t.Errorf("ToolParams should exclude blocked field category")
+		}
 	}
 }

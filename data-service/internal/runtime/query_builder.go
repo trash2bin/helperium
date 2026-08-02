@@ -107,7 +107,7 @@ func (b *Builder) BuildFind(entity Entity, searchField, value string) (Query, er
 	}
 
 	q := Query{
-		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` ` + likeOp + ` ` + ph,
+		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` ` + likeOp + ` ` + ph + ` ESCAPE '\'`,
 		Args: []any{searchVal},
 	}
 	return q, nil
@@ -128,13 +128,15 @@ func (b *Builder) isPostgres() bool {
 // filterOps  — типы операций: "like" для string, "eq" для чисел/bool.
 //
 // Пример:
-//   filterCols: ["name", "status", "city"]
-//   filterVals: ["Ivan", "active", "Moscow"]
-//   filterOps:  ["like", "eq", "eq"]
+//
+//	filterCols: ["name", "status", "city"]
+//	filterVals: ["Ivan", "active", "Moscow"]
+//	filterOps:  ["like", "eq", "eq"]
 //
 // Результат:
-//   SELECT ... FROM customers WHERE "name" ILIKE ? AND "status" = ? AND "city" = ?
-//   Args: ["%Ivan%", "active", "Moscow"]
+//
+//	SELECT ... FROM customers WHERE "name" ILIKE ? AND "status" = ? AND "city" = ?
+//	Args: ["%Ivan%", "active", "Moscow"]
 func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []any, filterOps []string) (Query, error) {
 	if entity.Table == "" {
 		return Query{}, &QueryError{
@@ -179,7 +181,10 @@ func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []a
 			}
 			escaped := escapeReplacer.Replace(s)
 			args = append(args, "%"+escaped+"%")
-			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" "+likeOp+" "+ph)
+			// ESCAPE '\\' обязателен: escapeReplacer экранирует %→\%, _→\_,
+			// но без ESCAPE-клаузы (SQLite) \ — литерал, wildcard остаётся активным.
+			// Согласовано с BuildFind и query.Engine (builder.go).
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" "+likeOp+" "+ph+" ESCAPE '\\'")
 			phIdx++
 		case "eq":
 			args = append(args, val)
@@ -300,23 +305,131 @@ func (b *Builder) BuildCustomQuery(cq CustomQuery, args []any) (Query, error) {
 	}
 
 	out := cq.SQL
-	// Заменяем '?' слева направо по индексу параметра. Мы не можем
-	// использовать strings.Replace — он заменяет все вхождения сразу,
-	// а нам нужно ставить $1, $2, ... в порядке появления в SQL.
-	for i := 1; i <= len(cq.Params); i++ {
-		idx := strings.Index(out, "?")
-		if idx < 0 {
-			// Меньше placeholder'ов, чем параметров — это программная
-			// ошибка cq.SQL, защищаемся явно.
-			return Query{}, &QueryError{
-				Op:     "BuildCustomQuery",
-				Reason: "placeholder count mismatch in SQL: fewer '?' than Params",
+	// Заменяем '?' слева направо по индексу параметра, но ТОЛЬКО вне
+	// строковых литералов: '?' внутри 'what?' / оператора JSONB (?)
+	// не является placeholder'ом. Идём посимвольно, отслеживая состояние
+	// строкового литерала ('...'; '' — экранированная кавычка внутри),
+	// комментариев (-- ... и /* ... */), PG dollar-строк ($$...$$, $tag$...$tag$)
+	// и JSONB-операторов (?|, ?&, ? 'key').
+	paramIdx := 0
+	inSingleQuote := false
+	inLineComment := false
+	inBlockComment := false
+	dollarTag := "" // текущая dollar-строка ("$$" или "$tag$"); "" = вне
+	var sb strings.Builder
+	for i := 0; i < len(out); i++ {
+		ch := out[i]
+		switch {
+		case inLineComment:
+			sb.WriteByte(ch)
+			if ch == '\n' {
+				inLineComment = false
 			}
+		case inBlockComment:
+			sb.WriteByte(ch)
+			if ch == '*' && i+1 < len(out) && out[i+1] == '/' {
+				sb.WriteByte('/')
+				i++
+				inBlockComment = false
+			}
+		case dollarTag != "":
+			// Внутри dollar-строки: ищем закрывающий тег (пишем его целиком,
+			// не дублируя текущий символ).
+			if strings.HasPrefix(out[i:], dollarTag) {
+				sb.WriteString(dollarTag)
+				i += len(dollarTag) - 1
+				dollarTag = ""
+			} else {
+				sb.WriteByte(ch)
+			}
+		case inSingleQuote:
+			// ' внутри литерала: '' — экранированная кавычка (продолжаем),
+			// иначе — конец литерала.
+			sb.WriteByte(ch)
+			if ch == '\'' {
+				if i+1 < len(out) && out[i+1] == '\'' {
+					sb.WriteByte('\'')
+					i++
+				} else {
+					inSingleQuote = false
+				}
+			}
+		case ch == '\'' && !inSingleQuote:
+			inSingleQuote = true
+			sb.WriteByte(ch)
+		case ch == '-' && i+1 < len(out) && out[i+1] == '-':
+			inLineComment = true
+			sb.WriteByte(ch)
+			// второй '-' запишется следующей итерацией (в inLineComment)
+		case ch == '/' && i+1 < len(out) && out[i+1] == '*':
+			inBlockComment = true
+			sb.WriteByte(ch)
+			// второй символ '*' запишется следующей итерацией (в inBlockComment)
+		case ch == '$':
+			// PG dollar-quote: $$ или $tag$. Если Params пуст и это просто $N
+			// (уже нативный плейсхолдер) — не трогаем.
+			if tag := matchDollarQuote(out[i:]); tag != "" {
+				dollarTag = tag
+				sb.WriteString(tag)
+				i += len(tag) - 1
+			} else {
+				sb.WriteByte(ch)
+			}
+		case ch == '?' && !inSingleQuote:
+			// JSONB-операторы НЕ placeholder'ы: ?|, ?& (следующий | или &),
+			// и ? 'key' (пробел + кавычка). Простой `? ` перед комментарием/концом
+			// — placeholder (в IN (?, ?) / = ? идёт пробел/запятая/скобка).
+			if i+1 < len(out) && (out[i+1] == '|' || out[i+1] == '&') {
+				sb.WriteByte(ch)
+			} else if i+2 < len(out) && out[i+1] == ' ' && out[i+2] == '\'' {
+				sb.WriteByte(ch)
+			} else {
+				paramIdx++
+				sb.WriteString(b.adapter.TranslatePlaceholder(paramIdx))
+			}
+		default:
+			sb.WriteByte(ch)
 		}
-		out = out[:idx] + b.adapter.TranslatePlaceholder(i) + out[idx+1:]
 	}
+	if paramIdx < len(cq.Params) {
+		// Меньше placeholder'ов, чем параметров — это программная
+		// ошибка cq.SQL, защищаемся явно.
+		return Query{}, &QueryError{
+			Op:     "BuildCustomQuery",
+			Reason: "placeholder count mismatch in SQL: fewer '?' than Params",
+		}
+	}
+	out = sb.String()
 
 	return Query{SQL: out, Args: args}, nil
+}
+
+// matchDollarQuote определяет PG dollar-quote тег в начале s: "$$", "$tag$".
+// Возвращает "" если s не начинается с dollar-quote.
+func matchDollarQuote(s string) string {
+	if len(s) < 2 || s[0] != '$' {
+		return ""
+	}
+	if s[1] == '$' {
+		return "$$"
+	}
+	// $tag$ — буквы/цифры/underscore между $ и $.
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if c == '$' && i > 1 {
+			return s[:i+1]
+		}
+		if !isDollarTagChar(c) {
+			return ""
+		}
+	}
+	return ""
+}
+
+// isDollarTagChar — допустимый символ в теге dollar-quoted строки
+// ($tag$...$tag$): буква, цифра или underscore.
+func isDollarTagChar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
 }
 
 // buildColumnList — внутренний helper: список квотированных колонок через запятую.
@@ -355,7 +468,6 @@ func paramCountMismatchReason(expected, got int) string {
 	return "arg count mismatch: query expects " +
 		strconv.Itoa(expected) + " params, got " + strconv.Itoa(got)
 }
-
 
 // isValidSelect — проверяет, что SQL является безопасным SELECT-выражением.
 //

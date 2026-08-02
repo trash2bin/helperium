@@ -11,9 +11,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/data-service/internal/runtime/handlers"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // TestStatsHandler_Success — несколько счётчиков, возвращает корректные значения
@@ -186,7 +186,8 @@ func TestStatsHandler_UnknownEntity(t *testing.T) {
 	}
 }
 
-// TestStatsHandler_DBError — ошибка БД во время COUNT → 500 db_error
+// TestStatsHandler_DBError — ошибка БД во время COUNT → fail-soft: counter
+// пропускается, /stats отдаёт 200 с остальными счётчиками (раньше: 500 на весь эндпоинт).
 func TestStatsHandler_DBError(t *testing.T) {
 	db, _ := sql.Open("sqlite", ":memory:")
 	defer db.Close() //nolint:errcheck
@@ -235,10 +236,98 @@ func TestStatsHandler_DBError(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
+	// Fail-soft: битый counter пропускается, ответ 200 без его ключа.
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 (fail-soft), got %d: %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "db_error") {
-		t.Errorf("response should contain db_error: %s", w.Body.String())
+	if strings.Contains(w.Body.String(), "total_customers") {
+		t.Errorf("failed counter should be skipped: %s", w.Body.String())
+	}
+}
+
+// TestStatsHandler_RowFilterUnknownColumn_SkipsBadCounter — RowFilter на
+// несуществующую колонку: один counter падает, остальные считаются (200).
+// Баг C6: раньше весь /stats валился 500.
+func TestStatsHandler_RowFilterUnknownColumn_SkipsBadCounter(t *testing.T) {
+	db, _ := sql.Open("sqlite", ":memory:")
+	defer db.Close() //nolint:errcheck
+	// :memory: — своя БД на коннект: фиксируем один коннект.
+	db.SetMaxOpenConns(1)
+
+	_, _ = db.ExecContext(context.Background(), `
+		CREATE TABLE customers (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL
+		);
+		INSERT INTO customers (id, name) VALUES (1, 'John'), (2, 'Jane');
+		CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY,
+			msg TEXT NOT NULL
+		);
+		INSERT INTO audit_log (id, msg) VALUES (1, 'a'), (2, 'b'), (3, 'c');
+	`)
+
+	adapter := &testAdapter{db: db}
+
+	customerEntity := runtime.Entity{
+		Name:     "customer",
+		Table:    "customers",
+		IDColumn: "id",
+		Fields: []runtime.EntityField{
+			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
+			{Name: "name", Column: "name", Type: "string"},
+		},
+	}
+	auditEntity := runtime.Entity{
+		Name:     "audit_log",
+		Table:    "audit_log",
+		IDColumn: "id",
+		Fields: []runtime.EntityField{
+			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
+			{Name: "msg", Column: "msg", Type: "string"},
+		},
+	}
+	resolver, _ := runtime.NewEntityResolver([]runtime.Entity{customerEntity, auditEntity})
+	builder := runtime.NewBuilder(adapter)
+
+	ctx := &handlers.Context{
+		DB:       adapter,
+		Adapter:  adapter,
+		Builder:  builder,
+		Resolver: resolver,
+		URLParam: func(_ *http.Request, _ string) string { return "" },
+		TenantIDFunc: func(_ *http.Request) string { return "tenant-a" },
+		// RowFilter ссылается на tenant_id, которой НЕТ в таблице customers.
+		// audit_log — БЕЗ RowFilter (healthy counter).
+		Auth: &config.AuthConfig{
+			Strategy: config.AuthStrategyHeader,
+			RowFilters: []config.RowFilter{
+				{Entity: "customer", Where: `"tenant_id" = :tenant_id`},
+			},
+		},
+	}
+
+	cfg := &config.Config{
+		Stats: &config.StatsConfig{
+			Counters: []config.Counter{
+				{Name: "customers_with_tenant", Entity: "customer"}, // битый (нет tenant_id) → 0 или skip
+				{Name: "audit_total", Entity: "audit_log"},         // healthy → 3
+			},
+		},
+	}
+
+	h := handlers.StatsHandler(ctx, cfg)
+	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// На sqlite несуществующая колонка в WHERE даёт 0 (не ошибку) — bad counter
+	// вернёт 0, а НЕ 500 на весь /stats (главное: эндпоинт жив, healthy counter ок).
+	if !strings.Contains(body, `"audit_total":3`) {
+		t.Errorf("healthy counter should be counted: %s", body)
 	}
 }

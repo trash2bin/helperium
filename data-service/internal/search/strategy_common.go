@@ -18,7 +18,8 @@ import (
 // =============================================================================
 
 // stringFields returns all string fields of an entity (excluding PK).
-func stringFields(entity config.Entity) []config.EntityField {
+// rules — опционально: searchable FieldRules, блокирующие поля (image/seo/json).
+func stringFields(entity config.Entity, rules ...config.FieldRule) []config.EntityField {
 	var result []config.EntityField
 	for _, f := range entity.Fields {
 		if f.PrimaryKey != nil && *f.PrimaryKey {
@@ -34,7 +35,33 @@ func stringFields(entity config.Entity) []config.EntityField {
 			result = append(result, f)
 		}
 	}
+	// M3: searchableRules фильтруют поля (зеркально hasSearchableFields в configgen).
+	if len(rules) > 0 {
+		filtered := result[:0]
+		for _, f := range result {
+			if isSearchableField(f, rules) {
+				filtered = append(filtered, f)
+			}
+		}
+		result = filtered
+	}
 	return result
+}
+
+// isSearchableField — поле проходит ВСЕ searchable-правила (не заблокировано).
+// Семантика зеркальна hasSearchableFields (configgen/columns.go): поле должно
+// пройти Matches по каждому правилу. Не путать с IsFilterableField (другая
+// логика: implicit FK/date/bool + allow rules).
+func isSearchableField(f config.EntityField, rules []config.FieldRule) bool {
+	if len(rules) == 0 {
+		return true
+	}
+	for _, r := range rules {
+		if !r.Matches(f.Name) {
+			return false
+		}
+	}
+	return true
 }
 
 // regexOp returns the regex operator for the database.
@@ -86,6 +113,10 @@ func parseLimitParam(q map[string][]string, defaultLimit int) int {
 	return v
 }
 
+// maxOffset — максимальный offset, защита от перебора всей таблицы.
+// Зеркально cap'у parseLimitParam (100).
+const maxOffset = 100000
+
 // parseOffset extracts offset from query params.
 func parseOffset(q map[string][]string) int {
 	vals, ok := q["offset"]
@@ -95,6 +126,9 @@ func parseOffset(q map[string][]string) int {
 	v, err := strconv.Atoi(strings.TrimSpace(vals[0]))
 	if err != nil || v < 0 {
 		return 0
+	}
+	if v > maxOffset {
+		return maxOffset
 	}
 	return v
 }

@@ -28,14 +28,14 @@ type LLMEntity struct {
 	Name string `json:"name"`
 
 	// ToolPrefix — префикс для тулов, ссылающихся на эту сущность ("catalog_product").
-	// Нужен для построения правильных ссылок на find_*, get_*, list_*.
+	// Нужен для построения правильных ссылок get_*, grep_*, filter_*, schema_*.
 	ToolPrefix string `json:"-"`
 
 	// Description — комментарий из БД либо авто-описание.
 	Description string `json:"description,omitempty"`
 
 	// SearchFields — поля, по которым работает нечёткий поиск (ILIKE/LIKE).
-	// Агент может передавать текст в name-параметр find_* тула.
+	// Агент может передавать текст в pattern-параметр grep_* тула.
 	SearchFields string `json:"search_fields,omitempty"`
 
 	// FilterFields — поля для точной фильтрации, сгруппированные по типу.
@@ -57,10 +57,10 @@ type FilterGroup struct {
 // FilterField — одна колонка-фильтр.
 type FilterField struct {
 	Name        string `json:"name"`
-	Column      string `json:"column"`      // оригинальное имя в БД (snake_case)
-	Type        string `json:"type"`         // string/int/float/bool/date/enum
+	Column      string `json:"column"` // оригинальное имя в БД (snake_case)
+	Type        string `json:"type"`   // string/int/float/bool/date/enum
 	Description string `json:"description,omitempty"`
-	IsFK        bool   `json:"is_fk,omitempty"`   // true если это внешний ключ
+	IsFK        bool   `json:"is_fk,omitempty"`     // true если это внешний ключ
 	FKEntity    string `json:"fk_entity,omitempty"` // имя сущности, на которую ссылается FK
 }
 
@@ -85,6 +85,11 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 	displayPrefixes := cfg.DisplayPrefixes
 	if len(displayPrefixes) == 0 {
 		displayPrefixes = DefaultDisplayPrefixes()
+	}
+	// Custom short names from config
+	customShortNames := cfg.CustomShortNames
+	if customShortNames == nil {
+		customShortNames = make(map[string]string)
 	}
 	if schema == nil {
 		return &SchemaForLLM{Entities: []LLMEntity{}}
@@ -148,7 +153,7 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 		}
 
 		// Build name and description
-		businessName := shortBusinessName(e.Name, displayPrefixes)
+		businessName := shortBusinessName(e.Name, displayPrefixes, customShortNames)
 		displayName := fmt.Sprintf("%s (%s)", businessName, e.Name)
 
 		desc := e.Description
@@ -185,13 +190,13 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			fkEntity := ""
 			if fkRef != "" {
 				if refShort := tableToEntity[fkRef]; refShort != "" {
-					fkEntity = shortBusinessName(refShort, displayPrefixes)
+					fkEntity = shortBusinessName(refShort, displayPrefixes, customShortNames)
 				} else {
 					short := fkRef
 					if idx := strings.LastIndex(short, "."); idx >= 0 {
 						short = short[idx+1:]
 					}
-					fkEntity = shortBusinessName(short, displayPrefixes)
+					fkEntity = shortBusinessName(short, displayPrefixes, customShortNames)
 				}
 			}
 
@@ -231,7 +236,7 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			}
 			relations = append(relations, LLMRelation{
 				Field:            rel.LocalFK,
-				ReferencedEntity: shortBusinessName(targetName, displayPrefixes),
+				ReferencedEntity: shortBusinessName(targetName, displayPrefixes, customShortNames),
 			})
 		}
 

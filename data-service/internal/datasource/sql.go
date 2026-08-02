@@ -136,8 +136,18 @@ func (s *SQLDataSource) Schema(ctx context.Context, entityName string) (*SchemaI
 	totalRows, err := s.db.QueryContext(ctx, totalSQL)
 	if err != nil {
 		slog.ErrorContext(ctx, "DB error in Schema count", "err", err)
-	} else if totalRows.Next() {
-		_ = totalRows.Scan(&info.Total)
+	} else {
+		// B1: rows закрываем СРАЗУ после чтения (не defer до конца функции),
+		// иначе на :memory: (своя БД на коннект) следующий запрос уйдёт на
+		// другой коннект без таблицы. defer здесь ломал TestSQLDataSource_Schema_Works.
+		if totalRows.Next() {
+			if err := totalRows.Scan(&info.Total); err != nil {
+				slog.WarnContext(ctx, "Schema count scan error", "err", err)
+			}
+		}
+		if err := totalRows.Err(); err != nil {
+			slog.WarnContext(ctx, "Schema count iteration error", "err", err)
+		}
 		_ = totalRows.Close()
 	}
 
@@ -149,53 +159,78 @@ func (s *SQLDataSource) Schema(ctx context.Context, entityName string) (*SchemaI
 		if f.Column == "tenant_id" {
 			continue
 		}
-
-		qName := a.QuoteIdentifier(f.Column)
-		meta := FieldMeta{Type: string(f.Type)}
-
-		switch f.Type {
-		case config.FieldTypeString:
-			// Distinct values (top 15)
-			sqlStr := fmt.Sprintf("SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL AND %s != '' ORDER BY %s LIMIT 15",
-				qName, a.QuoteIdentifier(entity.Table), qName, qName, qName)
-			rows, err := s.db.QueryContext(ctx, sqlStr)
-			if err == nil {
-				var vals []string
-				for rows.Next() {
-					var v string
-					_ = rows.Scan(&v)
-					vals = append(vals, v)
-				}
-				_ = rows.Close()
-				meta.Distinct = vals
-			}
-
-		case config.FieldTypeInt, config.FieldTypeFloat:
-			// Min, Max, Avg
-			sqlStr := fmt.Sprintf("SELECT MIN(%s), MAX(%s), AVG(%s) FROM %s",
-				qName, qName, qName, a.QuoteIdentifier(entity.Table))
-			statRows, err := s.db.QueryContext(ctx, sqlStr)
-			if err == nil && statRows.Next() {
-				var min, max, avg sql.NullFloat64
-				_ = statRows.Scan(&min, &max, &avg)
-				_ = statRows.Close()
-				if min.Valid {
-					meta.Min = f64ptr(min.Float64)
-				}
-				if max.Valid {
-					meta.Max = f64ptr(max.Float64)
-				}
-				if avg.Valid {
-					meta.Avg = f64ptr(math.Round(avg.Float64*100) / 100)
-				}
-			}
-		}
-
-		info.Fields[f.Name] = meta
+		info.Fields[f.Name] = s.schemaFieldMeta(ctx, entity, f)
 	}
 
 	auditDuration(start, "schema", &Query{Entity: entityName})
 	return info, nil
+}
+
+// schemaFieldMeta собирает метаданные одного поля (distinct / min-max-avg).
+// Вынесено в отдельный метод, чтобы defer rows.Close() в каждом case
+// срабатывал сразу после обработки поля, а не накапливался в цикле.
+func (s *SQLDataSource) schemaFieldMeta(ctx context.Context, entity config.Entity, f config.EntityField) FieldMeta {
+	a := s.adapter
+	qName := a.QuoteIdentifier(f.Column)
+	meta := FieldMeta{Type: string(f.Type)}
+
+	switch f.Type {
+	case config.FieldTypeString:
+		// Distinct values (top 15)
+		sqlStr := fmt.Sprintf("SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL AND %s != '' ORDER BY %s LIMIT 15",
+			qName, a.QuoteIdentifier(entity.Table), qName, qName, qName)
+		rows, err := s.db.QueryContext(ctx, sqlStr)
+		if err != nil {
+			slog.WarnContext(ctx, "Schema distinct query error", "err", err)
+			return meta
+		}
+		defer rows.Close() // B1: не течь при ошибке сканирования/обрыве
+		var vals []string
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				slog.WarnContext(ctx, "Schema distinct scan error", "err", err)
+				continue
+			}
+			vals = append(vals, v)
+		}
+		if err := rows.Err(); err != nil {
+			slog.WarnContext(ctx, "Schema distinct iteration error", "err", err)
+		}
+		meta.Distinct = vals
+
+	case config.FieldTypeInt, config.FieldTypeFloat:
+		// Min, Max, Avg
+		sqlStr := fmt.Sprintf("SELECT MIN(%s), MAX(%s), AVG(%s) FROM %s",
+			qName, qName, qName, a.QuoteIdentifier(entity.Table))
+		statRows, err := s.db.QueryContext(ctx, sqlStr)
+		if err != nil {
+			slog.WarnContext(ctx, "Schema stats query error", "err", err)
+			return meta
+		}
+		defer statRows.Close() // B1: не течь при обрыве итерации
+		if statRows.Next() {
+			var min, max, avg sql.NullFloat64
+			if err := statRows.Scan(&min, &max, &avg); err != nil {
+				slog.WarnContext(ctx, "Schema stats scan error", "err", err)
+				return meta
+			}
+			if min.Valid {
+				meta.Min = f64ptr(min.Float64)
+			}
+			if max.Valid {
+				meta.Max = f64ptr(max.Float64)
+			}
+			if avg.Valid {
+				meta.Avg = f64ptr(math.Round(avg.Float64*100) / 100)
+			}
+		}
+		if err := statRows.Err(); err != nil {
+			slog.WarnContext(ctx, "Schema stats iteration error", "err", err)
+		}
+	}
+
+	return meta
 }
 
 // ===========================================================================

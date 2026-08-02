@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -23,6 +24,9 @@ import (
 func (ts *TenantStore) RegisterTenantInstance(inst *TenantInstance) error {
 	if inst.healthMu == nil {
 		inst.healthMu = &sync.Mutex{}
+	}
+	if inst.schemaMu == nil {
+		inst.schemaMu = &sync.RWMutex{}
 	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -52,8 +56,9 @@ func (ts *TenantStore) AddTenant(ctx context.Context, id string, cfg *config.Con
 	// Double-check after acquiring write lock
 	if _, exists := ts.tenants[id]; exists {
 		ts.mu.Unlock()
-		// Clean up the connection we just opened
-		_ = inst.Conn.Close()
+		// Clean up connections we just opened — both main and readonly pools,
+		// otherwise the readonly pool (readonly_dsn) leaks on duplicate AddTenant.
+		closeTenantConns(inst)
 		return nil, fmt.Errorf("tenant %q already exists", id)
 	}
 	ts.tenants[id] = inst
@@ -69,6 +74,14 @@ func (ts *TenantStore) AddTenant(ctx context.Context, id string, cfg *config.Con
 }
 
 // RemoveTenant removes a tenant and closes its connection pool.
+//
+// Two-phase removal so in-flight requests (that already resolved the instance)
+// are not served from a closed pool:
+//  1. Under ts.mu.Lock: deregister from the map and mark inst.removing — new
+//     lookups (resolveTenant/resolveTenantAndLock) immediately return nil/404.
+//  2. Outside the lock: drain the pool — stop reusing idle connections and wait
+//     for currently-executing queries to return their connections (bounded wait).
+//  3. closeTenantConns — the actual Close() once no more work can start.
 func (ts *TenantStore) RemoveTenant(ctx context.Context, id string) error {
 	ts.mu.Lock()
 	inst, ok := ts.tenants[id]
@@ -77,22 +90,89 @@ func (ts *TenantStore) RemoveTenant(ctx context.Context, id string) error {
 		return fmt.Errorf("tenant %q not found", id)
 	}
 	delete(ts.tenants, id)
+	inst.removing.Store(true)
 	ts.mu.Unlock()
 
-	// Close connection outside the lock to avoid blocking readers
+	// Drain in-flight connections before closing. Requests that already hold an
+	// RLock (via resolveTenantAndLock) keep the instance pinned until they finish;
+	// we wait for their queries to return the connections back to the pool.
+	drainTenantConns(ctx, inst)
+
+	// Close connection outside the lock to avoid blocking readers.
+	closeTenantConns(inst)
+
+	slog.Info("tenant store: tenant removed", "id", id)
+	return nil
+}
+
+// drainTenantConns waits for in-flight queries to finish before Close().
+// It sets MaxIdleConns(0) so no new idle connections are retained, then polls
+// the pool's InUse counter until it hits zero or the drain deadline elapses.
+// The underlying connection is *sql.DB for both adapters; if the type-assert
+// fails (custom Conn implementation), it falls back to a short grace period.
+func drainTenantConns(ctx context.Context, inst *TenantInstance) {
+	if inst == nil {
+		return
+	}
+
+	// Bound the drain wait. 2s matches the health-ping timeout and the typical
+	// query budget; long-running queries will still get their results, they just
+	// won't block removal forever.
+	drainCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	drained := func() bool {
+		db, ok := asSQLDB(inst.Conn)
+		if !ok {
+			return false // cannot introspect — fall back to grace period below
+		}
+		db.SetMaxIdleConns(0)
+		for {
+			if drainCtx.Err() != nil {
+				return false
+			}
+			stats := db.Stats()
+			if stats.InUse == 0 {
+				return true
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	if !drained {
+		// Either the pool isn't a *sql.DB, or in-flight work is still running at
+		// the deadline. Give the pool a short grace period before Close() so
+		// already-started requests can finish their queries.
+		select {
+		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// asSQLDB returns the underlying *sql.DB if the Conn is backed by one.
+func asSQLDB(c datasource.Conn) (*sql.DB, bool) {
+	db, ok := c.(*sql.DB)
+	return db, ok
+}
+
+// closeTenantConns closes both the main and the read-only connection pools
+// of a TenantInstance, logging any errors. Safe to call on a partially-built
+// instance (nil fields are skipped).
+func closeTenantConns(inst *TenantInstance) {
+	if inst == nil {
+		return
+	}
 	if inst.Conn != nil {
 		if err := inst.Conn.Close(); err != nil {
-			slog.Warn("tenant store: error closing connection", "id", id, "error", err)
+			slog.Warn("tenant store: error closing connection", "id", inst.ID, "error", err)
 		}
 	}
 	if inst.ReadonlyConn != nil {
 		if err := inst.ReadonlyConn.Close(); err != nil {
-			slog.Warn("tenant store: error closing readonly connection", "id", id, "error", err)
+			slog.Warn("tenant store: error closing readonly connection", "id", inst.ID, "error", err)
 		}
 	}
-
-	slog.Info("tenant store: tenant removed", "id", id)
-	return nil
 }
 
 // GetTenant returns the TenantInstance for the given id, or (nil, false).
@@ -119,6 +199,9 @@ func (ts *TenantStore) ListTenants() []*TenantInstance {
 }
 
 // ReloadTenant reloads the config for a specific tenant from disk and rebuilds its router.
+// Если изменился DSN/ReadonlyDSN/Driver — пересоздаёт соединение целиком
+// (buildTenantInstance) и подменяет inst; иначе переиспользует существующий
+// AdapterSub (лёгкий путь — только router rebuild).
 func (ts *TenantStore) ReloadTenant(ctx context.Context, tenantID string, configPath string) error {
 	newCfg, err := config.Load(configPath)
 	if err != nil {
@@ -130,6 +213,53 @@ func (ts *TenantStore) ReloadTenant(ctx context.Context, tenantID string, config
 	ts.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("reload tenant %q: not found", tenantID)
+	}
+
+	// DSN изменился? Тогда валидированный dry-run'ом конфиг должен реально
+	// переподключиться (иначе изменение DSN молча игнорируется).
+	dsnChanged := inst.Config == nil ||
+		inst.Config.DataSource.DSN != newCfg.DataSource.DSN ||
+		inst.Config.DataSource.ReadonlyDSN != newCfg.DataSource.ReadonlyDSN ||
+		inst.Config.DataSource.Driver != newCfg.DataSource.Driver
+
+	if dsnChanged {
+		newInst, err := buildTenantInstance(ctx, ts, ts.registry, tenantID, newCfg, configPath)
+		if err != nil {
+			return fmt.Errorf("reload tenant %q: rebuild instance: %w", tenantID, err)
+		}
+		oldInst := inst
+		ts.mu.Lock()
+		_, ok := ts.tenants[tenantID]
+		if ok {
+			ts.tenants[tenantID] = newInst
+		}
+		ts.mu.Unlock()
+		if !ok {
+			// Тенант удалён между lookup и rebuild — не публикуем, закрываем новое.
+			if newInst.Conn != nil {
+				_ = newInst.Conn.Close()
+			}
+			if newInst.ReadonlyConn != nil {
+				_ = newInst.ReadonlyConn.Close()
+			}
+			return fmt.Errorf("reload tenant %q: removed during reload", tenantID)
+		}
+		// Закрываем старые коннекты ПОСЛЕ публикации нового inst
+		// (in-flight запросы со старым Router завершат работу по нему).
+		if oldInst != nil {
+			if oldInst.Conn != nil {
+				_ = oldInst.Conn.Close()
+			}
+			if oldInst.ReadonlyConn != nil {
+				_ = oldInst.ReadonlyConn.Close()
+			}
+		}
+		slog.Info("tenant store: config reloaded (DSN changed, reconnected)",
+			"tenant", tenantID,
+			"entities", len(newCfg.Entities),
+			"endpoints", len(newCfg.Endpoints),
+		)
+		return nil
 	}
 
 	// Build new router using existing connection, preserving approved tools
@@ -237,6 +367,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 		CreatedAt:     time.Now(),
 		Healthy:       true,
 		healthMu:      &sync.Mutex{},
+		schemaMu:      &sync.RWMutex{},
 		ApprovedTools: approvedTools,
 	}, nil
 }

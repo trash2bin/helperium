@@ -13,9 +13,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/data-service/internal/datasource"
 	"github.com/trash2bin/helperium/data-service/internal/server"
+	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
 // testSchema — DDL для in-memory SQLite в тестах.
@@ -275,7 +275,7 @@ func testConfig(t *testing.T) *config.Config {
 				MaxRows: 100,
 			},
 			"disciplines_all": {
-				SQL:    "SELECT d.id, d.name, d.description FROM disciplines d ORDER BY d.name",
+				SQL: "SELECT d.id, d.name, d.description FROM disciplines d ORDER BY d.name",
 				ResultMapping: map[string]config.ResultMappingField{
 					"id":          {Type: "string"},
 					"name":        {Type: "string"},
@@ -376,7 +376,6 @@ func extractPreview(t *testing.T, data any) []map[string]any {
 	t.Fatalf("unexpected response format: %v", data)
 	return nil
 }
-
 
 // ══════════════════════════════════════════════════════════════════════
 // Health

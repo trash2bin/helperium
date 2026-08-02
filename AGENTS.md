@@ -108,12 +108,40 @@ Default `read_only: true`. Активация: `false` в конфиге, PUT /a
 ## 🧬 Verification
 
 ```
-Last verified: 2026-07-30 (commit 1ea1a037e2cf167ba6d00f6d25095e9dc2a8ddf6, аудит api-service)
+Last verified: 2026-08-01 (аудит data-service после рефакторинга + фиксы C1-C6, M1-M7, config v4)
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
 
-Исправлено 12 из 14 найденных проблем (HIGH-1, HIGH-3, MEDIUM 1-8, LOW 1-3).
-HIGH-2 (backlog concurrent writes) не воспроизводится на тестах — отложен.
+Аудит (doc/agents/data-service-refactor-audit.md): рой из 4 reviewer'ов + ручная верификация.
+Исправлено (TDD, 28 новых тестов, 734 passed под -race):
+- C1 CRITICAL deadlock: вложенный RLock в ServeHTTP → inst в контексте (tenantInstanceKey),
+  /mcp/schema и /openapi.json читают из контекста, fallback на resolveTenant для прямых вызовов.
+- C2 HIGH PG placeholder offset: tenantFilter с корректным existingArgCount во всех ветках strategy_handler.
+- C3 HIGH format=count + tenant: AND к внутреннему WHERE вместо обёртки агрегата в подзапрос.
+- C4 HIGH tenant после ORDER BY: insertTenantBeforeLimit вставляет перед первой из ORDER/LIMIT/OFFSET
+  + перенумерация $N для PG.
+- C5 HIGH legacy find/list удалены: CurrentConfigVersion 3→4, конфиги с find/list падают в Validate.
+- C6 HIGH /stats fail-soft: битый counter логируется и пропускается, остальные считаются;
+  Validate проверяет RowFilter.Where (isValidFilterExpression) и entity.
+- M1 grep invert: Де Морган (AND↔OR) для multi-token/multi-field.
+- M2 BuildFilter: ESCAPE '\\' добавлена.
+- M3 searchable/filterable FieldRules enforced в runtime (grep stringFields, filter ParseRequest).
+- M4 BuildCustomQuery: JSONB ?| ?& ? 'key', комментарии -- /* */, dollar-строки не трогаются.
+- M5 sqlite: Exec-fallback прагм пропускается при явном _pragma= в DSN.
+- M6 normalizeDateTime: миллисекунды и таймзона парсятся.
+- M7 FieldRule.ID (стабильный) вместо Reason-prefix; миграция Reason→ID в normalizeV3ToV4;
+  resolveFieldRules идемпотентен (custom-дефолты не дублируются).
+LOW-фиксы (воркеры с toolBudget-block на read): L1 offset cap 100k, L2 tenant_id не течёт в ответ,
+L3 SaveTenantSchema атомарный (temp+rename), L5 QuoteIdentifier контракт, L6 ReadOnlyDB Deprecated,
+L7 DSN с ? документирован. Ручные фиксы: L8 PersistTenantConfig →
+RegenerateAndPersistTenantConfig (честное имя, только тесты), L9 OpenAPI query-params (grep/filter/distinct),
+L10 filter __like \ + ESCAPE задокументирован (filter.go + search-strategies.md).
+Остался: L4 (HealthCheck closed conn — приемлемо).
+Итого: 754 (data-service) + 114 (helperium-go) тестов, -race чистый.
+Финальный review-рой (2026-08-01) нашёл 2 CRITICAL (sqlite regexp не зарегистрирован,
+mode=ro + WAL ломает readonly_dsn), HIGH (OpenAPI sort_dir ghost), MEDIUM (admin-хендлеры
+без ts.mu — race с ReloadTenant; ReloadTenant игнорирует DSN; M7 custom-дедупликация)
++ LOW doc-фиксы. Все исправлены TDD (R1-R9 в data-service-refactor-audit.md).
 ```
 
 > **Knowledge graph workflow, Cookbook, skills, agent rules, decision tree** — смотри [.pi/APPEND_SYSTEM.md](.pi/APPEND_SYSTEM.md)

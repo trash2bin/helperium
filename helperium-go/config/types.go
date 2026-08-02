@@ -43,7 +43,8 @@ func (m HTTPMethod) Valid() bool {
 	return false
 }
 
-// Op — реализация endpoint'а (builtin, get_by_id, find, list, custom_query, distinct).
+// Op — реализация endpoint'а (builtin, get_by_id, strategy, custom_query, distinct, count).
+// Legacy op="find"/op="list" НЕ поддерживаются (удалены в v4) — Validate их отвергает.
 type Op string
 
 const (
@@ -222,6 +223,32 @@ type Config struct {
 
 	// CustomPlurals — кастомные plural-формы для tool display names.
 	CustomPlurals map[string]string `json:"custom_plurals,omitempty"`
+
+	// Field-level rules — настройка filterable/searchable/enum правил через конфиг.
+	// Паттерн как у SkipRules: Default*() + DisabledDefault* + Custom*.
+
+	// FilterableRules — дополняют дефолтные правила фильтруемых полей.
+	// Поле считается filterable если: FK (*_id), бизнес-дата (*_date), бизнес-бул,
+	// или проходит хотя бы одно из правил.
+	FilterableRules []FieldRule `json:"filterable_rules,omitempty"`
+	// DisabledDefaultFilterableRules — список имён дефолтных filterable rules для отключения.
+	DisabledDefaultFilterableRules []string `json:"disabled_default_filterable_rules,omitempty"`
+
+	// SearchableRules — дополняют дефолтные правила поисковых полей.
+	// Поле считается searchable если: string-тип, не block-правило.
+	SearchableRules []FieldRule `json:"searchable_rules,omitempty"`
+	// DisabledDefaultSearchableRules — список имён дефолтных searchable rules для отключения.
+	DisabledDefaultSearchableRules []string `json:"disabled_default_searchable_rules,omitempty"`
+
+	// EnumRules — дополняют дефолтные правила enum-полей (для distinct).
+	// Поле считается enum если: string-тип и проходит хотя бы одно из правил.
+	EnumRules []FieldRule `json:"enum_rules,omitempty"`
+	// DisabledDefaultEnumRules — список имён дефолтных enum rules для отключения.
+	DisabledDefaultEnumRules []string `json:"disabled_default_enum_rules,omitempty"`
+
+	// CustomShortNames — кастомные короткие имена для entity display_name.
+	// Ключ — короткое имя (например "cartitem"), значение — display name ("Cart item").
+	CustomShortNames map[string]string `json:"custom_short_names,omitempty"`
 }
 
 // DataSourceConfig — подключение к клиентской БД.
@@ -530,6 +557,81 @@ func (r SkipRule) Matches(name string) bool {
 	return true
 }
 
+// FieldRule defines a pattern for field-level allow/block rules.
+// Used for controlling which fields are searchable, filterable, or enum-eligible.
+// Allow* fields use OR logic: at least one must match.
+// Block* fields use OR logic: if any matches, the rule blocks.
+// If all Allow* slices are empty, the rule is treated as an allow-all (block-only rule).
+type FieldRule struct {
+	// ID — стабильный идентификатор правила (для disabled_default_*_rules).
+	// Дефолтные правила имеют фиксированные ID ('filterable.common',
+	// 'searchable.block_image', 'enum.contains'). Reason — только описательный,
+	// для матчинга не используется.
+	ID            string   `json:"id,omitempty"`
+	AllowNames    []string `json:"allow_names,omitempty"`
+	AllowSuffix   []string `json:"allow_suffix,omitempty"`
+	AllowContains []string `json:"allow_contains,omitempty"`
+	BlockNames    []string `json:"block_names,omitempty"`
+	BlockSuffix   []string `json:"block_suffix,omitempty"`
+	BlockContains []string `json:"block_contains,omitempty"`
+	Reason        string   `json:"reason,omitempty"`
+}
+
+// Matches checks if a field name matches this rule according to the FieldRule semantics.
+//   - If any Allow* is non-empty: at least one must match (OR), or the field is rejected.
+//   - If all Allow* are empty: the allow check passes (treat as block-only rule).
+//   - Then Block*: if any matches (OR), the field is rejected.
+func (r FieldRule) Matches(name string) bool {
+	hasAllow := len(r.AllowNames) > 0 || len(r.AllowSuffix) > 0 || len(r.AllowContains) > 0
+
+	if hasAllow {
+		allowMatch := false
+		for _, a := range r.AllowNames {
+			if a == name {
+				allowMatch = true
+				break
+			}
+		}
+		if !allowMatch {
+			for _, s := range r.AllowSuffix {
+				if strings.HasSuffix(name, s) {
+					allowMatch = true
+					break
+				}
+			}
+		}
+		if !allowMatch {
+			for _, c := range r.AllowContains {
+				if strings.Contains(name, c) {
+					allowMatch = true
+					break
+				}
+			}
+		}
+		if !allowMatch {
+			return false
+		}
+	}
+
+	for _, b := range r.BlockNames {
+		if b == name {
+			return false
+		}
+	}
+	for _, s := range r.BlockSuffix {
+		if strings.HasSuffix(name, s) {
+			return false
+		}
+	}
+	for _, c := range r.BlockContains {
+		if strings.Contains(name, c) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // ServerConfig — настройки HTTP-сервера data-service.
 type ServerConfig struct {
 	// RequestTimeoutSeconds — таймаут обработки запроса в секундах.
@@ -718,6 +820,21 @@ func (c *Config) Validate() error {
 	if c.Auth != nil {
 		if !c.Auth.Strategy.Valid() {
 			errs = append(errs, fmt.Sprintf("auth.strategy: unsupported %q", c.Auth.Strategy))
+		}
+		// RowFilter.Where валидируется как безопасное WHERE-выражение (тот же
+		// механизм, что и counter.Filter). Без этого битый RowFilter (напр.
+		// несуществующая колонка или инъекция) ронял /stats и другие хендлеры.
+		for i, rf := range c.Auth.RowFilters {
+			if rf.Entity == "" {
+				errs = append(errs, fmt.Sprintf("auth.row_filters[%d].entity: required", i))
+			} else if !entityNames[rf.Entity] {
+				errs = append(errs, fmt.Sprintf("auth.row_filters[%d].entity %q not found in entities", i, rf.Entity))
+			}
+			if rf.Where == "" {
+				errs = append(errs, fmt.Sprintf("auth.row_filters[%d].where: required", i))
+			} else if !isValidFilterExpression(rf.Where) {
+				errs = append(errs, fmt.Sprintf("auth.row_filters[%d].where: contains forbidden SQL construct", i))
+			}
 		}
 	}
 

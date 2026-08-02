@@ -2,9 +2,9 @@ package query
 
 // SearchResult — универсальный ответ для всех search endpoint'ов.
 type SearchResult struct {
-	Total    int           `json:"total"`
-	Returned int           `json:"returned"`
-	Preview  []CompactRow  `json:"preview,omitempty"`
+	Total    int              `json:"total"`
+	Returned int              `json:"returned"`
+	Preview  []CompactRow     `json:"preview,omitempty"`
 	Data     []map[string]any `json:"data,omitempty"`
 
 	// EmptyHint — подсказка при пустом результате (только при total==0)
