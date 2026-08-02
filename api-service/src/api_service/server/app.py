@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.staticfiles import StaticFiles
 
 from api_service.prometheus_metrics import init_metrics
 from api_service.log_config import configure_logging
+from .rate_limit import limiter
 
 try:
     from helperium_sdk.tracing import (
@@ -35,10 +39,6 @@ from .routes import chat, agents, admin, backlog, health, voice
 
 configure_logging()
 logger = logging.getLogger("api_service.server")
-
-import os
-
-from .rate_limit import limiter
 
 
 @asynccontextmanager
@@ -114,7 +114,15 @@ if instrument_fastapi is not None:
 
 # Rate limiter
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _helperium_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    """Adapter: slowapi types its handler with starlette Request[State]; FastAPI
+    registers ExceptionHandlers with plain Request. Delegate to the slowapi impl."""
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _helperium_rate_limit_handler)  # pyright: ignore[reportArgumentType]
 app.add_middleware(SlowAPIMiddleware)
 
 # CORS
@@ -134,16 +142,12 @@ app.middleware("http")(embed_security_middleware)
 app.middleware("http")(correlation_middleware)
 
 # Mount embed widget static files
-from pathlib import Path
-
 embed_override = os.environ.get("EMBED_DIR")
 if embed_override:
     embed_path = Path(embed_override)
 else:
     embed_path = Path(__file__).resolve().parent.parent.parent.parent / "embed" / "dist"
 if embed_path.is_dir():
-    from starlette.staticfiles import StaticFiles
-
     app.mount("/embed", StaticFiles(directory=str(embed_path)), name="embed")
     logger.info("Embed widget mounted at /embed from %s", embed_path)
 

@@ -218,15 +218,17 @@ class LLMStage:
                 "Content[0:200]=%s",
                 response.content[:200],
             )
-            if ctx.error_context:
-                ctx.error_context = ctx.error_context.with_stage("llm_stage")
-            else:
-                ctx.error_context = ErrorContext(stage="llm_stage")
-            ctx.error_context.error_code = "raw_json_tool_calls"
-            ctx.error_context.message = response.content[:200]
+            ec = (
+                ctx.error_context.with_stage("llm_stage")
+                if ctx.error_context is not None
+                else ErrorContext(stage="llm_stage")
+            )
+            ctx.error_context = ec
+            ec.error_code = "raw_json_tool_calls"
+            ec.message = response.content[:200]
             logger.error(
                 "[STAGE][LLM] Blocked raw JSON tool calls",
-                extra=ctx.error_context.to_dict(),
+                extra=ec.to_dict(),
             )
             err_msg = (
                 "Ошибка: модель вернула необработанный JSON-запрос. "

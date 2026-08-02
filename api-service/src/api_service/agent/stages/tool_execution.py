@@ -108,20 +108,22 @@ class ToolExecutionStage:
                     arguments,
                 )
             except Exception as exc:
-                if ctx.error_context:
-                    ctx.error_context = ctx.error_context.with_stage("tool_execution")
-                else:
-                    ctx.error_context = ErrorContext(stage="tool_execution")
-                ctx.error_context.error_code = "tool_call_failed"
-                ctx.error_context.message = str(exc)
-                ctx.error_context.metadata = {
+                ec = (
+                    ctx.error_context.with_stage("tool_execution")
+                    if ctx.error_context is not None
+                    else ErrorContext(stage="tool_execution")
+                )
+                ctx.error_context = ec
+                ec.error_code = "tool_call_failed"
+                ec.message = str(exc)
+                ec.metadata = {
                     "tool_name": name,
                     "tool_call_id": tool_call_id,
                 }
                 logger.error(
                     "[STAGE][TOOL] Tool call '%s' failed",
                     name,
-                    extra=ctx.error_context.to_dict(),
+                    extra=ec.to_dict(),
                 )
                 logger.info(
                     "[TOOL_STAGE] Tool %s FAILED, Iteration=%d, Args=%s, Error=%s",

@@ -24,7 +24,7 @@ class TestAntiAbuseProtocolRemoved:
     def test_protocol_no_longer_exists(self):
         """The dead AntiAbuseChecker class is removed from protocols.py."""
         with pytest.raises(ImportError):
-            pass  # noqa: F811
+            from api_service.agent.protocols import AntiAbuseChecker  # noqa: F401
         assert True, "AntiAbuseChecker is gone from protocols.py"
 
     def test_real_implementation_still_works(self):

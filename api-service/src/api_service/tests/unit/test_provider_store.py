@@ -279,8 +279,10 @@ def api_client(provider_store, monkeypatch):
 
     monkeypatch.setattr(ps_module, "get_provider_store", lambda: provider_store)
 
-    # Reload server/app module to pick up the patched store
-    import api_service.server.app as app_mod
+    # Reload server/app module to pick up the patched store.
+    # NOTE: `from api_service.server import app` would give the FastAPI *object*
+    # (re-exported in __init__), not the module — reload would TypeError.
+    app_mod = importlib.import_module("api_service.server.app")
 
     importlib.reload(app_mod)
 

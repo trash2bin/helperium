@@ -24,13 +24,19 @@ logger = logging.getLogger("api_service.server")
 router = APIRouter()
 
 
+def _correlation_id(request: Request) -> str:
+    """Extract correlation id from request state, falling back to a fresh UUID."""
+    cid = getattr(request.state, "correlation_id", None)
+    return cid if isinstance(cid, str) and cid else str(uuid4())
+
+
 # ── Chat endpoints ──────────────────────────────────────────────────────
 
 
 @router.post("/api/chat")
 @limiter.limit(rate_limit)
 async def chat_endpoint(request: Request) -> StreamingResponse:
-    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+    correlation_id = _correlation_id(request)
 
     try:
         body = await request.json()
@@ -107,7 +113,7 @@ async def chat_voice_endpoint(
     agent: str | None = Form(None),
     lang: str | None = Form(None),
 ) -> StreamingResponse:
-    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+    correlation_id = _correlation_id(request)
 
     try:
         audio_bytes = await audio.read()
@@ -209,19 +215,16 @@ async def chat_voice_endpoint(
 
     async def events():
         try:
-            kwargs = dict(
+            async for event in get_agent().stream_events(
                 user_message=text,
                 session_id=effective_session_id,
                 tenant_ids=tenant_ids,
                 system_prompt=system_prompt,
                 lang=request_lang,
-            )
-            if resolved_llm_config:
-                kwargs["llm_config"] = resolved_llm_config
-            if provider_priority:
-                kwargs["provider_priority"] = provider_priority
-            kwargs["correlation_id"] = correlation_id
-            async for event in get_agent().stream_events(**kwargs):
+                llm_config=resolved_llm_config,
+                provider_priority=provider_priority,
+                correlation_id=correlation_id,
+            ):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
                     yield _sse(payload)
@@ -245,7 +248,7 @@ async def chat_voice_endpoint(
 @router.post("/api/chat/{name}")
 @limiter.limit(rate_limit)
 async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
-    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+    correlation_id = _correlation_id(request)
 
     agent = await asyncio.to_thread(get_agent_store().get_agent, name)
     if not agent:
@@ -298,19 +301,16 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
 
     async def events():
         try:
-            kwargs = dict(
+            async for event in get_agent().stream_events(
                 user_message=message,
                 session_id=effective_session_id,
                 tenant_ids=tenant_ids,
                 system_prompt=system_prompt,
                 lang=lang,
-            )
-            if resolved_llm_config:
-                kwargs["llm_config"] = resolved_llm_config
-            if provider_priority:
-                kwargs["provider_priority"] = provider_priority
-            kwargs["correlation_id"] = correlation_id
-            async for event in get_agent().stream_events(**kwargs):
+                llm_config=resolved_llm_config,
+                provider_priority=provider_priority,
+                correlation_id=correlation_id,
+            ):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
                     yield _sse(payload)

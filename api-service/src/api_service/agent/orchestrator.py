@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 from helperium_sdk.settings import settings
 
@@ -28,6 +28,7 @@ from .middlewares import (
 )
 from .pipeline import Pipeline, PipelineContext
 from .prompts import SYSTEM_PROMPT
+from .types import TurnMessages
 from .stages import (
     FallbackStage,
     GuardInputStage,
@@ -223,7 +224,8 @@ class LLMAgent:
                     # save turn_messages directly via conversation_manager.
                     try:
                         await self.conversation_manager.aremember_turn(
-                            ctx.session_id, ctx.turn_messages
+                            ctx.session_id,
+                            cast("TurnMessages", ctx.turn_messages),
                         )
                     except Exception:
                         logger.exception(

@@ -216,7 +216,7 @@ class TestSpendingCompositeTenantIsolation:
         mw = SpendingMiddleware()
         event = AgentEvent("final", FinalEventData(content="test"))
 
-        result = await mw.process(ctx, event)
+        _ = await mw.process(ctx, event)
 
         # ⚡ TDD: spending должен быть записан для good-tenant
         good_spent = tracker._records.get("good-tenant", 0.0)

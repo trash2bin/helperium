@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from api_service.guardrails import get_guard_checker
 from api_service.spending import get_spending_checker
-from api_service.provider_store import get_provider_store
+import api_service.provider_store as _provider_store
 from api_service.abuse_live import get_live_abuse_provider
 
 logger = logging.getLogger("api_service.server")
@@ -120,7 +120,7 @@ async def save_abuse_config(data: dict):
 @router.get("/admin/llm-providers")
 async def list_llm_providers():
     """List all LLM providers with masked API keys."""
-    store = get_provider_store()
+    store = _provider_store.get_provider_store()
     return {
         "providers": await store.list_providers(),
         "fallback_enabled": store.get_fallback_enabled(),
@@ -143,7 +143,7 @@ async def list_litellm_providers():
 async def get_llm_provider(name: str):
     """Get a single LLM provider with masked API key."""
 
-    store = get_provider_store()
+    store = _provider_store.get_provider_store()
     provider = await store.get_provider(name)
     if not provider:
         raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
@@ -163,7 +163,7 @@ async def add_llm_provider(body: dict):
         enabled: whether the provider is active (default: true)
     """
 
-    store = get_provider_store()
+    store = _provider_store.get_provider_store()
     try:
         result = await store.add_provider(
             name=body["name"],
@@ -189,7 +189,7 @@ async def update_llm_provider(name: str, body: dict):
     Set api_key="__clear__" to clear the key.
     """
 
-    store = get_provider_store()
+    store = _provider_store.get_provider_store()
     result = await store.update_provider(
         name=name,
         model=body.get("model"),
@@ -208,7 +208,7 @@ async def update_llm_provider(name: str, body: dict):
 async def delete_llm_provider(name: str):
     """Delete an LLM provider."""
 
-    store = get_provider_store()
+    store = _provider_store.get_provider_store()
     if not await store.delete_provider(name):
         raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
     return {"deleted": True}
@@ -218,7 +218,7 @@ async def delete_llm_provider(name: str):
 async def toggle_llm_provider(name: str):
     """Toggle a provider on/off."""
 
-    store = get_provider_store()
+    store = _provider_store.get_provider_store()
     provider_data = await store.get_provider(name)
     if not provider_data:
         raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
@@ -233,9 +233,7 @@ async def toggle_llm_provider(name: str):
 @router.get("/admin/llm-config")
 async def get_llm_config():
     """Get current LLM provider fallback configuration."""
-    from api_service.provider_store import get_provider_store
-
-    store = get_provider_store()
+    store = _provider_store.get_provider_store()
     providers = await store.list_providers()
 
     return {

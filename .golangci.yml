@@ -12,6 +12,8 @@ linters:
       exclude-functions:
         - (net/http.ResponseWriter).Write
         - (io.ReadCloser).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
         - (*net/http.Server).Shutdown
         - (*encoding/json.Encoder).Encode
         - fmt.Fprintf

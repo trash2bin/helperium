@@ -18,9 +18,8 @@ async def health_endpoint():
 
 
 async def get_health():
-    payload = {"api": "ok"}
     try:
-        payload["ollama"] = await get_agent().health()
+        ollama_status = await get_agent().health()
     except Exception as exc:
-        payload["ollama"] = {"status": "error", "error": str(exc)}
-    return HealthResponse(**payload)
+        ollama_status = {"status": "error", "error": str(exc)}
+    return HealthResponse(api="ok", ollama=ollama_status)

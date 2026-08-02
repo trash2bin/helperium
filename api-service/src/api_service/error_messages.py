@@ -129,8 +129,9 @@ def classify_error(exc: Exception, lang: str = "ru") -> str:
 
     # 1c. litellm ContextWindowExceededError → context_length
     if litellm_exc is not None and isinstance(
-        exc, litellm_exc.ContextWindowExceededError
-    ):  # type: ignore[union-attr]
+        exc,
+        litellm_exc.ContextWindowExceededError,  # type: ignore[union-attr]
+    ):
         return _msg("context_length", lang)
 
     # 1d. HTTPX connection errors → connection

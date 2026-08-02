@@ -78,7 +78,7 @@ class TestClassifyErrorAuthMisclassification:
 
         # ⚡ TDD: тест падает потому что classify_error возвращает
         # сообщение из категории AUTH, а должно возвращать CONNECTION
-        auth_msg = (
+        auth_msg = (  # noqa: F841
             "Ошибка доступа к модели. Попробуйте позже или обратитесь к администратору."
         )
         connection_msg = "Не удалось подключиться к серверу данных. Попробуйте позже."
@@ -103,7 +103,7 @@ class TestClassifyErrorAuthMisclassification:
         print(f"\nИсключение: {exc}")
         print(f"classify_error вернула: {result}")
 
-        auth_msg = (
+        auth_msg = (  # noqa: F841
             "Model access error. Please try again later or contact the administrator."
         )
         internal_msg = "Sorry, an internal error occurred. Please try again."
@@ -130,7 +130,7 @@ class TestClassifyErrorTokenMisclassification:
         print(f"\nИсключение: {exc}")
         print(f"classify_error вернула: {result}")
 
-        context_msg = "The conversation is too long. Please start a new chat."
+        context_msg = "The conversation is too long. Please start a new chat."  # noqa: F841
         internal_msg = "Sorry, an internal error occurred. Please try again."
 
         assert result == internal_msg, (
@@ -152,7 +152,7 @@ class TestClassifyErrorTokenMisclassification:
         print(f"\nИсключение: {exc}")
         print(f"classify_error вернула: {result}")
 
-        context_msg = "The conversation is too long. Please start a new chat."
+        context_msg = "The conversation is too long. Please start a new chat."  # noqa: F841
         internal_msg = "Sorry, an internal error occurred. Please try again."
 
         assert result == internal_msg, (
@@ -177,7 +177,7 @@ class TestClassifyErrorProviderPriority:
         print(f"\nИсключение: {exc}")
         print(f"classify_error вернула: {result}")
 
-        mcp_msg = "Не удалось выполнить запрос к базе данных. Попробуйте позже."
+        mcp_msg = "Не удалось выполнить запрос к базе данных. Попробуйте позже."  # noqa: F841
         provider_msg = "Ошибка при обработке запроса моделью. Попробуйте позже."
 
         assert result == provider_msg, (
@@ -202,7 +202,7 @@ class TestClassifyErrorProviderPriority:
         print(f"classify_error вернула: {result}")
 
         connection_msg = "Failed to connect to the data server. Please try again later."
-        mcp_msg = "Failed to query the database. Please try again later."
+        mcp_msg = "Failed to query the database. Please try again later."  # noqa: F841
 
         assert result == connection_msg, (
             f"\n\n❌ TDD FAIL: ConnectionRefused к mcp-gateway классифицировано "

@@ -15,7 +15,7 @@ logger = logging.getLogger("api_service.server")
 
 _agent_instance: LLMAgent | None = None
 _agent_lock = threading.Lock()
-_agent_store: AgentStore | None = None
+_agent_store: SqliteAgentRepository | None = None
 
 
 def get_agent_store() -> SqliteAgentRepository:
