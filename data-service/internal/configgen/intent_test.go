@@ -209,3 +209,52 @@ func keys(m map[string]config.CustomQuery) []string {
 	}
 	return out
 }
+
+// TestRewrite_NewEntityFromSchemaDrift_WithoutRowFilter_RejectsConfig — пункт 3
+// ревью: самый вероятный сценарий у живого клиента — не первый онбординг, а
+// schema drift ПОСЛЕ него. Стартовый конфиг валиден (header-auth + row_filters
+// на все entity). Клиент добавил таблицу в БД (CRM). Rewrite-путь
+// (ExtractIntent → Hydrate → Validate — как в tenant_admin.go:520-526) должен
+// ОТКЛОНИТЬ новый конфиг, а не молча активировать его с дырой (новая entity
+// без row_filter → рантайм 403).
+func TestRewrite_NewEntityFromSchemaDrift_WithoutRowFilter_RejectsConfig(t *testing.T) {
+	// Схема ДО дрейфа: brands + products.
+	schemaBefore := intentTestSchema()
+
+	// Стартовый валидный конфиг: header-auth + row_filters на все entity.
+	intent := &TenantIntent{
+		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "test.db"},
+		Auth: &config.AuthConfig{
+			Strategy: config.AuthStrategyHeader,
+			RowFilters: []config.RowFilter{
+				{Entity: "brands", Where: "tenant_id = :tenant_id"},
+				{Entity: "products", Where: "tenant_id = :tenant_id"},
+			},
+		},
+	}
+
+	// 1. Первый rewrite (онбординг) — валиден.
+	initial := Hydrate(intent, schemaBefore)
+	if err := initial.Validate(); err != nil {
+		t.Fatalf("initial config must be valid, got: %v", err)
+	}
+
+	// 2. Schema drift: клиент добавил таблицу orders в CRM.
+	schemaAfter := intentTestSchema()
+	schemaAfter.Tables = append(schemaAfter.Tables, datasource.Table{
+		Name:       "orders",
+		PrimaryKey: []string{"id"},
+		Columns: []datasource.Column{
+			{Name: "id", Type: "int", Nullable: false},
+			{Name: "customer_id", Type: "int", Nullable: true},
+		},
+	})
+
+	// 3. Rewrite-путь как в tenant_admin.go: ExtractIntent → Hydrate → Validate.
+	newCfg := Hydrate(ExtractIntent(initial), schemaAfter)
+	if err := newCfg.Validate(); err == nil {
+		t.Error("SECURITY: rewrite with new entity 'orders' WITHOUT row_filter must be REJECTED. "+
+			"Fail-closed expected: header-auth requires row_filter for every entity. "+
+			"Silently activating this config would 403 all /orders requests in production.")
+	}
+}

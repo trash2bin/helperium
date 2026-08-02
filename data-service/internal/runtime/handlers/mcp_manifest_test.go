@@ -15,9 +15,9 @@ func boolPtr2(b bool) *bool { return &b }
 // кастомные FilterableRules (добавленные через PUT /admin/config) должны
 // доходить до MCP-манифеста, а не заменяться дефолтными в runtime.
 //
-// Поле secret_note не входит в дефолтные filterable-поля; с кастомным
-// правилом (AllowNames: ["secret_note"]) у filter-тула должен появиться
-// параметр secret_note.
+// Поле note не входит в дефолтные filterable-поля; с кастомным
+// правилом (AllowNames: ["note"]) у filter-тула должен появиться
+// параметр note.
 func TestMCPManifest_CustomFilterableRulesReachManifest(t *testing.T) {
 	entity := config.Entity{
 		Name:     "products",
@@ -26,7 +26,7 @@ func TestMCPManifest_CustomFilterableRulesReachManifest(t *testing.T) {
 		Fields: []config.EntityField{
 			{Name: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr2(true), Nullable: boolPtr2(false)},
 			{Name: "name", Type: config.FieldTypeString, Nullable: boolPtr2(false)},
-			{Name: "secret_note", Type: config.FieldTypeString, Nullable: boolPtr2(true)},
+			{Name: "note", Type: config.FieldTypeString, Nullable: boolPtr2(true)},
 		},
 	}
 
@@ -42,7 +42,7 @@ func TestMCPManifest_CustomFilterableRulesReachManifest(t *testing.T) {
 			},
 		},
 		FilterableRules: []config.FieldRule{
-			{AllowNames: []string{"secret_note"}, Reason: "User rule: secret_note filterable"},
+			{AllowNames: []string{"note"}, Reason: "User rule: note filterable"},
 		},
 	}
 
@@ -84,7 +84,7 @@ func TestMCPManifest_CustomFilterableRulesReachManifest(t *testing.T) {
 
 	found := false
 	for _, p := range filterTool.Params {
-		if p.Name == "secret_note" {
+		if p.Name == "note" {
 			found = true
 			break
 		}
@@ -94,6 +94,6 @@ func TestMCPManifest_CustomFilterableRulesReachManifest(t *testing.T) {
 		for _, p := range filterTool.Params {
 			names = append(names, p.Name)
 		}
-		t.Errorf("secret_note not in filter_products params (custom FilterableRules lost); got %v", names)
+		t.Errorf("note not in filter_products params (custom FilterableRules lost); got %v", names)
 	}
 }

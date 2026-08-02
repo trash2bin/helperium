@@ -17,6 +17,16 @@ func DefaultFilterableFieldRules() []FieldRule {
 			},
 			Reason: "Common filterable business fields",
 		},
+		{
+			// P2-8: PII/секретные поля НЕ фильтруются (block-only правило —
+			// без allow, поэтому безусловно блокирует совпадения).
+			// IsFilterableField: block-only правила проверяются первыми
+			// и имеют приоритет над implicit (*_id) и allow-правилами.
+			ID:            "filterable.block_sensitive",
+			BlockContains: []string{"password", "passwd", "secret", "token", "api_key", "apikey", "ssn", "credential"},
+			BlockSuffix:   []string{"_key", "_secret"},
+			Reason:        "Sensitive/PII fields (passwords, tokens, keys, SSN) are not filterable",
+		},
 	}
 }
 
@@ -30,6 +40,18 @@ func DefaultSearchableFieldRules() []FieldRule {
 			BlockNames:    []string{"image", "thumbnail"},
 			BlockContains: []string{"json", "seo"},
 			Reason:        "Image/SEO/JSON fields are not searchable",
+		},
+		{
+			// P2-8: дефолтный блок-лист PII/секретных полей.
+			// Без него password_hash/ssn/api_key/secret_token попадали в grep
+			// (searchable) и утекали через schema-ответ. Блок по имени —
+			// надёжнее, чем по типу: типы этих колонок обычно string.
+			// Contains матчит: password, password_hash, api_key, api_secret,
+			// token, secret_token, ssn...
+			ID:            "searchable.block_sensitive",
+			BlockContains: []string{"password", "passwd", "secret", "token", "api_key", "apikey", "ssn", "credential"},
+			BlockSuffix:   []string{"_key", "_secret"},
+			Reason:        "Sensitive/PII fields (passwords, tokens, keys, SSN) are not searchable",
 		},
 	}
 }
@@ -93,7 +115,14 @@ func IsFilterableField(field EntityField, rules []FieldRule) bool {
 	}
 
 	// Step 3: Configurable FieldRules (allow rules).
+	// Block-only правила (без Allow*) НЕ участвуют в allow-цикле: их
+	// Matches() возвращает true для несовпадающих имён (прошли блоки),
+	// что сделало бы ВСЕ поля filterable. Блоки уже обработаны в Step 1.
 	for _, r := range rules {
+		hasAllow := len(r.AllowNames) > 0 || len(r.AllowSuffix) > 0 || len(r.AllowContains) > 0
+		if !hasAllow {
+			continue
+		}
 		if r.Matches(name) {
 			return true
 		}

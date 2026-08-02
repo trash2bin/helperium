@@ -34,7 +34,13 @@ func StatsHandler(c *Context, cfg *config.Config) http.HandlerFunc {
 			// Без него в multi-tenant конфиге /stats отдавал глобальные счётчики
 			// по всем тенантам (cross-tenant leak).
 			translate := asPlaceholderFunc(c.Adapter)
-			tenantWhere, tenantArgs := tenantFilter(counter.Entity, c.Auth, c.tenantID(r), 0, translate)
+			tenantWhere, tenantArgs, tenantDeny := tenantFilter(counter.Entity, c.Auth, c.tenantID(r), 0, translate)
+			if tenantDeny != tenantDenyNone {
+				// Fail-closed: при header-auth и отсутствии row_filter для counter
+				// не считаем (иначе cross-tenant leak).
+				respondTenantDeny(w, tenantDeny)
+				return
+			}
 			if tenantWhere != "" {
 				if counter.Filter != "" {
 					sql = fmt.Sprintf("%s AND %s", sql, tenantWhere)

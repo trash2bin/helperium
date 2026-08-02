@@ -122,7 +122,8 @@
 - queryID: `{child}_by_{parent}_{fk_col}`
 - SQL: `SELECT t.* FROM {child} t WHERE t.{fk_col} = ?`
 - endpoint: `GET /{parent}/{id}/{child}`, op custom_query
-- MCP-тул: `{child_plural}_by_{parent_short}`
+
+**MCP-тулы для навигации НЕ генерируются (v4).** Relationship-тулы `_by_` удалены в v4 (commit 1de916e): LLM навигирует по FK через `filter_{child}({fk_field}=...)` — тот применяет tenant-фильтр, не имеет капа 1000 строк и поддерживает `__in`. Навигационный custom_query остаётся только REST-эндпоинтом (без tenant-фильтра, лимит 1000 — `custom_query.go`).
 
 **Валидация идентификаторов** (`navigation.go:16`): `safeIdentRe = ^[A-Za-z_][A-Za-z0-9_]*$`. navigation генерирует SQL напрямую без `QuoteIdentifier` (runtime `BuildCustomQuery` не квотирует) — имена с пробелами/`"`/`;`/дефисами сломали бы SQL или дали инъекцию из имени БД. Небезопасные имена пропускаются с `slog.Warn` (FK-колонка :31-34, имя таблицы :64-67). Schema-qualified PG-имена (`public.brands`) тоже пропускаются — навигация не умеет безопасно квотировать `schema.table`.
 

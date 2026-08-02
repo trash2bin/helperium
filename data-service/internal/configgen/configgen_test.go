@@ -692,7 +692,7 @@ func TestGenerate_NoCustomQueryMCPTool(t *testing.T) {
 			t.Errorf("relationship tools should not be generated in v4: %s (endpoint: %s)", tool.Name, tool.Endpoint)
 		}
 	}
-	t.Logf("✅ No _by_ tools generated (checked %d MCP tools)", len(cfg.MCPTools))
+	t.Logf(" No _by_ tools generated (checked %d MCP tools)", len(cfg.MCPTools))
 }
 
 // TestGenerate_WithSkipRules проверяет, что кастомные SkipRules работают вместе с дефолтными.
@@ -717,12 +717,14 @@ func TestGenerate_WithSkipRules(t *testing.T) {
 		},
 	}
 
-	// Default rules: django_ + session должны быть отфильтрованы
-	// Custom rule: wp_ тоже должен быть отфильтрован
+	// Default rules: django_ + wp_ (custom) должны быть отфильтрованы.
+	// session/sessions НЕ в дефолтах (P1-4: общеупотребимое бизнес-слово),
+	// но тест проверяет, что кастомное правило тоже работает.
 	cfg := Generate(schema, &config.Config{
 		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
 		SkipRules: []config.SkipRule{
 			{Prefix: "wp_", Reason: "WordPress"},
+			{Prefix: "session", Reason: "Custom: sessions not business"},
 		},
 	})
 
@@ -750,7 +752,8 @@ func TestDefaultFilterableFieldRules(t *testing.T) {
 		t.Fatal("expected non-empty DefaultFilterableFieldRules")
 	}
 
-	// Проверяем, что ключевые поля проходят
+	// Проверяем, что ключевые поля проходят (только allow-правила —
+	// block-only правила не делают поле filterable, см. IsFilterableField).
 	testFields := []struct {
 		name  string
 		match bool
@@ -764,6 +767,10 @@ func TestDefaultFilterableFieldRules(t *testing.T) {
 	for _, tc := range testFields {
 		matched := false
 		for _, r := range rules {
+			hasAllow := len(r.AllowNames) > 0 || len(r.AllowSuffix) > 0 || len(r.AllowContains) > 0
+			if !hasAllow {
+				continue // block-only: не allow-матчер
+			}
 			if r.Matches(tc.name) {
 				matched = true
 				break
@@ -852,16 +859,16 @@ func TestDefaultEnumFieldRules(t *testing.T) {
 func TestResolveFieldRules(t *testing.T) {
 	defaults := DefaultFilterableFieldRules()
 
-	// Без disabled и custom — как defaults
+	// Без disabled и custom — как defaults (2: filterable.common + block_sensitive)
 	result := resolveFieldRules(defaults, nil, nil)
-	if len(result) != 1 {
-		t.Errorf("expected 1 rule (no changes), got %d", len(result))
+	if len(result) != 2 {
+		t.Errorf("expected 2 rules (no changes), got %d", len(result))
 	}
 
-	// С disabled — фильтруем по Reason
+	// С disabled — фильтруем по ID (block_sensitive остаётся)
 	result = resolveFieldRules(defaults, []string{"filterable.common"}, nil)
-	if len(result) != 0 {
-		t.Errorf("expected 0 rules (disabled), got %d", len(result))
+	if len(result) != 1 {
+		t.Errorf("expected 1 rule (disabled filterable.common, block_sensitive stays), got %d", len(result))
 	}
 
 	// С custom — дополняем
@@ -869,12 +876,12 @@ func TestResolveFieldRules(t *testing.T) {
 		{AllowNames: []string{"rating", "discount"}, Reason: "Custom fields"},
 	}
 	result = resolveFieldRules(defaults, nil, custom)
-	if len(result) != 2 {
-		t.Errorf("expected 2 rules (default + custom), got %d: %v", len(result), result)
+	if len(result) != 3 {
+		t.Errorf("expected 3 rules (default + block_sensitive + custom), got %d: %v", len(result), result)
 	}
 	// Последнее правило — custom
-	if len(result[1].AllowNames) != 2 || result[1].AllowNames[0] != "rating" {
-		t.Errorf("expected custom rule with [rating, discount], got %v", result[1].AllowNames)
+	if len(result[2].AllowNames) != 2 || result[2].AllowNames[0] != "rating" {
+		t.Errorf("expected custom rule with [rating, discount], got %v", result[2].AllowNames)
 	}
 }
 
@@ -885,14 +892,14 @@ func TestResolveFieldRules_ExactIDMatch(t *testing.T) {
 
 	// Префикс ID "filterable" НЕ отключает "filterable.common" (exact match).
 	result := resolveFieldRules(defaults, []string{"filterable"}, nil)
-	if len(result) != 1 {
-		t.Errorf("expected 1 rule (prefix does not disable), got %d", len(result))
+	if len(result) != 2 {
+		t.Errorf("expected 2 rules (prefix does not disable), got %d", len(result))
 	}
 
-	// Полный ID отключает.
+	// Полный ID отключает (block_sensitive остаётся).
 	result = resolveFieldRules(defaults, []string{"filterable.common"}, nil)
-	if len(result) != 0 {
-		t.Errorf("expected 0 rules (exact ID disables), got %d", len(result))
+	if len(result) != 1 {
+		t.Errorf("expected 1 rule (exact ID disables filterable.common), got %d", len(result))
 	}
 
 	// Перефразировка Reason не ломает отключение (матч по ID).
@@ -913,8 +920,8 @@ func TestResolveFieldRules_DisabledFieldRules_Idempotent(t *testing.T) {
 
 	// Первый rewrite: Generate персистит resolved-список (default × 1).
 	result1 := resolveFieldRules(defaults, disabled, nil)
-	if len(result1) != 0 {
-		t.Fatalf("expected 0 rules after first resolve (disabled), got %d", len(result1))
+	if len(result1) != 1 || result1[0].ID != "filterable.block_sensitive" {
+		t.Fatalf("expected 1 rule (block_sensitive stays after disabling filterable.common), got %d", len(result1))
 	}
 
 	// Симуляция Hydrate: resolved-список (включая дефолт, если бы он не был
@@ -923,15 +930,18 @@ func TestResolveFieldRules_DisabledFieldRules_Idempotent(t *testing.T) {
 	// он отфильтровывается, не дублируется.
 	resolvedDefault := append([]config.FieldRule{}, defaults...)
 	result2 := resolveFieldRules(defaults, disabled, resolvedDefault)
-	if len(result2) != 0 {
-		t.Errorf("M7 drift: expected 0 rules (resolved default in custom filtered by ID), got %d: %v", len(result2), result2)
+	// Остаётся только block_sensitive (filterable.common отключён, его
+	// resolved-копия в custom тоже отфильтрована по ID).
+	if len(result2) != 1 || result2[0].ID != "filterable.block_sensitive" {
+		t.Errorf("M7 drift: expected 1 rule (block_sensitive only), got %d: %v", len(result2), result2)
 	}
 
 	// Контроль: без disabled custom-правило сохраняется.
 	custom := []config.FieldRule{{ID: "custom.rating", AllowNames: []string{"rating"}}}
 	result3 := resolveFieldRules(defaults, disabled, custom)
-	if len(result3) != 1 || result3[0].ID != "custom.rating" {
-		t.Errorf("expected custom rule kept, got %v", result3)
+	// block_sensitive не отключён и всегда в resolved + custom.rating.
+	if len(result3) != 2 || result3[1].ID != "custom.rating" {
+		t.Errorf("expected custom rule kept (block_sensitive + custom.rating), got %v", result3)
 	}
 }
 
@@ -1063,5 +1073,5 @@ func TestGenerate_DisabledFieldRules(t *testing.T) {
 		t.Error("expected filter_products endpoint — brand_id is implicit FK")
 	}
 
-	t.Logf("✅ filter_products endpoint present despite disabled default filterable rules")
+	t.Logf(" filter_products endpoint present despite disabled default filterable rules")
 }

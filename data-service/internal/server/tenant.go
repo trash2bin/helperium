@@ -253,6 +253,18 @@ func (ts *TenantStore) LoadTenantSchema(id string) (*datasource.Schema, error) {
 // Hydrate() перезапишет Entities/Endpoints/MCPTools/Stats.Counters из intent,
 // уничтожив ручные правки, не выраженные в intent (напр. Description эндпоинта).
 func (ts *TenantStore) RegenerateAndPersistTenantConfig(id string, cfg *config.Config) string {
+	// Fail-closed (P0-1): НЕ пишем невалидный конфиг. Даже если вызывающий
+	// путь забыл прогнать Validate() (например, будущий хендлер батч-миграции,
+	// использующий этот хелпер «по аналогии»), запись невалидного конфига
+	// на диск обошла бы tenant-изоляцию (row_filter для каждой entity при
+	// header-auth) и три слоя защиты из ревью. Отказ с логом — дёшево,
+	// а последствия пропуска — ровно тот класс бага, который чинили.
+	if err := cfg.Validate(); err != nil {
+		slog.Warn("persist config: rejecting invalid config (fail-closed)",
+			"tenant", id, "error", err)
+		return ""
+	}
+
 	schema, err := ts.LoadTenantSchema(id)
 	if err != nil {
 		slog.Warn("persist config: failed to load cached schema, persisting as-is", "tenant", id, "error", err)

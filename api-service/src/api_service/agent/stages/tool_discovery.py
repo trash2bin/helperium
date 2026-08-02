@@ -203,13 +203,11 @@ def _build_schema_message(schema: dict, tools: list[dict] | None = None) -> str:
             for rel in rels:
                 field = rel.get("field", "?")
                 ref = rel.get("referenced_entity", "?")
-                ref_prefix = (
-                    _entity_tool_name(ref)
-                    if "(" not in ref
-                    else _entity_tool_name(f"name ({ref.lower().replace(' ', '_')})")
-                )
+                # v4: навигация по FK идёт через filter_{child}({fk}=...), НЕ через
+                # отдельные _by_ тулы (они удалены в v4). filter_* применяет
+                # tenant-фильтр и не имеет капа 1000 строк.
                 lines.append(
-                    f"    - `{field}` → **{ref}** (use `grep_{ref_prefix}()` or `get_{ref_prefix}()`)"
+                    f"    - `{field}` → **{ref}** (use `filter_{prefix}({field}=...)` to find rows by this FK)"
                 )
 
         # ── Entity-specific workflow hint ──

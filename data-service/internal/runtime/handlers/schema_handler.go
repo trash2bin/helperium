@@ -30,7 +30,11 @@ func (h *StrategySchemaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	translate := asPlaceholderFunc(h.ctx.Adapter)
 
 	// Tenant filter (row-level isolation)
-	tenantWhere, tenantArgs := tenantFilter(h.entity.Name, h.ctx.Auth, h.ctx.tenantID(r), 0, translate)
+	tenantWhere, tenantArgs, tenantDeny := tenantFilter(h.entity.Name, h.ctx.Auth, h.ctx.tenantID(r), 0, translate)
+	if tenantDeny != tenantDenyNone {
+		respondTenantDeny(w, tenantDeny)
+		return
+	}
 
 	// 1. Total count
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", qTable)

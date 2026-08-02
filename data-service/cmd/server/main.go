@@ -235,6 +235,13 @@ func main() {
 }
 
 // runDiscover открывает БД по env, интроспектирует схему и выводит конфиг в stdout.
+//
+//  READ-ONLY: этот путь НЕ пишет конфиг на диск и НЕ активирует его в рантайме.
+// Результат — превью для админа (онбординг). Активация идёт через admin API
+// (POST /admin/tenants, PUT /admin/config, POST /admin/config/rewrite), которые
+// прогоняют конфиг через config.Validate() (включая fail-closed требование
+// row_filter для каждой entity при header-auth). НЕ добавляйте сюда запись на
+// диск без Validate — это обойдёт tenant-изоляцию.
 func runDiscover() error {
 	driver := os.Getenv("DB_DRIVER")
 	if driver == "" {

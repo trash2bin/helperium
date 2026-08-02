@@ -88,7 +88,7 @@ func TestTenantFilter(t *testing.T) {
 				translate = sqlitePH
 			}
 
-			where, args := tenantFilter(tt.entityName, tt.auth, tt.tenantID, tt.existingArgs, translate)
+			where, args, _ := tenantFilter(tt.entityName, tt.auth, tt.tenantID, tt.existingArgs, translate)
 			if where != tt.wantWhere {
 				t.Errorf("where = %q, want %q", where, tt.wantWhere)
 			}

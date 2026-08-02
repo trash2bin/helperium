@@ -262,9 +262,11 @@ func TestStatsHandler_RowFilterUnknownColumn_SkipsBadCounter(t *testing.T) {
 		INSERT INTO customers (id, name) VALUES (1, 'John'), (2, 'Jane');
 		CREATE TABLE audit_log (
 			id INTEGER PRIMARY KEY,
-			msg TEXT NOT NULL
+			msg TEXT NOT NULL,
+			tenant_id TEXT NOT NULL
 		);
-		INSERT INTO audit_log (id, msg) VALUES (1, 'a'), (2, 'b'), (3, 'c');
+		INSERT INTO audit_log (id, msg, tenant_id) VALUES
+			(1, 'a', 'tenant-a'), (2, 'b', 'tenant-a'), (3, 'c', 'tenant-a');
 	`)
 
 	adapter := &testAdapter{db: db}
@@ -285,6 +287,7 @@ func TestStatsHandler_RowFilterUnknownColumn_SkipsBadCounter(t *testing.T) {
 		Fields: []runtime.EntityField{
 			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
 			{Name: "msg", Column: "msg", Type: "string"},
+			{Name: "tenant_id", Column: "tenant_id", Type: "string"},
 		},
 	}
 	resolver, _ := runtime.NewEntityResolver([]runtime.Entity{customerEntity, auditEntity})
@@ -302,7 +305,8 @@ func TestStatsHandler_RowFilterUnknownColumn_SkipsBadCounter(t *testing.T) {
 		Auth: &config.AuthConfig{
 			Strategy: config.AuthStrategyHeader,
 			RowFilters: []config.RowFilter{
-				{Entity: "customer", Where: `"tenant_id" = :tenant_id`},
+				{Entity: "customer", Where: `"tenant_id" = :tenant_id`}, // битый: tenant_id нет в customers
+				{Entity: "audit_log", Where: `"tenant_id" = :tenant_id`}, // healthy: есть
 			},
 		},
 	}

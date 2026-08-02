@@ -26,16 +26,27 @@ func readAndUnmarshal(t *testing.T, path string, out any) error {
 
 func boolPtrTrue() *bool { b := true; return &b }
 
+// validTestConfig возвращает минимальный ВАЛИДНЫЙ конфиг (проходит Validate),
+// чтобы тесты механики RegenerateAndPersistTenantConfig не триггерили
+// fail-closed защиту (Validate внутри хелпера).
+func validTestConfig() *config.Config {
+	return &config.Config{
+		Version: 1,
+		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "x.db", ReadOnly: boolPtrTrue()},
+		Entities: []config.Entity{{
+			Name: "products", Table: "products", IDColumn: "id",
+			Fields: []config.EntityField{{Name: "id", Column: "id", Type: config.FieldTypeString}},
+		}},
+	}
+}
+
 // TestRegenerateAndPersistTenantConfig_NoSchema_Fallback — L-3: без закэшированной схемы
 // RegenerateAndPersistTenantConfig сохраняет конфиг как есть (fallback), не регенерируя.
 func TestRegenerateAndPersistTenantConfig_NoSchema_Fallback(t *testing.T) {
 	ts := NewTenantStore(datasource.NewDefaultRegistry(), "")
 	ts.TenantsDir = t.TempDir()
 
-	cfg := &config.Config{
-		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "x.db", ReadOnly: boolPtrTrue()},
-		Entities:   []config.Entity{{Name: "products"}},
-	}
+	cfg := validTestConfig()
 	path := ts.RegenerateAndPersistTenantConfig("t-no-schema", cfg)
 	if path == "" {
 		t.Fatal("RegenerateAndPersistTenantConfig returned empty path")
@@ -67,10 +78,7 @@ func TestRegenerateAndPersistTenantConfig_CorruptSchema_Fallback(t *testing.T) {
 		t.Fatal("LoadTenantSchema: expected error for corrupt cache, got nil")
 	}
 
-	cfg := &config.Config{
-		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "x.db", ReadOnly: boolPtrTrue()},
-		Entities:   []config.Entity{{Name: "products"}},
-	}
+	cfg := validTestConfig()
 	path := ts.RegenerateAndPersistTenantConfig("t-corrupt", cfg)
 	if path == "" {
 		t.Fatal("RegenerateAndPersistTenantConfig returned empty path")
@@ -104,10 +112,7 @@ func TestRegenerateAndPersistTenantConfig_WithSchema_Regenerates(t *testing.T) {
 	}
 	ts.SaveTenantSchema("t-with-schema", schema)
 
-	cfg := &config.Config{
-		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "x.db", ReadOnly: boolPtrTrue()},
-		// Намеренно не содержат Entities — Hydrate должен их сгенерировать из схемы.
-	}
+	cfg := validTestConfig()
 	path := ts.RegenerateAndPersistTenantConfig("t-with-schema", cfg)
 	if path == "" {
 		t.Fatal("RegenerateAndPersistTenantConfig returned empty path")
@@ -177,9 +182,8 @@ func TestRegenerateAndPersistTenantConfig_SQLiteRoundTrip(t *testing.T) {
 
 	ts.SaveTenantSchema("t-rt", schema)
 
-	cfg := &config.Config{
-		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: dbPath, ReadOnly: boolPtrTrue()},
-	}
+	cfg := validTestConfig()
+	cfg.DataSource.DSN = dbPath
 	path := ts.RegenerateAndPersistTenantConfig("t-rt", cfg)
 	if path == "" {
 		t.Fatal("RegenerateAndPersistTenantConfig returned empty path")
@@ -194,5 +198,35 @@ func TestRegenerateAndPersistTenantConfig_SQLiteRoundTrip(t *testing.T) {
 	// Валидность результирующего конфига.
 	if err := saved.Validate(); err != nil {
 		t.Errorf("persisted config invalid: %v", err)
+	}
+}
+
+// TestRegenerateAndPersistTenantConfig_RejectsInvalidConfig — ревью, хвост 2:
+// RegenerateAndPersistTenantConfig НЕ должен писать невалидный конфиг, даже если
+// вызывающий путь забыл Validate(). Это защищает от будущего использования
+// хелпера в проде (батч-миграция, «по аналогии») — запись невалидного конфига
+// обошла бы tenant-изоляцию. Fail-closed: return "" и файл не создаётся.
+func TestRegenerateAndPersistTenantConfig_RejectsInvalidConfig(t *testing.T) {
+	ts := NewTenantStore(datasource.NewDefaultRegistry(), "")
+	ts.TenantsDir = t.TempDir()
+
+	// Невалидный конфиг: entity без полей (Validate требует fields).
+	invalid := &config.Config{
+		Version: 1,
+		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "x.db"},
+		Entities: []config.Entity{{Name: "products"}}, // нет Fields
+	}
+	path := ts.RegenerateAndPersistTenantConfig("t-invalid", invalid)
+	if path != "" {
+		t.Errorf("invalid config must NOT be persisted (fail-closed), got path %q", path)
+	}
+	if _, err := os.Stat(ts.TenantConfigPath("t-invalid")); !os.IsNotExist(err) {
+		t.Error("config file must not exist after rejecting invalid config")
+	}
+
+	// Контроль: валидный конфиг пишется.
+	okPath := ts.RegenerateAndPersistTenantConfig("t-ok", validTestConfig())
+	if okPath == "" {
+		t.Fatal("valid config should be persisted")
 	}
 }

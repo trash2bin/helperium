@@ -149,3 +149,130 @@ func TestValidate_RowFilterEntity_NotFound(t *testing.T) {
 		t.Error("expected validation error for row_filter on unknown entity, got nil")
 	}
 }
+
+// TestValidate_HeaderAuth_RequiresRowFilterForEveryEntity — P0-1 fail-closed:
+// при strategy=header КАЖДАЯ entity обязана иметь row_filter. Иначе в рантайме
+// запрос к непокрытой entity вернёт 403 (мой фикс tenantFilter), что клиент
+// обнаружит только в проде. Ловим на онбординге (Validate), а не в рантайме.
+func TestValidate_HeaderAuth_RequiresRowFilterForEveryEntity(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		wantError bool
+	}{
+		{
+			name: "header + все entity покрыты row_filters → ok",
+			json: `{
+				"version": 1,
+				"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+				"entities": [
+					{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]},
+					{"name": "orders", "table": "orders", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}
+				],
+				"auth": {
+					"strategy": "header",
+					"row_filters": [
+						{"entity": "users", "where": "tenant_id = :tenant_id"},
+						{"entity": "orders", "where": "tenant_id = :tenant_id"}
+					]
+				}
+			}`,
+			wantError: false,
+		},
+		{
+			name: "header + entity БЕЗ row_filter → error (fail at onboarding)",
+			json: `{
+				"version": 1,
+				"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+				"entities": [
+					{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]},
+					{"name": "orders", "table": "orders", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}
+				],
+				"auth": {
+					"strategy": "header",
+					"row_filters": [
+						{"entity": "users", "where": "tenant_id = :tenant_id"}
+					]
+				}
+			}`,
+			wantError: true,
+		},
+		{
+			name: "header + вообще без row_filters → error",
+			json: `{
+				"version": 1,
+				"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+				"entities": [
+					{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}
+				],
+				"auth": {"strategy": "header"}
+			}`,
+			wantError: true,
+		},
+		{
+			name: "strategy=none + без row_filters → ok (single-tenant)",
+			json: `{
+				"version": 1,
+				"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+				"entities": [
+					{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}
+				],
+				"auth": {"strategy": "none"}
+			}`,
+			wantError: false,
+		},
+		{
+			name: "auth отсутствует → ok (no multi-tenancy)",
+			json: `{
+				"version": 1,
+				"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+				"entities": [
+					{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}
+				]
+			}`,
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate([]byte(tt.json))
+			if tt.wantError && err == nil {
+				t.Error("expected validation error (entity without row_filter under header-auth), got nil")
+			}
+			if !tt.wantError && err != nil {
+				t.Errorf("expected no validation error, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestValidate_AuthStrategyNone_DoesNotRequireRowFilters — пункт 1 ревью:
+// инвариант в Validate() — «auth задан и strategy != none» (не «== header»).
+// Единственная валидная не-none стратегия сегодня — header (покрыта
+// TestValidate_HeaderAuth_*). Этот тест фиксирует границу инварианта:
+// none освобождает от row_filters, всё остальное (в будущем jwt/api_key) —
+// нет. См. types.go: if c.Auth.Strategy != AuthStrategyNone.
+func TestValidate_AuthStrategyNone_DoesNotRequireRowFilters(t *testing.T) {
+	// none + entity без row_filter → ok (single-tenant, изоляция не включена)
+	noneNoFilter := `{
+		"version": 1,
+		"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+		"entities": [{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}],
+		"auth": {"strategy": "none"}
+	}`
+	if err := Validate([]byte(noneNoFilter)); err != nil {
+		t.Errorf("strategy=none without row_filters should be valid (single-tenant), got: %v", err)
+	}
+
+	// header + entity без row_filter → error (уже покрыто, но подтверждаем контраст)
+	headerNoFilter := `{
+		"version": 1,
+		"data_source": {"driver": "sqlite", "dsn": ":memory:"},
+		"entities": [{"name": "users", "table": "users", "id_column": "id", "fields": [{"name": "id", "column": "id", "type": "int"}]}],
+		"auth": {"strategy": "header"}
+	}`
+	if err := Validate([]byte(headerNoFilter)); err == nil {
+		t.Error("strategy=header without row_filters must be invalid (fail-closed invariant), got nil")
+	}
+}

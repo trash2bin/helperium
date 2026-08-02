@@ -65,7 +65,11 @@ func DistinctHandler(c *Context, entityName string) http.HandlerFunc {
 		// Добавляем tenant-фильтр ПЕРЕД LIMIT (после ORDER BY):
 		// "... LIMIT 50 AND tenant..." — невалидный SQL.
 		// existingArgCount=0: в query нет плейсхолдеров, кроме tenant.
-		tenantWhere, tenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), 0, translate)
+		tenantWhere, tenantArgs, tenantDeny := tenantFilter(entityName, c.Auth, c.tenantID(r), 0, translate)
+		if tenantDeny != tenantDenyNone {
+			respondTenantDeny(w, tenantDeny)
+			return
+		}
 		if tenantWhere != "" {
 			upper := strings.ToUpper(query)
 			if limIdx := strings.LastIndex(upper, " LIMIT "); limIdx >= 0 {

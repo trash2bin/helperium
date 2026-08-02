@@ -131,6 +131,12 @@ Multi-token AND по полям, OR между полями. Лимиты в `Ne
 - `CountHandler` (`count.go:37-42`): `tenant_id` исключён из fieldMap и из системных параметров (:54) — HIGH-15 fix, защита от фильтрации по чужому tenant_id.
 - **Security Gap:** при `AuthStrategyHeader` без настроенных `RowFilters` — tenant-фильтр не применяется, запрос вернёт все строки. Регресс-тест: `row_filter_security_test.go`.
 
+### MCP-тулы и FK-навигация (v4)
+
+- **`_by_` relationship-тулы НЕ генерируются** (v4, commit 1de916e). LLM навигирует по FK через `filter_{child}({fk_field}=...)` — это функционально лучше: применяет tenant-фильтр, без капа 1000 строк, поддерживает `__in`.
+- Навигационные custom-query эндпоинты (`GET /{parent}/{id}/{child}`) существуют в REST, но не экспонируются LLM как отдельные MCP-тулы (у них нет tenant-фильтра и лимит 1000 строк — `custom_query.go:11-15`).
+- Каждый FK (`*_id`, кроме `tenant_id`) implicitly filterable (`filterable.go:105-112`) → `filter_{child}({fk}=...)` доступен по умолчанию.
+
 ### Schema handler (`schema_handler.go`)
 
 `distinctValues()` :103 (до 20 значений), `fieldStats()` :135 (min/max/avg). Обходит tenantWhere через параметры.
@@ -213,7 +219,7 @@ datasource.Adapter.Introspect() → Schema
 - `TenantIntent` :13 — только намерения: DataSource, правила (FieldRules/DisabledDefault*), CustomShortNames, explicit CustomQueries, Stats, Introspection, Auth, Server. Без Entities/Endpoints/MCPTools/derived CustomQueries — они вычислимы через Hydrate.
 - `ExtractIntent(cfg)` :66 — выделяет интенты из полного `config.Config`, исключая FK-derived запросы (`DerivedCustomQueryKeys` :55).
 - `Hydrate(intent, schema)` :108 — собирает полный `config.Config` из intent + свежей схемы (Generate + возврат explicit queries/Stats).
-- Вызывается из: `tenant_admin.go:525` (rewrite), `tenant_admin.go:621` (discover), `tenant.go:238` (PersistTenantConfig).
+- Вызывается из: `tenant_admin.go:525` (rewrite), `tenant_admin.go:621` (discover), `tenant.go:255` (`RegenerateAndPersistTenantConfig`, с fail-closed Validate внутри).
 
 ### FieldRules (прокси в `columns.go:12-14` → `helperium-go/config/filterable.go`)
 

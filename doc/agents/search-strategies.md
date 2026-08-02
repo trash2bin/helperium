@@ -181,7 +181,8 @@ Tenant isolation: `tenant_id` нельзя искать (grep.go:148, :169-172).
 - `tenant_id` исключён из LLM-параметров (grep.go:148, :172; filter.go:194, :211).
 - **Count:** `tenant_id` исключён из фильтров — `count.go:37-42` (HIGH-15-fix: раньше `count?tenant_id=<чужой>` давал посчитать записи чужого тенанта; `tenant_id` добавлен в skip системных параметров count.go:53).
 - **/stats:** tenant-фильтр применяется к каждому counter — `stats.go:36-42` (раньше `GET /stats` отдавал глобальные счётчики по всем тенантам).
-- **Gap:** при отсутствии `auth.row_filters` для сущности фильтр не применяется. Регресс: `row_filter_security_test.go`.
+- **Fail-closed (P0-1):** `tenantFilter` возвращает `denyReason != tenantDenyNone` когда header-auth настроен, но изоляция невозможна: пустой `X-Tenant-ID` → `tenantDenyMissingTenantID` (400, ошибка запроса), отсутствие `row_filter` для entity → `tenantDenyMissingRowFilter` (403, ошибка конфига). Раньше это был fail-open: `("", nil)` → SQL без WHERE → тенант видел чужие строки. Регресс: `row_filter_security_test.go`.
+- **Валидация конфига:** `Validate()` требует row_filter для КАЖДОЙ entity при любой не-none auth-стратегии (`types.go`) — fail at onboarding, а не 403 в проде. Rewrite (`tenant_admin.go`) тоже валидирует до записи.
 - Ошибки count-запроса логируются, а не глотаются: `runCountQuery` возвращает `-1` только при реальной ошибке SQL/scan (pagination.go:104-115).
 
 ## Лимиты (сводно)

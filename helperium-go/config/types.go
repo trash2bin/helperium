@@ -817,6 +817,26 @@ func (c *Config) Validate() error {
 		if !c.Auth.Strategy.Valid() {
 			errs = append(errs, fmt.Sprintf("auth.strategy: unsupported %q", c.Auth.Strategy))
 		}
+		// P0-1 fail-closed: при ЛЮБОЙ реальной стратегии (не "none") КАЖДАЯ entity
+		// обязана иметь row_filter. Иначе запрос к непокрытой entity вернёт 403
+		// в рантайме (tenantFilter deny), что клиент обнаружит только в проде.
+		// Ловим на онбординге: конфиг с auth и entity без row_filter — невалиден.
+		// Инвариант по факту (auth != none), а не по имени стратегии — будущие
+		// стратегии (jwt, api_key) автоматически под защитой.
+		if c.Auth.Strategy != AuthStrategyNone {
+			covered := make(map[string]bool, len(c.Auth.RowFilters))
+			for _, rf := range c.Auth.RowFilters {
+				covered[rf.Entity] = true
+			}
+			for i := range c.Entities {
+				if !covered[c.Entities[i].Name] {
+					errs = append(errs, fmt.Sprintf(
+						"auth.row_filters: entity %q has no row_filter under strategy=%q "+
+							"(fail-closed: requests to it would return 403)",
+						c.Entities[i].Name, c.Auth.Strategy))
+				}
+			}
+		}
 		// RowFilter.Where валидируется как безопасное WHERE-выражение (тот же
 		// механизм, что и counter.Filter). Без этого битый RowFilter (напр.
 		// несуществующая колонка или инъекция) ронял /stats и другие хендлеры.

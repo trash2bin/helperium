@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
@@ -14,6 +15,32 @@ import (
 // Имена с спецсимволами (пробелы, `"`, `;`, дефисы) сломают SQL или позволят
 // инъекцию из имени БД — такие связи пропускаем с логом.
 var safeIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// quoteTableRef возвращает безопасную SQL-ссылку на таблицу.
+//
+// Для простых имён (products) — как есть (проходят safeIdentRe, SQLite-совместимо).
+// Для schema-qualified PG (public.brands) — квотирует каждый сегмент:
+// "public"."brands". Runtime BuildCustomQuery не квотирует, поэтому встраиваем
+// квоты здесь. Имена с небезопасными символами (пробелы, `"`, `;`, дефисы)
+// в любом сегменте → возвращает "" (связь пропускается, смотри caller).
+func quoteTableRef(table string) string {
+	if safeIdentRe.MatchString(table) {
+		return table
+	}
+	// schema-qualified: все сегменты должны быть безопасными идентификаторами
+	if strings.Contains(table, ".") {
+		segs := strings.Split(table, ".")
+		quoted := make([]string, 0, len(segs))
+		for _, s := range segs {
+			if !safeIdentRe.MatchString(s) {
+				return ""
+			}
+			quoted = append(quoted, `"`+s+`"`)
+		}
+		return strings.Join(quoted, ".")
+	}
+	return ""
+}
 
 // buildNavigationEndpoints generates custom queries and navigation endpoints
 // from FK relations. Creates GET /parent/{id}/child endpoints for each FK.
@@ -66,7 +93,11 @@ func buildNavigationEndpoints(entities []config.Entity) ([]config.Endpoint, map[
 
 			// Имена child-таблицы и FK-колонки идут в SQL без квотирования —
 			// требуем безопасный набор символов (см. safeIdentRe).
-			if !safeIdentRe.MatchString(entity.Table) {
+			// Schema-qualified PG-имена (public.brands) НЕ проходят safeIdentRe,
+			// но их можно безопасно квотировать по сегментам ("public"."brands").
+			// Runtime BuildCustomQuery не квотирует, поэтому встраиваем квоты здесь.
+			tableRef := quoteTableRef(entity.Table)
+			if tableRef == "" {
 				slog.Warn("navigation: skipping relation with unsafe table name",
 					"entity", entity.Name, "table", entity.Table)
 				continue
@@ -74,7 +105,7 @@ func buildNavigationEndpoints(entities []config.Entity) ([]config.Endpoint, map[
 
 			// SELECT * FROM child_table WHERE fk = ?
 			customQueries[queryID] = config.CustomQuery{
-				SQL:         fmt.Sprintf("SELECT t.* FROM %s t WHERE t.%s = ?", entity.Table, rel.LocalFK),
+				SQL:         fmt.Sprintf("SELECT t.* FROM %s t WHERE t.%s = ?", tableRef, rel.LocalFK),
 				Params:      []string{rel.LocalFK},
 				MaxRows:     1000,
 				Description: fmt.Sprintf("All %s linked to a %s", entity.Name, parentEntity.Name),

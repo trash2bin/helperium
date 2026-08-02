@@ -803,7 +803,13 @@ func TestGrepStrategy_PostgresPlaceholders(t *testing.T) {
 // block-only правилом не фильтруется через HTTP.
 func TestFilterStrategy_ParseRequest_RespectsFilterableRules(t *testing.T) {
 	blockRule := config.FieldRule{BlockNames: []string{"category"}}
-	s := NewFilterStrategy("id", "name", blockRule)
+	// Реалистичный набор: дефолтное allow-правило (name filterable)
+	// + block-only правило (category blocked).
+	allowRule := config.FieldRule{
+		ID:          "filterable.common",
+		AllowNames:  []string{"name", "price", "status"},
+	}
+	s := NewFilterStrategy("id", "name", allowRule, blockRule)
 
 	// category заблокирован → 0 conditions → "at least one filter parameter".
 	r := makeRequest(map[string]string{"category": "x"})
@@ -811,7 +817,7 @@ func TestFilterStrategy_ParseRequest_RespectsFilterableRules(t *testing.T) {
 		t.Fatal("expected error for blocked field category, got nil")
 	}
 
-	// name разрешён (block-only правило не трогает его).
+	// name разрешён (allow-правило).
 	r2 := makeRequest(map[string]string{"name": "x"})
 	if _, err := s.ParseRequest(r2, sampleEntity, testAdapter{}); err != nil {
 		t.Errorf("expected OK for allowed field name, got: %v", err)

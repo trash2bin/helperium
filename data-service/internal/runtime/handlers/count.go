@@ -112,7 +112,11 @@ func CountHandler(c *Context, entityName string) http.HandlerFunc {
 		}
 
 		// Добавляем tenant-фильтр
-		tenantWhere, tenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), len(args), translate)
+		tenantWhere, tenantArgs, tenantDeny := tenantFilter(entityName, c.Auth, c.tenantID(r), len(args), translate)
+		if tenantDeny != tenantDenyNone {
+			respondTenantDeny(w, tenantDeny)
+			return
+		}
 		if tenantWhere != "" {
 			if strings.Contains(strings.ToUpper(countSQL), " WHERE ") {
 				countSQL += " AND " + tenantWhere

@@ -15,6 +15,7 @@ package configgen
 
 import (
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -38,12 +39,12 @@ func DefaultSkipRules() []config.SkipRule {
 		// Django framework
 		{Prefix: "auth_", Reason: "Django: built-in auth tables (auth_user, auth_group, auth_permission) — not business data"},
 		{Prefix: "django_", Reason: "Django: framework metadata (django_migrations, django_content_type, django_admin_log)"},
-		{Prefix: "session", Reason: "Django: server-side session storage — temporary, no business value"},
-		// RAG internal
-		{Prefix: "documents", Reason: "Helperium RAG: internal document chunks and embeddings"},
+		// RAG internal — document_chunks однозначно служебная; сами documents
+		// НЕ скипаем (P1-4): имя слишком общеупотребимо для бизнес-таблиц
+		// (договоры, документы).
+		{Prefix: "document_chunks", Reason: "Helperium RAG: internal document chunks"},
 		// Laravel (future)
 		{Prefix: "migrations", Reason: "Laravel: framework migration tracking, not user data"},
-		{Prefix: "jobs", Reason: "Laravel: queue job storage (horizon, failed_jobs) — operational, not business"},
 		{Prefix: "failed_jobs", Reason: "Laravel: queue failure log — operational, not business"},
 		// Rails (future)
 		{Prefix: "schema_migrations", Reason: "Rails: migration version tracking — framework internals"},
@@ -110,15 +111,19 @@ func Generate(schema *datasource.Schema, cfg *config.Config) *config.Config {
 		customPlurals = make(map[string]string)
 	}
 
-	// Read-only by default
+	// Read-only by default — НЕ мутируем входной cfg (README: «чистая функция»).
+	// Раньше писали cfg.DataSource.ReadOnly = &readOnly прямо во входной указатель:
+	// при параллельном Generate на общем шаблонном cfg это data race (P0-3).
+	// Копируем DataSource локально и выставляем дефолт только в копии.
 	readOnly := true
-	if cfg.DataSource.ReadOnly == nil {
-		cfg.DataSource.ReadOnly = &readOnly
+	dataSource := cfg.DataSource
+	if dataSource.ReadOnly == nil {
+		dataSource.ReadOnly = &readOnly
 	}
 
 	result := &config.Config{
 		Version:    config.CurrentConfigVersion,
-		DataSource: cfg.DataSource,
+		DataSource: dataSource,
 		Meta: &config.ConfigMeta{
 			ConfigVersion:    config.CurrentConfigVersion,
 			GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
@@ -135,6 +140,12 @@ func Generate(schema *datasource.Schema, cfg *config.Config) *config.Config {
 	var entities []config.Entity
 	for _, tbl := range tables {
 		if shouldSkip(tbl.Name, skipRules, nil) {
+			// P1-4: предупреждаем о скипе — DefaultSkipRules содержит
+			// общеупотребимые слова (documents, jobs, session, migrations),
+			// которые могут быть бизнес-таблицами (договоры, вакансии).
+			// Логируем имя таблицы и число колонок, чтобы при онбординге
+			// было видно, что таблица реально пропущена.
+			slog.Warn("configgen: skipping table", "table", tbl.Name, "columns", len(tbl.Columns))
 			continue
 		}
 		entities = append(entities, tableToEntity(tbl, displayPrefixes))

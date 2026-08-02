@@ -8,21 +8,20 @@ import (
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
-// TestTenantFilter_SecurityGap demonstrates the security issue:
-// when auth is missing or RowFilters is empty, tenantFilter returns
-// empty WHERE clause — meaning tenant_id is NOT enforced.
+// TestTenantFilter_SecurityGap demonstrates the security fix:
+// when auth is configured (header) but tenant_id is missing or RowFilters
+// is empty for the entity, tenantFilter now returns deny=true (fail-closed).
 //
-// This test is EXPECTED TO PASS (confirming the vulnerability exists).
-// It serves as a regression test: if the vulnerability is fixed,
-// this test should be updated to FAIL.
+// This test verifies the FIX: previously these cases returned empty WHERE
+// (meaning tenant_id was NOT enforced — cross-tenant leak). Now they must
+// signal deny so the handler returns 403.
 func TestTenantFilter_SecurityGap(t *testing.T) {
-	// Simulate configuration where admin forgot to set up RowFilters
-	// or auth is entirely missing.
 	tests := []struct {
 		name        string
 		auth        *config.AuthConfig
 		tenantID    string
 		entityName  string
+		expectDeny  tenantDenyReason // fail-closed: != tenantDenyNone = reject
 		expectWhere string
 		comment     string
 	}{
@@ -31,32 +30,36 @@ func TestTenantFilter_SecurityGap(t *testing.T) {
 			auth:        nil,
 			tenantID:    "tenant-a",
 			entityName:  "customer",
-			expectWhere: "", // ⚠️ GAP: any tenant_id sees all rows
-			comment:     "No isolation — tenant_a sees tenant_b's data",
+			expectDeny:  tenantDenyNone, // single-tenant: no isolation required
+			expectWhere: "",
+			comment:     "No auth configured — single-tenant mode, no denial",
 		},
 		{
 			name:        "auth configured but no RowFilters",
 			auth:        &config.AuthConfig{Strategy: config.AuthStrategyHeader},
 			tenantID:    "tenant-a",
 			entityName:  "customer",
-			expectWhere: "", // ⚠️ GAP: header is read but no filtering applied
-			comment:     "Auth header required but no row_filter set",
+			expectDeny:  tenantDenyMissingRowFilter, // FAIL-CLOSED: config error
+			expectWhere: "",
+			comment:     "Auth header required but no row_filter set — must deny",
 		},
 		{
 			name:        "RowFilters set only for entity X, request for entity Y",
 			auth:        &config.AuthConfig{Strategy: config.AuthStrategyHeader, RowFilters: []config.RowFilter{{Entity: "customer", Where: "tenant_id = :tenant_id"}}},
 			tenantID:    "tenant-a",
 			entityName:  "order",
-			expectWhere: "", // ⚠️ GAP: order entity has no filter
-			comment:     "Cross-entity leak: order has no filter, sees all rows",
+			expectDeny:  tenantDenyMissingRowFilter, // FAIL-CLOSED: config error
+			expectWhere: "",
+			comment:     "Cross-entity: order has no filter — must deny, not leak",
 		},
 		{
 			name:        "empty tenant_id in header",
 			auth:        &config.AuthConfig{Strategy: config.AuthStrategyHeader, RowFilters: []config.RowFilter{{Entity: "customer", Where: "tenant_id = :tenant_id"}}},
 			tenantID:    "",
 			entityName:  "customer",
-			expectWhere: "", // ⚠️ GAP: no tenant_id means no filter
-			comment:     "If X-Tenant-ID not sent, no isolation — all data visible",
+			expectDeny:  tenantDenyMissingTenantID, // FAIL-CLOSED: request error
+			expectWhere: "",
+			comment:     "No X-Tenant-ID sent — must deny, not return all data",
 		},
 	}
 
@@ -64,23 +67,22 @@ func TestTenantFilter_SecurityGap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			where, args := tenantFilter(tt.entityName, tt.auth, tt.tenantID, 0, translate)
+			where, _, deny := tenantFilter(tt.entityName, tt.auth, tt.tenantID, 0, translate)
 
 			if where != tt.expectWhere {
 				t.Errorf("where = %q, want %q", tt.expectWhere, where)
 			}
-
-			// SECURITY CHECK: If tenant_id is provided AND auth is configured,
-			// we MUST have a where clause that filters by tenant.
-			if tt.tenantID != "" && tt.auth != nil && tt.auth.Strategy == config.AuthStrategyHeader {
-				if where == "" {
-					t.Logf("⚠️  SECURITY GAP: tenant_id=%q provided but no WHERE clause generated. %s", tt.tenantID, tt.comment)
-					t.Logf("   This means tenant-a can see tenant-b's data via direct API call!")
-				}
+			if deny != tt.expectDeny {
+				t.Errorf("deny = %v, want %v (%s)", deny, tt.expectDeny, tt.comment)
 			}
 
-			if len(args) > 0 && args[0] != tt.tenantID {
-				t.Errorf("args[0] = %v, want %v", args[0], tt.tenantID)
+			// SECURITY CHECK (fail-closed): если auth настроен (header),
+			// запрос БЕЗ валидного tenant-фильтра ДОЛЖЕН быть отклонён.
+			if tt.auth != nil && tt.auth.Strategy == config.AuthStrategyHeader {
+				if deny == tenantDenyNone && where == "" {
+					t.Errorf("SECURITY REGRESSION: auth=header, tenant_id=%q, entity=%q → no WHERE and no deny. "+
+						"This is the old fail-open behavior — cross-tenant leak!", tt.tenantID, tt.entityName)
+				}
 			}
 		})
 	}
@@ -97,13 +99,13 @@ func TestTenantFilter_RequiredRowFilterOnAuthHeader(t *testing.T) {
 
 	for _, entity := range []string{"customer", "order", "product", "user"} {
 		t.Run(entity, func(t *testing.T) {
-			where, args := tenantFilter(entity, auth, "tenant-a", 0, translate)
+			where, args, _ := tenantFilter(entity, auth, "tenant-a", 0, translate)
 
 			// CRITICAL: If we get here, no filter was applied.
 			// In a hardened version, this should auto-generate a default
 			// filter (e.g. "tenant_id = ?") when AuthStrategyHeader is set.
 			if where == "" && args == nil {
-				t.Logf("⚠️  SECURITY: tenant_id='tenant-a' request for entity=%q produced no WHERE clause", entity)
+				t.Logf("  SECURITY: tenant_id='tenant-a' request for entity=%q produced no WHERE clause", entity)
 				t.Logf("   Auto-generated fallback filter ('tenant_id = ?') should be added when Strategy=Header")
 			}
 		})
@@ -179,7 +181,7 @@ func TestSQLBuilder_AddsTenantFilter(t *testing.T) {
 	// This is the realistic scenario in production.
 	auth := &config.AuthConfig{
 		Strategy:     config.AuthStrategyHeader,
-		RowFilters:   nil, // ⚠️ MISSING!
+		RowFilters:   nil, //  MISSING!
 		TenantHeader: "X-Tenant-ID",
 	}
 
@@ -188,12 +190,12 @@ func TestSQLBuilder_AddsTenantFilter(t *testing.T) {
 	// (if no RowFilters is configured, fallback to "tenant_id = ?")
 	translate := func(i int) string { return "?" }
 
-	where, args := tenantFilter("customer", auth, "tenant-a", 0, translate)
+	where, args, _ := tenantFilter("customer", auth, "tenant-a", 0, translate)
 
 	// Currently: where="" args=nil (security gap)
 	// Hardened version: where="tenant_id = ?" args=[tenant-a]
 	if where == "" || len(args) == 0 {
-		t.Logf("⚠️  CRITICAL SECURITY GAP: tenant_id='tenant-a' but no WHERE clause applied")
+		t.Logf("  CRITICAL SECURITY GAP: tenant_id='tenant-a' but no WHERE clause applied")
 		t.Logf("   In production, this would allow tenant-a to see tenant-b's data!")
 		t.Logf("   Fix: auto-generate 'tenant_id = ?' filter when AuthStrategyHeader is set")
 	}
@@ -211,9 +213,9 @@ func TestTenantFilter_TenantIDSpoofing(t *testing.T) {
 	translate := func(i int) string { return "?" }
 
 	// Client 1 sends X-Tenant-ID: tenant-a
-	where1, args1 := tenantFilter("customer", auth, "tenant-a", 0, translate)
+	where1, args1, _ := tenantFilter("customer", auth, "tenant-a", 0, translate)
 	// Client 2 sends X-Tenant-ID: tenant-a (same as Client 1)
-	where2, args2 := tenantFilter("customer", auth, "tenant-a", 0, translate)
+	where2, args2, _ := tenantFilter("customer", auth, "tenant-a", 0, translate)
 
 	if where1 != where2 {
 		t.Errorf("Inconsistent WHERE for same tenant_id: %q vs %q", where1, where2)
@@ -226,7 +228,7 @@ func TestTenantFilter_TenantIDSpoofing(t *testing.T) {
 	}
 
 	// Client 3 sends X-Tenant-ID: tenant-b
-	where3, args3 := tenantFilter("customer", auth, "tenant-b", 0, translate)
+	where3, args3, _ := tenantFilter("customer", auth, "tenant-b", 0, translate)
 	if len(args3) > 0 && args3[0] != "tenant-b" {
 		t.Errorf("args3[0] = %v, want tenant-b", args3[0])
 	}
@@ -235,6 +237,76 @@ func TestTenantFilter_TenantIDSpoofing(t *testing.T) {
 	// Currently: just verifies args are different strings
 	// Hardened: also verify that WHERE clause is present in both cases
 	if where1 == "" || where3 == "" {
-		t.Logf("⚠️  tenant_id='tenant-a' and 'tenant-b' both produce no WHERE clause — isolation broken")
+		t.Logf("  tenant_id='tenant-a' and 'tenant-b' both produce no WHERE clause — isolation broken")
+	}
+}
+
+// TestTenantFilter_MissingRowFilter_FailsClosedAtRuntime — пункт 2 ревью:
+// рантайм-защита НЕ должна зависеть от того, прошёл ли конфиг Validate().
+// Даже если конфиг обошёл валидацию (баг рядом, ручная правка JSON на диске,
+// будущий путь мутации без Validate), tenantFilter обязан вернуть deny для
+// entity без row_filter — иначе данные текут без изоляции.
+func TestTenantFilter_MissingRowFilter_FailsClosedAtRuntime(t *testing.T) {
+	// Конфиг НЕ прогнан через Validate: header-auth, row_filter только для
+	// customer, а запрос за entity "order" (не покрыта).
+	auth := &config.AuthConfig{
+		Strategy: config.AuthStrategyHeader,
+		RowFilters: []config.RowFilter{
+			{Entity: "customer", Where: "tenant_id = :tenant_id"},
+		},
+	}
+	translate := func(i int) string { return "?" }
+
+	// order не покрыта row_filter → deny=MissingRowFilter (данные НЕ текут)
+	where, args, deny := tenantFilter("order", auth, "tenant-a", 0, translate)
+	if deny != tenantDenyMissingRowFilter {
+		t.Errorf("SECURITY: entity 'order' without row_filter under header-auth must deny (MissingRowFilter). "+
+			"Got where=%q args=%v deny=%v (fail-open would leak all rows)", where, args, deny)
+	}
+	if where != "" || args != nil {
+		t.Errorf("denied request must have empty where/args, got where=%q args=%v", where, args)
+	}
+
+	// Контроль: customer покрыта → фильтр есть, deny=none
+	where2, args2, deny2 := tenantFilter("customer", auth, "tenant-a", 0, translate)
+	if deny2 != tenantDenyNone {
+		t.Error("customer has row_filter, deny should be tenantDenyNone")
+	}
+	if where2 == "" || len(args2) != 1 || args2[0] != "tenant-a" {
+		t.Errorf("customer filter broken: where=%q args=%v", where2, args2)
+	}
+}
+
+// TestTenantFilter_MissingTenantID_DeniesAsRequestError — раздельный тест
+// (ревью, пункт 2): пустой X-Tenant-ID и отсутствие row_filter — РАЗНЫЕ
+// failure mode. Здесь: header-auth настроен, row_filter ЕСТЬ, но клиент не
+// прислал X-Tenant-ID → tenantDenyMissingTenantID (ошибка запроса → 400),
+// НЕ MissingRowFilter (ошибка конфига → 403).
+func TestTenantFilter_MissingTenantID_DeniesAsRequestError(t *testing.T) {
+	auth := &config.AuthConfig{
+		Strategy: config.AuthStrategyHeader,
+		RowFilters: []config.RowFilter{
+			{Entity: "customer", Where: "tenant_id = :tenant_id"},
+		},
+	}
+	translate := func(i int) string { return "?" }
+
+	// tenantID пуст, но row_filter ЕСТЬ → MissingTenantID (request error)
+	where, args, deny := tenantFilter("customer", auth, "", 0, translate)
+	if deny != tenantDenyMissingTenantID {
+		t.Errorf("empty tenant_id with existing row_filter must deny as MissingTenantID (request error), got deny=%v", deny)
+	}
+	if where != "" || args != nil {
+		t.Errorf("denied request must have empty where/args, got where=%q args=%v", where, args)
+	}
+
+	// Различие failure mode: тот же конфиг, tenant_id ЕСТЬ, entity не покрыта →
+	// MissingRowFilter (config error). Два разных кода ошибки.
+	where2, args2, deny2 := tenantFilter("order", auth, "tenant-a", 0, translate)
+	if deny2 != tenantDenyMissingRowFilter {
+		t.Errorf("entity without row_filter + valid tenant_id must deny as MissingRowFilter (config error), got deny=%v", deny2)
+	}
+	if where2 != "" || args2 != nil {
+		t.Errorf("denied request must have empty where/args, got where=%q args=%v", where2, args2)
 	}
 }

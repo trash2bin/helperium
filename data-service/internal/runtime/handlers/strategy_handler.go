@@ -40,6 +40,17 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 			return
 		}
 
+		// Fail-closed (P0-1): при AuthStrategyHeader и пустом X-Tenant-ID ИЛИ
+		// отсутствии row_filter для entity — deny. Проверяем ДО выполнения
+		// запроса, единая точка для всех веток (count/select/rawwhere).
+		{
+			_, _, tenantDeny := tenantFilter(entityName, c.Auth, c.tenantID(r), 0, asPlaceholderFunc(c.Adapter))
+			if tenantDeny != tenantDenyNone {
+				respondTenantDeny(w, tenantDeny)
+				return
+			}
+		}
+
 		// Bridge runtime.AdapterSubset => query.AdapterSubset
 		qAdapter := &runtime.AdapterToQuery{Inner: c.Adapter}
 		searchAdapter := search.NewAdapter(qAdapter)
@@ -61,7 +72,7 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 			}
 			// Tenant-фильтр: existingArgCount = число уже сгенерированных args
 			// (иначе на PG плейсхолдер tenant $1 коллизирует с WHERE $1..$n).
-			tenantWhere, tenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), len(args), translate)
+			tenantWhere, tenantArgs, _ := tenantFilter(entityName, c.Auth, c.tenantID(r), len(args), translate)
 			if tenantWhere != "" {
 				// Применяем tenant как AND к ВНУТРЕННЕМУ WHERE, а не оборачиваем
 				// агрегат в подзапрос: SELECT COUNT(*) не имеет колонки tenant_id,
@@ -121,7 +132,7 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 				RespondError(w, http.StatusInternalServerError, "query_error", err.Error())
 				return
 			}
-			tenantWhere, tenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), len(innerArgs), translate)
+			tenantWhere, tenantArgs, _ := tenantFilter(entityName, c.Auth, c.tenantID(r), len(innerArgs), translate)
 			if tenantWhere != "" {
 				// Внешний SELECT — явный список колонок БЕЗ tenant_id.
 				// Иначе внутренний ensureColumn(tenant_id) (нужен для WHERE)
@@ -157,7 +168,7 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 			if whereArgCount < 0 {
 				whereArgCount = 0
 			}
-			tenantWhere, tenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), whereArgCount, translate)
+			tenantWhere, tenantArgs, _ := tenantFilter(entityName, c.Auth, c.tenantID(r), whereArgCount, translate)
 			if tenantWhere != "" {
 				isPG := adapterIsPostgres(c.Adapter)
 				sqlStr, args = insertTenantBeforeLimit(sqlStr, args, " AND "+tenantWhere, tenantArgs, isPG)
@@ -165,7 +176,7 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 		} else {
 			// Нет WHERE-условий (кроме tenant) — tenant offset = 0 (первый аргумент),
 			// хвостовые плейсхолдеры (LIMIT/OFFSET) сдвигаются на 1 для PG.
-			tenantWhere, tenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), 0, translate)
+			tenantWhere, tenantArgs, _ := tenantFilter(entityName, c.Auth, c.tenantID(r), 0, translate)
 			if tenantWhere != "" {
 				isPG := adapterIsPostgres(c.Adapter)
 				sqlStr, args = insertTenantBeforeLimit(sqlStr, args, " WHERE "+tenantWhere, tenantArgs, isPG)
@@ -187,7 +198,7 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 			// и у него нет колонки tenant_id для внешнего WHERE.
 			// Плейсхолдер tenant считаем от len(plan.RawWhereArgs) — в count
 			// участвуют только RawWhere-аргументы (не полный SELECT args).
-			countTenantWhere, countTenantArgs := tenantFilter(entityName, c.Auth, c.tenantID(r), len(plan.RawWhereArgs), translate)
+			countTenantWhere, countTenantArgs, _ := tenantFilter(entityName, c.Auth, c.tenantID(r), len(plan.RawWhereArgs), translate)
 			if countTenantWhere != "" {
 				countSQL = "SELECT COUNT(*) FROM " + plan.From + " WHERE (" + plan.RawWhere + ") AND " + countTenantWhere
 				countArgs = append(append([]any{}, plan.RawWhereArgs...), countTenantArgs...)
