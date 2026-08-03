@@ -224,7 +224,8 @@ curl -s http://127.0.0.1:8082/openapi.json | yu -x . > specs/rag.openapi.yaml
 ## Data-service OpenAPI — runtime-генерация
 
 В отличие от Python-сервисов, data-service НЕ хранит OpenAPI spec-файл.
-Схема генерируется runtime через `data-service/internal/openapigen/openapigen.go`
+Схема генерируется runtime через `helperium-go/openapigen/openapigen.go`
+(общий пакет, переехал из `data-service/internal/openapigen` 2026-08-03)
 на основе загруженного конфига. Живая спека:
 
 ```bash
@@ -243,4 +244,4 @@ openapi-generator generate -i specs/rag.openapi.yaml -g python -o /tmp/rag-clien
 openapi-generator generate -i specs/api.openapi.yaml -g typescript -o /tmp/api-client
 ```
 ---
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

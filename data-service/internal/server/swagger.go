@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/trash2bin/helperium/data-service/internal/openapigen"
+	"github.com/trash2bin/helperium/helperium-go/openapigen"
 	"github.com/trash2bin/helperium/helperium-go/pkg/cors"
 	"github.com/trash2bin/helperium/helperium-go/pkg/swaggerui"
 )

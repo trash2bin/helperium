@@ -85,6 +85,8 @@ func New(opts Options) *Server {
 	}
 	// OpenAPI spec генерится в build.sh → internal/server/static/openapi.json
 	// и вкомпиливается через //go:embed static. runtime — через openAPIHandler.
+	// Спека — ручной хардкод в internal/openapi/spec.go, синхронизация с роутером
+	// проверяется reciprocal-тестом internal/server/router_contract_test.go.
 	return s
 }
 
@@ -447,6 +449,27 @@ func (s *Server) proxyGetToDataService(path string, tenantID ...string) ([]byte,
 	return body, resp.StatusCode, nil
 }
 
+// proxyDeleteToDataService отправляет DELETE-запрос к data-service с Authorization.
+// Используется для удаления tenant'ов: data-service ожидает DELETE /admin/tenants/{id}.
+func (s *Server) proxyDeleteToDataService(path string) ([]byte, int, error) {
+	dataURL := s.opts.DataSvcURL + path
+	req, err := http.NewRequest(http.MethodDelete, dataURL, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.opts.AdminToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return body, resp.StatusCode, nil
+}
+
 // proxyPostToDataService отправляет POST-запрос к data-service с JSON-телом.
 // Если tenantID не пустой, добавляет X-Tenant-ID заголовок.
 func (s *Server) proxyPostToDataService(path string, payload any, tenantID ...string) ([]byte, int, error) {
@@ -662,7 +685,9 @@ func (s *Server) tenantGetHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) tenantDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	body, status, err := s.proxyPostToDataService("/admin/tenants/"+id+"/delete", nil)
+	// data-service удаляет tenant через DELETE /admin/tenants/{id} (не POST .../delete —
+	// тот путь не существует, возвращает 404). Проверено вживую: DELETE /admin/tenants/{id} → 200.
+	body, status, err := s.proxyDeleteToDataService("/admin/tenants/"+id)
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
 		return

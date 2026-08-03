@@ -178,6 +178,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 | RagClient stats | GET `/admin/stats` | HTTP | Get RAG statistics |
 | RagClient update config | PUT `/admin/config` | HTTP | Update RAG config |
 
+**Headers:** `X-Admin-Token: {ADMIN_TOKEN}` (admin-dashboard отправляет свой `ADMIN_TOKEN` как `X-Admin-Token`; rag-service сверяет его с env `ADMIN_API_TOKEN` — значения ДОЛЖНЫ совпадать, иначе 403).
 **Config field:** `Opts.RagSvcURL`
 
 ## Data Flow Summary
@@ -245,4 +246,4 @@ LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 100
 | `ADMIN_DASHBOARD_AS_URL` | - | admin-dashboard | api-service |
 | `ADMIN_DASHBOARD_RS_URL` | - | admin-dashboard | rag |
 ---
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

@@ -20,8 +20,10 @@ internal/query/                Expression AST → SQL (Engine)
 internal/runtime/              AdapterSubset, EntityResolver, HTTP-хендлеры
 internal/search/               стратегии grep/filter/schema (Strategy interface)
 internal/server/               TenantStore, роутер, middleware, admin API
-internal/openapigen/           runtime-генерация OpenAPI 3.1 из cfg.Endpoints
 ```
+
+> OpenAPI-генератор переехал в общий пакет `helperium-go/openapigen/` (2026-08-03) —
+> см. `helperium-go/openapigen/openapigen.go`.
 
 ## datasource — интерфейсы и драйверы
 
@@ -245,16 +247,20 @@ datasource.Adapter.Introspect() → Schema
 
 `DefaultDisplayPrefixes()` :12, `shortBusinessName()` :19, `titleCase()` :48, `shortColumnName()` :56, `pluralizeEntity()` :67, `toolDisplayName()` :107.
 
-## openapigen — OpenAPI 3.1 runtime (`internal/openapigen/openapigen.go`)
+## openapigen — OpenAPI 3.1 runtime (`helperium-go/openapigen/openapigen.go`)
+
+> Переехал из `data-service/internal/openapigen` в общий пакет `helperium-go/openapigen` (2026-08-03),
+> чтобы admin-dashboard мог импортировать его в контрактных тестах без internal-ограничений.
 
 - `Generate()` :19 — из cfg.Endpoints на каждый запрос.
-- `buildPaths()` :394, `buildComponents()` :645, `entitySchema()` :726, `openapiType()` :749, `operationID()` :768.
+- `GenerateSystemSpec()` :40 — system-only спека (health, admin-эндпоинты).
+- `buildPaths()` :416, `buildComponents()` :664, `entitySchema()` :745, `openapiType()` :768, `operationID()` :787.
 
 ## Конфиг
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "data_source": { "driver": "sqlite|postgres", "dsn": "...", "read_only": true },
   "entities": [...],
   "endpoints": [...],

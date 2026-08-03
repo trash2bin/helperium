@@ -111,6 +111,19 @@ cd admin-dashboard && bash build.sh     # 0 errors expected
 
 ---
 
+## OpenAPI-контракты и прокси (2026-08-03)
+
+Спека `internal/openapi/spec.go` — ручной хардкод (не генерация из роутера), синхронизация защищена двумя контрактными тестами:
+
+- **`internal/server/router_contract_test.go` (Gap A)** — reciprocal: каждый маршрут `Router()` (chi.Walk) должен быть в `GenerateSpec()`, и наоборот. Падает при добавлении/удалении маршрута в `server.go` без правки `spec.go`.
+- **`internal/openapi/proxy_contract_test.go` (Gap B)** — каждый прокси-эндпоинт (`withProxyTarget` в `spec.go` ставит `x-upstream-method`/`x-upstream-path`/`x-upstream-headers`) сверяется с реальной спекой upstream: data-service через импорт `helperium-go/openapigen`, api/rag через `specs/*.yaml`. Падает, если прокси шлёт на путь, которого нет у upstream.
+
+Прокси-пути заполнены по реальному коду хендлеров (`server.go`/`client.go`), не по названию. Пример найденного и исправленного бага: `tenantDeleteHandler` слал `POST /admin/tenants/{id}/delete` (404 на data-service) → теперь `DELETE /admin/tenants/{id}` (200).
+
+`openapigen` переехал из `data-service/internal` в `helperium-go/openapigen` — общий пакет, прямой импорт в тестах без internal-ограничений.
+
+---
+
 ## i18n
 
 - Bilingual: русский / английский (309 ключей)

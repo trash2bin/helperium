@@ -1048,7 +1048,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/api/agents"
       },
       "post": {
         "operationId": "agents_create",
@@ -1100,7 +1105,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/api/agents"
       }
     },
     "/api/agents/{name}": {
@@ -1128,7 +1138,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "DELETE",
+        "x-upstream-path": "/api/agents/{name}"
       },
       "get": {
         "operationId": "agents_get",
@@ -1181,7 +1196,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/api/agents/{name}"
       },
       "put": {
         "operationId": "agents_update",
@@ -1244,7 +1264,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "PUT",
+        "x-upstream-path": "/api/agents/{name}"
       }
     },
     "/api/agents/{name}/abuse": {
@@ -1467,7 +1492,13 @@
         "x-auth-required": true,
         "x-proxy-to": "api-service",
         "x-route-group": "api-service",
-        "x-streaming": true
+        "x-streaming": true,
+        "x-upstream-headers": [
+          "Authorization",
+          "X-Tenant-ID"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/api/chat/voice"
       }
     },
     "/api/dashboard": {
@@ -1694,7 +1725,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/llm-config"
       }
     },
     "/api/llm-provider-list": {
@@ -1738,7 +1774,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/llm-provider-list"
       }
     },
     "/api/llm-providers": {
@@ -1782,7 +1823,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/llm-providers"
       },
       "post": {
         "operationId": "llm_providers_add",
@@ -1834,7 +1880,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/admin/llm-providers"
       }
     },
     "/api/llm-providers/{name}": {
@@ -1889,7 +1940,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "DELETE",
+        "x-upstream-path": "/admin/llm-providers/{name}"
       },
       "get": {
         "operationId": "llm_providers_get",
@@ -1942,7 +1998,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/llm-providers/{name}"
       },
       "put": {
         "operationId": "llm_providers_update",
@@ -2005,7 +2066,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "PUT",
+        "x-upstream-path": "/admin/llm-providers/{name}"
       }
     },
     "/api/llm-providers/{name}/toggle": {
@@ -2060,7 +2126,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/admin/llm-providers/{name}/toggle"
       }
     },
     "/api/rag/config": {
@@ -2104,7 +2175,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/config"
       },
       "put": {
         "operationId": "rag_config_put",
@@ -2156,7 +2229,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "PUT",
+        "x-upstream-path": "/admin/config"
       }
     },
     "/api/rag/documents/delete": {
@@ -2210,7 +2285,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/documents/delete"
       }
     },
     "/api/rag/documents/import": {
@@ -2264,7 +2341,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/documents/import"
       }
     },
     "/api/rag/documents/list": {
@@ -2318,7 +2397,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/documents/list"
       }
     },
     "/api/rag/documents/upload": {
@@ -2386,7 +2467,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/documents/upload"
       }
     },
     "/api/rag/health": {
@@ -2430,7 +2513,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/health"
       }
     },
     "/api/rag/stats": {
@@ -2474,7 +2559,9 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "rag-service",
-        "x-route-group": "rag-service"
+        "x-route-group": "rag-service",
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/stats"
       }
     },
     "/api/tenants": {
@@ -2518,7 +2605,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/tenants"
       },
       "post": {
         "operationId": "tenants_create",
@@ -2570,7 +2662,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/admin/tenants"
       }
     },
     "/api/tenants/upload-sqlite": {
@@ -2639,7 +2736,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/admin/tenants"
       }
     },
     "/api/tenants/{id}": {
@@ -2694,7 +2796,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "DELETE",
+        "x-upstream-path": "/admin/tenants/{id}"
       },
       "get": {
         "operationId": "tenants_get",
@@ -2747,7 +2854,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/tenants/{id}"
       }
     },
     "/api/tenants/{id}/config": {
@@ -2802,7 +2914,13 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization",
+          "X-Tenant-ID"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/config"
       },
       "put": {
         "operationId": "tenants_config_put",
@@ -2865,7 +2983,13 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization",
+          "X-Tenant-ID"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/admin/config?tenant={id}"
       }
     },
     "/api/tenants/{id}/introspect": {
@@ -2920,7 +3044,13 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization",
+          "X-Tenant-ID"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/admin/config/rewrite"
       }
     },
     "/api/tenants/{id}/manifest": {
@@ -2975,7 +3105,13 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "data-service",
-        "x-route-group": "data-service"
+        "x-route-group": "data-service",
+        "x-upstream-headers": [
+          "Authorization",
+          "X-Tenant-ID"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/mcp/manifest"
       }
     },
     "/api/voice-config": {
@@ -3019,7 +3155,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/api/voice-config"
       },
       "put": {
         "operationId": "voice_config_put",
@@ -3071,7 +3212,12 @@
         ],
         "x-auth-required": true,
         "x-proxy-to": "api-service",
-        "x-route-group": "api-service"
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "PUT",
+        "x-upstream-path": "/api/voice-config"
       }
     },
     "/health": {

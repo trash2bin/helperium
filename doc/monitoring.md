@@ -233,5 +233,5 @@ flowchart TD
 | `docker/grafana/dashboards/helperium-overview.json` | **Дашборд** (этот файл) |
 | `docker/grafana/dashboards/dashboard.yml` | Provider для автозагрузки |
 | `.data/logs/{svc}.log` | JSON-логи сервисов |
-| `.env` | RAG_ADMIN_TOKEN, ADMIN_TOKEN |
+| `.env` | ADMIN_API_TOKEN (для RAG /admin/*), ADMIN_TOKEN |
 | `doc/monitoring.md` | **Эта документация** |

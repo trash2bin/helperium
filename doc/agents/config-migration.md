@@ -58,7 +58,7 @@ config.Load(path)                    [helperium-go/config/loader.go]
 helperium-go/config/
 ├── types.go            # Config struct, Validate(), all enum types
 ├── loader.go           # Load() — the pipeline above
-├── migration.go        # Normalize(), CurrentConfigVersion, ConfigMeta, ApprovedTool
+├── migration.go        # Normalize(), CurrentConfigVersion, ConfigMeta
 ├── validate.go         # Validate(rawJSON) — convenience wrapper for admin API
 ├── filter_validation_test.go
 ├── loader_test.go
@@ -210,7 +210,7 @@ the pipeline.
 | # | Change | Rationale |
 |---|--------|-----------|
 | 1 | Added `Meta` block | Track when/which version generated the config |
-| 2 | `ApprovedTools` `[]string` → `[]ApprovedTool` | Allow per-method approval, not just per-endpoint (удалено в v4.1 — write-tools выпилены) |
+| 2 | ~~`ApprovedTools` `[]string` → `[]ApprovedTool`~~ | Удалено в 2026-08-02 — write-tool approval выпилен из кода/UI/доков |
 | 3 | `Relation.JunctionTable` | Required for `many_to_many` (the old struct had no way to specify the junction table) |
 | 4 | `EndpointParam.ArrayOf`, `EndpointParam.EnumValues` | Better JSON Schema for MCP tool parameters |
 | 5 | `Version` check in `Validate()`: `== 1` → `== CurrentConfigVersion` | No more hardcoded `== 1` |
@@ -252,7 +252,7 @@ result := &config.Config{
 }
 ```
 
-### Post-migration config shape (v2)
+### Post-migration config shape (v2 — исторический пример; текущая версия схемы — 4)
 
 ```json
 {
@@ -442,7 +442,7 @@ go test ./helperium-go/config/... -run 'TestNormalize|TestApproved|TestValidate_
   migrate the field to a new location and leave the old one readable for one
   cycle.
 - **Don't change existing field types** — `string` → `[]string` breaks
-  `Unmarshal` silently. Use a custom `UnmarshalJSON` like `ApprovedTool` does.
+  `Unmarshal` silently. Use a custom `UnmarshalJSON` when needed.
 - **Don't mutate `Version` inside `Validate()`** — normalization belongs in
   `Normalize()`. `Validate()` should only check the final shape.
 
@@ -475,15 +475,15 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 
 | Source | Version |
 |--------|---------|
-| Hand-written `specs/config.example.json` | **2** (updated during v1→v2 migration) |
-| `configgen.Generate()` | **2** (`config.CurrentConfigVersion`) — now produces `grep`, `filter`, `schema` endpoints with `strategy` field |
-| Old `.data/tenants/*.json` on disk | 0 or 1 — auto-upgraded by `Normalize()` |
+| `configgen.Generate()` | **4** (`config.CurrentConfigVersion` = 4) — produces `grep`, `filter`, `schema` endpoints with `strategy` |
+| Hand-written `specs/config.example.json` | **2** (устарел — должен быть обновлён до 4; `Normalize()` молча апгрейдит, но для примера лучше держать актуальный) |
+| Old `.data/tenants/*.json` on disk | 0–3 — auto-upgraded by `Normalize()` |
 
 ### Key files
 
 | File | Purpose |
 |------|---------|
-| `helperium-go/config/migration.go` | `Normalize()`, version chain, `ConfigMeta`, `ApprovedTool` |
+| `helperium-go/config/migration.go` | `Normalize()`, version chain, `ConfigMeta` |
 | `helperium-go/config/types.go` | All config types, `Validate()`, `String()` |
 | `helperium-go/config/loader.go` | `Load()` — the Normalize → Validate pipeline |
 | `helperium-go/config/validate.go` | `Validate(rawJSON)` — convenience for admin API |
@@ -496,4 +496,4 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 | `doc/agents/tenant-lifecycle.md` | How configs are created and persisted |
 | `doc/agents/search-strategies.md` | Detailed description of each strategy (grep, filter, schema) |
 ---
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

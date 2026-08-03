@@ -80,6 +80,9 @@ services:
       - RAG_DEVICE=${RAG_DEVICE:-cpu}
       - RAG_CHUNKER_TYPE=${RAG_CHUNKER_TYPE:-semantic}
       - RAG_LOCAL_FILES_ONLY=${RAG_LOCAL_FILES_ONLY:-0}
+      # Токен для /admin/* (admin-dashboard шлёт X-Admin-Token = свой ADMIN_TOKEN).
+      # Без него RAG admin-эндпоинты недоступны (fail-closed 403).
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-${ADMIN_TOKEN:-}}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8082/health"]
       <<: *hc-curl

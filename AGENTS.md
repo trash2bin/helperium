@@ -105,9 +105,13 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 ## 🧬 Verification
 
 ```
-Last verified: 2026-08-02 (выпилка write-tool approval: удалены ApprovedTools/approve/pending из кода, UI и доков; 18/18 Go-пакетов, golangci-lint 0 issues, vitest 72/72, живой smoke-тест)
+Last verified: 2026-08-02 (HEAD `3aa1cdbc`; выпилка write-tool approval: удалены ApprovedTools/approve/pending из кода, UI и доков; 18/18 Go-пакетов, golangci-lint 0 issues, vitest 72/72, живой smoke-тест)
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
+
+OpenAPI-контракты admin-dashboard (2026-08-03, после HEAD `3aa1cdbc`): Gap A/B тесты + фикс DELETE — [admin-dashboard/README.md](admin-dashboard/README.md#openapi-контракты-и-прокси-2026-08-03).
+
+Аудит-проход 2026-08-03 (после OpenAPI-контрактов): убран dead `replace data-service` из `admin-dashboard/go.mod`; доки синхронизированы: `openapigen` → `helperium-go/openapigen` (specs/README, data-service/README), config version 3→4 (data-service/README), ApprovedTool-упоминания вычищены (config-migration.md), configgen версия 2→4 в таблице, RAG admin-токен: `ADMIN_API_TOKEN` должен совпадать с `ADMIN_TOKEN` (docker-compose + .env.example + rag/README + api-flow), dead `RAG_ADMIN_TOKEN` убран из monitoring.md.
 
 Аудит (doc/agents/data-service-refactor-audit.md): рой из 4 reviewer'ов + ручная верификация.
 Исправлено (TDD, 28 новых тестов, 734 passed под -race):

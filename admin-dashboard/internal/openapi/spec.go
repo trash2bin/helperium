@@ -116,161 +116,194 @@ func buildPaths() map[string]any {
 	// ── Data-Service proxy ──
 	addGet(paths, "/api/tenants", "tenants_list", "List all tenants", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("GET", "/admin/tenants", "Authorization"),
 		withResponse("ok", "#/components/schemas/TenantListResponse"))
 
 	addPost(paths, "/api/tenants", "tenants_create", "Create a new tenant (+ start introspection)", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("POST", "/admin/tenants", "Authorization"),
 		withRequestBody("#/components/schemas/CreateTenantRequest"),
 		withResponse("created", "#/components/schemas/TenantCreateResponse"))
 
 	addGet(paths, "/api/tenants/{id}", "tenants_get", "Get tenant info", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("GET", "/admin/tenants/{id}", "Authorization"),
 		withPathParam("id", "string", "Tenant ID"),
 		withResponse("ok", "#/components/schemas/TenantResponse"))
 
 	addDelete(paths, "/api/tenants/{id}", "tenants_delete", "Delete a tenant", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("DELETE", "/admin/tenants/{id}", "Authorization"),
 		withPathParam("id", "string", "Tenant ID"),
 		withResponse("ok", "#/components/schemas/StatusResponse"))
 
 	addPost(paths, "/api/tenants/upload-sqlite", "tenants_upload_sqlite", "Upload SQLite file and register tenant", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("POST", "/admin/tenants", "Authorization"),
 		withMultipartRequestBody([]string{"file", "tenant_id", "driver"}),
 		withResponse("created", "#/components/schemas/TenantCreateResponse"))
 
 	addGet(paths, "/api/tenants/{id}/config", "tenants_config_get", "Get tenant config", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("GET", "/admin/config", "Authorization", "X-Tenant-ID"),
 		withPathParam("id", "string", "Tenant ID"),
 		withResponse("ok", "#/components/schemas/ConfigObject"))
 
 	addPut(paths, "/api/tenants/{id}/config", "tenants_config_put", "Update tenant config", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("POST", "/admin/config?tenant={id}", "Authorization", "X-Tenant-ID"),
 		withPathParam("id", "string", "Tenant ID"),
 		withRequestBody("application/json"),
 		withResponse("ok", "#/components/schemas/ConfigObject"))
 
 	addPost(paths, "/api/tenants/{id}/introspect", "tenants_introspect", "Run introspection (rewrite config from DB schema)", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("POST", "/admin/config/rewrite", "Authorization", "X-Tenant-ID"),
 		withPathParam("id", "string", "Tenant ID"),
 		withResponse("ok", "#/components/schemas/RewriteResponse"))
 
 	addGet(paths, "/api/tenants/{id}/manifest", "tenants_manifest", "Get MCP manifest for tenant", "Data-Service",
 		withProxyTo("data-service"),
+		withProxyTarget("GET", "/mcp/manifest", "Authorization", "X-Tenant-ID"),
 		withPathParam("id", "string", "Tenant ID"),
 		withResponse("ok", "#/components/schemas/ManifestResponse"))
 
 	// ── API-Service proxy ──
 	addGet(paths, "/api/agents", "agents_list", "List all agents", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("GET", "/api/agents", "Authorization"),
 		withResponse("ok", "#/components/schemas/AgentListResponse"))
 
 	addPost(paths, "/api/agents", "agents_create", "Create a new agent", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("POST", "/api/agents", "Authorization"),
 		withRequestBody("#/components/schemas/CreateAgentRequest"),
 		withResponse("created", "#/components/schemas/AgentResponse"))
 
 	addGet(paths, "/api/agents/{name}", "agents_get", "Get agent by name", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("GET", "/api/agents/{name}", "Authorization"),
 		withPathParam("name", "string", "Agent name"),
 		withResponse("ok", "#/components/schemas/AgentResponse"))
 
 	addPut(paths, "/api/agents/{name}", "agents_update", "Update agent", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("PUT", "/api/agents/{name}", "Authorization"),
 		withPathParam("name", "string", "Agent name"),
 		withRequestBody("#/components/schemas/UpdateAgentRequest"),
 		withResponse("ok", "#/components/schemas/AgentResponse"))
 
 	addDelete(paths, "/api/agents/{name}", "agents_delete", "Delete agent", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("DELETE", "/api/agents/{name}", "Authorization"),
 		withPathParam("name", "string", "Agent name"),
 		withResponse("no_content", "#/components/schemas/StatusResponse"))
 
 	addGet(paths, "/api/llm-config", "llm_config_get", "Get LLM fallback configuration", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("GET", "/admin/llm-config", "Authorization"),
 		withResponse("ok", "#/components/schemas/LlmConfig"))
 
 	addGet(paths, "/api/llm-providers", "llm_providers_list", "List all LLM providers (detailed)", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("GET", "/admin/llm-providers", "Authorization"),
 		withResponse("ok", "#/components/schemas/LlmProviderList"))
 
 	addPost(paths, "/api/llm-providers", "llm_providers_add", "Add a new LLM provider", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("POST", "/admin/llm-providers", "Authorization"),
 		withRequestBody("#/components/schemas/LlmProviderAddRequest"),
 		withResponse("created", "#/components/schemas/LlmProvider"))
 
 	addGet(paths, "/api/llm-providers/{name}", "llm_providers_get", "Get LLM provider by name", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("GET", "/admin/llm-providers/{name}", "Authorization"),
 		withPathParam("name", "string", "Provider name"),
 		withResponse("ok", "#/components/schemas/LlmProvider"))
 
 	addPut(paths, "/api/llm-providers/{name}", "llm_providers_update", "Update LLM provider", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("PUT", "/admin/llm-providers/{name}", "Authorization"),
 		withPathParam("name", "string", "Provider name"),
 		withRequestBody("#/components/schemas/LlmProviderUpdateRequest"),
 		withResponse("ok", "#/components/schemas/LlmProvider"))
 
 	addDelete(paths, "/api/llm-providers/{name}", "llm_providers_delete", "Delete LLM provider", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("DELETE", "/admin/llm-providers/{name}", "Authorization"),
 		withPathParam("name", "string", "Provider name"),
 		withResponse("ok", "#/components/schemas/StatusResponse"))
 
 	addPost(paths, "/api/llm-providers/{name}/toggle", "llm_providers_toggle", "Toggle LLM provider on/off", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("POST", "/admin/llm-providers/{name}/toggle", "Authorization"),
 		withPathParam("name", "string", "Provider name"),
 		withResponse("ok", "#/components/schemas/LlmProvider"))
 
 	addGet(paths, "/api/llm-provider-list", "llm_provider_list", "List available providers from LiteLLM", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("GET", "/admin/llm-provider-list", "Authorization"),
 		withResponse("ok", "#/components/schemas/ProviderListResponse"))
 
 	addGet(paths, "/api/voice-config", "voice_config_get", "Get STT voice configuration", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("GET", "/api/voice-config", "Authorization"),
 		withResponse("ok", "#/components/schemas/VoiceConfig"))
 
 	addPut(paths, "/api/voice-config", "voice_config_put", "Update STT voice configuration", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("PUT", "/api/voice-config", "Authorization"),
 		withRequestBody("#/components/schemas/VoiceConfig"),
 		withResponse("ok", "#/components/schemas/VoiceConfig"))
 
 	addSsePost(paths, "/api/chat/voice", "chat_voice", "Voice chat (multipart audio → SSE stream)", "API-Service",
 		withProxyTo("api-service"),
+		withProxyTarget("POST", "/api/chat/voice", "Authorization", "X-Tenant-ID"),
 		withMultipartRequestBody([]string{"audio", "session_id", "agent", "lang"}))
 
 	// ── RAG proxy ──
 	addGet(paths, "/api/rag/health", "rag_health", "RAG service health check", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("GET", "/health"),
 		withResponse("ok", "#/components/schemas/RagHealthResponse"))
 
 	addGet(paths, "/api/rag/config", "rag_config_get", "Get RAG configuration", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("GET", "/admin/config"),
 		withResponse("ok", "#/components/schemas/RagConfig"))
 
 	addPut(paths, "/api/rag/config", "rag_config_put", "Update RAG configuration", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("PUT", "/admin/config"),
 		withRequestBody("#/components/schemas/RagConfig"),
 		withResponse("ok", "#/components/schemas/RagConfig"))
 
 	addGet(paths, "/api/rag/stats", "rag_stats", "Get RAG statistics", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("GET", "/admin/stats"),
 		withResponse("ok", "#/components/schemas/RagStats"))
 
 	addPost(paths, "/api/rag/documents/list", "rag_documents_list", "List RAG documents", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("POST", "/documents/list"),
 		withRequestBody("#/components/schemas/RagDocListRequest"),
 		withResponse("ok", "#/components/schemas/RagDocList"))
 
 	addPost(paths, "/api/rag/documents/import", "rag_documents_import", "Import document from file path", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("POST", "/documents/import"),
 		withRequestBody("#/components/schemas/RagDocImportRequest"),
 		withResponse("ok", "#/components/schemas/RagDocImportResponse"))
 
 	addPost(paths, "/api/rag/documents/upload", "rag_documents_upload", "Upload document (multipart)", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("POST", "/documents/upload"),
 		withMultipartRequestBody([]string{"file", "title", "discipline_id"}),
 		withResponse("ok", "#/components/schemas/RagDocImportResponse"))
 
 	addPost(paths, "/api/rag/documents/delete", "rag_documents_delete", "Delete RAG document", "RAG",
 		withProxyTo("rag-service"),
+		withProxyTarget("POST", "/documents/delete"),
 		withRequestBody("#/components/schemas/RagDocDeleteRequest"),
 		withResponse("ok", "#/components/schemas/StatusResponse"))
 
@@ -846,6 +879,22 @@ func withProxyTo(service string) pathOption {
 	return func(op map[string]any) {
 		op["x-proxy-to"] = service
 		op["x-route-group"] = service
+	}
+}
+
+// withProxyTarget расширяет прокси-аннотацию реальным upstream-контрактом:
+// метод и путь, которые хендлер реально шлёт на upstream-сервис, плюс
+// обязательные заголовки. Это позволяет контрактному тесту проверить,
+// что x-upstream-path существует в OpenAPI-спеке целевого сервиса.
+// Значения берутся из реального кода хендлеров (server.go / client.go),
+// а не угадываются по названию.
+func withProxyTarget(upstreamMethod, upstreamPath string, requiredHeaders ...string) pathOption {
+	return func(op map[string]any) {
+		op["x-upstream-method"] = upstreamMethod
+		op["x-upstream-path"] = upstreamPath
+		if len(requiredHeaders) > 0 {
+			op["x-upstream-headers"] = requiredHeaders
+		}
 	}
 }
 

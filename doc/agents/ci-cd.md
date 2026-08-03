@@ -123,4 +123,4 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 3. [ ] `uv run pytest tests/e2e/ -v` — 44 теста без LLM
 4. [ ] Mutation score не упал (опционально)
 ---
-**Last verified:** 2026-07-28 (commit `a12e54c96fb1b751902329133786daf8bab8e971`)
+**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

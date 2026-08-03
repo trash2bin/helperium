@@ -57,7 +57,7 @@
 | `RAG_CACHE_ENABLED` | `1` | Включить кэширование результатов поиска |
 | `RAG_CACHE_MAXSIZE` | `256` | Макс. записей в кэше |
 | `RAG_CACHE_TTL` | `300` | TTL кэша (секунды) |
-| `ADMIN_API_TOKEN` | — | Токен для доступа к admin API (`/admin/*`) |
+| `ADMIN_API_TOKEN` | — | Токен для доступа к admin API (`/admin/*`). ⚠️ admin-dashboard шлёт `X-Admin-Token` = свой `ADMIN_TOKEN`, поэтому `ADMIN_API_TOKEN` должен совпадать с `ADMIN_TOKEN` (иначе 403). Docker: `docker-compose.yml` прокидывает `ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-${ADMIN_TOKEN:-}}`. |
 
 ## Запуск
 

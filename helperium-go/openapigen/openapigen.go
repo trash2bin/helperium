@@ -308,6 +308,28 @@ func buildSystemPaths(hasAdmin bool) map[string]any {
 				"500": errorResponse("Ошибка подключения, интроспекции или записи файла"),
 			},
 		}
+
+		// MCP manifest — реальный эндпоинт data-service (GET /mcp/manifest), на который
+		// проксирует tenantManifestHandler в admin-dashboard. Добавлен в спеку, чтобы
+		// контрактный тест admin-dashboard (proxy_contract_test.go) видел его.
+		paths["/mcp/manifest"] = map[string]any{
+			"get": map[string]any{
+				"summary":     "MCP manifest для tenant",
+				"operationId": "mcp_manifest",
+				"tags":        adminTag,
+				"security":    adminSec,
+				"responses": map[string]any{
+					"200": map[string]any{
+						"description": "Manifest (entities + mcp_tools)",
+						"content": map[string]any{
+							"application/json": map[string]any{
+								"schema": map[string]any{"type": "object"},
+							},
+						},
+					},
+				},
+			},
+		}
 	}
 
 	return paths
