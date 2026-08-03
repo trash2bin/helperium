@@ -91,7 +91,10 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 	if customShortNames == nil {
 		customShortNames = make(map[string]string)
 	}
-	if schema == nil {
+	// schema может быть nil (db_map после рестарта data-service до rewrite).
+	// Если entities есть — строим из cfg.Entities (FK из Relations);
+	// если и entities пусты — возвращаем пустую карту.
+	if schema == nil && len(cfg.Entities) == 0 {
 		return &SchemaForLLM{Entities: []LLMEntity{}}
 	}
 
@@ -113,11 +116,24 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 
 	// Build FK index: (tableName, column) -> referenced table
 	fkIndex := make(map[[2]string]string) // key: (table, column) -> referencedTable
-	for _, tbl := range schema.Tables {
-		for _, fk := range tbl.ForeignKeys {
-			for i, col := range fk.Columns {
-				if i < len(fk.ReferencedColumns) {
-					fkIndex[[2]string{tbl.Name, col}] = fk.ReferencedTable
+	if schema != nil {
+		for _, tbl := range schema.Tables {
+			for _, fk := range tbl.ForeignKeys {
+				for i, col := range fk.Columns {
+					if i < len(fk.ReferencedColumns) {
+						fkIndex[[2]string{tbl.Name, col}] = fk.ReferencedTable
+					}
+				}
+			}
+		}
+	} else {
+		// Fallback (Фаза 2.5 smoke): без introspected schema (db_map после
+		// рестарта data-service, пока админ не вызвал rewrite) строим FK-индекс
+		// из cfg.Entities.Relations — они есть в конфиге всегда.
+		for _, e := range cfg.Entities {
+			for _, rel := range e.Relations {
+				if rel.LocalFK != "" {
+					fkIndex[[2]string{e.Table, rel.LocalFK}] = rel.Table
 				}
 			}
 		}
@@ -137,18 +153,21 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 
 	for _, e := range cfg.Entities {
 		// Find the original datasource.Table for this entity
+		// (nil если schema не заинтроспекчена — поля берём из cfg.Entities).
 		var tbl *datasource.Table
-		for i := range schema.Tables {
-			stripped := schema.Tables[i].Name
-			if idx := strings.LastIndex(stripped, "."); idx >= 0 {
-				stripped = stripped[idx+1:]
-			}
-			if stripped == e.Name || schema.Tables[i].Name == e.Table {
-				tbl = &schema.Tables[i]
-				break
+		if schema != nil {
+			for i := range schema.Tables {
+				stripped := schema.Tables[i].Name
+				if idx := strings.LastIndex(stripped, "."); idx >= 0 {
+					stripped = stripped[idx+1:]
+				}
+				if stripped == e.Name || schema.Tables[i].Name == e.Table {
+					tbl = &schema.Tables[i]
+					break
+				}
 			}
 		}
-		if tbl == nil {
+		if tbl == nil && schema != nil {
 			continue
 		}
 
@@ -172,17 +191,24 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 				continue
 			}
 
-			// Check FK
-			fkRef := fkIndex[[2]string{tbl.Name, f.Column}]
-			if fkRef == "" {
-				// Also try short table name
-				short := tbl.Name
-				if idx := strings.LastIndex(short, "."); idx >= 0 {
-					short = short[idx+1:]
-				}
-				fkRef = fkIndex[[2]string{short, f.Column}]
+			// Check FK. tbl может быть nil (schema не заинтроспекчена) —
+			// тогда FK-поиск идёт по e.Table/e.Name (индекс построен из Relations).
+			var fkRef string
+			if tbl != nil {
+				fkRef = fkIndex[[2]string{tbl.Name, f.Column}]
 				if fkRef == "" {
-					fkRef = fkIndex[[2]string{e.Name, f.Column}]
+					// Also try short table name
+					short := tbl.Name
+					if idx := strings.LastIndex(short, "."); idx >= 0 {
+						short = short[idx+1:]
+					}
+					fkRef = fkIndex[[2]string{short, f.Column}]
+				}
+			}
+			if fkRef == "" {
+				fkRef = fkIndex[[2]string{e.Name, f.Column}]
+				if fkRef == "" {
+					fkRef = fkIndex[[2]string{e.Table, f.Column}]
 				}
 			}
 
@@ -252,11 +278,32 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			filterFields = append(filterFields, FilterGroup{Label: "exact", Fields: exactFields})
 		}
 
+		// SearchFields — поля нечёткого поиска (grep). Зеркально stringFields
+		// в search-пакете: string-тип, не PK, не tenant_id, не ExcludeFromSearch,
+		// проходит searchableRules. Раньше всегда "" — модель не знала,
+		// по каким полям искать.
+		searchable := make([]string, 0, len(e.Fields))
+		for _, f := range e.Fields {
+			if f.PrimaryKey != nil && *f.PrimaryKey {
+				continue
+			}
+			if f.Column == "tenant_id" {
+				continue
+			}
+			if f.ExcludeFromSearch {
+				continue
+			}
+			if f.Type != config.FieldTypeString {
+				continue
+			}
+			searchable = append(searchable, f.Column)
+		}
+
 		entities = append(entities, LLMEntity{
 			Name:         displayName,
 			ToolPrefix:   e.Name, // e.g. "catalog_product"
 			Description:  desc,
-			SearchFields: "",
+			SearchFields: strings.Join(searchable, ", "),
 			FilterFields: filterFields,
 			Relations:    relations,
 		})
@@ -267,45 +314,30 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 		return strings.ToLower(strings.TrimSpace(h))
 	}
 
-	// Check for category-like vs brand-like entities
-	hasCategory := false
-	hasBrand := false
-	for _, e := range entities {
-		low := strings.ToLower(e.Name)
-		if strings.Contains(low, "категори") || strings.Contains(low, "category") {
-			hasCategory = true
-		}
-		if strings.Contains(low, "бренд") || strings.Contains(low, "brand") {
-			hasBrand = true
-		}
+	// Доменно-нейтральные подсказки. Ссылаются на реальные тулы: db_map,
+	// db_describe, db_search, db_get + пер-энтити filter_<entity> (Фаза 2.5 smoke:
+	// filter деконсолидирован, т.к. имена полей нужны модели прямо в схеме тула).
+	// Для filter используем паттерн filter_<entity>, т.к. имя зависит от entity.
+
+	// 1. Search-first: не перебирать по ID.
+	searchFirst := "SEARCH-FIRST: NEVER guess an id and call db_get on it. Always search first with db_search (text) or filter_<entity> (exact values), then use the id from the result with db_get. Sequential id enumeration (db_get id=1, id=2, ...) is forbidden and wastes quota."
+	if !hintSet[hintKey(searchFirst)] {
+		hints = append(hints, searchFirst)
+		hintSet[hintKey(searchFirst)] = true
 	}
 
-	if hasCategory && hasBrand {
-		h := "Categories = part type (brake pads, shock absorbers). Brands = manufacturer (Bosch, KYB, TRW). Use grep_{entity}(pattern='oil filter') to find products by text, or filter_{entity}(category='Brakes') to filter by category."
-		if !hintSet[hintKey(h)] {
-			hints = append(hints, h)
-			hintSet[hintKey(h)] = true
-		}
-	} else if hasCategory {
-		h := "Categories = part type. Use grep_{entity}(pattern='brake pads') to find products by text, or filter_{entity}(category='Brakes') to filter by category."
-		if !hintSet[hintKey(h)] {
-			hints = append(hints, h)
-			hintSet[hintKey(h)] = true
-		}
+	// 2. Efficient workflow: db_map → filter_<entity>/db_search.
+	efficient := "EFFICIENT WORKFLOW: start with db_map to see the entities. For exact filtering, use filter_<entity> (replace <entity> with the entity name — its schema lists all filterable fields). For text search, use db_search. Use db_describe to see valid values/ranges."
+	if !hintSet[hintKey(efficient)] {
+		hints = append(hints, efficient)
+		hintSet[hintKey(efficient)] = true
 	}
 
-	// Efficient workflow hint
-	h := "EFFICIENT WORKFLOW: Start with schema_{entity}() to see available values. Use distinct_{entity}(column='brand') to explore further. Then grep_{entity}(pattern='Brembo', limit=10) to search text, or filter_{entity}(category='Brakes') for exact field filtering."
-	if !hintSet[hintKey(h)] {
-		hints = append(hints, h)
-		hintSet[hintKey(h)] = true
-	}
-
-	// Self-correction hint
-	h2 := "SELF-CORRECTION: If grep_{entity}() returns empty results, use schema_{entity}() to discover valid values first. If filter_{entity}() returns nothing, check field names via schema or adjust ranges. Never call a tool without parameters — always specify search terms or field filters."
-	if !hintSet[hintKey(h2)] {
-		hints = append(hints, h2)
-		hintSet[hintKey(h2)] = true
+	// 3. Self-correction: db_describe as the discovery tool.
+	selfCorrection := "SELF-CORRECTION: if db_search returns empty results, use db_describe on the same entity to discover valid values first. If filter_<entity> returns nothing, check field names (they are listed in the filter tool schema) or values via db_describe. Never call a tool without parameters."
+	if !hintSet[hintKey(selfCorrection)] {
+		hints = append(hints, selfCorrection)
+		hintSet[hintKey(selfCorrection)] = true
 	}
 
 	return &SchemaForLLM{

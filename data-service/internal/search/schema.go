@@ -35,11 +35,16 @@ func (s *SchemaStrategy) ToolName(entity config.Entity) string {
 
 func (s *SchemaStrategy) ToolDescription(entity config.Entity) string {
 	return fmt.Sprintf(
-		"Get metadata about %[1]s: total count, available values for each field, "+
-			"min/max for numeric fields. Use BEFORE search to discover valid values. "+
-			"One lightweight query — cheaper than distinct_* + count_* separately.\n"+
+		"Metadata about %[1]s: total count, available values for each field, "+
+			"min/max for numeric fields. Inspect BEFORE searching — it shows valid "+
+			"values and field names you can filter by.\n"+
 			"\n"+
-			"Example: schema_%[1]s() → {total: 35, fields: {brand: [Brembo, Bosch], price: {min: 100, max: 45000}}}",
+			"WHEN: you are unsure about field names, values, or whether the entity has data.\n"+
+			"WHEN NOT: do not use to fetch rows — use search/filter for that.\n"+
+			"\n"+
+			"No parameters — always returns the full field map.\n"+
+			"\n"+
+			"Example: schema_%[1]s() → {total: 35, fields: {brand: [value1, value2], price: {min: 100, max: 45000}}}",
 		entity.Name,
 	)
 }

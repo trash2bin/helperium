@@ -170,3 +170,44 @@ func TestQueryParams_StrategyEndpoints(t *testing.T) {
 		t.Errorf("generated OpenAPI should contain pattern query param for grep endpoint")
 	}
 }
+
+// TestQueryParams_QDispatch — /q/* (Фаза 2) параметры в OpenAPI.
+func TestQueryParams_QDispatch(t *testing.T) {
+	// /q/search должен содержать entity (required) и pattern.
+	searchParams := queryParams(config.Endpoint{Op: config.OpQDispatch, Path: "/q/search"})
+	var hasEntity, hasPattern, entityRequired bool
+	for _, p := range searchParams {
+		switch p["name"] {
+		case "entity":
+			hasEntity = true
+			entityRequired = p["required"] == true
+		case "pattern":
+			hasPattern = true
+		}
+	}
+	if !hasEntity || !entityRequired {
+		t.Errorf("/q/search queryParams should have required entity, got %v", searchParams)
+	}
+	if !hasPattern {
+		t.Errorf("/q/search queryParams should have pattern, got %v", searchParams)
+	}
+
+	// /q/get должен содержать id (required).
+	getParams := queryParams(config.Endpoint{Op: config.OpQDispatch, Path: "/q/get"})
+	var hasID, idRequired bool
+	for _, p := range getParams {
+		if p["name"] == "id" {
+			hasID = true
+			idRequired = p["required"] == true
+		}
+	}
+	if !hasID || !idRequired {
+		t.Errorf("/q/get queryParams should have required id, got %v", getParams)
+	}
+
+	// responseSchema для /q/search — array (список строк), не default object.
+	schema := responseSchema(config.Endpoint{Op: config.OpQDispatch, Path: "/q/search"})
+	if schema["type"] != "array" {
+		t.Errorf("/q/search responseSchema should be array, got %v", schema)
+	}
+}

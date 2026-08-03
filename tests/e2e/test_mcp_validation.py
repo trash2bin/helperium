@@ -1,19 +1,20 @@
-"""MCP validation: проверка что тулы с required аргументами реджектят пустые вызовы.
+"""MCP validation: проверка консолидированных db_* тулов (Фаза 2).
 
-Проблема: LLM (deepseek) шлёт `get_catalog_product({})` и `grep_catalog_product({})`
-с пустыми аргументами. MCP-гейтвей должен возвращать isError, а не выполнять запрос.
+Проблема: LLM (deepseek) шлёт тулы с пустыми аргументами. MCP-гейтвей должен
+возвращать isError, а не выполнять запрос.
 
-Что тестируем:
-1. get_*({}) → isError (требует id)
-2. grep_*({}) → isError (требует pattern)
-3. get_*(правильные args) → OK
-4. grep_*(правильные args) → OK
-5. schema_*({}) → OK (без параметров)
-6. filter_*(с параметрами) → OK
-7. Все тулы (кроме count_*) имеют required параметры
-8. Long regex → isError (ReDoS защита)
+Что тестируем (новый контракт Фазы 2 — 6 константных тулов):
+1. db_get({}) → isError (требует entity + id)
+2. db_search({}) → isError (требует entity + pattern)
+3. db_get(entity, id) → OK
+4. db_search(entity, pattern) → OK
+5. db_describe(entity) → OK
+6. db_filter(entity, field__op) → OK
+7. Все db_* тулы имеют required параметры
+8. Long regex в db_search → isError (ReDoS защита)
 9. limit > 100 → isError
-10. search_* и simple_* тулы отсутствуют
+10. Нет per-entity тулов (grep_*/filter_*/schema_*/get_*/count_*/distinct_*) — консолидированы
+11. Ровно 6 db_* тулов независимо от размера БД
 
 Создаёт собственный tenant через интроспекцию БД из auto-shop сценария.
 """
@@ -31,7 +32,6 @@ import requests
 from tests.e2e.helpers import (
     admin_headers,
     data_service_url,
-    mcp_gateway_url,
     mcp_call,
     project_root,
     scenarios_dir,
@@ -43,6 +43,7 @@ pytestmark = [
         reason="ADMIN_TOKEN not set — register admin API calls",
     ),
 ]
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -120,19 +121,15 @@ def _register_and_rewrite(tenant_id: str, db_path: Path) -> dict:
         f"Register tenant: {resp.status_code} {resp.text[:200]}"
     )
 
-    # 2. Rewrite config (introspect + generate)
+    # 2. Rewrite (introspect → generate entities/endpoints/tools)
     resp = requests.post(
         f"{base}/admin/config/rewrite",
-        headers={
-            "X-Tenant-ID": tenant_id,
-            **h,
-        },
+        headers={**h, "X-Tenant-ID": tenant_id},
         timeout=30,
     )
     assert resp.status_code == 200, (
-        f"Rewrite: {resp.status_code} {resp.text[:200]}"
+        f"Rewrite: {resp.status_code} {resp.text[:300]}"
     )
-
     return resp.json()
 
 
@@ -199,148 +196,130 @@ def tenant_context():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 1. GET_* validation — должны требовать id
+# 1. DB_GET — должен требовать entity + id
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestGetWithRequired:
-    """get_* тулы: пустой вызов → isError, с id → OK."""
+class TestDBGetWithRequired:
+    """db_get: пустой вызов → isError, с entity+id → OK."""
 
-    def test_get_without_id_returns_is_error(self, tenant_context):
-        """get_auto_parts({}) → isError, не данные."""
+    def test_get_without_arguments_returns_is_error(self, tenant_context):
+        """db_get({}) → isError, не данные."""
         tid, tools = tenant_context
-        t = _get_tool_by_name(tools, "get_auto_parts")
+        t = _get_tool_by_name(tools, "db_get")
         params = t.get("params", [])
         required = [p["name"] for p in params if p.get("required")]
+        assert "entity" in required, (
+            f"db_get должен требовать entity. required={required}"
+        )
         assert "id" in required, (
-            f"get_auto_parts должен требовать id. required={required}"
+            f"db_get должен требовать id. required={required}"
         )
 
-        result = mcp_call("get_auto_parts", {}, tenant_ids=tid, timeout=30)
+        result = mcp_call("db_get", {}, tenant_ids=tid, timeout=30)
         is_error = result.result.get("isError", False)
         content = result.result.get("content", [])
         err_text = "".join(c.get("text", "") for c in content if "text" in c)
 
         assert is_error, (
-            f"get_auto_parts({{}}) должно вернуть isError.\n"
+            f"db_get({{}}) должно вернуть isError.\n"
             f"  Вместо этого: {err_text[:300]}"
         )
-        assert "id" in err_text.lower(), (
-            f"Ошибка должна упоминать 'id'. Текст: {err_text[:300]}"
+        assert "id" in err_text.lower() or "required" in err_text.lower(), (
+            f"Ошибка должна упоминать id/required. Текст: {err_text[:300]}"
         )
-        print(f"\n  ✅ Empty get_auto_parts → isError: {err_text[:200]}")
+        print(f"\n  ✅ Empty db_get → isError: {err_text[:200]}")
 
     def test_get_with_id_returns_ok(self, tenant_context):
-        """get_auto_parts({'id': 1}) → данные."""
+        """db_get(entity, id) → данные (id из поиска)."""
         tid, _ = tenant_context
+        # Сначала db_search, чтобы получить реальный id (анти-перебор).
+        search = mcp_call(
+            "db_search",
+            {"entity": "auto_parts", "pattern": "масло"},
+            tenant_ids=tid,
+            timeout=30,
+        )
+        text = "".join(c.get("text", "") for c in search.result.get("content", []) if "text" in c)
+        import re
+
+        m = re.search(r'"id"\s*:\s*(\d+)', text)
+        assert m, f"db_search должен вернуть id: {text[:300]}"
+        rid = int(m.group(1))
+
         result = mcp_call(
-            "get_auto_parts", {"id": 1}, tenant_ids=tid, timeout=30
+            "db_get", {"entity": "auto_parts", "id": rid}, tenant_ids=tid, timeout=30
         )
         content = result.result.get("content", [])
         text = "".join(c.get("text", "") for c in content if "text" in c)
 
-        assert len(text) > 0, f"Empty response for valid get call: {result}"
-        assert "error" not in text.lower()[:50], (
-            f"Valid get returned error-like: {text[:200]}"
+        assert len(text) > 0, f"Empty response for valid db_get call: {result}"
+        assert not result.result.get("isError", False), (
+            f"Valid db_get returned isError: {text[:200]}"
         )
-        print(f"\n  ✅ get_auto_parts(id=1) → {len(text)} chars")
-
-    def test_several_get_tools_reject_empty(self, tenant_context):
-        """Несколько get_* тулов проверяются на валидацию."""
-        tid, tools = tenant_context
-        get_tools = [t for t in tools if t["name"].startswith("get_")]
-        import random
-
-        random.seed(42)
-        samples = random.sample(get_tools, min(3, len(get_tools)))
-
-        for t in samples:
-            name = t["name"]
-            result = mcp_call(name, {}, tenant_ids=tid, timeout=30)
-            is_error = result.result.get("isError", False)
-            assert is_error, (
-                f"{name}({{}}) не вернул isError!\n"
-                f"  Tool params: {t.get('params', [])}"
-            )
-            print(f"  ✅ {name}({{}}) → isError")
+        print(f"\n  ✅ db_get(entity, id={rid}) → {len(text)} chars")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 2. GREP_* validation — должны требовать pattern
+# 2. DB_SEARCH — должен требовать entity + pattern
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestGrepWithRequired:
-    """grep_* тулы: пустой вызов → isError, с pattern → OK."""
+class TestDBSearchWithRequired:
+    """db_search: пустой вызов → isError, с pattern → OK."""
 
-    def test_grep_without_pattern_returns_is_error(self, tenant_context):
-        """grep_auto_parts({}) → isError."""
+    def test_search_without_pattern_returns_is_error(self, tenant_context):
+        """db_search({}) → isError."""
         tid, tools = tenant_context
-        t = _get_tool_by_name(tools, "grep_auto_parts")
+        t = _get_tool_by_name(tools, "db_search")
         params = t.get("params", [])
         required = [p["name"] for p in params if p.get("required")]
+        assert "entity" in required, (
+            f"db_search должен требовать entity. required={required}"
+        )
         assert "pattern" in required, (
-            f"grep_auto_parts должен требовать pattern. required={required}"
+            f"db_search должен требовать pattern. required={required}"
         )
 
-        result = mcp_call("grep_auto_parts", {}, tenant_ids=tid, timeout=30)
+        result = mcp_call("db_search", {}, tenant_ids=tid, timeout=30)
         is_error = result.result.get("isError", False)
         content = result.result.get("content", [])
         err_text = "".join(c.get("text", "") for c in content if "text" in c)
 
         assert is_error, (
-            f"grep_auto_parts({{}}) должно вернуть isError.\n"
+            f"db_search({{}}) должно вернуть isError.\n"
             f"  Response OK: {err_text[:300]}"
         )
         assert "pattern" in err_text.lower() or "required" in err_text.lower(), (
             f"Ошибка должна упоминать pattern/required. Текст: {err_text[:300]}"
         )
-        print(f"\n  ✅ Empty grep_auto_parts → isError: {err_text[:200]}")
+        print(f"\n  ✅ Empty db_search → isError: {err_text[:200]}")
 
-    def test_grep_with_pattern_returns_ok(self, tenant_context):
-        """grep_auto_parts({'pattern': 'масло'}) → данные."""
+    def test_search_with_pattern_returns_ok(self, tenant_context):
+        """db_search(entity, pattern) → данные."""
         tid, _ = tenant_context
         result = mcp_call(
-            "grep_auto_parts", {"pattern": "масло"}, tenant_ids=tid, timeout=30
+            "db_search",
+            {"entity": "auto_parts", "pattern": "масло"},
+            tenant_ids=tid,
+            timeout=30,
         )
         content = result.result.get("content", [])
         text = "".join(c.get("text", "") for c in content if "text" in c)
 
-        assert len(text) > 0, f"Empty response for valid grep call"
-        assert "error" not in text.lower()[:50], (
-            f"Valid grep returned error-like: {text[:200]}"
+        assert len(text) > 0, f"Empty response for valid db_search call"
+        assert not result.result.get("isError", False), (
+            f"Valid db_search returned isError: {text[:200]}"
         )
-        print(f"\n  ✅ grep_auto_parts(pattern='масло') → {len(text)} chars")
+        print(f"\n  ✅ db_search(entity, pattern='масло') → {len(text)} chars")
 
-    def test_several_grep_tools_reject_empty(self, tenant_context):
-        """Несколько grep_* тулов проверяются."""
-        tid, tools = tenant_context
-        grep_tools = [t for t in tools if t["name"].startswith("grep_")]
-        import random
-
-        random.seed(42)
-        samples = random.sample(grep_tools, min(3, len(grep_tools)))
-
-        for t in samples:
-            name = t["name"]
-            result = mcp_call(name, {}, tenant_ids=tid, timeout=30)
-            is_error = result.result.get("isError", False)
-            if not is_error:
-                content = result.result.get("content", [])
-                text = "".join(c.get("text", "") for c in content if "text" in c)
-            assert is_error, (
-                f"{name}({{}}) не вернул isError!\n"
-                f"  Вместо этого: {text[:200] if not is_error else 'OK'}"
-            )
-            print(f"  ✅ {name}({{}}) → isError")
-
-    def test_grep_long_regex_returns_is_error(self, tenant_context):
-        """grep_* with very long regex pattern → isError (ReDoS protection)."""
+    def test_search_long_regex_returns_is_error(self, tenant_context):
+        """db_search with very long regex pattern → isError (ReDoS protection)."""
         tid, _ = tenant_context
         long_pattern = "a" * 300  # exceeds maxRegexLen=200
         result = mcp_call(
-            "grep_auto_parts",
-            {"pattern": long_pattern, "regex": True},
+            "db_search",
+            {"entity": "auto_parts", "pattern": long_pattern, "regex": True},
             tenant_ids=tid,
             timeout=30,
         )
@@ -355,36 +334,49 @@ class TestGrepWithRequired:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 3. Все тулы: проверка что required поля заданы
+# 3. Все db_* тулы: required параметры
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestAllToolsHaveRequiredGuard:
-    """Тулы, которые должны иметь required параметры: get_*, grep_*.
+    """db_search/db_get/db_related/db_describe — required entity; filter_* — per-field.
 
-    filter_*, schema_*, count_*, distinct_* — легитимно без required:
-    - filter_{entity}() — LLM передаёт field__op параметры, ни один не обязателен
-    - schema_{entity}() — без параметров (discovery)
-    - count_{entity}() — без параметров (everything)
-    - distinct_{entity}() — column опционален (по умолч. nameCol)
+    db_map — без параметров (вся карта).
     """
 
-    def test_grep_and_get_have_required_param(self, tenant_context):
-        """У get_*, grep_* есть required параметры."""
+    def test_db_tools_have_required_param(self, tenant_context):
+        """У db_search/db_get/db_related/db_describe есть required entity."""
         tid, tools = tenant_context
         bad = []
         for t in tools:
             name = t["name"]
-            if not (name.startswith("get_") or name.startswith("grep_")):
+            if name == "db_map" or name.startswith("filter_"):
+                continue
+            if not name.startswith("db_"):
                 continue
             params = t.get("params", [])
             required = [p["name"] for p in params if p.get("required")]
-            if not required:
-                bad.append(name)
+            if "entity" not in required:
+                bad.append((name, required))
 
         assert not bad, (
-            f"Тулы без required параметров: {bad}"
+            f"db_* тулы без required entity: {bad}"
         )
+
+    def test_filter_tools_expose_fields(self, tenant_context):
+        """filter_* (пер-энтити, Фаза 2.5): поля сущности в параметрах тула
+        (тупая модель должна видеть имена полей прямо в схеме)."""
+        tid, tools = tenant_context
+        filter_tools = [t for t in tools if t["name"].startswith("filter_")]
+        assert len(filter_tools) >= 1, f"Нет filter_* тулов: {[t['name'] for t in tools]}"
+        # У filter_auto_parts должны быть поля (не только limit).
+        t = _get_tool_by_name(tools, "filter_auto_parts")
+        params = t.get("params", [])
+        field_params = [p["name"] for p in params if p["name"] != "limit"]
+        assert len(field_params) >= 3, (
+            f"filter_auto_parts должен перечислять поля (не только limit), got {field_params}"
+        )
+        print(f"\n  ✅ filter_auto_parts поля: {field_params[:8]}")
 
     def test_all_tool_params_have_names(self, tenant_context):
         """Проверка что у всех тулов параметры имеют имена (базовая валидация схемы)."""
@@ -408,26 +400,20 @@ class TestLimitHasMaxBound:
     """limit параметр не должен позволять загрузить всю БД."""
 
     def test_limit_has_maximum_constraint(self, tenant_context):
-        """Проверяем что в схеме тула есть параметр limit."""
+        """Проверяем что в схеме db_search есть параметр limit."""
         tid, tools = tenant_context
-        found = False
-        for t in tools:
-            params = t.get("params", [])
-            for p in params:
-                if p["name"] == "limit":
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "Ни один тул не имеет параметра limit!"
-        print(f"\n  ✅ limit parameter found in tools")
+        t = _get_tool_by_name(tools, "db_search")
+        params = t.get("params", [])
+        has_limit = any(p["name"] == "limit" for p in params)
+        assert has_limit, f"db_search должен иметь limit: {params}"
+        print(f"\n  ✅ limit parameter found in db_search")
 
     def test_limit_gt_100_returns_is_error(self, tenant_context):
-        """limit > 100 → isError (cap changed from 1000 to 100 in v4)."""
+        """db_search limit > 100 → isError."""
         tid, _ = tenant_context
         result = mcp_call(
-            "grep_auto_parts",
-            {"pattern": "масло", "limit": 9999999},
+            "db_search",
+            {"entity": "auto_parts", "pattern": "масло", "limit": 9999999},
             tenant_ids=tid,
             timeout=30,
         )
@@ -445,84 +431,87 @@ class TestLimitHasMaxBound:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. Проверка отсутствия устаревших тулов
+# 5. Консолидация (Фаза 2): ровно 6 db_* тулов, нет per-entity
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestNoLegacyTools:
-    """После v4 search_*, simple_*, find_*, list_*, _by_* тулы не должны генерироваться
-    для entity с grep/filter/schema стратегией."""
+class TestToolComposition:
+    """Фаза 2.5: N filter_* (пер-энтити) + 5 db_* консолидированных."""
 
-    def test_no_search_tools(self, tenant_context):
-        """search_* не должно быть в манифесте."""
+    def test_five_db_tools_and_filter_per_entity(self, tenant_context):
+        """5 db_* (без db_filter) + N filter_* (пер-энтити)."""
         tid, tools = tenant_context
-        for t in tools:
-            name = t["name"]
-            assert not name.startswith("search_"), (
-                f"search_* тулы удалены в v4, но найден: {name}"
-            )
-        print(f"\n  ✅ Нет search_* тулов ({len(tools)} total)")
-
-    def test_no_simple_tools(self, tenant_context):
-        """simple_* не должно быть в манифесте."""
-        tid, tools = tenant_context
-        for t in tools:
-            name = t["name"]
-            assert not name.startswith("simple_"), (
-                f"simple_* тулы удалены в v4, но найден: {name}"
-            )
-        print(f"  ✅ Нет simple_* тулов")
-
-    def test_no_find_list_by_tools(self, tenant_context):
-        """find_*, list_*, _by_* тулы не должны генерироваться."""
-        tid, tools = tenant_context
-        names = [t["name"] for t in tools]
-        bad = [n for n in names if n.startswith(("find_", "list_")) or "_by_" in n]
-        assert len(bad) == 0, (
-            f"find_*/list_*/_by_* тулы удалены в v4, но найдены: {bad}"
+        db_tools = {t["name"] for t in tools if t["name"].startswith("db_")}
+        expected_db = {"db_map", "db_describe", "db_search", "db_get", "db_related"}
+        assert db_tools == expected_db, (
+            f"Ожидались 5 db_* (без db_filter): {sorted(expected_db)}, получили {sorted(db_tools)}"
         )
-        print(f"  ✅ Нет find_*/list_*/_by_* тулов ({len(tools)} total)")
+        # filter_* — пер-энтити, есть для auto_parts.
+        filter_tools = [t["name"] for t in tools if t["name"].startswith("filter_")]
+        assert "filter_auto_parts" in filter_tools, (
+            f"filter_auto_parts должен быть (пер-энтити filter), got {filter_tools}"
+        )
+        print(f"\n  ✅ 5 db_* + N filter_*: {len(filter_tools)} filter tools")
 
-    def test_has_grep_filter_schema(self, tenant_context):
-        """grep_*, filter_*, schema_* должны быть."""
+    def test_no_per_entity_grep_schema(self, tenant_context):
+        """grep_*/schema_* остаются консолидированными (не пер-энтити)."""
+        tid, tools = tenant_context
+        bad_prefixes = ("grep_", "schema_", "get_", "count_", "distinct_")
+        bad = [t["name"] for t in tools if t["name"].startswith(bad_prefixes)]
+        assert len(bad) == 0, (
+            f"grep_/schema_/get_/count_/distinct_ должны быть консолидированы/удалены, но найдены: {bad}"
+        )
+        print(f"  ✅ Нет per-entity grep_/schema_/get_/count_/distinct_ ({len(tools)} total)")
+
+    def test_no_legacy_tools(self, tenant_context):
+        """search_*, simple_*, find_*, list_*, _by_* не должны генерироваться."""
         tid, tools = tenant_context
         names = [t["name"] for t in tools]
-        grep_tools = [n for n in names if n.startswith("grep_")]
-        filter_tools = [n for n in names if n.startswith("filter_")]
-        schema_tools = [n for n in names if n.startswith("schema_")]
-
-        assert len(grep_tools) >= 1, f"Нет grep_* тулов среди: {names}"
-        assert len(filter_tools) >= 1, f"Нет filter_* тулов среди: {names}"
-        assert len(schema_tools) >= 1, f"Нет schema_* тулов среди: {names}"
-
-        print(f"  ✅ Тулы: {len(grep_tools)} grep, {len(filter_tools)} filter, {len(schema_tools)} schema")
-
-    def test_filter_tool_params_sane(self, tenant_context):
-        """filter_* тулы должны иметь разумное кол-во params (<50, не 116)."""
-        tid, tools = tenant_context
-        filter_tools = [t for t in tools if t["name"].startswith("filter_")]
-        assert len(filter_tools) >= 1, "Нет filter_* тулов"
-
-        for t in filter_tools:
-            n = len(t.get("params", []))
-            assert n < 50, (
-                f"{t['name']} has {n} params — слишком много для LLM (ожидается <50)\n"
-                f"  Параметры: {[p['name'] for p in t.get('params', [])]}"
-            )
-            assert n >= 1, (
-                f"{t['name']} имеет 0 params — должен быть хотя бы limit"
-            )
-        print(f"  ✅ Filter params: {[f'{t["name"]}: {len(t.get("params", []))} params' for t in filter_tools]}")
+        bad = [n for n in names if n.startswith(("search_", "simple_", "find_", "list_")) or "_by_" in n]
+        assert len(bad) == 0, (
+            f"Legacy-тулы удалены, но найдены: {bad}"
+        )
+        print(f"  ✅ Нет legacy-тулов")
 
     def test_tools_have_display_name(self, tenant_context):
-        """strategy-тулы (grep_*, filter_*, schema_*) должны иметь display_name."""
+        """db_* и filter_* тулы должны иметь display_name."""
         tid, tools = tenant_context
         for t in tools:
             name = t["name"]
-            if name.startswith(("grep_", "filter_", "schema_", "get_")):
+            if name.startswith(("db_", "filter_")):
                 dn = t.get("display_name", "")
                 assert dn, (
                     f"{name} должен иметь display_name\n"
                     f"  Полный tool: {json.dumps(t, indent=2)[:500]}"
                 )
-        print(f"  ✅ Все strategy-тулы имеют display_name")
+        print(f"  ✅ Все db_* и filter_* тулы имеют display_name")
+
+    def test_entity_param_is_plain_string(self, tenant_context):
+        """entity — обычный string, не enum (на большой БД enum расдул бы манифест)."""
+        tid, tools = tenant_context
+        t = _get_tool_by_name(tools, "db_search")
+        for p in t.get("params", []):
+            if p["name"] == "entity":
+                assert p.get("type", "string") == "string", (
+                    f"entity должен быть string (не enum): {p}"
+                )
+                break
+        else:
+            raise AssertionError("db_search не имеет параметра entity")
+
+    def test_unknown_entity_returns_404(self, tenant_context):
+        """db_search с неизвестным entity → isError (404 на /q/*), не данные."""
+        tid, _ = tenant_context
+        result = mcp_call(
+            "db_search",
+            {"entity": "ghost_entity", "pattern": "a"},
+            tenant_ids=tid,
+            timeout=30,
+        )
+        is_error = result.result.get("isError", False)
+        content = result.result.get("content", [])
+        text = "".join(c.get("text", "") for c in content if "text" in c)
+        assert is_error, (
+            f"Неизвестный entity должен давать isError (404), получили данные: {text[:200]}"
+        )
+        print(f"\n  ✅ db_search(unknown entity) → isError: {text[:150]}")

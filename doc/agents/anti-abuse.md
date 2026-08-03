@@ -27,9 +27,9 @@ LLM склонна вызывать инструменты с пустыми а�
 - `filter.go`: `maxFilterValueLen=200`, `maxInValues=50`, `parseFilterLimit=10`
 - `Config.MCPTool` carries `Required: &t` — приходит через manifest в mcp-gateway и проверяется там
 
-### Уровень 3 — Empty Hints (schema tool)
-- При `total=0` grep/filter возвращают `empty_hint` с подсказкой: `"Try schema_{entity}() to discover available values"`
-- LLM видит подсказку и вызывает `schema_{entity}()` вместо циклических пустых попыток
+### Уровень 3 — Empty Hints (db_describe)
+- При `total=0` grep/filter возвращают `empty_hint` с подсказкой: `"Try db_describe(entity=<entity>) to discover available values"`
+- LLM видит подсказку и вызывает `db_describe` вместо циклических пустых попыток
 
 ### Security limits per strategy
 

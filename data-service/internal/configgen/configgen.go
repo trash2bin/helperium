@@ -172,6 +172,22 @@ func Generate(schema *datasource.Schema, cfg *config.Config) *config.Config {
 		Op:     config.OpBuiltinStats,
 	})
 
+	// /q/* — консолидированный LLM-диспетчер (Фаза 2).
+	// Системные endpoints: указывают на /q/* хендлеры, которые регистрирует
+	// NewRouterFromConfig отдельно от cfg.Endpoints (см. endpoint_builder.go).
+	// Здесь они нужны, чтобы валидация mcp_tools[].endpoint (см. types.go)
+	// находила "/q/map" и т.д. в cfg.Endpoints.
+	for _, qPath := range []string{
+		"/q/map", "/q/describe", "/q/search", "/q/filter", "/q/get", "/q/related",
+	} {
+		endpoints = append(endpoints, config.Endpoint{
+			Method:      config.MethodGET,
+			Path:        qPath,
+			Op:          config.OpQDispatch,
+			Description: "Consolidated LLM dispatch endpoint",
+		})
+	}
+
 	result.Entities = entities
 	result.Endpoints = endpoints
 	result.Stats = &config.StatsConfig{Counters: buildCounters(entities)}
@@ -190,7 +206,7 @@ func Generate(schema *datasource.Schema, cfg *config.Config) *config.Config {
 		result.CustomQueries = customQueries
 	}
 
-	result.MCPTools = GenerateMCPTools(endpoints, entities, displayPrefixes, customPlurals, filterableRules, searchableRules)
+	result.MCPTools = GenerateMCPTools(endpoints, entities, displayPrefixes, customPlurals, filterableRules, searchableRules, cfg.LLMToolPolicy)
 
 	return result
 }

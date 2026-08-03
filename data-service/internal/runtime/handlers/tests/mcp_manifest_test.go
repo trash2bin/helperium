@@ -10,7 +10,9 @@ import (
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
 
-// TestMCPManifestHandler_WithTools — cfg.MCPTools уже заданы
+// TestMCPManifestHandler_WithTools — cfg.MCPTools уже заданы, но регенерация
+// из Endpoints имеет приоритет. get_by_id по MCP-политике (Фаза 1) НЕ эмитится
+// в манифест, даже если он есть в endpoints.
 func TestMCPManifestHandler_WithTools(t *testing.T) {
 	cfg := &config.Config{
 		Endpoints: []config.Endpoint{
@@ -40,9 +42,9 @@ func TestMCPManifestHandler_WithTools(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	// Регенерация: имя тула = get_student из endpoint
-	if !strings.Contains(body, "get_student") {
-		t.Errorf("response should contain get_student: %s", body)
+	// MCP-политика: get_* не эмитится в манифест (анти-перебор).
+	if strings.Contains(body, "get_student") {
+		t.Errorf("get_student must NOT appear in MCP manifest (anti-enumeration policy): %s", body)
 	}
 	if !strings.Contains(body, `"endpoints"`) {
 		t.Errorf("response should contain endpoints: %s", body)
@@ -54,12 +56,14 @@ func TestMCPManifestHandler_GenerateTools(t *testing.T) {
 	cfg := &config.Config{
 		Endpoints: []config.Endpoint{
 			{Path: "/students/{id}", Op: "get_by_id", Entity: "student", Method: "GET"},
+			{Path: "/students/grep", Op: "strategy", Strategy: "grep", Entity: "student", Method: "GET"},
 		},
 		Entities: []config.Entity{
 			{
 				Name: "student", Table: "students", IDColumn: "id",
 				Fields: []config.EntityField{
 					{Name: "id", Column: "id", Type: "int", PrimaryKey: boolPtr(true)},
+					{Name: "name", Column: "name", Type: "string"},
 				},
 			},
 		},
@@ -80,9 +84,13 @@ func TestMCPManifestHandler_GenerateTools(t *testing.T) {
 	if !strings.Contains(body, "mcp_tools") {
 		t.Errorf("response should contain mcp_tools: %s", body)
 	}
-	// Должен быть сгенерирован tool из endpoint
-	if !strings.Contains(body, "GET") && !strings.Contains(body, "get") {
-		t.Errorf("response should contain generated tool: %s", body)
+	// Консолидированный тул генерируется (Фаза 2).
+	if !strings.Contains(body, "db_search") {
+		t.Errorf("response should contain db_search (consolidated tool): %s", body)
+	}
+	// get_by_id НЕ эмитится (анти-перебор).
+	if strings.Contains(body, "get_student") {
+		t.Errorf("get_student must NOT appear in MCP manifest (anti-enumeration policy): %s", body)
 	}
 }
 

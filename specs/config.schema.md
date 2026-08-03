@@ -1,7 +1,7 @@
 # Tenant config schema
 
 Human-readable reference for the JSON config that drives `data-service`.
-Current version: **2**.
+Current version: **4** (`config.CurrentConfigVersion`).
 
 Validation lives in Go types (`helperium-go/config/types.go` — `Config.Validate()`).
 This file is documentation only.
@@ -12,9 +12,9 @@ This file is documentation only.
 
 ```jsonc
 {
-  "version": 2,                          // schema version, Normalize() upgrades old ones
+  "version": 4,                          // schema version, Normalize() upgrades old ones
   "meta": {                              // who/when generated this config
-    "config_version": 2,
+    "config_version": 4,
     "generated_at": "2026-07-11T12:00:00Z",
     "generator_version": "1.2.0"
   },
@@ -35,6 +35,11 @@ This file is documentation only.
   "custom_queries": {},                  // whitelist SQL for escape-hatch
   "stats": { "counters": [] },           // counters for /stats
   "mcp_tools": [/* see below */],        // MCP tool definitions
+  "llm_tool_policy": {                   // MCP-эмиссия для LLM (optional, Фаза 2)
+    "expose_get_by_id": false,           // get_* per-entity (default false — анти-перебор)
+    "expose_count": false,
+    "expose_distinct": false
+  },
   "auth": {/* see below */},             // multi-tenancy isolation (optional)
   "server": {                            // HTTP limits (optional, env overrides)
     "request_timeout_seconds": 30,

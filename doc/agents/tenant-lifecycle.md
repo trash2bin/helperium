@@ -36,7 +36,7 @@ Authorization: Bearer $ADMIN_TOKEN
 4. `SaveTenantConfig()` → пишет `.data/tenants/{id}.json`
 5. `ReloadTenant(ctx, id, path)` — без даунтайма
 
-**Что генерируется:** entity + endpoint get_by_id/find на каждую таблицу, health/stats, mcp_tools, read_only: true.
+**Что генерируется:** entity + strategy-эндпоинты (grep/filter/schema) на каждую таблицу, health/stats, mcp_tools (Фаза 2/2.5: 5 `db_*` + N `filter_{entity}`), read_only: true. `find`/`list` больше не генерируются (v4).
 
 ## Persistence
 

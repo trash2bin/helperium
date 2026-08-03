@@ -206,11 +206,22 @@ Tenant isolation: `tenant_id` нельзя искать (grep.go:148, :169-172).
 
 Параметры тулов генерируют стратегии через `ToolParams()` (search/strategy.go:32), не из дискового конфига. Манифест — `runtime/handlers/mcp_manifest.go:20` (runtime из cfg.Endpoints).
 
+**Поверхность (Фаза 2/2.5 — LLM-first):** N пер-энтити `filter_{entity}` + 5 консолидированных `db_*` через `/q/*` диспетчер (`runtime/handlers/q_dispatch.go`).
+
 | Strategy | MCP tool | Параметры |
 |---|---|---|
-| grep | `grep_{entity}` | pattern (required), limit, fields |
-| filter | `filter_{entity}` | поля по IsFilterableField + операторы |
-| schema | `schema_{entity}` | нет |
+| grep | `db_search` (`/q/search?entity=&pattern=`) | entity (string, не enum), pattern (required), limit, fields |
+| filter | `filter_{entity}` (пер-энтити, `/{entity}/filter`) | поля по IsFilterableField + операторы (`price__gt`, `__like`, `__in`), limit |
+| schema | `db_describe` (`/q/describe?entity=`) | entity |
+| map | `db_map` (`/q/map`) | — |
+| get | `db_get` (`/q/get?entity=&id=`) | entity, id |
+| related | `db_related` (`/q/related?entity=&id=&relation=`) | entity, id, relation |
+
+- **Почему filter пер-энтити, а остальные консолидированы:** слабая модель не вытаскивает имена полей из db_map; `filter_{entity}` кладёт их топ-левел в схему тула → `filter_products?price__gt=100` с первого раза (валидировано живой моделью Ollama). grep/schema/get/related не требуют имён полей в схеме — консолидированы.
+- **`get_*`/`count_*`/`distinct_*` не эмитятся** (default false) — opt-in через `config.LLMToolPolicy`. Анти-перебор: db_get только с id из результата поиска.
+- **entity — обычный string**, валидируется `EntityResolver` (whitelist, неизвестный → 404). Допустимые имена — из `db_map`.
+- WorkflowHints в `db_map` ссылаются только на реальные тулы (`db_map`/`db_describe`/`db_search`/`db_get`/`filter_<entity>`), без доменных слов.
+- REST-эндпоинты `/{entity}/grep|filter|schema|{id}|count|distinct` **сохранены** — деконсолидация касается только MCP-манифеста.
 
 ## Тесты
 

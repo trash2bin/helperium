@@ -11,81 +11,216 @@ import (
 // GenerateMCPTools creates compact MCP tools from endpoints with LLM-friendly descriptions.
 // filterableRules/searchableRules — resolved FieldRules для стратегий (явные слайсы,
 // т.к. Go не позволяет два variadic в одной сигнатуре).
-func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, displayPrefixes []string, customPlurals map[string]string, filterableRules []config.FieldRule, searchableRules []config.FieldRule) []config.MCPTool {
+//
+// Фаза 2 (консолидация) + Фаза 2.5 (деконсолидация filter):
+//   - N пер-энтити filter_{entity} (поля в схеме тула) — живой REST /{entity}/filter
+//   - 5 консолидированных db_* (db_map, db_describe, db_search, db_get, db_related)
+//     через /q/* диспетчер.
+// Остальные per-entity тулы (grep_*, schema_*) не эмитятся.
+//
+// LLMToolPolicy (opt-in): если ExposeGetByID/Count/Distinct=true, в ДОПОЛНЕНИЕ
+// эмитятся per-entity get_*/count_*/distinct_* (для клиентов, которым нужны).
+// REST-эндпоинты /{entity}/get|count|distinct остаются всегда.
+func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, displayPrefixes []string, customPlurals map[string]string, filterableRules []config.FieldRule, searchableRules []config.FieldRule, policy config.LLMToolPolicy) []config.MCPTool {
+	// Консолидированные тулы (Фаза 2, деконсолидация filter в 2.5-smoke):
+	// db_map/db_describe/db_search/db_get/db_related — через /q/*.
+	// db_filter НЕ существует — фильтрация через пер-энтити filter_{entity}.
+	tools := GenerateConsolidatedMCPTools(displayPrefixes, customPlurals)
+
 	entityMap := make(map[string]*config.Entity, len(entities))
 	for i := range entities {
 		entityMap[entities[i].Name] = &entities[i]
 	}
 
-	tools := make([]config.MCPTool, 0, len(endpoints))
+	// ── Пер-энтити filter_{entity} (Фаза 2.5 smoke-фикс) ────────────────
+	// Смоук с живой моделью показал: тупая модель не делает db_map→db_describe→
+	// filter_{entity}, а лезет в filter сразу. Имена полей ей нужны ПРЯМО в схеме тула
+	// (топ-левел properties), а консолидированный db_filter с entity-параметром
+	// не может их дать (схема статична). Поэтому filter — пер-энтити:
+	//   filter_{entity} с полями через FilterStrategy.ToolParams() (см. filter.go:86).
+	// Указывает на живой REST-роут /{entity}/filter (tenant-безопасный).
+	// M3: строим с resolved-правилами (как endpoint_builder.go:190), иначе
+	// ToolParams отдаст дефолтные поля, а не кастомные.
+	for _, ep := range endpoints {
+		if ep.Strategy == "filter" && ep.Entity != "" {
+			ent := entityMap[ep.Entity]
+			if ent == nil {
+				continue
+			}
+			tool := strategyToMCPTool("filter", *ent, ep.Path, displayPrefixes, customPlurals, filterableRules, searchableRules)
+			if tool != nil {
+				tools = append(tools, *tool)
+			}
+		}
+	}
+
+	// Opt-in per-entity тулы по политике (get_*/count_*/distinct_*).
 	for _, ep := range endpoints {
 		if ep.Op == config.OpBuiltinHealth || ep.Op == config.OpBuiltinStats {
 			continue
 		}
 
-		// Strategy-based endpoints (grep, filter, schema)
-		// Use the strategy's ToolName/ToolDescription/ToolParams.
-		if ep.Strategy != "" {
-			// Find entity config for strategy params
-			var entCfg *config.Entity
-			for i := range entities {
-				if entities[i].Name == ep.Entity {
-					entCfg = &entities[i]
-					break
-				}
-			}
-			if entCfg == nil {
-				continue
-			}
-			tool := strategyToMCPTool(ep.Strategy, *entCfg, ep.Path, displayPrefixes, customPlurals, filterableRules, searchableRules)
-			if tool != nil {
-				tools = append(tools, *tool)
-			}
+		var emit bool
+		switch ep.Op {
+		case config.OpGetByID:
+			emit = policy.ExposeGetByID
+		case config.OpCount:
+			emit = policy.ExposeCount
+		case config.OpDistinct:
+			emit = policy.ExposeDistinct
+		default:
+			// Стратегии и прочее — не эмитим per-entity (консолидированы).
+			continue
+		}
+		if !emit {
 			continue
 		}
 
-		var toolName, desc, displayName string
+		ent := entityMap[ep.Entity]
+		if ent == nil {
+			continue
+		}
 
+		var toolName, desc string
 		switch ep.Op {
 		case config.OpGetByID:
 			toolName = fmt.Sprintf("get_%s", ep.Entity)
 			desc = fmt.Sprintf(
-				"Get a single %s by its ID. "+
-					"Use after grep_%s when you have a specific ID.",
-				ep.Entity, ep.Entity)
-			displayName = toolDisplayName(string(config.OpGetByID), ep.Entity, displayPrefixes, customPlurals)
-
-		case config.OpDistinct:
-			toolName = fmt.Sprintf("distinct_%s", ep.Entity)
-			desc = fmt.Sprintf(
-				"Get unique values for enum columns in %s. "+
-					"Use INSTEAD of fetching all records — fast and token-cheap. "+
-					"Example: distinct_%s(column='brand') returns ['Brembo', 'Bosch', 'TRW']. "+
-					"Always try this first to discover available filter values.",
-				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals), ep.Entity)
-			displayName = toolDisplayName(string(config.OpDistinct), ep.Entity, displayPrefixes, customPlurals)
-
+				"Get a single %s by its ID. ONLY use with an id you ALREADY got from search/filter. "+
+					"NEVER enumerate ids (id=1, id=2, ...) — search first.", ep.Entity)
 		case config.OpCount:
 			toolName = fmt.Sprintf("count_%s", ep.Entity)
-			desc = fmt.Sprintf(
-				"Count %s matching filters. Returns {entity, count}. Fast and token-cheap.",
+			desc = fmt.Sprintf("Count %s matching filters. Returns {entity, count}.",
 				pluralizeEntity(ep.Entity, displayPrefixes, customPlurals))
-			displayName = toolDisplayName(string(config.OpCount), ep.Entity, displayPrefixes, customPlurals)
-
+		case config.OpDistinct:
+			toolName = fmt.Sprintf("distinct_%s", ep.Entity)
+			desc = fmt.Sprintf("Get unique values for enum columns in %s.", ep.Entity)
 		}
 
-		if toolName != "" {
-			params := deriveToolParams(ep)
-			tools = append(tools, config.MCPTool{
-				Name:        toolName,
-				DisplayName: displayName,
-				Endpoint:    ep.Path,
-				Description: desc,
-				Params:      params,
-			})
-		}
+		tools = append(tools, config.MCPTool{
+			Name:        toolName,
+			DisplayName: toolDisplayName(string(ep.Op), ep.Entity, displayPrefixes, customPlurals),
+			Endpoint:    ep.Path,
+			Description: desc,
+			Params:      deriveToolParams(ep),
+		})
+	}
+
+	return tools
+}
+
+// GenerateConsolidatedMCPTools возвращает 6 константных LLM-тулов,
+// указывающих на /q/* диспетчер. Число тулов НЕ зависит от числа сущностей.
+//
+// entity — обычный string (не enum): на большой БД enum на сотни значений
+// расдул бы манифест и жрал токены на каждый вызов. Допустимые имена модель
+// узнаёт из db_map, сервер валидирует через EntityResolver (whitelist).
+func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[string]string) []config.MCPTool {
+	tools := []config.MCPTool{
+		{
+			Name:        "db_map",
+			DisplayName: "Database map",
+			Endpoint:    "/q/map",
+			Description: "Map of the database: entities, their fields, searchable columns, relations (FK). " +
+				"Call FIRST to learn what entities exist and how to query them. " +
+				"Also shows which fields are searchable (use in db_search) and filterable (use in filter_<entity>).",
+		},
+		{
+			Name:        "db_describe",
+			DisplayName: "Describe entity",
+			Endpoint:    "/q/describe",
+			Description: "Metadata about ONE entity: total count, available values per field, min/max for numeric. " +
+				"Use BEFORE searching when unsure about field names or valid values. " +
+				"No guessing: see actual values first.",
+			Params: []config.EndpointParam{
+				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map)."},
+			},
+		},
+		{
+			Name:        "db_search",
+			DisplayName: "Text search",
+			Endpoint:    "/q/search",
+			Description: "PRIMARY text search across an entity. Search here FIRST instead of guessing ids. " +
+				"Finds records by words/phrases in searchable fields (see db_map).",
+			Params: []config.EndpointParam{
+				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map)."},
+				{Name: "pattern", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Search query. Example: 'blue widget'."},
+				{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: ptrBool(false),
+					Description: "Max results (1-100, default: 10)."},
+				{Name: "fields", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
+					Description: "Comma-separated field names to search. Default: all searchable fields."},
+			},
+		},
+		{
+			Name:        "db_get",
+			DisplayName: "Get by id",
+			Endpoint:    "/q/get",
+			Description: "Fetch ONE record by its id. " +
+				"ONLY use with an id you ALREADY obtained from db_search or filter_<entity>. " +
+				"NEVER enumerate ids (id=1, id=2, ...) — search first.",
+			Params: []config.EndpointParam{
+				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map)."},
+				{Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Record id (from a previous db_search/filter_<entity> result)."},
+			},
+		},
+		{
+			Name:        "db_related",
+			DisplayName: "Related records",
+			Endpoint:    "/q/related",
+			Description: "Fetch records of an entity linked to a parent by FK (one hop). " +
+				"Use to navigate relations shown in db_map (e.g. orders for a customer). " +
+				"One query, no JOINs.",
+			Params: []config.EndpointParam{
+				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map)."},
+				{Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Parent record id."},
+				{Name: "relation", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
+					Description: "FK column name (from db_map relations). Optional if entity has one relation."},
+			},
+		},
 	}
 	return tools
+}
+
+// ptrBool возвращает указатель на bool.
+func ptrBool(b bool) *bool { return &b }
+
+// strategyToMCPTool создаёт MCPTool для strategy-эндпоинта, используя
+// методы стратегии для генерации имени, описания и параметров.
+// filterableRules/searchableRules — resolved FieldRules (M3: кастомные
+// правила доходят до манифеста, а не дефолтные).
+func strategyToMCPTool(strategyName string, entity config.Entity, epPath string, displayPrefixes []string, customPlurals map[string]string, filterableRules []config.FieldRule, searchableRules []config.FieldRule) *config.MCPTool {
+	idCol := entity.IDColumnOrDefault()
+	nameCol := entity.FirstStringFieldColumn()
+
+	var strategy search.Strategy
+	switch strategyName {
+	case "grep":
+		strategy = search.NewGrepStrategy(idCol, nameCol, searchableRules...)
+	case "filter":
+		strategy = search.NewFilterStrategy(idCol, nameCol, filterableRules...)
+	case "schema":
+		strategy = search.NewSchemaStrategy(idCol, nameCol)
+
+	default:
+		return nil
+	}
+
+	displayName := toolDisplayName(strategyName, entity.Name, displayPrefixes, customPlurals)
+
+	return &config.MCPTool{
+		Name:        strategy.ToolName(entity),
+		DisplayName: displayName,
+		Description: strategy.ToolDescription(entity),
+		Params:      strategy.ToolParams(entity),
+		Endpoint:    epPath,
+	}
 }
 
 // deriveToolParams извлекает параметры инструмента из структуры endpoint'а.
@@ -131,34 +266,4 @@ func extractPathParams(path string) []string {
 		path = path[start+end+1:]
 	}
 	return params
-}
-
-// strategyToMCPTool создаёт MCPTool для strategy-эндпоинта, используя
-// методы стратегии для генерации имени, описания и параметров.
-func strategyToMCPTool(strategyName string, entity config.Entity, epPath string, displayPrefixes []string, customPlurals map[string]string, filterableRules []config.FieldRule, searchableRules []config.FieldRule) *config.MCPTool {
-	idCol := entity.IDColumnOrDefault()
-	nameCol := entity.FirstStringFieldColumn()
-
-	var strategy search.Strategy
-	switch strategyName {
-	case "grep":
-		strategy = search.NewGrepStrategy(idCol, nameCol, searchableRules...)
-	case "filter":
-		strategy = search.NewFilterStrategy(idCol, nameCol, filterableRules...)
-	case "schema":
-		strategy = search.NewSchemaStrategy(idCol, nameCol)
-
-	default:
-		return nil
-	}
-
-	displayName := toolDisplayName(strategyName, entity.Name, displayPrefixes, customPlurals)
-
-	return &config.MCPTool{
-		Name:        strategy.ToolName(entity),
-		DisplayName: displayName,
-		Description: strategy.ToolDescription(entity),
-		Params:      strategy.ToolParams(entity),
-		Endpoint:    epPath,
-	}
 }

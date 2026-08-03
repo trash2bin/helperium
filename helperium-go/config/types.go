@@ -55,12 +55,13 @@ const (
 	OpCustomQuery     Op = "custom_query"
 	OpDistinct        Op = "distinct"
 	OpCount           Op = "count"
+	OpQDispatch       Op = "q_dispatch"
 )
 
 // Valid проверяет, что op входит в whitelist.
 func (o Op) Valid() bool {
 	switch o {
-	case OpBuiltinHealth, OpBuiltinStats, OpGetByID, OpStrategy, OpCustomQuery, OpDistinct, OpCount:
+	case OpBuiltinHealth, OpBuiltinStats, OpGetByID, OpStrategy, OpCustomQuery, OpDistinct, OpCount, OpQDispatch:
 		return true
 	}
 	return false
@@ -201,6 +202,12 @@ type Config struct {
 
 	// MCPTools — описание MCP-инструментов (для фазы 3.4).
 	MCPTools []MCPTool `json:"mcp_tools,omitempty"`
+
+	// LLMToolPolicy — политика эмиссии MCP-инструментов для LLM-агента.
+	// Фаза 2: по умолчанию (нулевое значение) get_by_id/count/distinct НЕ
+	// эмитятся в манифест — модель не должна перебирать по PK. Это opt-in:
+	// если клиенту нужен get_* — включает через конфиг.
+	LLMToolPolicy LLMToolPolicy `json:"llm_tool_policy,omitempty"`
 
 	// Auth — multi-tenancy и row-level isolation (для фазы 3.7).
 	Auth *AuthConfig `json:"auth,omitempty"`
@@ -503,6 +510,24 @@ type MCPTool struct {
 
 	// Params — описание параметров инструмента.
 	Params []EndpointParam `json:"params,omitempty"`
+}
+
+// LLMToolPolicy — политика эмиссии MCP-инструментов (Фаза 2).
+//
+// По умолчанию (нулевое значение, все false) get_by_id/count/distinct НЕ
+// эмитятся в MCP-манифест: модель не должна перебирать по PK, а count/distinct
+// дублируют schema. Это осознанный дефолт для слабых/локальных моделей (Ollama).
+// Клиент может вернуть get_* через ExposeGetByID (например, если агент работает
+// только с известными id из внешней системы).
+type LLMToolPolicy struct {
+	// ExposeGetByID — эмитить get_* в MCP-манифест. Default false.
+	ExposeGetByID bool `json:"expose_get_by_id,omitempty"`
+
+	// ExposeCount — эмитить count_* в MCP-манифест. Default false.
+	ExposeCount bool `json:"expose_count,omitempty"`
+
+	// ExposeDistinct — эмитить distinct_* в MCP-манифест. Default false.
+	ExposeDistinct bool `json:"expose_distinct,omitempty"`
 }
 
 // AuthConfig — multi-tenancy и row-level isolation.

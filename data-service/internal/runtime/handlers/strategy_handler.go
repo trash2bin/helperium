@@ -252,7 +252,9 @@ func collectEmptyHint(ctx context.Context, db runtime.AdapterSubset, entity conf
 	}
 
 	qTable := a.QuoteIdentifier(entity.Table)
-	suggested := fmt.Sprintf("Try schema_%s() to discover available values, then retry with exact values.", entity.Name)
+	// Фаза 2/2.5: per-entity schema_{entity} тула больше нет — db_describe
+	// консолидирован и принимает entity параметром.
+	suggested := fmt.Sprintf("Try db_describe(entity=%s) to discover available values, then retry with exact values.", entity.Name)
 
 	hint := &query.EmptyHint{
 		SuggestedAction: suggested,

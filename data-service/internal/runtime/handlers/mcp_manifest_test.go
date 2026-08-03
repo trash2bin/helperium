@@ -82,6 +82,10 @@ func TestMCPManifest_CustomFilterableRulesReachManifest(t *testing.T) {
 		t.Fatalf("filter_products tool not found in manifest: %+v", manifest.MCPTools)
 	}
 
+	// filter_products — пер-энтити (Фаза 2.5): поля перечислены в схеме тула,
+	// чтобы тупая модель видела имена полей прямо в properties.
+	// Кастомное правило FilterableRules (AllowNames: ["note"]) должно
+	// доходить до параметров filter_products.
 	found := false
 	for _, p := range filterTool.Params {
 		if p.Name == "note" {

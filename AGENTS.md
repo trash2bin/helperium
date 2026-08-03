@@ -55,9 +55,9 @@ Protocol'ы: LLMProvider, ConversationStore, SpendingTracker, BacklogWriter, Gua
 1. SSE-сессия (GET /mcp) → `event: endpoint`
 2. POST /mcp/message?sessionId= → JSON-RPC → `HandleMessage()`
 3. `FetchConfigWithTenant()` → GET data-service `/mcp/manifest` (кэшируется **30s TTL**, `InvalidateManifestCache()` для сброса) → `tools.NewRegistry(cfg)`
-4. Генерация инструментов: `configgen.GenerateMCPTools()`. Strategy-тулы — параметры от `Strategy.ToolParams()`
-5. Тулы: `grep_{entity}`, `get_{entity}`, `filter_{entity}`, `count_{entity}`, `distinct_{entity}`, `schema_{entity}`
-6. **Composite Mode:** `X-Tenant-ID: a,b` → префикс `{tenantID}__grep_product`
+4. Генерация инструментов: `configgen.GenerateMCPTools()`. filter-тулы — параметры от `FilterStrategy.ToolParams()` (поля в схеме тула)
+5. Тулы (Фаза 2/2.5): **N пер-энтити `filter_{entity}` + 5 консолидированных `db_*`** (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related` через `/q/*`). `get_*`/`count_*`/`distinct_*` — opt-in через `LLMToolPolicy` (default false, анти-перебор)
+6. **Composite Mode:** `X-Tenant-ID: a,b` → префикс `{tenantID}__filter_product`
 
 ### 2b. Tenant Lifecycle
 POST /admin/tenants → bootstrap; POST /admin/config/rewrite → интроспекция; `.data/tenants/{id}.json`.
@@ -106,6 +106,7 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 
 ```
 Last verified: 2026-08-03 (HEAD `c763ff0`; вычистка мёртвого кода в data-service: удалены BuildFind/BuildList, ReadOnlyDB, FormatFields, expression-конструкторы Eq..And, EntityResolver.ColumnFor/PublicFor/AllEntities, coerceValue, pagination readPagination/appendPagination/countQuery, SetAuditRecorder, SwaggerHandlerWithTenant + привязанные тесты/бенчмарки; deadcode 0, все тесты и -race зелёные)
+Обновлено 2026-08-03 (LLM-first tool surface, Фаза 2/2.5, НЕ закоммичено): 5 консолидированных `db_*` (map/describe/search/get/related через `/q/*`) + N пер-энтити `filter_{entity}`; get_*/count_*/distinct_* — opt-in `LLMToolPolicy`; db_map fallback при nil-схеме; EmptyHint → `db_describe(entity=...)` (был мёртвый `schema_{entity}`); синхронизированы все KB-доки (data-service/README, configgen/README, search-strategies, mcp-session-lifecycle, anti-abuse, config-migration, specs/README, specs/config.schema.md 2→4, корневые README, AGENTS.md 2a); смоук живой моделью Ollama: `filter_products(price__gt=100)` без перебора id; тесты: data-service -race 11 пакетов ok, E2E 25/25)
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
 

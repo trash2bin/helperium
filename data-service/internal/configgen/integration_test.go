@@ -336,17 +336,28 @@ func TestAutoparts_Generate(t *testing.T) {
 			toolNames[tool.Name] = true
 		}
 
-		// Key tools
+		// Key tools: стратегии grep/filter/schema. get_*/count_*/distinct_*
+		// по MCP-политике (Фаза 1) НЕ эмитятся в манифест (анти-перебор).
 		for _, expected := range []string{
 			"grep_catalog_product",
-			"get_catalog_product",
 			"grep_catalog_brand",
+			"filter_catalog_product",
+			"schema_catalog_product",
+		} {
+			if !toolNames[expected] {
+				t.Errorf("expected MCP tool %q", expected)
+			}
+		}
+
+		// get_/count_/distinct_ НЕ должны присутствовать в манифесте.
+		for _, forbidden := range []string{
+			"get_catalog_product",
 			"get_catalog_brand",
 			"count_catalog_product",
 			"distinct_catalog_product",
 		} {
-			if !toolNames[expected] {
-				t.Errorf("expected MCP tool %q", expected)
+			if toolNames[forbidden] {
+				t.Errorf("MCP tool %q must NOT be present (anti-enumeration policy)", forbidden)
 			}
 		}
 

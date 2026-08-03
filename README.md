@@ -97,7 +97,7 @@ Browser (Embed Widget → POST /api/chat/{name}
 
 **demo/web** (:8080) — **только для локальной разработки**, не production entry point.
 
-**Note:** data-service is **not** a semantic search engine. It provides three search strategies — `grep` (multi-token AND text search, regex), `filter` (field-based with `field__gt`, `__like`, `__in` operators), and `schema` (metadata discovery with distinct values and numeric ranges) — plus `get_by_id`, `count`, `distinct`, and custom_queries (pre-approved SELECT statements configured per tenant). LLM decides which tool to call and with which parameters.
+**Note:** data-service is **not** a semantic search engine. It provides three search strategies — `grep` (multi-token AND text search, regex), `filter` (field-based with `field__gt`, `__like`, `__in` operators), and `schema` (metadata discovery with distinct values and numeric ranges) — plus custom_queries (pre-approved SELECT statements configured per tenant). LLM decides which tool to call and with which parameters. The LLM tool surface is **N per-entity `filter_{entity}`** (field names live in the tool schema) **+ 5 consolidated `db_*`** (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related` via `/q/*`) — see `data-service/README.md`.
 
 - **Mechanical workloads** (MCP gateway, admin dashboard, data-service) are written in Go for throughput and full async concurrency.
 - **AI workloads** (agent orchestration, LLM integration, embed widget serving, RAG, embeddings) are written in Python using FastAPI, LiteLLM, and Sentence Transformers.

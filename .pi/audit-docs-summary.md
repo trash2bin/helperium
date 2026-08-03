@@ -212,7 +212,7 @@ Pipeline.run()
 
 **Ответственность:**
 - Expression AST → SQL query engine (Condition-based, без RawWhere)
-- 6 search strategies: grep, filter, schema, get_by_id, count, distinct
+- Search strategies: grep, filter, schema (REST) + get_by_id/count/distinct (REST). LLM-поверхность (Фаза 2/2.5): 5 консолидированных `db_*` + N пер-энтити `filter_{entity}`; get_*/count_*/distinct_* — opt-in `LLMToolPolicy`
 - Config generation (configgen — интроспекция БД, SkipRules, entity generation)
 - Multi-tenant TenantStore (per-tenant пул коннектов, роутер, конфиг)
 - Read-only enforcement (ReadOnlyDB — только SELECT)

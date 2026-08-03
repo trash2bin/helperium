@@ -76,11 +76,17 @@
 ## MCP tools (`mcp.go`)
 
 - `GenerateMCPTools()` :12 — проходится по эндпоинтам, для каждого создаёт `config.MCPTool`.
-- `strategyToMCPTool()` :137 — grep/filter/schema: параметры берутся из `Strategy.ToolParams()` (search/strategy.go:32), не из дискового конфига.
+- `strategyToMCPTool()` :137 — grep/schema: параметры берутся из `Strategy.ToolParams()` (search/strategy.go:32), не из дискового конфига.
 - `deriveToolParams()` :93 — параметры для не-strategy тулов (get_by_id, custom_query).
 - `extractPathParams()` :118 — `{id}` из пути.
 
 Манифест runtime: `runtime/handlers/mcp_manifest.go:20` регенерирует тулы из cfg.Endpoints на каждый запрос (не кэширует на диске).
+
+**Поверхность тулов (Фаза 2/2.5 — LLM-first):**
+- **5 консолидированных `db_*`** — `db_map`, `db_describe`, `db_search`, `db_get`, `db_related` (O(1), не зависят от числа сущностей; указывают на `/q/*` диспетчер, см. `runtime/handlers/q_dispatch.go`). `db_filter` НЕ существует.
+- **N пер-энтити `filter_{entity}`** — фильтрация с именами полей прямо в схеме тула (`Strategy.ToolParams()` из `FilterStrategy` с resolved FilterableRules). Причина деконсолидации: слабая модель не вытаскивала имена полей из db_map и не могла вызвать консолидированный filter. Валидировано живой моделью Ollama (`filter_products?price__gt=100` с первого раза).
+- **`get_*`/`count_*`/`distinct_*` по умолчанию НЕ эмитятся** — opt-in через `config.LLMToolPolicy` (`ExposeGetByID`/`ExposeCount`/`ExposeDistinct`, default false). Анти-перебор по id.
+- `db_map` **fallback**: при `schema==nil` (после рестарта до rewrite) `GenerateSchemaForLLM` строит карту из `cfg.Entities` (FK из `Relations`) — db_map не отдаёт 503.
 
 **Кастомные FilterableRules доходят до runtime** (было: всегда дефолтные):
 - `runtime/handlers/mcp_manifest.go:33` — `GenerateMCPTools(..., configgen.ResolveFieldRules(DefaultFilterableFieldRules(), cfg.DisabledDefaultFilterableRules, cfg.FilterableRules)...)`.
@@ -92,6 +98,8 @@
 - `SchemaForLLM` :15 — Entities + WorkflowHints.
 - `LLMEntity` :26 — Name, Description, SearchFields, FilterFields []FilterGroup, Relations []LLMRelation.
 - `GenerateSchemaForLLM()` :83 — группирует фильтры по типам (bool/range/exact), добавляет workflow hints.
+- **WorkflowHints** (доменно-нейтральные, ссылаются только на реальные тулы): `db_map` (карта), `db_search` (текст), `filter_<entity>` (точные значения — имена полей в схеме тула), `db_describe` (значения/диапазоны), `db_get` (id из результата поиска). Никаких `db_filter`, `get_*`, доменных слов (Bosch/KYB/brake pads) и `{entity}`-литералов.
+- **Fallback при `schema==nil`** — карта строится из `cfg.Entities` (FK-индекс из `Relations`, `llm.go`). Покрыт тестом `TestSchemaForLLM_NilSchema_FallbackToEntities`.
 
 Формат — текстовое описание без SQL-типов и системных таблиц. Потребляется api-service через mcp-gateway `GET /mcp/schema` → system prompt.
 

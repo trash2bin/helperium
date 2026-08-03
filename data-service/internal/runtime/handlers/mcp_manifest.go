@@ -31,7 +31,8 @@ func MCPManifestHandler(cfg *config.Config) http.HandlerFunc {
 	}
 	tools := configgen.GenerateMCPTools(cfg.Endpoints, cfg.Entities, displayPrefixes, customPlurals,
 		configgen.ResolveFieldRules(configgen.DefaultFilterableFieldRules(), cfg.DisabledDefaultFilterableRules, cfg.FilterableRules),
-		configgen.ResolveFieldRules(configgen.DefaultSearchableFieldRules(), cfg.DisabledDefaultSearchableRules, cfg.SearchableRules))
+		configgen.ResolveFieldRules(configgen.DefaultSearchableFieldRules(), cfg.DisabledDefaultSearchableRules, cfg.SearchableRules),
+		cfg.LLMToolPolicy)
 	// Определяем read-only режим
 	readOnly := cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly
 

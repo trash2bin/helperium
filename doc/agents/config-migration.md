@@ -340,7 +340,7 @@ type Endpoint struct {
 | `"filter"` | `search.NewFilterStrategy()` | Field-based c компараторами `field__gt`, `field__like`, `field__in` |
 | `"schema"` | `search.NewSchemaStrategy()` | Discovery: мета-информация о сущности (distinct, min/max, count) |
 
-**v4 changes:** `search` и `simple` стратегии удалены. LLM использует `grep_{entity}` для текстового поиска и `filter_{entity}` для точной фильтрации.
+**v4 changes:** `search` и `simple` стратегии удалены. **Фаза 2/2.5 (LLM-поверхность):** консолидированные `db_*` (`db_map`/`db_describe`/`db_search`/`db_get`/`db_related` через `/q/*`) + пер-энтити `filter_{entity}`. Текстовый поиск — `db_search`, точная фильтрация — `filter_{entity}` (поля в схеме тула). `grep_{entity}`/`schema_{entity}` как MCP-тулы не эмитятся.
 
 ### Routing logic (endpoint_builder.go)
 

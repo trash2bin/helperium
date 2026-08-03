@@ -887,6 +887,38 @@ func queryParams(ep config.Endpoint) []map[string]any {
 		return nil
 	}
 
+	// /q/* — консолидированный LLM-диспетчер (Фаза 2).
+	// entity — обычный string (не enum), остальные параметры зависят от пути.
+	if ep.Op == config.OpQDispatch {
+		entity := map[string]any{"name": "entity", "in": "query", "required": true,
+			"schema": map[string]any{"type": "string"}, "description": "Имя сущности (из db_map)."}
+		switch {
+		case ep.Path == "/q/map":
+			return nil
+		case ep.Path == "/q/describe":
+			return []map[string]any{entity}
+		case ep.Path == "/q/search":
+			return []map[string]any{
+				entity,
+				{"name": "pattern", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Поисковый запрос."},
+				intp("limit", "Максимум результатов (1-100, default 10)."),
+				str("fields", "Список полей для поиска через запятую."),
+			}
+		case ep.Path == "/q/get":
+			return []map[string]any{
+				entity,
+				{"name": "id", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Идентификатор записи."},
+			}
+		case ep.Path == "/q/related":
+			return []map[string]any{
+				entity,
+				{"name": "id", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Идентификатор родительской записи."},
+				str("relation", "Имя FK-колонки (опционально, если у сущности одна relation)."),
+			}
+		}
+		return []map[string]any{entity}
+	}
+
 	// Не-strategy: distinct требует column.
 	if ep.Op == config.OpDistinct {
 		return []map[string]any{
@@ -912,6 +944,12 @@ func responseSchema(ep config.Endpoint) map[string]any {
 	case ep.Op == config.OpStrategy && ep.Entity != "":
 		return map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/" + ep.Entity}}
 	case ep.Op == config.OpCustomQuery:
+		return map[string]any{"type": "array", "items": map[string]any{"type": "object"}}
+	case ep.Op == config.OpQDispatch:
+		// /q/* — консолидированный диспетчер: схема зависит от пути.
+		if ep.Path == "/q/map" || ep.Path == "/q/describe" {
+			return map[string]any{"type": "object"}
+		}
 		return map[string]any{"type": "array", "items": map[string]any{"type": "object"}}
 	}
 	return map[string]any{"type": "object"}

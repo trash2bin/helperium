@@ -24,6 +24,7 @@ from tests.e2e.helpers import (
     cleanup_db,
     data_service_url,
     delete_tenant,
+    mcp_call,
     register_tenant,
     seed_database,
 )
@@ -110,39 +111,43 @@ def teardown_module(module):
 # ── Tests ──────────────────────────────────────────────────────────────────
 
 
-def test_tenant_a_has_data():
-    """Tenant A returns data via its own X-Tenant-ID."""
-    r = requests.get(
+def _students_grep(tenant_id: str | None = None) -> requests.Response:
+    """GET /students?pattern=a — grep по students (REST strategy-эндпоинт)."""
+    headers = {}
+    if tenant_id:
+        headers["X-Tenant-ID"] = tenant_id
+    return requests.get(
         f"{data_service_url()}/students",
-        headers={"X-Tenant-ID": "e2e-iso-a"},
+        params={"pattern": "a"},
+        headers=headers,
         timeout=10,
     )
+
+
+def test_tenant_a_has_data():
+    """Tenant A returns data via its own X-Tenant-ID."""
+    r = _students_grep("e2e-iso-a")
     assert r.status_code == 200, f"e2e-iso-a: got {r.status_code}: {r.text[:200]}"
     data = r.json()
-    assert isinstance(data, list), f"expected list, got {type(data)}"
-    assert len(data) > 0, "empty list returned"
+    # grep возвращает объект {total, returned, preview} (не list — list убран в v4).
+    preview = data.get("preview", []) if isinstance(data, dict) else data
+    assert isinstance(preview, list), f"expected preview list, got {type(preview)}"
+    assert len(preview) > 0, "empty result returned"
 
 
 def test_tenant_b_has_data():
     """Tenant B returns data via its own X-Tenant-ID."""
-    r = requests.get(
-        f"{data_service_url()}/students",
-        headers={"X-Tenant-ID": "e2e-iso-b"},
-        timeout=10,
-    )
+    r = _students_grep("e2e-iso-b")
     assert r.status_code == 200, f"e2e-iso-b: got {r.status_code}: {r.text[:200]}"
     data = r.json()
-    assert isinstance(data, list), f"expected list, got {type(data)}"
-    assert len(data) > 0, "empty list returned"
+    preview = data.get("preview", []) if isinstance(data, dict) else data
+    assert isinstance(preview, list), f"expected preview list, got {type(preview)}"
+    assert len(preview) > 0, "empty result returned"
 
 
 def test_isolation_a_does_not_see_b():
     """Tenant A's data does NOT contain Tenant B's isolation marker."""
-    r = requests.get(
-        f"{data_service_url()}/students",
-        headers={"X-Tenant-ID": "e2e-iso-a"},
-        timeout=10,
-    )
+    r = _students_grep("e2e-iso-a")
     marker_b = _MARKERS.get("e2e-iso-b", "")
     assert marker_b not in r.text, (
         f"ISOLATION BREACH: Tenant B's marker '{marker_b}' found in Tenant A's data!"
@@ -151,11 +156,7 @@ def test_isolation_a_does_not_see_b():
 
 def test_isolation_b_does_not_see_a():
     """Tenant B's data does NOT contain Tenant A's isolation marker."""
-    r = requests.get(
-        f"{data_service_url()}/students",
-        headers={"X-Tenant-ID": "e2e-iso-b"},
-        timeout=10,
-    )
+    r = _students_grep("e2e-iso-b")
     marker_a = _MARKERS.get("e2e-iso-a", "")
     assert marker_a not in r.text, (
         f"ISOLATION BREACH: Tenant A's marker '{marker_a}' found in Tenant B's data!"
@@ -164,7 +165,7 @@ def test_isolation_b_does_not_see_a():
 
 def test_default_tenant_no_leaked_data():
     """Default tenant (no X-Tenant-ID) has no isolation markers."""
-    r = requests.get(f"{data_service_url()}/students", timeout=10)
+    r = _students_grep()
     for tid, marker in _MARKERS.items():
         assert marker not in r.text, (
             f"ISOLATION BREACH: {tid}'s marker '{marker}' leaked into default tenant!"
@@ -173,9 +174,90 @@ def test_default_tenant_no_leaked_data():
 
 def test_ghost_tenant_returns_404():
     """Non-existent tenant returns 404."""
-    r = requests.get(
-        f"{data_service_url()}/students",
-        headers={"X-Tenant-ID": f"ghost-{uuid.uuid4().hex[:8]}"},
-        timeout=10,
-    )
+    r = _students_grep(f"ghost-{uuid.uuid4().hex[:8]}")
     assert r.status_code == 404, f"Ghost tenant should 404, got {r.status_code}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Фаза 2: db_get / db_related изоляция через MCP (ревизия)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _db_get_id(tenant_id: str) -> int | None:
+    """Через db_search найти первый id записи тенанта (для db_get)."""
+    marker = _MARKERS.get(tenant_id, "")
+    r = mcp_call(
+        "db_search",
+        {"entity": "student", "pattern": marker or "a"},
+        tenant_ids=tenant_id,
+        timeout=30,
+    )
+    if not r.result.get("isError", False):
+        text = "".join(c.get("text", "") for c in r.result.get("content", []) if "text" in c)
+        import re
+
+        # id может быть строкой (UUID) — берём первое значение поля id.
+        m = re.search(r'"id"\s*:\s*"([^"]+)"', text)
+        if not m:
+            m = re.search(r'"id"\s*:\s*(\d+)', text)
+        if m:
+            return m.group(1)
+    return None
+
+
+def test_db_get_other_tenant_id_denied():
+    """db_get чужого id (из другого тенанта) → isError/нет данных."""
+    # Найти id записи тенанта B через его db_search.
+    id_b = _db_get_id("e2e-iso-b")
+    assert id_b is not None, "tenant B should have a student id"
+
+    # Тенант A пытается db_get id тенанта B.
+    r = mcp_call(
+        "db_get",
+        {"entity": "student", "id": id_b},
+        tenant_ids="e2e-iso-a",
+        timeout=30,
+    )
+    text = "".join(c.get("text", "") for c in r.result.get("content", []) if "text" in c)
+    marker_b = _MARKERS.get("e2e-iso-b", "")
+    assert marker_b not in text, (
+        f"ISOLATION BREACH: tenant A db_get leaked tenant B record (marker '{marker_b}')"
+    )
+    # Либо isError, либо not_found — но не данные тенанта B.
+    assert "Student" not in text or r.result.get("isError", False), (
+        f"tenant A db_get should not return tenant B data: {text[:200]}"
+    )
+
+
+def test_db_get_own_id_ok():
+    """db_get своего id → данные своего тенанта."""
+    id_a = _db_get_id("e2e-iso-a")
+    assert id_a is not None, "tenant A should have a student id"
+    r = mcp_call(
+        "db_get",
+        {"entity": "student", "id": id_a},
+        tenant_ids="e2e-iso-a",
+        timeout=30,
+    )
+    text = "".join(c.get("text", "") for c in r.result.get("content", []) if "text" in c)
+    marker_a = _MARKERS.get("e2e-iso-a", "")
+    assert marker_a in text, (
+        f"db_get own id should return own marker '{marker_a}': {text[:200]}"
+    )
+
+
+def test_db_filter_does_not_leak_other_tenant():
+    """db_search (есть у iso-tenant): тенант A не видит записи тенанта B
+    (изоляция по tenant_id; filter_* в iso-конфиге нет — он минимальный)."""
+    marker_b = _MARKERS.get("e2e-iso-b", "")
+    r = mcp_call(
+        "db_search",
+        {"entity": "student", "pattern": marker_b or "ISO-B"},
+        tenant_ids="e2e-iso-a",
+        timeout=30,
+    )
+    content = r.result.get("content", []) if r.result else []
+    text = "".join(c.get("text", "") for c in content if "text" in c)
+    assert marker_b not in text, (
+        f"ISOLATION BREACH: tenant A db_search leaked tenant B record (marker '{marker_b}')"
+    )

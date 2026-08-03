@@ -75,14 +75,16 @@ func (s *GrepStrategy) ToolName(entity config.Entity) string {
 
 func (s *GrepStrategy) ToolDescription(entity config.Entity) string {
 	return fmt.Sprintf(
-		"Search %s by text.\n"+
+		"PRIMARY text search over %s. Search here FIRST instead of guessing ids.\n"+
 			"\n"+
-			"REQUIRED: Always pass 'pattern' parameter (what to search). Returns error if missing!\n"+
+			"WHEN: find records by words/phrases. WHEN NOT: do not enumerate ids — search text instead.\n"+
+			"\n"+
+			"REQUIRED: always pass 'pattern' (what to search). Returns error if missing!\n"+
 			"\n"+
 			"Examples:\n"+
-			"  pattern='muffler BMW'     -> finds parts with BOTH 'muffler' AND 'BMW'\n"+
-			"  pattern='oil', limit=5     -> first 5 results\n"+
-			"  pattern='Brembo', fields='name,description' -> search in name+description only\n"+
+			"  pattern='blue widget'       -> records with BOTH 'blue' AND 'widget'\n"+
+			"  pattern='invoice', limit=5  -> first 5 results\n"+
+			"  pattern='john', fields='first_name,last_name' -> search those fields only\n"+
 			"\n"+
 			"SQLite note: Cyrillic search is case-sensitive - try capitalized form.\n"+
 			"See doc for: ignore_case, invert, regex, format, offset, sort_by (not in JSON Schema)",
@@ -96,11 +98,11 @@ func (s *GrepStrategy) ToolParams(entity config.Entity) []config.EndpointParam {
 
 	params := []config.EndpointParam{
 		{Name: "pattern", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &t,
-			Description: "Search query. REQUIRED. Example: 'muffler BMW', 'oil', 'Brembo'."},
+			Description: "Search query. REQUIRED. Example: 'blue widget', 'invoice', 'john smith'."},
 		{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: &f,
 			Description: "Max results (1-100, default: 10)."},
 		{Name: "fields", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
-			Description: "Comma-separated field names to search. Default: all string fields. Example: 'name,description'"},
+			Description: "Comma-separated field names to search. Default: all string fields. Example: 'first_name,last_name'"},
 	}
 	return params
 }
@@ -112,7 +114,7 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 	// ── Pattern ─────────────────────────────────────────────────────
 	pattern := strings.TrimSpace(q.Get("pattern"))
 	if pattern == "" {
-		return nil, fmt.Errorf("'pattern' is required. Example: pattern='muffler BMW' or pattern='oil',limit=5")
+		return nil, fmt.Errorf("'pattern' is required. Example: pattern='blue widget' or pattern='invoice',limit=5")
 	}
 	if len(pattern) > s.maxPatternLen {
 		return nil, fmt.Errorf("pattern too long: %d chars (max %d)", len(pattern), s.maxPatternLen)

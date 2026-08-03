@@ -130,17 +130,44 @@ Multi-token AND по полям, OR между полями. Лимиты в `Ne
 - `insertTenantBeforeLimit()` (`strategy_handler.go:306`) — перестановка args: WHERE + tenant + LIMIT/OFFSET.
 - `/stats` (`stats.go:36`): `StatsHandler` вызывает `tenantFilter` для каждого counter — иначе в multi-tenant `/stats` отдавал глобальные счётчики (cross-tenant leak). `tenantWhere` конкатенируется поверх `counter.Filter`.
 - `CountHandler` (`count.go:37-42`): `tenant_id` исключён из fieldMap и из системных параметров (:54) — HIGH-15 fix, защита от фильтрации по чужому tenant_id.
+- `GetByIDHandler` (`get_by_id.go`): применяет `tenantFilter` перед SQL — fail-closed (400 без X-Tenant-ID, 403 без RowFilter), затем `AND tenant_id = ?`. **Чужой id → 404** (не отличимо от «не существует» — нет оракула перебора id между тенантами). Регресс-тесты: `q_isolation_test.go` (TestDBGet_*), E2E `test_data_isolation.py::test_db_get_other_tenant_id_denied`.
+- `db_related` (`related_handler.go`): тот же `tenantFilter` + явная проекция БЕЗ `tenant_id` (SELECT * не используется — L2-загрязнение). PG-плейсхолдеры id=$1, tenant=$2, limit=$3 (регресс: `TestDBRelated_PGPlaceholdersAndTenantStrip`).
 - **Security Gap:** при `AuthStrategyHeader` без настроенных `RowFilters` — tenant-фильтр не применяется, запрос вернёт все строки. Регресс-тест: `row_filter_security_test.go`.
 
-### MCP-тулы и FK-навигация (v4)
+### MCP-тулы и FK-навигация (v5 — консолидированные db_* + пер-энтити filter_, Фаза 2/2.5)
 
-- **`_by_` relationship-тулы НЕ генерируются** (v4, commit 1de916e). LLM навигирует по FK через `filter_{child}({fk_field}=...)` — это функционально лучше: применяет tenant-фильтр, без капа 1000 строк, поддерживает `__in`.
-- Навигационные custom-query эндпоинты (`GET /{parent}/{id}/{child}`) существуют в REST, но не экспонируются LLM как отдельные MCP-тулы (у них нет tenant-фильтра и лимит 1000 строк — `custom_query.go:11-15`).
-- Каждый FK (`*_id`, кроме `tenant_id`) implicitly filterable (`filterable.go:105-112`) → `filter_{child}({fk}=...)` доступен по умолчанию.
+- **Поверхность тулов:** N пер-энтити `filter_{entity}` (имена полей прямо в схеме тула — слабая модель не может вытащить их из db_map) + 5 консолидированных `db_*`: `db_map`, `db_describe`, `db_search`, `db_get`, `db_related` (указывают на `/q/*` диспетчер). `db_filter` НЕ существует — фильтрация только через `filter_{entity}`.
+- **Почему filter пер-энтити:** консолидированный `db_filter` (entity runtime + статичная JSON-схема) не может перечислить поля; слабая модель вызывала его напрямую и не могла вытащить имена полей из db_map. Пер-энтити `filter_{entity}` кладёт поля топ-левел в схему тула → модель строит `filter_products?price__gt=100` с первого раза (валидировано живой моделью Ollama, см. `doc/agents/search-strategies.md`).
+- **`entity` — обычный string, не enum** (на большой БД enum на сотни значений расдул бы манифест). Допустимые имена модель узнаёт из `db_map`; сервер валидирует через `EntityResolver` (whitelist, `/q/*` с неизвестным entity → 404).
+- **`db_related`** — один хоп по объявленному FK с tenant-фильтром и лимитом (в отличие от legacy custom_query-навигации, у которой нет tenant-фильтра и лимит 1000 строк).
+- **LLMToolPolicy** (`config.LLMToolPolicy`) — opt-in возврат `get_*`/`count_*`/`distinct_*` в манифест (`ExposeGetByID`/`ExposeCount`/`ExposeDistinct`, default false). Анти-перебор: `db_get` требует id из предыдущего поиска, NEVER enumerate.
+- **`_by_` relationship-тулы НЕ генерируются** (v4, commit 1de916e). FK-навигация — через `filter_{entity}({fk}=...)` или `db_related`.
+- Навигационные custom-query эндпоинты (`GET /{parent}/{id}/{child}`) существуют в REST, но не экспонируются LLM (нет tenant-фильтра и лимит 1000 строк — `custom_query.go:11-15`).
+- Каждый FK (`*_id`, кроме `tenant_id`) implicitly filterable (`filterable.go:105-112`) → `filter_{entity}({fk}=...)` доступен по умолчанию.
+- REST-эндпоинты (`GET /{entity}/grep|filter|schema|{id}|count|distinct`) **сохранены** — это только про MCP-манифест.
 
 ### Schema handler (`schema_handler.go`)
 
 `distinctValues()` :103 (до 20 значений), `fieldStats()` :135 (min/max/avg). Обходит tenantWhere через параметры.
+
+### `/q/*` диспетчер (Фаза 2, `q_dispatch.go`)
+
+Консолидированные LLM-эндпоинты, за которыми стоят те же стратегии/хендлеры (filter — пер-энтити, через живые REST-роуты `/{entity}/filter`):
+
+| Route | Тул | Handler |
+|---|---|---|
+| `GET /q/map` | `db_map` | SchemaForLLM (карта БД: сущности, поля, FK, hints) |
+| `GET /q/describe?entity=X` | `db_describe` | SchemaStrategy (метаданные сущности) |
+| `GET /q/search?entity=X&pattern=..` | `db_search` | GrepStrategy |
+| `GET /q/get?entity=X&id=..` | `db_get` | GetByID |
+| `GET /q/related?entity=X&id=..&relation=..` | `db_related` | FK-навигация (RelatedHandler) |
+
+Фильтрация — НЕ через `/q/filter` (удалён), а пер-энтити `filter_{entity}` на живых REST-роутах `GET /{entity}/filter` (см. `search/filter.go`).
+
+- **Entity whitelist:** все /q/* резолвят entity через `EntityResolver.Resolve`; неизвестный → 404.
+- **Стрип entity:** параметр `entity` удаляется из query перед делегированием стратегии (чтобы filter не принял его за поле).
+- **db_related** (`related_handler.go`): `SELECT * FROM t WHERE fk = ? [AND tenant] LIMIT ?` — tenant-фильтр применяется всегда, лимит по умолчанию 20 (max 100).
+- **db_map fallback:** при `IntrospectedSchema == nil` (после рестарта до rewrite) `GenerateSchemaForLLM` строит карту из `cfg.Entities` (FK из `Relations`) — db_map не отдаёт 503, модель не слепнет.
 
 ### Маппинг значений (`response_mapper.go`)
 

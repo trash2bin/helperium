@@ -43,12 +43,17 @@ mcp-gateway: createCompositeServer()
     ▼
 data-service: configgen.GenerateMCPTools()
     │
-    ├── Strategy-based:
-    │   ├── grep_{entity}     — search.NewGrepStrategy().ToolName/Params/Description
-    │   ├── filter_{entity}   — search.NewFilterStrategy()
-    │   └── schema_{entity}   — search.NewSchemaStrategy()
+    ├── Consolidated db_* (O(1), /q/*):
+    │   ├── db_map       — GenerateSchemaForLLM (карта БД + hints)
+    │   ├── db_describe  — search.NewSchemaStrategy()
+    │   ├── db_search    — search.NewGrepStrategy()
+    │   ├── db_get       — GetByIDHandler (id из результата поиска)
+    │   └── db_related   — RelatedHandler (один FK-хоп, tenant+лимит)
     │
-    ├── Direct (без стратегии):
+    ├── Per-entity filter_{entity} (живой REST-роут /{entity}/filter):
+    │   └── filter_{entity} — search.NewFilterStrategy() (поля в схеме тула)
+    │
+    ├── Opt-in (config.LLMToolPolicy, default false):
     │   ├── get_{entity}
     │   ├── count_{entity}
     │   └── distinct_{entity}
@@ -59,16 +64,17 @@ mcp-gateway: buildTools() — строит toolDefs из cfg.MCPTools
     └── registerOne() — регистрирует каждый tool с Required/InputSchema
 ```
 
-### Какие тулы генерируются
+### Какие тулы генерируются (Фаза 2/2.5 — N filter_* + 5 db_*)
 
 | MCP Tool | Тип | Description source |
 |---|---|---|
-| `grep_{entity}` | Strategy | `GrepStrategy.ToolDescription()` |
-| `filter_{entity}` | Strategy | `FilterStrategy.ToolDescription()` |
-| `schema_{entity}` | Strategy | `SchemaStrategy.ToolDescription()` |
-| `get_{entity}` | Direct | configgen inline |
-| `count_{entity}` | Direct | configgen inline |
-| `distinct_{entity}` | Direct | configgen inline |
+| `filter_{entity}` (N) | Per-entity strategy | `FilterStrategy.ToolDescription()` — поля в схеме тула |
+| `db_map` | Consolidated (/q/map) | `GenerateSchemaForLLM` — карта БД + workflow hints |
+| `db_describe` | Consolidated (/q/describe) | `SchemaStrategy.ToolDescription()` |
+| `db_search` | Consolidated (/q/search) | `GrepStrategy.ToolDescription()` |
+| `db_get` | Consolidated (/q/get) | GetByIDHandler (fail-closed tenant, id из поиска) |
+| `db_related` | Consolidated (/q/related) | RelatedHandler (один FK-хоп, tenant+лимит) |
+| `get_{entity}`/`count_{entity}`/`distinct_{entity}` | Opt-in (`LLMToolPolicy`, default false) | configgen inline |
 
 ## Три уровня защиты от пустых/опасных вызовов
 

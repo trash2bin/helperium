@@ -57,28 +57,25 @@ func (s *FilterStrategy) ToolName(entity config.Entity) string {
 
 func (s *FilterStrategy) ToolDescription(entity config.Entity) string {
 	return fmt.Sprintf(
-		"Фильтрация %s по значениям полей.\n"+
+		"Exact-value filtering over %s. Use ONLY when you KNOW the value.\n"+
 			"\n"+
-			"ВАЖНО: Передай хотя бы один параметр фильтра!\n"+
+			"WHEN: you have an exact value (an id from a previous search, a known status, a price range).\n"+
+			"WHEN NOT: do not guess values — call schema on the entity first to see valid values.\n"+
 			"\n"+
-			"Операторы (добавляются к имени поля через __):\n"+
-			"  {field}=value       — точное совпадение (category='Тормозная система')\n"+
-			"  {field}__gt=value   — больше (price__gt=1000)\n"+
-			"  {field}__lt=value   — меньше (price__lt=5000)\n"+
-			"  {field}__gte=value  — больше или равно\n"+
-			"  {field}__lte=value  — меньше или равно\n"+
-			"  {field}__like=value — LIKE поиск (reason__like='%%Голов%%')\n"+
-			"  {field}__in=a,b,c   — IN список (status__in=shipped,delivered)\n"+
+			"Operators (appended to the field name with __):\n"+
+			"  {field}=value       — exact match (status='shipped')\n"+
+			"  {field}__gt=value   — greater than (price__gt=1000)\n"+
+			"  {field}__lt=value   — less than (price__lt=5000)\n"+
+			"  {field}__gte=value  — greater than or equal\n"+
+			"  {field}__lte=value  — less than or equal\n"+
+			"  {field}__like=value — LIKE search (name__like='%%head%%')\n"+
+		"  {field}__in=a,b,c   — IN list (status__in=shipped,delivered)\n"+
 			"\n"+
-			"Примеры:\n"+
-			"  category='Тормозная система', price__lte=5000\n"+
-			"    → тормозные запчасти до 5000₽\n"+
+			"Examples:\n"+
 			"  status__in=shipped,delivered, limit=10\n"+
-			"    → последние 10 отправленных и доставленных заказов\n"+
-			"  rating__gte=4.5, experience__gte=10\n"+
-			"    → топ врачи со стажем от 10 лет\n"+
+			"  price__lte=5000, category='brakes'\n"+
 			"\n"+
-			"SQLite: LIKE чувствителен к регистру для кириллицы, используй %% как wildcard.",
+			"SQLite: LIKE is case-sensitive for Cyrillic, use %% as wildcard.",
 		entity.Name,
 	)
 }

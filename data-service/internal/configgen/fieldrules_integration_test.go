@@ -141,15 +141,14 @@ func TestFieldRules_E2E(t *testing.T) {
 
 		foundGrep := false
 		for _, tool := range cfg.MCPTools {
-			if tool.Name == "grep_products" {
-				// internal_note заблокирован из searchable, но name остаётся
-				// searchable → grep-эндпоинт генерируется. Проверяем его наличие
-				// (grep fields — free text, не валидируется).
+			if tool.Name == "db_search" {
+				// Консолидированный тул. internal_note заблокирован из searchable,
+				// но name остаётся searchable → grep-эндпоинт генерируется (REST).
 				foundGrep = true
 			}
 		}
 		if !foundGrep {
-			t.Error("grep_products tool should exist (name still searchable)")
+			t.Error("db_search tool should exist (consolidated, Phase 2)")
 		}
 	})
 

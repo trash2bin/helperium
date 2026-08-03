@@ -78,27 +78,34 @@ func TestGenerateMCPTools_NavigationEndpointsHaveTools(t *testing.T) {
 		}
 	}
 
-	// 3. У LLM есть filter_children с FK-параметром — через него идёт навигация.
+	// 3. У LLM есть filter_children (пер-энтити, Фаза 2.5) — через него идёт
+	// навигация по FK (parent_id), плюс db_related для одного хопа.
 	var filterTool *config.MCPTool
+	var relatedTool *config.MCPTool
 	for i := range cfg.MCPTools {
 		if cfg.MCPTools[i].Name == "filter_children" {
 			filterTool = &cfg.MCPTools[i]
-			break
+		}
+		if cfg.MCPTools[i].Name == "db_related" {
+			relatedTool = &cfg.MCPTools[i]
 		}
 	}
 	if filterTool == nil {
-		t.Fatalf("filter_children tool not generated (precondition broken)")
+		t.Fatalf("filter_children tool not generated (per-entity filter, Phase 2.5)")
 	}
-	// FK-колонка parent_id должна быть в параметрах filter-тула.
+	if relatedTool == nil {
+		t.Fatalf("db_related tool not generated (Phase 2 FK navigation)")
+	}
+	// filter_children содержит FK-параметр parent_id (навигация по связи).
 	hasParentID := false
 	for _, p := range filterTool.Params {
-		if p.Name == "parent_id" || p.Name == "parent_id__eq" || strings.Contains(p.Name, "parent_id") {
+		if strings.Contains(p.Name, "parent_id") {
 			hasParentID = true
 			break
 		}
 	}
 	if !hasParentID {
-		t.Errorf("filter_children must expose FK param parent_id for navigation (got params: %v)", filterTool.Params)
+		t.Errorf("filter_children must expose FK param parent_id (got params: %v)", filterTool.Params)
 	}
 }
 

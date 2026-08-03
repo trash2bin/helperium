@@ -70,22 +70,23 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 3. **Разрешение**: `Registry.buildTools()` — маппинг endpoint → MCP toolDef
 4. **Вызов**: `makeHandler()` → `client.Call(ctx, endpoint, params)` → data-service → JSON → MCP-результат
 
-## Схема именования инструментов
+## Схема именования инструментов (Фаза 2/2.5 — N filter_* + 5 db_*)
 
 | Op | Имя | Пример |
 |---|---|---|
-| `get_by_id` | `get_{entity}` | `get_student` |
-| `grep` (strategy) | `grep_{entity}` | `grep_products` |
+| `/q/map` | `db_map` | `db_map` |
+| `/q/describe` | `db_describe` | `db_describe` |
+| `/q/search` | `db_search` | `db_search` |
+| `/q/get` | `db_get` | `db_get` |
+| `/q/related` | `db_related` | `db_related` |
 | `filter` (strategy) | `filter_{entity}` | `filter_products` |
-| `schema` (strategy) | `schema_{entity}` | `schema_products` |
-| `distinct` | `distinct_{entity}` | `distinct_products` |
-| `count` | `count_{entity}` | `count_products` |
+| `get_by_id`/`distinct`/`count` | `get_*`/`distinct_*`/`count_*` | только opt-in (`LLMToolPolicy`, default false) |
 | `builtin_health` | `health` | `health` |
 | `builtin_stats` | `stats` | `stats` |
 | `custom_query` | `{query_id}` | `student_grades` |
 
 > **Примечание:** `find` / `list` — REST-эндпоинты для data-service, но **не MCP-тулы**.
-> MCP-тулы для поиска/фильтрации генерируются через стратегии (`grep`, `filter`, `schema`).
+> Фильтрация — пер-энтити `filter_{entity}` (поля в схеме тула); текст/разведка/получение — консолидированные `db_*` через `/q/*` (см. `data-service/README.md`).
 
 Санитизация: `deriveToolName()` удаляет `{` `}` из имён (Mistral reject).
 

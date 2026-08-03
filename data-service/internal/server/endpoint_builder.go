@@ -144,7 +144,50 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 		dataSource = datasource.NewSQLDataSource(adapter, dsAdapter, cfg.Entities, queryTimeout)
 	}
 
+	// /q/* — консолидированный LLM-диспетчер (Фаза 2).
+	// db_map/db_describe/db_search/db_get/db_related → O(1) тулов.
+	// filter — пер-энтити filter_{entity} (Фаза 2.5).
+	// entity резолвится через whitelist (entityMap), параметр entity стрипается
+	// из query перед делегированием стратегии.
+	{
+		schemaForLLM := func(r *http.Request) (any, bool) {
+			inst, _ := r.Context().Value(tenantInstanceKey).(*TenantInstance)
+			if inst == nil {
+				inst = ts.resolveTenant(r)
+			}
+			if inst == nil {
+				return nil, false
+			}
+			inst.schemaMu.RLock()
+			defer inst.schemaMu.RUnlock()
+			schema := inst.IntrospectedSchema
+			// schema может быть nil (после рестарта, до rewrite). GenerateSchemaForLLM
+			// умеет строить карту из cfg.Entities (fallback на Relations) — Фаза 2.5,
+			// иначе модель слепа после рестарта data-service.
+			return configgen.GenerateSchemaForLLM(schema, inst.Config), true
+		}
+
+		entityProvider := func(name string) (config.Entity, bool) {
+			e, ok := entityMap[name]
+			return e, ok
+		}
+
+		qRoutes := handlers.MakeQDispatcher(ctx, entityProvider, dataSource, schemaForLLM)
+		for path, h := range qRoutes {
+			r.Get(path, h)
+		}
+	}
+
 	for _, ep := range cfg.Endpoints {
+		// /q/* — консолидированный LLM-диспетчер: регистрируется отдельно
+		// (MakeQDispatcher выше), НЕ как обычный strategy-эндпоинт.
+		// Здесь в cfg.Endpoints они присутствуют только для валидации
+		// mcp_tools[].endpoint — пропускаем их в цикле по op (не по пути,
+		// чтобы не зацепить случайные /query, /questions и т.п.).
+		if ep.Op == config.OpQDispatch {
+			continue
+		}
+
 		// Read-only guard: пропускаем write-методы в read-only режиме
 		if readOnly && isWriteMethod(ep.Method) {
 			slog.Debug("skipping write endpoint in read-only mode",
