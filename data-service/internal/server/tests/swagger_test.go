@@ -115,19 +115,3 @@ func min(a, b int) int {
 }
 
 // TestSwaggerHandlerWithTenant — добавляет tenant в URL
-func TestSwaggerHandlerWithTenant(t *testing.T) {
-	store := server.NewTenantStore(nil, "")
-	h := server.SwaggerHandlerWithTenant(store, "test-tenant")
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/docs", nil)
-	h.ServeHTTP(w, r)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "swagger") && !strings.Contains(body, "Swagger") {
-		t.Errorf("response should contain swagger UI")
-	}
-}

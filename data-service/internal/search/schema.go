@@ -8,7 +8,6 @@ package search
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/trash2bin/helperium/data-service/internal/query"
 	"github.com/trash2bin/helperium/helperium-go/config"
@@ -73,13 +72,4 @@ func (s *SchemaStrategy) FieldInfo(entity config.Entity) []config.EntityField {
 		fields = append(fields, f)
 	}
 	return fields
-}
-
-// FormatFields возвращает имена полей для LLM-friendly отображения.
-func FormatFields(fields []config.EntityField) string {
-	var names []string
-	for _, f := range fields {
-		names = append(names, f.Name)
-	}
-	return strings.Join(names, ", ")
 }

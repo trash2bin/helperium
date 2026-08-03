@@ -128,39 +128,6 @@ func (b *Builder) MapRows(
 	return out, nil
 }
 
-// coerceValue приводит строковое значение к типу из конфига.
-// Сохранён для обратной совместимости (используется в тестах).
-func coerceValue(val, typ string) any {
-	if val == "" {
-		return val
-	}
-	switch typ {
-	case "int":
-		if n, err := strconv.Atoi(val); err == nil {
-			return n
-		}
-		return val
-	case "float":
-		if f, err := strconv.ParseFloat(val, 64); err == nil {
-			return f
-		}
-		return val
-	case "bool":
-		if b, err := strconv.ParseBool(val); err == nil {
-			return b
-		}
-		return val
-	case "json":
-		var js any
-		if err := json.Unmarshal([]byte(val), &js); err == nil {
-			return js
-		}
-		return val
-	default:
-		return val
-	}
-}
-
 // safeFloatToInt64 безопасно приводит float64 к int64: дробная часть и
 // выход за диапазон int64 НЕ замалчиваются — возвращаем (0, false).
 // int64(95.7)→95 и int64(1e300)→saturate были тихими искажениями данных.

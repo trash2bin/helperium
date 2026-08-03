@@ -166,7 +166,7 @@ type Query struct {
 // QueryError — ошибка построения/выполнения запроса с контекстом операции.
 //
 // Reason — человеко-читаемая причина ("unknown field", "arg count mismatch").
-// Op — имя операции ("BuildGetByID", "BuildFind", ...).
+// Op — имя операции ("BuildGetByID", "BuildFilter", ...).
 // Err — обёрнутая ошибка (если есть).
 type QueryError struct {
 	// Op — имя операции или метода, где произошла ошибка.

@@ -41,8 +41,7 @@ internal/server/               TenantStore, роутер, middleware, admin API
 
 ### ReadOnly (`internal/datasource/readonly.go`)
 
-- `ReadOnlyDB` (:11) — обёртка над `*sql.DB`, только SELECT. `NewReadOnlyDB()` :16 проверяет при старте, что write падает.
-- `ReadOnlyConn` (:41) — обёртка над `Conn`. `ExecContext()` :62 всегда возвращает ошибку. Используется для code-level гарантии: data path не пишет в БД.
+- `ReadOnlyConn` (:20) — обёртка над `Conn`. `ExecContext()` :41 всегда возвращает ошибку. Используется для code-level гарантии: data path не пишет в БД.
 
 ### DataSource (абстракция для не-SQL бэкендов, `internal/datasource/datasource.go`)
 
@@ -101,7 +100,7 @@ Multi-token AND по полям, OR между полями. Лимиты в `Ne
 
 ### SchemaStrategy (`schema.go:25`)
 
-`ToolParams()` :48 — nil (без параметров). `ParseRequest()` :54 — nil (не использует Engine; handler работает напрямую с БД). `FormatFields()` :79.
+`ToolParams()` :48 — nil (без параметров). `ParseRequest()` :54 — nil (не использует Engine; handler работает напрямую с БД). `FieldInfo()` :58 — поля для schema-ответа.
 
 ## runtime — типы и хендлеры
 

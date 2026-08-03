@@ -94,71 +94,6 @@ type OrderClause struct {
 	Desc bool
 }
 
-// ---------------------------------------------------------------------------
-// Constructors — удобные функции для создания Condition.
-// ---------------------------------------------------------------------------
-
-// Eq создаёт условие равенства: field = value.
-func Eq(field string, value any) Condition {
-	return Condition{Field: field, Operator: OpEq, Value: value}
-}
-
-// Neq создаёт условие неравенства: field != value.
-func Neq(field string, value any) Condition {
-	return Condition{Field: field, Operator: OpNeq, Value: value}
-}
-
-// Lt создаёт условие "меньше": field < value.
-func Lt(field string, value any) Condition {
-	return Condition{Field: field, Operator: OpLt, Value: value}
-}
-
-// Lte создаёт условие "меньше или равно": field <= value.
-func Lte(field string, value any) Condition {
-	return Condition{Field: field, Operator: OpLte, Value: value}
-}
-
-// Gte создаёт условие "больше или равно": field >= value.
-func Gte(field string, value any) Condition {
-	return Condition{Field: field, Operator: OpGte, Value: value}
-}
-
-// Gt создаёт условие "больше": field > value.
-func Gt(field string, value any) Condition {
-	return Condition{Field: field, Operator: OpGt, Value: value}
-}
-
-// Like создаёт условие LIKE: field LIKE pattern.
-func Like(field string, pattern string) Condition {
-	return Condition{Field: field, Operator: OpLike, Value: pattern}
-}
-
-// ILike создаёт условие ILIKE: field ILIKE pattern (Postgres).
-// Для SQLite LIKE уже case-insensitive, оператор тот же.
-func ILike(field string, pattern string) Condition {
-	return Condition{Field: field, Operator: OpILike, Value: pattern}
-}
-
-// Regexp создаёт условие regexp: field REGEXP pattern (SQLite) / field ~ pattern (Postgres).
-func Regexp(field string, pattern string) Condition {
-	return Condition{Field: field, Operator: OpRegex, Value: pattern}
-}
-
-// NotLike создаёт условие NOT LIKE: field NOT LIKE pattern.
-func NotLike(field string, pattern string) Condition {
-	return Condition{Field: field, Operator: OpNotLike, Value: pattern}
-}
-
-// In создаёт условие IN: field IN (values...).
-func In(field string, values ...any) Condition {
-	return Condition{Field: field, Operator: OpIn, Values: values}
-}
-
-// Between создаёт условие BETWEEN: field BETWEEN a AND b.
-func Between(field string, a, b any) Condition {
-	return Condition{Field: field, Operator: OpBetween, Values: []any{a, b}}
-}
-
 // EmptyHint — подсказка LLM при пустом результате поиска.
 // Возвращается только когда Total == 0, чтобы LLM понимала что делать дальше.
 type EmptyHint struct {
@@ -167,10 +102,4 @@ type EmptyHint struct {
 
 	// AvailableValues — для каждого string-поля список distinct значений (max 5)
 	AvailableValues map[string][]string `json:"available_values,omitempty"`
-}
-
-// And — группирует условия для читаемости; просто возвращает conds как есть.
-// Использование: plan.Where = query.And(query.Eq("a", 1), query.Gt("b", 2))
-func And(conds ...Condition) []Condition {
-	return conds
 }

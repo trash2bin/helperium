@@ -64,62 +64,13 @@ func (b *Builder) BuildGetByID(entity Entity, idValue any) (Query, error) {
 	return q, nil
 }
 
-// BuildFind собирает SELECT с поиском по одному публичному полю.
-//
-// Поле ищется в entity.Fields по публичному имени (entity.Fields[].Name),
-// в SQL подставляется реальное имя колонки. Если поле не найдено —
-// ошибка QueryError.
-//
-// Пример: searchField="email", value="x@y.com" →
-//
-//	SELECT "id", "email", "created_at" FROM "customers" WHERE "email" = ?
-//
-// Args: [value]. Caller экранирует значение через prepared statement.
-func (b *Builder) BuildFind(entity Entity, searchField, value string) (Query, error) {
-	if entity.Table == "" {
-		return Query{}, &QueryError{
-			Op:     "BuildFind",
-			Reason: "entity has empty Table",
-		}
-	}
-
-	column, ok := b.columnFor(entity, searchField)
-	if !ok {
-		return Query{}, &QueryError{
-			Op:     "BuildFind",
-			Reason: "unknown search field " + quote(searchField) + " for entity " + quote(entity.Name),
-		}
-	}
-
-	cols := buildColumnList(b.adapter, entity)
-	ph := b.adapter.TranslatePlaceholder(1)
-
-	// LIKE/ILIKE поиск: совместимость со старыми хендлерами (поиск по подстроке).
-	// PostgreSQL: ILIKE (case-insensitive). SQLite: LIKE (already case-insensitive).
-	// Безопасность: value в prepared statement, wildcards % и _ экранируются
-	// перед LIKE, чтобы предотвратить DoS через wildcard-атаки (full scan).
-	escaped := escapeReplacer.Replace(value)
-	searchVal := "%" + escaped + "%"
-
-	likeOp := "LIKE"
-	if b.isPostgres() {
-		likeOp = "ILIKE"
-	}
-
-	q := Query{
-		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(column) + ` ` + likeOp + ` ` + ph + ` ESCAPE '\'`,
-		Args: []any{searchVal},
-	}
-	return q, nil
-}
+// BuildFilter собирает SELECT с фильтрацией по нескольким полям.
 
 // isPostgres checks if the adapter uses PostgreSQL-style placeholders ($1, $2, ...).
 // Used to choose ILIKE (PostgreSQL) vs LIKE (SQLite) for case-insensitive search.
 func (b *Builder) isPostgres() bool {
 	return strings.Contains(b.adapter.TranslatePlaceholder(1), "$")
 }
-
-// BuildFilter собирает SELECT с фильтрацией по нескольким полям.
 // Поддерживает LIKE-поиск для string-полей и exact match для int/float/bool.
 // Поддерживает limit/offset для пагинации.
 //
@@ -183,7 +134,7 @@ func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []a
 			args = append(args, "%"+escaped+"%")
 			// ESCAPE '\\' обязателен: escapeReplacer экранирует %→\%, _→\_,
 			// но без ESCAPE-клаузы (SQLite) \ — литерал, wildcard остаётся активным.
-			// Согласовано с BuildFind и query.Engine (builder.go).
+			// Согласовано с query.Engine (builder.go).
 			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" "+likeOp+" "+ph+" ESCAPE '\\'")
 			phIdx++
 		case "eq":
@@ -243,43 +194,6 @@ func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []a
 	}
 	q.Args = args
 	return q, nil
-}
-
-// BuildList собирает SELECT всех колонок сущности.
-//
-// whereClause — сырая строка фильтра ("status = ? AND tenant_id = ?"),
-// caller отвечает за её корректность и за порядок args. builder не парсит
-// whereClause — только конкатенирует.
-//
-// Если whereClause пуст — генерируется чистый SELECT без WHERE.
-//
-// Параметры:
-//   - whereClause — пусто или "status = ? AND ..." (с '?' placeholder'ами)
-//   - args        — значения для placeholder'ов в том же порядке
-//
-// Пример без where:
-//
-//	SELECT "id", "email" FROM "customers"
-//
-// Пример с where:
-//
-//	SELECT "id", "email" FROM "customers" WHERE status = ? AND tenant_id = ?
-func (b *Builder) BuildList(entity Entity, whereClause string, args []any) (Query, error) {
-	if entity.Table == "" {
-		return Query{}, &QueryError{
-			Op:     "BuildList",
-			Reason: "entity has empty Table",
-		}
-	}
-
-	cols := buildColumnList(b.adapter, entity)
-	sql := `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table)
-
-	if w := strings.TrimSpace(whereClause); w != "" {
-		sql += ` WHERE ` + w
-	}
-
-	return Query{SQL: sql, Args: args}, nil
 }
 
 // BuildCustomQuery собираёт запрос из CustomQuery с prepared args.
@@ -581,10 +495,5 @@ func summarizeSQL(sql string) string {
 	if len(s) > maxLen {
 		s = s[:maxLen] + "..."
 	}
-	return `"` + s + `"`
-}
-
-// quote — локальный strconv.Quote для сообщений об ошибках.
-func quote(s string) string {
 	return `"` + s + `"`
 }

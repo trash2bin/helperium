@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
-	"net/url"
 
 	"github.com/trash2bin/helperium/helperium-go/openapigen"
 	"github.com/trash2bin/helperium/helperium-go/pkg/cors"
@@ -73,28 +72,5 @@ func NewOpenAPIHandler(ts *TenantStore, hasAdmin bool) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", cors.AllowOrigin())
 		json.NewEncoder(w).Encode(spec)
-	}
-}
-
-// SwaggerHandlerWithTenant ensures the Swagger UI and OpenAPI spec carry a tenant
-// identifier so the page does not fall through to tenant_not_found.
-func SwaggerHandlerWithTenant(ts *TenantStore, defaultTenant string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tenantID := defaultTenant
-		if tenantID == "" {
-			tenantID = r.URL.Query().Get("tenant")
-		}
-		if tenantID == "" {
-			tenantID = r.Header.Get("X-Tenant-ID")
-		}
-		if tenantID == "" {
-			tenantID = "default"
-		}
-		if r.URL.RawQuery != "" {
-			r.URL.RawQuery = r.URL.RawQuery + "&tenant=" + url.QueryEscape(tenantID)
-		} else {
-			r.URL.RawQuery = "tenant=" + url.QueryEscape(tenantID)
-		}
-		SwaggerHandler(w, r)
 	}
 }

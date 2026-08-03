@@ -33,12 +33,3 @@ func (n *NoopAuditRecorder) RecordToolCall(_ context.Context, _ *ToolCallRecord)
 // GlobalAuditRecorder — глобальный экземпляр для доступа из DataSource.
 // Замена на прод-имплементацию через SetAuditRecorder.
 var GlobalAuditRecorder AuditRecorder = &NoopAuditRecorder{}
-
-// SetAuditRecorder устанавливает глобальный AuditRecorder.
-func SetAuditRecorder(r AuditRecorder) {
-	if r == nil {
-		GlobalAuditRecorder = &NoopAuditRecorder{}
-		return
-	}
-	GlobalAuditRecorder = r
-}

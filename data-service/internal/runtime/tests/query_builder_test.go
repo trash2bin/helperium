@@ -150,78 +150,11 @@ func TestBuildGetByID_UnknownEntity(t *testing.T) {
 	}
 }
 
-func TestBuildFind(t *testing.T) {
-	adapter, cleanup := newTestAdapter(t)
-	defer cleanup()
-
-	b := runtime.NewBuilder(adapter)
-	q, err := b.BuildFind(customerEntity(), "email", "x@y.com")
-	if err != nil {
-		t.Fatalf("BuildFind: unexpected error: %v", err)
-	}
-
-	wantSubstrs := []string{
-		`SELECT "id", "email", "created_at"`,
-		`FROM "customers"`,
-		`WHERE "email" LIKE ? ESCAPE '\'`,
-	}
-	for _, s := range wantSubstrs {
-		if !strings.Contains(q.SQL, s) {
-			t.Errorf("SQL missing %q\nSQL: %s", s, q.SQL)
-		}
-	}
-
-	if len(q.Args) != 1 || q.Args[0] != "%x@y.com%" {
-		t.Errorf("Args = %v, want [%%x@y.com%%]", q.Args)
-	}
-}
 
 // TestBuildFind_LikeEscapingWorksEndToEnd — поведенческая проверка фикса
 // LIKE-экранирования: значение с литеральными %/_ должно находиться ТОЛЬКО
 // при работающей ESCAPE-клаузе (без неё в SQLite \ — литерал, % остаётся
 // wildcard'ом и точный поиск не срабатывает).
-func TestBuildFind_LikeEscapingWorksEndToEnd(t *testing.T) {
-	// Собственная in-memory SQLite: вставка строки с литеральными %/_.
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-	if _, err := db.Exec(`CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL)`); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if _, err := db.Exec(`INSERT INTO customers (id, email) VALUES (1, 'discount_100%_off@shop.example')`); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-
-	adapter := &testAdapter{db: db}
-	b := runtime.NewBuilder(adapter)
-	// Ищем подстроку "100%_off" — в LIKE она экранируется в \%\_,
-	// и с ESCAPE '\\' должна матчиться буквально.
-	q, err := b.BuildFind(customerEntity(), "email", "100%_off")
-	if err != nil {
-		t.Fatalf("BuildFind: unexpected error: %v", err)
-	}
-	if !strings.Contains(q.SQL, "ESCAPE '\\'") {
-		t.Errorf("BuildFind SQL should contain ESCAPE clause: %q", q.SQL)
-	}
-
-	rows, err := adapter.QueryContext(context.Background(), q.SQL, q.Args...)
-	if err != nil {
-		t.Fatalf("query: %v", err)
-	}
-	defer rows.Close()
-	count := 0
-	for rows.Next() {
-		count++
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("rows.Err: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("expected exactly 1 row (literal %%/_), got %d", count)
-	}
-}
 
 // TestBuildFilter_LikeEscapingWorksEndToEnd — M2: BuildFilter с op="like"
 // тоже должен иметь ESCAPE-клаузу (раньше escapeReplacer экранировал %/_,
@@ -265,51 +198,7 @@ func TestBuildFilter_LikeEscapingWorksEndToEnd(t *testing.T) {
 	}
 }
 
-func TestBuildFind_UnknownField(t *testing.T) {
-	adapter, cleanup := newTestAdapter(t)
-	defer cleanup()
 
-	b := runtime.NewBuilder(adapter)
-	// "phone" не описан в Fields → должна быть ошибка QueryError.
-	_, err := b.BuildFind(customerEntity(), "phone", "555")
-	if err == nil {
-		t.Fatal("BuildFind with unknown field: expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "BuildFind") {
-		t.Errorf("error %q should mention op BuildFind", err)
-	}
-}
-
-func TestBuildList(t *testing.T) {
-	adapter, cleanup := newTestAdapter(t)
-	defer cleanup()
-
-	b := runtime.NewBuilder(adapter)
-
-	// Без where.
-	q, err := b.BuildList(customerEntity(), "", nil)
-	if err != nil {
-		t.Fatalf("BuildList (no where): unexpected error: %v", err)
-	}
-	if !strings.Contains(q.SQL, `SELECT "id", "email", "created_at" FROM "customers"`) {
-		t.Errorf("SQL should be clean SELECT, got: %s", q.SQL)
-	}
-	if strings.Contains(q.SQL, "WHERE") {
-		t.Errorf("SQL without where should not contain WHERE, got: %s", q.SQL)
-	}
-
-	// С where — builder просто конкатенирует, не валидирует.
-	q, err = b.BuildList(customerEntity(), `"id" > ?`, []any{10})
-	if err != nil {
-		t.Fatalf("BuildList (with where): unexpected error: %v", err)
-	}
-	if !strings.Contains(q.SQL, `WHERE "id" > ?`) {
-		t.Errorf("SQL with where missing WHERE clause, got: %s", q.SQL)
-	}
-	if len(q.Args) != 1 || q.Args[0] != 10 {
-		t.Errorf("Args = %v, want [10]", q.Args)
-	}
-}
 
 func TestBuildCustomQuery(t *testing.T) {
 	adapter, cleanup := newTestAdapter(t)

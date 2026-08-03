@@ -141,7 +141,7 @@ Tenant isolation: `tenant_id` нельзя искать (grep.go:148, :169-172).
 
 - `ToolParams()` :48 — nil (без параметров).
 - `ParseRequest()` :54 — nil (не использует Engine).
-- `FormatFields()` :79 — строковое описание полей.
+- `FieldInfo()` :58 — поля для schema-ответа.
 
 Обработка: `schema_handler.go:23`. Ответ:
 

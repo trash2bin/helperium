@@ -105,7 +105,7 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 ## 🧬 Verification
 
 ```
-Last verified: 2026-08-02 (HEAD `3aa1cdbc`; выпилка write-tool approval: удалены ApprovedTools/approve/pending из кода, UI и доков; 18/18 Go-пакетов, golangci-lint 0 issues, vitest 72/72, живой smoke-тест)
+Last verified: 2026-08-03 (HEAD `c763ff0`; вычистка мёртвого кода в data-service: удалены BuildFind/BuildList, ReadOnlyDB, FormatFields, expression-конструкторы Eq..And, EntityResolver.ColumnFor/PublicFor/AllEntities, coerceValue, pagination readPagination/appendPagination/countQuery, SetAuditRecorder, SwaggerHandlerWithTenant + привязанные тесты/бенчмарки; deadcode 0, все тесты и -race зелёные)
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
 

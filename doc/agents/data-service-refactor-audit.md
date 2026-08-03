@@ -145,7 +145,7 @@ WHERE "category" = ? ORDER BY "created_at" DESC AND "tenant_id" = ? LIMIT ? OFFS
 - **L3** — `SaveTenantSchema` не-атомарный (tenant.go:186-190) — крэш mid-write = битый cache; `PersistTenantConfig` имеет fallback, приемлемо.
 - **L4** — HealthCheck: ping может пойти на закрытый RemoveTenant'ом Conn → транзиентный "unhealthy" (tenant_health.go:55,72-88). Приемлемо.
 - **L5** — `QuoteIdentifier` (PG): `split(".")` + удвоение — имена из конфига с точкой/кавычками квотируются дважды. Для интроспекции (schema.table) — ок. Контракт надо задокументировать.
-- **L6** — `ReadOnlyDB` (readonly.go:14-36) — мёртвый код (runtime не использует).
+- **L6** — `ReadOnlyDB` (readonly.go:14-36) — мёртвый код (runtime не использует). → **удалён окончательно (2026-08-03)**: осталась только `ReadOnlyConn`.
 - **L7** — DSN с `?` в имени файла — ограничение modernc, не документировано.
 - **L8** — `PersistTenantConfig` (tenant.go:225-238) — имя провоцирует misuse (регенерит из intent); сейчас только rewrite, но лучше переименовать.
 - **L9** — OpenAPI: query-параметры grep/filter не в спеки (openapigen.go:575-577).
@@ -220,7 +220,7 @@ M7 — стабильный ID + миграция Reason→ID в normalizeV3ToV4
 | L2 tenant_id в ответе | ✅ outerCols без tenant_id (RawWhere) |
 | L3 SaveTenantSchema атомарность | ✅ temp+rename |
 | L5 QuoteIdentifier контракт | ✅ документация |
-| L6 ReadOnlyDB мёртвый | ✅ Deprecated-пометка |
+| L6 ReadOnlyDB мёртвый | ✅ удалён (2026-08-03); осталась ReadOnlyConn |
 | L7 DSN с ? | ✅ документация |
 | L10 filter __like \ + ESCAPE | ✅ задокументирован (filter.go, search-strategies.md) |
 | L4 HealthCheck closed conn | ⏳ приемлемо (транзиентный unhealthy) |

@@ -52,50 +52,8 @@ func BenchmarkBuildGetByID(b *testing.B) {
 	}
 }
 
-// BenchmarkBuildList — сборка запроса SELECT без WHERE
-func BenchmarkBuildList(b *testing.B) {
-	adapter := &benchmarkAdapter{}
-	builder := runtime.NewBuilder(adapter)
-	entity := benchEntity()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := builder.BuildList(entity, "", nil)
-		if err != nil {
-			b.Fatalf("BuildList: %v", err)
-		}
-	}
-}
 
-// BenchmarkBuildList_WithWhere — сборка запроса с WHERE
-func BenchmarkBuildList_WithWhere(b *testing.B) {
-	adapter := &benchmarkAdapter{}
-	builder := runtime.NewBuilder(adapter)
-	entity := benchEntity()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := builder.BuildList(entity, "active = ?", []any{true})
-		if err != nil {
-			b.Fatalf("BuildList with where: %v", err)
-		}
-	}
-}
-
-// BenchmarkBuildFind — сборка запроса поиска
-func BenchmarkBuildFind(b *testing.B) {
-	adapter := &benchmarkAdapter{}
-	builder := runtime.NewBuilder(adapter)
-	entity := benchEntity()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := builder.BuildFind(entity, "email", "test@example.com")
-		if err != nil {
-			b.Fatalf("BuildFind: %v", err)
-		}
-	}
-}
 
 // BenchmarkBuildCustomQuery — сборка кастомного запроса
 func BenchmarkBuildCustomQuery(b *testing.B) {

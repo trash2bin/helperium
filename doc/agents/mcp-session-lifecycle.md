@@ -140,7 +140,7 @@ Go-таймаута в 5 минут. После реконнекта → нов�
 
 ### Read-only
 
-- ReadOnlyDB — только SELECT методы
+- ReadOnlyConn — только SELECT методы
 - `cfg.DataSource.ReadOnly = true` по умолчанию
 - Write-методы блокируются на уровне endpoint_builder
 
