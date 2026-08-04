@@ -153,13 +153,6 @@ func TestMCPTools_EntityIsPlainStringNotEnum(t *testing.T) {
 	}
 }
 
-func toolNames(tools []config.MCPTool) []string {
-	names := make([]string, 0, len(tools))
-	for _, t := range tools {
-		names = append(names, t.Name)
-	}
-	return names
-}
 func TestStrategyToolDescriptions_DomainNeutralAndNoDeletedTools(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",

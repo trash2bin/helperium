@@ -8,12 +8,6 @@ import (
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 )
 
-const (
-	defaultLimit = 100
-	maxLimit     = 1000
-	maxOffset    = 100000
-)
-
 // countQueryWithArgs возвращает count SQL и args без LIMIT/OFFSET аргументов.
 func countQueryWithArgs(selectSQL string, args []any) (string, []any) {
 	upper := strings.ToUpper(selectSQL)
