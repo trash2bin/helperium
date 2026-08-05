@@ -14,9 +14,6 @@ LLM-чат с неявным интентом — в tests/e2e-llm/ (требу�
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import uuid
 from pathlib import Path
 
 import pytest
@@ -28,6 +25,10 @@ from tests.e2e.helpers import (
     api_service_url,
     project_root,
     scenarios_dir,
+    create_scenario_db,
+    register_tenant_and_rewrite,
+    e2e_tenant_id,
+    delete_tenant,
 )
 
 pytestmark = [
@@ -37,119 +38,14 @@ pytestmark = [
     ),
 ]
 
-# ── Helpers ────────────────────────────────────────────────────────────────
-
-
-def _tenant_id(prefix: str) -> str:
-    return f"e2e-{prefix}-{uuid.uuid4().hex[:6]}"
-
-
-def _create_db(scenario: str) -> Path:
-    """Create scenario database and return path."""
-    sc_dir = scenarios_dir() / scenario
-    if not sc_dir.exists():
-        raise FileNotFoundError(f"Scenario dir not found: {sc_dir}")
-
-    script = sc_dir / "create_db.py"
-    db_path = sc_dir / "data.db"
-
-    # Удаляем старую БД если есть
-    if db_path.exists():
-        db_path.unlink()
-        for ext in ("-wal", "-shm"):
-            (db_path.with_suffix(db_path.suffix + ext)).unlink(missing_ok=True)
-
-    # Запускаем скрипт создания БД
-    result = subprocess.run(
-        ["python3", str(script)],
-        cwd=project_root(),
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"create_db.py failed:\n{result.stderr}")
-
-    if not db_path.exists():
-        raise RuntimeError(f"DB not created: {db_path}")
-
-    return db_path
-
-
-def _register_and_rewrite(tenant_id: str, db_path: Path) -> dict:
-    """Register a tenant with minimal config, then POST /admin/config/rewrite.
-
-    Returns rewrite response.
-    """
-    base = data_service_url()
-    h = admin_headers()
-
-    # 1. Register tenant with just DSN
-    config = {
-        "data_source": {
-            "driver": "sqlite",
-            "dsn": str(db_path),
-            "read_only": True,
-        },
-        # Кастомные filterable-поля для e2e: stock/city/experience/rating/reason
-        # не входят в DefaultFilterableFieldRules, поэтому filter по ним падал бы
-        # с 400 parse_error. rewrite сохраняет filterable_rules через
-        # ExtractIntent → Hydrate (configgen/intent.go), поэтому кладём их ДО rewrite.
-        "filterable_rules": [
-            {
-                "id": "e2e.allow",
-                "allow_names": ["stock", "city", "experience", "rating", "reason"],
-                "reason": "E2E: business fields for filter tests",
-            },
-        ],
-    }
-
-    resp = requests.post(
-        f"{base}/admin/tenants",
-        json={"id": tenant_id, "config": config},
-        headers=h,
-        timeout=10,
-    )
-    if resp.status_code not in (200, 201):
-        # Maybe already exists — try delete + recreate
-        if resp.status_code == 409:
-            requests.delete(f"{base}/admin/tenants/{tenant_id}", headers=h, timeout=10)
-            resp = requests.post(
-                f"{base}/admin/tenants",
-                json={"id": tenant_id, "config": config},
-                headers=h,
-                timeout=10,
-            )
-    assert resp.status_code in (200, 201), (
-        f"Register tenant: {resp.status_code} {resp.text[:200]}"
-    )
-
-    # 2. Rewrite config (introspect + generate)
-    resp = requests.post(
-        f"{base}/admin/config/rewrite",
-        headers={
-            "X-Tenant-ID": tenant_id,
-            **h,
-        },
-        timeout=30,
-    )
-    assert resp.status_code == 200, (
-        f"Rewrite: {resp.status_code} {resp.text[:200]}"
-    )
-
-    return resp.json()
-
-
-def _cleanup_tenant(tenant_id: str):
-    """Delete tenant if exists."""
-    try:
-        requests.delete(
-            f"{data_service_url()}/admin/tenants/{tenant_id}",
-            headers=admin_headers(),
-            timeout=10,
-        )
-    except Exception:
-        pass
+# Default filterable rules for e2e tests (stock, city, experience, rating, reason)
+E2E_FILTERABLE_RULES = [
+    {
+        "id": "e2e.allow",
+        "allow_names": ["stock", "city", "experience", "rating", "reason"],
+        "reason": "E2E: business fields for filter tests",
+    },
+]
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
@@ -158,31 +54,31 @@ def _cleanup_tenant(tenant_id: str):
 @pytest.fixture(scope="module")
 def auto_shop_db():
     """Create auto-shop DB once per module."""
-    yield _create_db("auto-shop")
+    yield create_scenario_db("auto-shop")
 
 
 @pytest.fixture(scope="module")
 def clinic_db():
     """Create clinic DB once per module."""
-    yield _create_db("clinic")
+    yield create_scenario_db("clinic")
 
 
 @pytest.fixture(scope="module")
 def auto_shop_tenant(auto_shop_db):
     """Register auto-shop tenant with rewrite."""
-    tid = _tenant_id("autoshop")
-    result = _register_and_rewrite(tid, auto_shop_db)
+    tid = e2e_tenant_id("autoshop")
+    result = register_tenant_and_rewrite(tid, auto_shop_db, E2E_FILTERABLE_RULES)
     yield tid, result
-    _cleanup_tenant(tid)
+    delete_tenant(tid)
 
 
 @pytest.fixture(scope="module")
 def clinic_tenant(clinic_db):
     """Register clinic tenant with rewrite."""
-    tid = _tenant_id("clinic")
-    result = _register_and_rewrite(tid, clinic_db)
+    tid = e2e_tenant_id("clinic")
+    result = register_tenant_and_rewrite(tid, clinic_db, E2E_FILTERABLE_RULES)
     yield tid, result
-    _cleanup_tenant(tid)
+    delete_tenant(tid)
 
 
 # ── Shared SSE parser ──────────────────────────────────────────────────────

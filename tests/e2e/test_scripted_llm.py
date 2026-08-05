@@ -21,7 +21,14 @@ from pathlib import Path
 import pytest
 import requests
 
-from tests.e2e.helpers import admin_headers, data_service_url, project_root, mcp_call
+from tests.e2e.helpers import (
+    admin_headers,
+    data_service_url,
+    project_root,
+    mcp_call,
+    create_scenario_db,
+    register_tenant_and_rewrite,
+)
 
 
 def _find_free_port() -> int:
@@ -325,10 +332,9 @@ def scripted_server(tmp_path_factory):
         pass
 
     # ── Регистрация tenant ──
-    from tests.e2e.test_search_strategies import _create_db, _register_and_rewrite
-    db_path = _create_db("auto-shop")
+    db_path = create_scenario_db("auto-shop")
     tid = f"e2e-{uuid.uuid4().hex[:8]}"
-    _register_and_rewrite(tid, db_path)
+    register_tenant_and_rewrite(tid, db_path)
 
     # ── Создаём агента через API нашего инстанса ──
     agent_name = f"agent-{uuid.uuid4().hex[:6]}"

@@ -489,3 +489,125 @@ def save_and_check_persistence(
                     f"expected={val!r}, got={config[key]!r}"
                 )
     return config
+
+
+# ── Scenario database creation & tenant rewrite ───────────────────────────
+
+
+def create_scenario_db(scenario: str, project_root_dir: Path | None = None) -> Path:
+    """Create a scenario database using the scenario's create_db.py script.
+
+    Args:
+        scenario: Scenario name (e.g. 'sqlite-testseed', 'auto-shop', 'clinic').
+        project_root_dir: Optional project root (auto-detected if not provided).
+
+    Returns:
+        Path to the created database file.
+
+    Raises:
+        FileNotFoundError: If scenario directory not found.
+        RuntimeError: If database creation fails.
+    """
+    root = project_root_dir or project_root()
+    sc_dir = root / "data-service" / "testdata" / "scenarios" / scenario
+    if not sc_dir.exists():
+        # Fallback: some scenarios in agent-db
+        sc_dir = root / "agent-db" / "scenarios" / scenario
+    if not sc_dir.exists():
+        raise FileNotFoundError(f"Scenario dir not found: {sc_dir}")
+
+    script = sc_dir / "create_db.py"
+    db_path = sc_dir / "data.db"
+
+    # Remove old DB if exists
+    if db_path.exists():
+        db_path.unlink()
+        for ext in ("-wal", "-shm"):
+            (db_path.with_suffix(db_path.suffix + ext)).unlink(missing_ok=True)
+
+    # Run database creation script
+    result = subprocess.run(
+        ["python3", str(script)],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"create_db.py failed:\n{result.stderr}")
+
+    if not db_path.exists():
+        raise RuntimeError(f"DB not created: {db_path}")
+
+    return db_path
+
+
+def register_tenant_and_rewrite(
+    tenant_id: str,
+    db_path: Path,
+    filterable_rules: list[dict] | None = None,
+    service_url: str | None = None,
+) -> dict:
+    """Register a tenant with minimal config, then POST /admin/config/rewrite.
+
+    Args:
+        tenant_id: Unique tenant identifier.
+        db_path: Path to the tenant's SQLite database.
+        filterable_rules: Optional custom filterable field rules to add before rewrite.
+        service_url: Optional data-service URL (default: from env).
+
+    Returns:
+        Rewrite response JSON (contains entities/endpoints counts).
+
+    Raises:
+        AssertionError: If registration or rewrite fails.
+    """
+    base = service_url or data_service_url()
+    h = admin_headers()
+
+    config = {
+        "data_source": {
+            "driver": "sqlite",
+            "dsn": str(db_path),
+            "read_only": True,
+        },
+    }
+    if filterable_rules:
+        config["filterable_rules"] = filterable_rules
+
+    # 1. Register tenant
+    resp = requests.post(
+        f"{base}/admin/tenants",
+        json={"id": tenant_id, "config": config},
+        headers=h,
+        timeout=10,
+    )
+    if resp.status_code not in (200, 201):
+        if resp.status_code == 409:
+            requests.delete(f"{base}/admin/tenants/{tenant_id}", headers=h, timeout=10)
+            resp = requests.post(
+                f"{base}/admin/tenants",
+                json={"id": tenant_id, "config": config},
+                headers=h,
+                timeout=10,
+            )
+    assert resp.status_code in (200, 201), (
+        f"Register tenant: {resp.status_code} {resp.text[:200]}"
+    )
+
+    # 2. Rewrite config (introspect + generate)
+    resp = requests.post(
+        f"{base}/admin/config/rewrite",
+        headers={"X-Tenant-ID": tenant_id, **h},
+        timeout=30,
+    )
+    assert resp.status_code == 200, (
+        f"Rewrite: {resp.status_code} {resp.text[:200]}"
+    )
+
+    return resp.json()
+
+
+def e2e_tenant_id(prefix: str) -> str:
+    """Generate a unique e2e tenant ID with prefix."""
+    return f"e2e-{prefix}-{uuid.uuid4().hex[:6]}"
