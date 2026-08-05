@@ -193,9 +193,10 @@ jobs:
       - name: Create data directories for bind mounts
         run: |
           mkdir -p .data/app .data/rag .data/hf_cache .data/uploads .data/pg .data/tenants
-          sudo chown -R 1000:1000 .data
-      - name: Fix workspace permissions for container user
-        run: sudo chown -R 1000:1000 .
+          # workspace → UID 1000 (api/e2e containers write test DBs + backlog here)
+          sudo chown -R 1000:1000 .
+          # .data needs write from BOTH UID 1000 (api) and UID 1001 (data-service)
+          sudo chmod -R 777 .data
       - name: Run e2e tests (container, profile=test)
         run: docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
         env:
