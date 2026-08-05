@@ -206,7 +206,7 @@ jobs:
           VIEWER_TOKEN: "ci-viewer-token"
       - name: Dump API logs on failure
         if: failure()
-        run: docker compose --profile test logs api-service
+        run: docker compose --profile test logs api
       - name: Stop services
         if: always()
         run: docker compose --profile test down -v
