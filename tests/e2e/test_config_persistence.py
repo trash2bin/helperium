@@ -2,97 +2,64 @@
 
 Tests that:
 1. Register tenant → config written to .data/tenants/{id}.json
-2. After data-service restart, tenant is still registered and serves data
+2. Tenant is registered and serves data
 3. Tenant config file contains valid data
 
-Requires data-service (:8084) running. Uses admin API to check persistence.
+Uses module-scope TestTenant (registered once).
+
+Requires data-service (:8084) running.
 """
 
 from __future__ import annotations
 
-import copy
 import json
-import sqlite3
-import subprocess
-import time
-import uuid
-from pathlib import Path
 
 import pytest
 import requests
 
 from tests.e2e.helpers import (
-    admin_headers,
-    cleanup_db,
+    TestTenant,
     data_service_url,
-    delete_tenant,
-    project_root,
-    register_tenant,
-    seed_database,
     tenants_data_dir,
 )
 
 
-_TENANT_ID = f"e2e-persist-{uuid.uuid4().hex[:6]}"
-_DB_PATH: Path | None = None
+@pytest.fixture(scope="module")
+def persist_tenant() -> TestTenant:
+    """Module-scope tenant: seeded + registered once."""
+    from tests.e2e.helpers import make_tenant
 
+    t = make_tenant("sqlite-testseed", prefix="persist")
+    t.register()
 
-def setup_module(module):
-    """Seed a fresh database and register tenant."""
-    global _DB_PATH
-    root = project_root()
-    suffix = uuid.uuid4().hex[:8]
-    _DB_PATH = root / f".data/e2e_persist_{suffix}.db"
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Persist-Marker for data-access tests
+    import sqlite3
 
-    seed_database(_DB_PATH, scenario="sqlite-testseed", project_root_dir=root)
-
-    conn = sqlite3.connect(str(_DB_PATH))
+    conn = sqlite3.connect(str(t.db_path))
     conn.execute(
-        "UPDATE students SET name = 'Persist-Marker' WHERE id = (SELECT id FROM students LIMIT 1)"
+        "UPDATE students SET name = 'Persist-Marker' "
+        "WHERE id = (SELECT id FROM students LIMIT 1)"
     )
     conn.commit()
     conn.close()
 
-    delete_tenant(_TENANT_ID)
-
-    scenario_config = (
-        root
-        / "data-service"
-        / "testdata"
-        / "scenarios"
-        / "sqlite-testseed"
-        / "config.json"
-    )
-    base_config = json.loads(scenario_config.read_text())
-    cfg = copy.deepcopy(base_config)
-    cfg["data_source"]["dsn"] = str(_DB_PATH)
-    module._config = cfg
-
-    result = register_tenant(_TENANT_ID, cfg)
-    assert result["status"] in (200, 201), f"Register {_TENANT_ID}: {result['status']}"
-
-
-def teardown_module(module):
-    """Cleanup."""
-    delete_tenant(_TENANT_ID)
-    if _DB_PATH:
-        cleanup_db(_DB_PATH)
+    yield t
+    t.cleanup()
 
 
 # ── Tests ──────────────────────────────────────────────────────────────────
 
 
-def test_config_file_exists():
+def test_config_file_exists(persist_tenant):
     """Tenant config is persisted to disk after registration."""
-    config_path = tenants_data_dir() / f"{_TENANT_ID}.json"
+    config_path = tenants_data_dir() / f"{persist_tenant.id}.json"
     assert config_path.exists(), f"Config not found: {config_path}"
-    assert config_path.stat().st_size > 50, f"Config file too small"
+    assert config_path.stat().st_size > 50, "Config file too small"
 
 
-def test_config_file_has_valid_content():
+def test_config_file_has_valid_content(persist_tenant):
     """Persisted config is valid JSON with required fields."""
-    config_path = tenants_data_dir() / f"{_TENANT_ID}.json"
+    config_path = tenants_data_dir() / f"{persist_tenant.id}.json"
     config = json.loads(config_path.read_text())
     assert config.get("version", 0) >= 1, "Missing version"
     assert "data_source" in config, "Missing data_source"
@@ -101,25 +68,45 @@ def test_config_file_has_valid_content():
     assert len(config.get("entities", [])) > 0, "Empty entities"
 
 
-def test_tenant_serves_data():
-    """Tenant serves data before hypothetical restart."""
-    # v5: /students is the grep strategy endpoint and requires a pattern.
-    # Use the seeded isolation marker as the pattern and full format so the
-    # marker is present in the response body.
+def test_tenant_serves_data(persist_tenant):
+    """Tenant serves data via its X-Tenant-ID."""
     r = requests.get(
         f"{data_service_url()}/students",
         params={"pattern": "Persist-Marker", "format": "full"},
-        headers={"X-Tenant-ID": _TENANT_ID},
+        headers={"X-Tenant-ID": persist_tenant.id},
         timeout=10,
     )
     assert r.status_code == 200, f"Data: {r.status_code}"
     assert "Persist-Marker" in r.text, "Isolation marker not found in tenant data"
 
 
-def test_config_has_bak_file():
-    """Config .bak file exists (data-service writes .bak before overwrite)."""
-    # The persistence mechanism writes .bak files
-    bak_path = tenants_data_dir() / f"{_TENANT_ID}.json.bak"
-    if not bak_path.exists():
-        # Not all configs have .bak — this test is diagnostic
-        pytest.skip("No .bak file for this tenant (expected for fresh tenants)")
+def test_config_write_is_atomic(persist_tenant):
+    """Config write is atomic: no .tmp leftovers, file stays valid JSON.
+
+    data-service persists configs via temp+rename (os.CreateTemp →
+    os.Rename), not a .bak backup. This verifies that mechanism:
+    - no ``*.json.tmp*`` files left behind
+    - a rewrite (register same tenant → 409 path) keeps the file valid
+    """
+    ddir = tenants_data_dir()
+    tenant_id = persist_tenant.id
+    config_path = ddir / f"{tenant_id}.json"
+
+    # 1. No temp leftovers from the original write
+    leftovers = list(ddir.glob(f"{tenant_id}.json.tmp*"))
+    assert not leftovers, f"Temp files left after persist: {leftovers}"
+
+    # 2. Force a re-write: duplicate registration triggers persist path
+    from tests.e2e.helpers import register_tenant
+
+    result = register_tenant(tenant_id, persist_tenant.config)
+    assert result["status"] == 409, (
+        f"Expected 409 duplicate, got {result['status']}: {result['text'][:100]}"
+    )
+
+    # 3. Still no temp leftovers, and config is valid JSON
+    leftovers = list(ddir.glob(f"{tenant_id}.json.tmp*"))
+    assert not leftovers, f"Temp files left after duplicate write: {leftovers}"
+
+    config = json.loads(config_path.read_text())
+    assert "data_source" in config, "Config corrupted after duplicate write"

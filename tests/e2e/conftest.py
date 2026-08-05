@@ -17,7 +17,6 @@ Usage:
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -68,6 +67,93 @@ def pytest_configure(config: pytest.Config) -> None:
     """Apply --no-traceback flag."""
     if config.getoption("--no-traceback"):
         config.option.tbstyle = "line"
+
+
+# ── TestTenant fixtures (расширяемая архитектура) ─────────────────────────
+
+
+@pytest.fixture
+def tenant() -> pytest.FixtureRequest:
+    """Factory fixture: create a registered TestTenant on demand.
+
+    Usage:
+        def test_x(tenant):
+            t = tenant("sqlite-testseed")          # scenario DB + register
+            t = tenant(config=my_cfg)               # custom config
+            t = tenant("auto-shop", rewrite=True)  # introspect + rewrite
+
+    Cleans up (delete tenant + rm DB) automatically after each test.
+    """
+    from tests.e2e.helpers import TestTenant, make_tenant
+
+    created: list[TestTenant] = []
+
+    def _factory(
+        scenario: str | None = None,
+        *,
+        tenant_id: str | None = None,
+        prefix: str = "e2e",
+        config: dict | None = None,
+        rewrite: bool = False,
+        filterable_rules: list[dict] | None = None,
+    ) -> TestTenant:
+        t = make_tenant(
+            scenario=scenario,
+            tenant_id=tenant_id,
+            prefix=prefix,
+            config=config,
+            rewrite=rewrite,
+            filterable_rules=filterable_rules,
+        )
+        t.register()
+        created.append(t)
+        return t
+
+    yield _factory
+
+    for t in created:
+        t.cleanup()
+
+
+@pytest.fixture
+def tenants() -> pytest.FixtureRequest:
+    """Factory fixture: create multiple TestTenants, cleaned up together.
+
+    Usage:
+        def test_isolation(tenants):
+            a = tenants("sqlite-testseed")
+            b = tenants("sqlite-testseed", prefix="other")
+            assert a.id != b.id
+    """
+    from tests.e2e.helpers import TestTenant, make_tenant
+
+    created: list[TestTenant] = []
+
+    def _factory(
+        scenario: str | None = None,
+        *,
+        tenant_id: str | None = None,
+        prefix: str = "e2e",
+        config: dict | None = None,
+        rewrite: bool = False,
+        filterable_rules: list[dict] | None = None,
+    ) -> TestTenant:
+        t = make_tenant(
+            scenario=scenario,
+            tenant_id=tenant_id,
+            prefix=prefix,
+            config=config,
+            rewrite=rewrite,
+            filterable_rules=filterable_rules,
+        )
+        t.register()
+        created.append(t)
+        return t
+
+    yield _factory
+
+    for t in created:
+        t.cleanup()
 
 
 # ── Project paths ──────────────────────────────────────────────────────────

@@ -62,7 +62,41 @@ ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
   docker-compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
 ```
 
-**105 тестов + 1 skip** (skip = `test_config_has_bak_file`, ожидаемо для свежих tenant'ов).
+**124 теста** (без скипов). Все зелёные — включая проверку атомарной записи конфига
+(`test_config_write_is_atomic` — temp+rename, без `.bak`).
+
+### 3.0 Расширяемая архитектура — `TestTenant` + fixture-фабрики
+
+Слои:
+
+```
+tests/e2e/
+├── helpers.py        # чистые блоки БЕЗ pytest: TestTenant, make_tenant, parse_sse_stream
+├── conftest.py       # pytest-мост: factory-fixtures tenant() / tenants()
+└── test_*.py         # тонкие тесты на фабриках
+```
+
+Добавить тест = 10 строк:
+
+```python
+def test_x(tenant):
+    t = tenant("clinic")            # seed + register + авто-cleanup
+    assert t.tools()                  # mcp-тулы готовы (db_*/filter_*)
+
+def test_isolation(tenants):
+    a = tenants("sqlite-testseed")
+    b = tenants("sqlite-testseed", prefix="other")
+```
+
+- `tenant("auto-shop")` — сценарии с `create_db.py` авто-перегенерируют БД
+  (`ensure_scenario_db`), не нужны ручные bash-команды
+- `make_tenant` сам решает: config.json+seed.json → `seed_database`;
+  только create_db.py → `create_scenario_db` + авто-rewrite
+- Сценарии без config.json (auto-shop/clinic) регистрируются через rewrite
+  (introspection генерит entities/endpoints/tools)
+- `TestTenant.tools()` читает `mcp_tools` из manifest
+
+Бенчи могут переиспользовать `helpers.py` напрямую (чистые функции без pytest).
 
 ### 3a. Search Strategies E2E — `tests/e2e/test_search_strategies.py`
 
@@ -128,7 +162,7 @@ Pipeline с `ScriptedLLMProvider` — **без живой модели** (мок
 | Файл | Что проверяет |
 |---|---|
 | `test_admin_lifecycle.py` | регистрация/листинг/удаление tenant'ов через admin API |
-| `test_config_persistence.py` | конфиг tenant'а пишется в `.data/tenants/{id}.json` |
+| `test_config_persistence.py` | конфиг tenant'а пишется в `.data/tenants/{id}.json`; атомарная запись (temp+rename, без `.bak`) |
 | `test_data_isolation.py` | tenant A не видит данные tenant B |
 | `test_mcp_dynamic.py` | v5 тулы (`db_map`/`db_search`/`db_get`/`filter_*`) через MCP |
 | `test_mcp_composite.py` | composite mode (`X-Tenant-ID: a,b` → префикс `{tenantID}__`) |

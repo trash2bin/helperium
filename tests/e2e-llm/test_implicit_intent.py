@@ -17,11 +17,12 @@ import uuid
 import pytest
 import requests
 
-from tests.e2e.helpers import admin_headers, api_service_url
-from tests.e2e.test_search_strategies import (
-    _create_db,
-    _parse_sse_stream,
-    _register_and_rewrite,
+from tests.e2e.helpers import (
+    admin_headers,
+    api_service_url,
+    create_scenario_db,
+    register_tenant_and_rewrite,
+    parse_sse_stream,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -33,9 +34,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def auto_shop_tenant():
     """Register auto-shop tenant (v5 filterable rules)."""
-    db_path = _create_db("auto-shop")
+    db_path = create_scenario_db("auto-shop")
     tid = f"e2e-autoshop-{uuid.uuid4().hex[:6]}"
-    result = _register_and_rewrite(tid, db_path)
+    result = register_tenant_and_rewrite(tid, db_path)
     yield tid, result
     try:
         requests.delete(
@@ -178,7 +179,7 @@ class TestLLMImplicitIntent:
         if resp.status_code != 200:
             return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}", "success": False}
 
-        return _parse_sse_stream(resp, idle_timeout=15)
+        return parse_sse_stream(resp, idle_timeout=15)
 
     def _check_result(self, result: dict):
         """Check that LLM produced useful output."""

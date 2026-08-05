@@ -7,7 +7,7 @@
 ## Запуск
 
 ```bash
-# Все e2e (без LLM) — 103 теста, ~2-3 мин
+# Все e2e (без LLM) — 124 теста, ~2-3 мин
 uv run pytest tests/e2e/ -v
 
 # Без traceback
@@ -36,7 +36,7 @@ tests/
 │   ├── test_data_isolation.py    # 9 тестов: tenant A ≠ B, ghost → 404, db_get denied
 │   ├── test_mcp_composite.py     # 5 тестов: composite mode, prefixed tools
 │   ├── test_mcp_dynamic.py       # 5 тестов: tools + cross-tenant isolation
-│   ├── test_mcp_validation.py    # 16 тестов: required-args, limits, tool composition
+│   ├── test_mcp_validation.py    # 28 тестов: required-args, limits, tool composition
 │   ├── test_scripted_llm.py      # 11 тестов: pipeline через ScriptedLLMProvider (мок LLM)
 │   ├── test_search_strategies.py # 31 тест: grep/filter/schema/manifest
 │   └── test_sse_session.py       # 4 теста: SSE open, JSON-RPC, tools/list
@@ -65,12 +65,13 @@ pytest баг с class-scoped yield fixtures в pytest 9.x).
 ```python
 from tests.e2e.helpers import seed_database
 
-# Из сценария
+# Из сценария (рекомендуется)
 seed_database(db_path, scenario="sqlite-testseed")
-
-# Из seed.json
-seed_database(db_path, seed_path=Path("specs/fixtures/seed.json"))
 ```
+
+Параметр `seed_path`/`seed.json` удалён — все e2e используют сценарии из
+`data-service/testdata/scenarios/` (legacy `seed_database(seed_path=...)`
+выпилен в 2026-08, gitignored `specs/fixtures/seed.json` больше не нужен).
 
 ### mcp_call()
 

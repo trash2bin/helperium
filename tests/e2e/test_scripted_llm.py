@@ -11,10 +11,8 @@ from __future__ import annotations
 import json
 import os
 import signal
-import socket
 import subprocess
 import sys
-import time
 import uuid
 from pathlib import Path
 
@@ -23,84 +21,14 @@ import requests
 
 from tests.e2e.helpers import (
     admin_headers,
-    data_service_url,
     project_root,
     mcp_call,
-    create_scenario_db,
+    ensure_scenario_db,
     register_tenant_and_rewrite,
+    parse_sse_stream,
+    find_free_port,
+    wait_for_health,
 )
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def _wait_for_health(url: str, timeout: int = 30) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            r = requests.get(f"{url}/health", timeout=3)
-            if r.status_code == 200:
-                return True
-        except (requests.ConnectionError, OSError):
-            pass
-        time.sleep(0.5)
-    return False
-
-
-def _parse_sse_stream(response, idle_timeout: int = 20) -> dict:
-    """Parse SSE stream into structured result."""
-    result = {
-        "events": [],
-        "tool_calls": [],
-        "tool_results": [],
-        "final_text": "",
-        "errors": [],
-        "status_messages": [],
-    }
-    try:
-        sock = getattr(
-            getattr(getattr(response.raw, "_fp", None), "fp", None), "_sock", None
-        )
-        if sock is not None:
-            sock.settimeout(idle_timeout)
-    except (AttributeError, OSError):
-        pass
-    try:
-        for line_bytes in response.iter_lines():
-            if not line_bytes:
-                continue
-            line = line_bytes.decode("utf-8", errors="replace")
-            if not line.startswith("data: "):
-                continue
-            try:
-                payload = json.loads(line[6:])
-            except json.JSONDecodeError:
-                continue
-            result["events"].append(payload)
-            ev_type = payload.get("type", "")
-            if ev_type == "status":
-                result["status_messages"].append(
-                    payload.get("message") or payload.get("phase", "")
-                )
-            elif ev_type == "tool_call":
-                result["tool_calls"].append(payload)
-            elif ev_type == "tool_result":
-                result["tool_results"].append(payload)
-            elif ev_type == "token":
-                result["final_text"] += payload.get("text", "")
-            elif ev_type == "error":
-                result["errors"].append(payload.get("text", str(payload)))
-            elif ev_type == "final":
-                result["final_text"] += payload.get("text", "")
-            elif ev_type == "done":
-                break
-    except (requests.ConnectionError, TimeoutError, OSError):
-        if not result["events"]:
-            result["errors"].append("SSE stream ended unexpectedly")
-    return result
 
 
 # ── Script helpers ──────────────────────────────────────────────────────
@@ -282,7 +210,7 @@ def scripted_server(tmp_path_factory):
     script_path = data_dir / "pipeline.jsonl"
     _write_good_script(script_path)
 
-    port = _find_free_port()
+    port = find_free_port()
     api_url = f"http://127.0.0.1:{port}"
 
     # Поднимаем api-service с scripted LLM и отдельной БД
@@ -313,7 +241,7 @@ def scripted_server(tmp_path_factory):
         stderr=subprocess.STDOUT,
     )
 
-    if not _wait_for_health(api_url, timeout=30):
+    if not wait_for_health(api_url, timeout=30):
         try:
             log_text = log_path.read_text(encoding="utf-8")[-3000:]
             pytest.fail(f"api-service failed to start.\n=== last 3KB log ===\n{log_text}")
@@ -332,7 +260,7 @@ def scripted_server(tmp_path_factory):
         pass
 
     # ── Регистрация tenant ──
-    db_path = create_scenario_db("auto-shop")
+    db_path = ensure_scenario_db("auto-shop")
     tid = f"e2e-{uuid.uuid4().hex[:8]}"
     register_tenant_and_rewrite(tid, db_path)
 
@@ -487,9 +415,9 @@ class TestScriptedPipeline:
         # db_map возвращает список сущностей; per-entity grep_* не должны существовать
         import json as _json
         try:
-            tools_json = _json.loads(result.result) if isinstance(result.result, str) else result.result
+            _json.loads(result.result) if isinstance(result.result, str) else result.result
         except Exception:
-            tools_json = {}
+            pass
         # Проверяем что вызов несуществующего grep-тула вернёт ошибку
         bad = mcp_call("grep_auto_parts", arguments={"pattern": "x"}, tenant_ids=tid, timeout=15)
         assert not bad.success, "grep_auto_parts не должен существовать в v5!"
@@ -581,4 +509,4 @@ class TestScriptedPipeline:
                 "events": [], "tool_calls": [], "tool_results": [],
                 "final_text": "", "errors": [f"HTTP {resp.status_code}"], "status_messages": [],
             }
-        return _parse_sse_stream(resp, idle_timeout=20)
+        return parse_sse_stream(resp, idle_timeout=20)

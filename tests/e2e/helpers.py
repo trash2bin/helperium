@@ -4,7 +4,7 @@ Provides:
 - admin_headers(): auth headers for admin API
 - register_tenant(): register a tenant via admin API
 - delete_tenant(): remove a tenant
-- seed_database(): generate SQLite DB from seed.json
+- seed_database(): generate SQLite DB from a scenario (agent-db seedgen)
 - mcp_call(): make MCP JSON-RPC tool call over SSE
 - save_and_check_persistence(): verify config written to .data/tenants/
 - run(): subprocess helper
@@ -99,8 +99,7 @@ def admin_headers() -> dict[str, str]:
 
 def seed_database(
     db_path: Path,
-    scenario: str | None = None,
-    seed_path: Path | None = None,
+    scenario: str,
     project_root_dir: Path | None = None,
 ) -> dict:
     """Generate a SQLite database from a scenario using Python seedgen.
@@ -108,8 +107,6 @@ def seed_database(
     Args:
         db_path: Absolute path to the target .db file
         scenario: Scenario name (e.g. 'sqlite-testseed', 'shop').
-                  Overrides seed_path if given.
-        seed_path: Path to seed.json (deprecated — use scenario instead)
         project_root_dir: Project root (default: auto-detect)
 
     Returns:
@@ -121,124 +118,19 @@ def seed_database(
     """
     root = project_root_dir or project_root()
 
-    if scenario:
-        sc_dir = root / "agent-db" / "scenarios" / scenario
-        if not (sc_dir / "config.json").exists():
-            # Fallback: still in data-service/testdata (before full migration)
-            sc_dir = root / "data-service" / "testdata" / "scenarios" / scenario
-        if not (sc_dir / "config.json").exists():
-            raise FileNotFoundError(
-                f"Scenario not found: {scenario} (tried {sc_dir / 'config.json'})"
-            )
+    sc_dir = root / "agent-db" / "scenarios" / scenario
+    if not (sc_dir / "config.json").exists():
+        # Scenarios live in data-service/testdata (no agent-db/scenarios dir yet)
+        sc_dir = root / "data-service" / "testdata" / "scenarios" / scenario
+    if not (sc_dir / "config.json").exists():
+        raise FileNotFoundError(
+            f"Scenario not found: {scenario} (tried {sc_dir / 'config.json'})"
+        )
 
-        from agent_db.seedgen import materialize
+    from agent_db.seedgen import materialize
 
-        cfg = materialize(str(sc_dir), force=True, output_dsn=str(db_path))
-        return cfg
-
-    # Legacy path: explicit seed_path
-    if seed_path is None:
-        seed_path = root / "specs" / "fixtures" / "seed.json"
-
-    if not seed_path.exists():
-        raise FileNotFoundError(f"Seed file not found: {seed_path}")
-
-    # Use the old seed-cli path but with Python seedgen
-    import json as _json
-    from agent_db.seedgen import apply_with_ddl, generate_ddl
-    from agent_db.seedgen.models import (
-        Entity,
-        EntityField,
-        FieldType,
-        DataSourceConfig,
-        ScenarioConfig,
-        Relation,
-    )
-    import sqlite3
-
-    with open(seed_path) as f:
-        raw_seed = _json.load(f)
-
-    from helperium_sdk.seed_models import StorageSeed
-
-    seed = StorageSeed.model_validate(raw_seed)
-
-    # Build minimal entities from seed data structure
-    entities = [
-        Entity(
-            name="group",
-            table="groups",
-            id_column="id",
-            fields=[
-                EntityField(name=n, column=n, type=FieldType.STRING)
-                for n in ["id", "name", "speciality"]
-            ],
-        ),
-        Entity(
-            name="student",
-            table="students",
-            id_column="id",
-            fields=[
-                EntityField(
-                    name=n,
-                    column=n,
-                    type=FieldType.INT if n == "course" else FieldType.STRING,
-                )
-                for n in ["id", "name", "group_id", "course"]
-            ],
-        ),
-        Entity(
-            name="teacher",
-            table="teachers",
-            id_column="id",
-            fields=[
-                EntityField(name=n, column=n, type=FieldType.STRING)
-                for n in ["id", "name", "disciplines_json"]
-            ],
-        ),
-        Entity(
-            name="discipline",
-            table="disciplines",
-            id_column="id",
-            fields=[
-                EntityField(name=n, column=n, type=FieldType.STRING)
-                for n in ["id", "name", "description"]
-            ],
-        ),
-        Entity(
-            name="schedule",
-            table="schedule",
-            id_column="id",
-            fields=[
-                EntityField(name=n, column=n, type=FieldType.STRING)
-                for n in ["id", "day", "group_id", "lessons_json"]
-            ],
-        ),
-        Entity(
-            name="grade",
-            table="grades",
-            id_column="id",
-            fields=[
-                EntityField(name=n, column=n, type=FieldType.STRING)
-                for n in ["id", "student_id", "discipline_id", "grade", "date"]
-            ],
-        ),
-    ]
-
-    ddl = generate_ddl(entities, "sqlite")
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    try:
-        apply_with_ddl(conn, ddl=ddl, seed=seed, driver="sqlite")
-        conn.commit()
-    finally:
-        conn.close()
-
-    return ScenarioConfig(
-        entities=entities,
-        data_source=DataSourceConfig(driver="sqlite", dsn=str(db_path)),
-    )
+    cfg = materialize(str(sc_dir), force=True, output_dsn=str(db_path))
+    return cfg
 
 
 def cleanup_db(*db_paths: Path) -> None:
@@ -251,6 +143,111 @@ def cleanup_db(*db_paths: Path) -> None:
             pass
 
 
+def temp_db_path(prefix: str, project_root_dir: Path | None = None) -> Path:
+    """Return a unique temp DB path under ``.data/`` (not yet created).
+
+    Parent dir is created; caller should seed/register and cleanup with
+    :func:`cleanup_db`.
+    """
+    root = project_root_dir or project_root()
+    suffix = uuid.uuid4().hex[:8]
+    p = root / ".data" / f"e2e_{prefix}_{suffix}.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+# ── SSE parsing (shared by e2e + e2e-llm + bench) ────────────────────────
+
+
+def parse_sse_stream(response, idle_timeout: int = 20) -> dict:
+    """Parse SSE stream from api-service into structured result.
+
+    Stream format: ``data: {"type": "<event>", ...}`` (no ``event:`` lines —
+    the event type lives inside the JSON payload).
+
+    Returns a dict with:
+      - events: all raw payloads (in order)
+      - tool_calls / tool_results / status_messages: filtered event lists
+      - final_text: concatenated ``token`` + ``final`` text
+      - errors: error messages
+    """
+    result = {
+        "events": [],
+        "tool_calls": [],
+        "tool_results": [],
+        "final_text": "",
+        "errors": [],
+        "status_messages": [],
+    }
+    try:
+        sock = getattr(
+            getattr(getattr(response.raw, "_fp", None), "fp", None), "_sock", None
+        )
+        if sock is not None:
+            sock.settimeout(idle_timeout)
+    except (AttributeError, OSError):
+        pass
+    try:
+        for line_bytes in response.iter_lines():
+            if not line_bytes:
+                continue
+            line = line_bytes.decode("utf-8", errors="replace")
+            if not line.startswith("data: "):
+                continue
+            try:
+                payload = json.loads(line[6:])
+            except json.JSONDecodeError:
+                continue
+            result["events"].append(payload)
+            ev_type = payload.get("type", "")
+            if ev_type == "status":
+                result["status_messages"].append(
+                    payload.get("message") or payload.get("phase", "")
+                )
+            elif ev_type == "tool_call":
+                result["tool_calls"].append(payload)
+            elif ev_type == "tool_result":
+                result["tool_results"].append(payload)
+            elif ev_type == "token":
+                result["final_text"] += payload.get("text", "")
+            elif ev_type == "error":
+                result["errors"].append(payload.get("text", str(payload)))
+            elif ev_type == "final":
+                result["final_text"] += payload.get("text", "")
+            elif ev_type == "done":
+                break
+    except (requests.ConnectionError, TimeoutError, OSError):
+        if not result["events"]:
+            result["errors"].append("SSE stream ended unexpectedly")
+    return result
+
+
+# ── Subprocess helpers (scripted api-service, bench) ───────────────────────
+
+
+def find_free_port() -> int:
+    """Return a free localhost TCP port."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def wait_for_health(url: str, timeout: int = 30) -> bool:
+    """Poll ``{url}/health`` until 200 or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"{url}/health", timeout=3)
+            if r.status_code == 200:
+                return True
+        except (requests.ConnectionError, OSError):
+            pass
+        time.sleep(0.5)
+    return False
+
+
 # ── Scenario config loading ────────────────────────────────────────────────
 
 
@@ -260,6 +257,162 @@ def load_scenario_config(scenario: str) -> dict:
     if not config_path.exists():
         raise FileNotFoundError(f"Config not found: {config_path}")
     return json.loads(config_path.read_text())
+
+
+# ── TestTenant — единый примитив тестового тенанта ─────────────────────────
+
+
+class TestTenant:
+    """A registered test tenant with its lifecycle.
+
+    Centralises the pattern every e2e test repeats by hand:
+    seed DB → build config → register → cleanup. Tests receive a fully
+    usable tenant (``tenant.id``, ``tenant.db_path``, ``tenant.config``,
+    ``tenant.tools``) and just call ``tenant.cleanup()`` — or use the
+    ``tenant`` pytest fixture which does it automatically.
+    """
+
+    # pytest: не собирать как тестовый класс (префикс Test)
+    __test__ = False
+
+    def __init__(
+        self,
+        tenant_id: str,
+        db_path: Path,
+        config: dict | None = None,
+        filterable_rules: list[dict] | None = None,
+    ):
+        self.id = tenant_id
+        self.db_path = db_path
+        self.config = config or {}
+        self.filterable_rules = filterable_rules or []
+        self._registered = False
+        self._rewrite = False
+        self._tools: list[dict] = []
+
+    # ── registration ──────────────────────────────────────────────────────
+
+    def register(self, rewrite: bool | None = None) -> "TestTenant":
+        """Register the tenant (rewrite via introspection when needed).
+
+        ``rewrite`` overrides; if None, uses the mode chosen by
+        :func:`make_tenant` (auto-rewrite for scenarios without config.json).
+        """
+        if self._registered:
+            return self
+        delete_tenant(self.id)  # cleanup stale from previous runs
+        if rewrite is None:
+            rewrite = self._rewrite
+        if rewrite:
+            register_tenant_and_rewrite(
+                self.id, self.db_path, self.filterable_rules
+            )
+        else:
+            cfg = self.config or {
+                "data_source": {
+                    "driver": "sqlite",
+                    "dsn": str(self.db_path),
+                    "read_only": True,
+                }
+            }
+            result = register_tenant(self.id, cfg)
+            if result["status"] not in (200, 201):
+                raise RuntimeError(
+                    f"Register {self.id}: status={result['status']} "
+                    f"body={result['text'][:200]}"
+                )
+        self._registered = True
+        return self
+
+    def cleanup(self) -> None:
+        """Delete tenant and remove its temp DB (idempotent)."""
+        if self._registered:
+            try:
+                delete_tenant(self.id)
+            except Exception:
+                pass
+            self._registered = False
+        cleanup_db(self.db_path)
+
+    # ── helpers for tests ─────────────────────────────────────────────────
+
+    def mcp_call(
+        self,
+        tool_name: str,
+        arguments: dict | None = None,
+        timeout: float = 30,
+    ) -> MCPCallResult:
+        """Call an MCP tool as this tenant."""
+        return mcp_call(tool_name, arguments, tenant_ids=self.id, timeout=timeout)
+
+    def tools(self, refresh: bool = False) -> list[dict]:
+        """List MCP tools for this tenant (cached)."""
+        if refresh or not self._tools:
+            resp = requests.get(
+                f"{mcp_gateway_url()}/mcp/manifest",
+                headers={"X-Tenant-ID": self.id},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                # manifest — это конфиг: тулы в mcp_tools (или tools для legacy)
+                self._tools = data.get("mcp_tools", data.get("tools", []))
+        return self._tools
+
+    def __repr__(self) -> str:
+        return f"<TestTenant {self.id} db={self.db_path.name}>"
+
+
+def make_tenant(
+    scenario: str | None = None,
+    *,
+    tenant_id: str | None = None,
+    prefix: str = "e2e",
+    config: dict | None = None,
+    rewrite: bool = False,
+    filterable_rules: list[dict] | None = None,
+    db_path: Path | None = None,
+) -> TestTenant:
+    """Create a ready-to-register TestTenant.
+
+    If ``scenario`` is given, seeds a fresh DB from it:
+      - scenarios with config.json+seed.json (sqlite-testseed) → seed_database
+      - scenarios with only create_db.py (auto-shop, clinic) → create_scenario_db
+    Scenarios without config.json register via rewrite (introspection
+    generates the config from the DB — entities/endpoints/tools appear).
+
+    ``rewrite=True`` registers via ``POST /admin/config/rewrite``.
+    """
+    tid = tenant_id or e2e_tenant_id(prefix)
+    sc_dir = scenarios_dir() / scenario if scenario else None
+    has_config = bool(sc_dir and (sc_dir / "config.json").exists())
+    has_script = bool(sc_dir and (sc_dir / "create_db.py").exists())
+
+    if db_path is None:
+        if scenario:
+            if has_config and not has_script:
+                db_path = temp_db_path(prefix)
+                seed_database(db_path, scenario=scenario)
+            else:
+                # create_db.py scenario (auto-shop, clinic, shop) — авто-регенерация
+                db_path = ensure_scenario_db(scenario)
+        else:
+            db_path = Path(config["data_source"]["dsn"]) if config else temp_db_path(prefix)
+
+    if config is None and scenario and has_config:
+        config = load_scenario_config(scenario)
+        config = {
+            **config,
+            "data_source": {**config.get("data_source", {}), "dsn": str(db_path)},
+        }
+    # Сценарии без config.json (auto-shop, clinic) не могут зарегистрироваться
+    # с фиксированным конфигом — entities/endpoints пустые. Для них обязателен
+    # rewrite (introspection).
+    if scenario and not has_config and not rewrite:
+        rewrite = True
+    t = TestTenant(tid, db_path, config=config, filterable_rules=filterable_rules)
+    t._rewrite = rewrite
+    return t
 
 
 # ── Tenant registration ────────────────────────────────────────────────────
@@ -472,7 +625,6 @@ def save_and_check_persistence(
 
     Returns the loaded config dict.
     """
-    root = project_root_dir or project_root()
     ddir = data_dir or tenants_data_dir()
     config_path = ddir / f"{tenant_id}.json"
     if not config_path.exists():
@@ -540,6 +692,68 @@ def create_scenario_db(scenario: str, project_root_dir: Path | None = None) -> P
         raise RuntimeError(f"DB not created: {db_path}")
 
     return db_path
+
+
+def ensure_scenario_db(
+    scenario: str, project_root_dir: Path | None = None
+) -> Path:
+    """Return a valid scenario DB, regenerating it if stale/corrupt.
+
+    Scenario DBs (auto-shop, clinic, shop) are gitignored and can be left
+    empty/corrupt by docker runs or crashed generators. This checks the DB
+    has real tables and regenerates it (via create_db.py) otherwise.
+
+    Returns the path to the valid DB.
+    """
+    root = project_root_dir or project_root()
+    sc_dir = root / "data-service" / "testdata" / "scenarios" / scenario
+    db_path = sc_dir / "data.db"
+
+    def _valid(p: Path) -> bool:
+        if not p.exists() or p.stat().st_size < 4096:
+            return False
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=2)
+            try:
+                tables = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            finally:
+                conn.close()
+            return len(tables) > 0
+        except Exception:
+            return False
+
+    if _valid(db_path):
+        return db_path
+
+    if (sc_dir / "create_db.py").exists():
+        # regenerate from the scenario's own generator
+        return create_scenario_db(scenario, project_root_dir=root)
+
+    # Fallback: shop — генератор в testdata/scripts/create_shop_db.py (как CI-workflow)
+    generator = root / "data-service" / "testdata" / "scripts" / "create_shop_db.py"
+    if generator.exists():
+        env = {**os.environ, "SHOP_DB": str(db_path)}
+        result = subprocess.run(
+            ["python3", str(generator)],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"create_shop_db.py failed:\n{result.stderr}")
+        if not _valid(db_path):
+            raise RuntimeError(f"create_shop_db.py produced invalid DB: {db_path}")
+        return db_path
+
+    raise RuntimeError(
+        f"Scenario {scenario} DB is invalid and no create_db.py to regenerate"
+    )
 
 
 def register_tenant_and_rewrite(

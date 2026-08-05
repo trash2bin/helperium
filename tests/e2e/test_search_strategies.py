@@ -14,7 +14,6 @@ LLM-чат с неявным интентом — в tests/e2e-llm/ (требу�
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 import requests
@@ -22,10 +21,7 @@ import requests
 from tests.e2e.helpers import (
     admin_headers,
     data_service_url,
-    api_service_url,
-    project_root,
-    scenarios_dir,
-    create_scenario_db,
+    ensure_scenario_db,
     register_tenant_and_rewrite,
     e2e_tenant_id,
     delete_tenant,
@@ -54,13 +50,13 @@ E2E_FILTERABLE_RULES = [
 @pytest.fixture(scope="module")
 def auto_shop_db():
     """Create auto-shop DB once per module."""
-    yield create_scenario_db("auto-shop")
+    yield ensure_scenario_db("auto-shop")
 
 
 @pytest.fixture(scope="module")
 def clinic_db():
     """Create clinic DB once per module."""
-    yield create_scenario_db("clinic")
+    yield ensure_scenario_db("clinic")
 
 
 @pytest.fixture(scope="module")
@@ -82,79 +78,6 @@ def clinic_tenant(clinic_db):
 
 
 # ── Shared SSE parser ──────────────────────────────────────────────────────
-
-
-def _parse_sse_stream(response, idle_timeout: int = 12) -> dict:
-    """Parse SSE stream from api-service into structured result."""
-    import socket as _socket
-
-    result = {
-        "events": [],
-        "tool_calls": [],
-        "tool_results": [],
-        "final_text": "",
-        "errors": [],
-        "status_messages": [],
-    }
-
-    try:
-        sock = getattr(
-            getattr(getattr(response.raw, "_fp", None), "fp", None), "_sock", None
-        )
-        if sock is not None:
-            sock.settimeout(idle_timeout)
-    except (AttributeError, OSError):
-        pass
-
-    try:
-        for line_bytes in response.iter_lines():
-            if not line_bytes:
-                continue
-            line = line_bytes.decode("utf-8", errors="replace")
-            if not line.startswith("data: "):
-                continue
-
-            payload_str = line[6:]
-            try:
-                payload = json.loads(payload_str)
-            except json.JSONDecodeError:
-                continue
-
-            result["events"].append(payload)
-            ev_type = payload.get("type", "")
-
-            if ev_type == "status":
-                result["status_messages"].append(
-                    payload.get("message") or payload.get("phase", "")
-                )
-            elif ev_type == "tool_call":
-                result["tool_calls"].append(payload)
-            elif ev_type == "tool_result":
-                result["tool_results"].append(payload)
-            elif ev_type == "token":
-                result["final_text"] += payload.get("text", "")
-            elif ev_type == "error":
-                result["errors"].append(payload.get("text", str(payload)))
-            elif ev_type == "final":
-                result["final_text"] += payload.get("text", "")
-            elif ev_type == "done":
-                break
-    except (
-        requests.ConnectionError,
-        TimeoutError,
-        _socket.timeout,
-        _socket.error,
-        OSError,
-    ):
-        if not result["events"]:
-            result["errors"].append("SSE stream ended unexpectedly")
-
-    return result
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# TESTS: Auto-shop — grep + filter + schema стратегии
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestAutoShopStrategies:
@@ -396,10 +319,10 @@ class TestAutoShopStrategies:
 
         # Должны быть пер-энтити filter_{entity} тулы
         assert "filter_auto_parts" in tool_names, (
-            f"filter_auto_parts not found"
+            "filter_auto_parts not found"
         )
-        assert "filter_brands" in tool_names, f"filter_brands not found"
-        assert "filter_orders" in tool_names, f"filter_orders not found"
+        assert "filter_brands" in tool_names, "filter_brands not found"
+        assert "filter_orders" in tool_names, "filter_orders not found"
 
         # НЕ должно быть per-entity grep_*/schema_*/get_*/count_*/distinct_* тулов (v5)
         bad_old = [
@@ -642,9 +565,9 @@ class TestClinicStrategies:
             assert db_tool in tool_names, f"{db_tool} not found: {tool_names}"
 
         # Пер-энтити filter_{entity}
-        assert "filter_doctors" in tool_names, f"filter_doctors not found"
-        assert "filter_appointments" in tool_names, f"filter_appointments not found"
-        assert "filter_patients" in tool_names, f"filter_patients not found"
+        assert "filter_doctors" in tool_names, "filter_doctors not found"
+        assert "filter_appointments" in tool_names, "filter_appointments not found"
+        assert "filter_patients" in tool_names, "filter_patients not found"
 
         # НЕ должно быть per-entity grep_*/schema_*/search_* тулов
         bad = [

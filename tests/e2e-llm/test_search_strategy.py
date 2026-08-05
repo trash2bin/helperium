@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
 
 import pytest
@@ -150,9 +149,9 @@ class TestSearchMCP:
         is_error = result.result.get("isError", False)
         content = result.result.get("content", [])
         err_text = "".join(c.get("text", "") for c in content if "text" in c)
-        assert is_error or not result.success, f"Expected 400 for empty grep"
+        assert is_error or not result.success, "Expected 400 for empty grep"
         assert "pattern" in err_text.lower() or "required" in err_text.lower()
-        print(f"\n  ✅ Empty grep → isError with field hint")
+        print("\n  ✅ Empty grep → isError with field hint")
 
     def test_filter_catalog_product(self):
         """filter_catalog_product(category='Brake') → данные."""
@@ -225,7 +224,6 @@ class TestSearchLLMDiagnostic:
                    "final_text": "", "errors": [], "status_messages": [],
                    "session_id": session_id}
 
-        import socket as _socket
         try:
             sock = getattr(getattr(getattr(r.raw, "_fp", None), "fp", None), "_sock", None)
             if sock is not None:
@@ -294,7 +292,7 @@ class TestSearchLLMDiagnostic:
         print(f"  📊 schema_* used: {used_schema}")
 
         if result["tool_calls"]:
-            print(f"\n  ┌─ Tool calls ──────────────────────────────")
+            print("\n  ┌─ Tool calls ──────────────────────────────")
             for i, tc in enumerate(result["tool_calls"]):
                 name = tc.get("name", "?")
                 args = tc.get("arguments", {})
@@ -304,7 +302,7 @@ class TestSearchLLMDiagnostic:
             print(f"  └{'─'*45}")
 
         if result["tool_results"]:
-            print(f"\n  ┌─ Tool results ────────────────────────────")
+            print("\n  ┌─ Tool results ────────────────────────────")
             error_count = 0
             for i, tr in enumerate(result["tool_results"][:10]):
                 is_err = tr.get("isError", False)
@@ -326,12 +324,12 @@ class TestSearchLLMDiagnostic:
 
         if result["final_text"]:
             snippet = result["final_text"][:500]
-            print(f"\n  ┌─ LLM Response ───────────────────────────")
+            print("\n  ┌─ LLM Response ───────────────────────────")
             for line in snippet.split("\n"):
                 print(f"  │ {line}")
             print(f"  └{'─'*45}")
         else:
-            print(f"\n  ⚠️  No response text")
+            print("\n  ⚠️  No response text")
 
         return result
 

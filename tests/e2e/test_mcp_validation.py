@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import uuid
 from pathlib import Path
@@ -164,7 +163,7 @@ def tenant_context():
     """
     db_path = _create_db("auto-shop")
     tid = _tenant_id("val")
-    rewrite_result = _register_and_rewrite(tid, db_path)
+    _register_and_rewrite(tid, db_path)
 
     # Даём mcp-gateway время подхватить новый tenant
     import time
@@ -307,7 +306,7 @@ class TestDBSearchWithRequired:
         content = result.result.get("content", [])
         text = "".join(c.get("text", "") for c in content if "text" in c)
 
-        assert len(text) > 0, f"Empty response for valid db_search call"
+        assert len(text) > 0, "Empty response for valid db_search call"
         assert not result.result.get("isError", False), (
             f"Valid db_search returned isError: {text[:200]}"
         )
@@ -388,7 +387,7 @@ class TestAllToolsHaveRequiredGuard:
             for p in params:
                 if not p.get("name"):
                     issues.append(f"{name}: param without name: {p}")
-        assert not issues, f"Параметры без имени:\n" + "\n".join(issues)
+        assert not issues, "Параметры без имени:\n" + "\n".join(issues)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -406,7 +405,7 @@ class TestLimitHasMaxBound:
         params = t.get("params", [])
         has_limit = any(p["name"] == "limit" for p in params)
         assert has_limit, f"db_search должен иметь limit: {params}"
-        print(f"\n  ✅ limit parameter found in db_search")
+        print("\n  ✅ limit parameter found in db_search")
 
     def test_limit_gt_100_returns_is_error(self, tenant_context):
         """db_search limit > 100 → isError."""
@@ -471,7 +470,7 @@ class TestToolComposition:
         assert len(bad) == 0, (
             f"Legacy-тулы удалены, но найдены: {bad}"
         )
-        print(f"  ✅ Нет legacy-тулов")
+        print("  ✅ Нет legacy-тулов")
 
     def test_tools_have_display_name(self, tenant_context):
         """db_* и filter_* тулы должны иметь display_name."""
@@ -484,7 +483,7 @@ class TestToolComposition:
                     f"{name} должен иметь display_name\n"
                     f"  Полный tool: {json.dumps(t, indent=2)[:500]}"
                 )
-        print(f"  ✅ Все db_* и filter_* тулы имеют display_name")
+        print("  ✅ Все db_* и filter_* тулы имеют display_name")
 
     def test_entity_param_is_plain_string(self, tenant_context):
         """entity — обычный string, не enum (на большой БД enum расдул бы манифест)."""
@@ -552,14 +551,14 @@ class TestDBDescribe:
             timeout=30,
         )
         assert result.result.get("isError", False), f"Expected isError for unknown entity: {result}"
-        print(f"\n  ✅ db_describe(ghost_entity) → isError")
+        print("\n  ✅ db_describe(ghost_entity) → isError")
 
     def test_describe_requires_entity_param(self, tenant_context):
         """db_describe({}) → isError (entity is required)."""
         tid, _ = tenant_context
         result = mcp_call("db_describe", {}, tenant_ids=tid, timeout=30)
         assert result.result.get("isError", False), f"Expected isError for empty call: {result}"
-        print(f"\n  ✅ db_describe({{}}) → isError")
+        print("\n  ✅ db_describe({}) → isError")
 
 
 class TestDBRelated:
@@ -597,7 +596,7 @@ class TestDBRelated:
         content = result.result.get("content", [])
         text = "".join(c.get("text", "") for c in content if "text" in c)
         assert "unknown relation" in text.lower() or "invalid_relation" in text.lower(), f"Expected relation error: {text[:300]}"
-        print(f"\n  ✅ db_related(unknown relation) → isError as expected")
+        print("\n  ✅ db_related(unknown relation) → isError as expected")
 
     def test_related_unknown_entity_is_error(self, tenant_context):
         """db_related(unknown_entity) → isError."""
@@ -609,14 +608,14 @@ class TestDBRelated:
             timeout=30,
         )
         assert result.result.get("isError", False), f"Expected isError for unknown entity: {result}"
-        print(f"\n  ✅ db_related(ghost_entity) → isError")
+        print("\n  ✅ db_related(ghost_entity) → isError")
 
     def test_related_requires_entity_and_id(self, tenant_context):
         """db_related({}) → isError (entity and id required)."""
         tid, _ = tenant_context
         result = mcp_call("db_related", {}, tenant_ids=tid, timeout=30)
         assert result.result.get("isError", False), f"Expected isError for empty call: {result}"
-        print(f"\n  ✅ db_related({{}}) → isError")
+        print("\n  ✅ db_related({}) → isError")
 
 
 class TestFilterEntity:
@@ -655,7 +654,7 @@ class TestFilterEntity:
         assert not result.result.get("isError", False), f"isError: {result}"
         content = result.result.get("content", [])
         text = "".join(c.get("text", "") for c in content if "text" in c)
-        assert len(text) > 0, f"Empty response for price__gt filter"
+        assert len(text) > 0, "Empty response for price__gt filter"
         print(f"\n  ✅ filter_auto_parts(price__gt=10000) → {len(text)} chars")
 
     def test_filter_auto_parts_by_stock_gt(self, tenant_context):
@@ -676,7 +675,7 @@ class TestFilterEntity:
         else:
             content = result.result.get("content", [])
             text = "".join(c.get("text", "") for c in content if "text" in c)
-            assert len(text) > 0, f"Empty response for stock__gt filter"
+            assert len(text) > 0, "Empty response for stock__gt filter"
             print(f"\n  ✅ filter_auto_parts(stock__gt=0) → {len(text)} chars")
 
     def test_filter_tool_exposes_field_params(self, tenant_context):
@@ -703,11 +702,11 @@ class TestFilterEntity:
         )
         # Должен вернуть isError (валидация схемы тула)
         assert result.result.get("isError", False), f"Expected isError for unknown field: {result}"
-        print(f"\n  ✅ filter_auto_parts(unknown_field) → isError")
+        print("\n  ✅ filter_auto_parts(unknown_field) → isError")
 
     def test_no_db_filter_tool(self, tenant_context):
         """db_filter НЕ существует (только filter_{entity})."""
         tid, tools = tenant_context
         tool_names = [t["name"] for t in tools]
         assert "db_filter" not in tool_names, f"db_filter не должен существовать: {tool_names}"
-        print(f"\n  ✅ db_filter отсутствует (только filter_{{entity}})")
+        print("\n  ✅ db_filter отсутствует (только filter_{entity})")

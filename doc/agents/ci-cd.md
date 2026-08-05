@@ -120,7 +120,7 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 
 1. [ ] `make ci` — зелёный
 2. [ ] Pre-commit hooks — все Passed
-3. [ ] e2e без LLM зелёные — `./scripts/dev.sh e2e` (105 passed + 1 skip) или Docker: `docker-compose --profile test up e2e`
+3. [ ] e2e без LLM зелёные — `./scripts/dev.sh e2e` (124 passed) или Docker: `docker-compose --profile test up e2e`
 4. [ ] Mutation score не упал (опционально)
 ---
 **Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

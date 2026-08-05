@@ -18,7 +18,6 @@ Does NOT require LLM. Requires data-service (:8084) + mcp-gateway (:8083) runnin
 from __future__ import annotations
 
 import re
-import uuid
 from pathlib import Path
 
 from tests.e2e.helpers import (
@@ -28,6 +27,8 @@ from tests.e2e.helpers import (
     project_root,
     register_tenant,
     seed_database,
+    temp_db_path,
+    ensure_scenario_db,
 )
 
 
@@ -43,14 +44,12 @@ def setup_module(module):
     """Setup: seed two databases, register two tenants with different schemas."""
     global _DB_A, _DB_B
     root = project_root()
-    suffix = uuid.uuid4().hex[:8]
-    _DB_A = root / f".data/e2e_mcp_uni_{suffix}.db"
-    _DB_B = root / f".data/e2e_mcp_shop_{suffix}.db"
-    _DB_A.parent.mkdir(parents=True, exist_ok=True)
+    _DB_A = temp_db_path("mcp_uni")
+    _DB_B = temp_db_path("mcp_shop")
 
     # Seed university DB
     seed_database(_DB_A, scenario="sqlite-testseed", project_root_dir=root)
-    shop_db = root / "data-service" / "testdata" / "scenarios" / "shop" / "data.db"
+    shop_db = ensure_scenario_db("shop")
 
     # Register tenants — different schemas
     for tid, db_path in [(_TENANT_A, _DB_A), (_TENANT_B, shop_db)]:

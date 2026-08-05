@@ -1,7 +1,9 @@
 """Shared fixtures for LLM e2e tests (tests/e2e-llm).
 
-Загружает .env (ADMIN_TOKEN, LLM-ключи) и переиспользует общие фикстуры
-из tests/e2e/conftest.py через pytest_plugins.
+Грузит .env вручную (вместо pytest_plugins — он ломает совместный запуск
+``pytest tests/e2e tests/e2e-llm``: плагин tests.e2e.conftest регистрируется
+дважды). Сами тесты импортируют helpers-функции напрямую из
+``tests.e2e.helpers`` — pytest-фикстуры из tests/e2e/conftest им не нужны.
 """
 
 from __future__ import annotations
@@ -21,6 +23,3 @@ if _env.exists():
         val = val.strip().strip("\"'")
         if key and key not in os.environ:
             os.environ[key] = val
-
-# Переиспользуем fixtures/helpers из tests/e2e (project_root, health-check и т.д.)
-pytest_plugins = ["tests.e2e.conftest"]

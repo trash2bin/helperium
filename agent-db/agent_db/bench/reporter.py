@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import BenchReport, ToolCallEvent, TurnResult
+from .models import BenchReport, TurnResult
 
 
 def _pretty_duration(ms: float) -> str:

@@ -15,24 +15,14 @@ Some tests require MISTRAL_API_KEY in .env or --llm-key CLI arg.
 
 from __future__ import annotations
 
-import json
 import uuid
 
-import pytest
 import requests
 
 from tests.e2e.helpers import (
     admin_headers,
     api_service_url,
-    data_service_url,
-    delete_tenant,
-    mcp_gateway_url,
-    project_root,
-    register_tenant,
-    seed_database,
-    cleanup_db,
 )
-from pathlib import Path
 
 
 # ── Module-level state ─────────────────────────────────────────────────────

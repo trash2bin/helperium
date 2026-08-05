@@ -13,14 +13,13 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 
 import pytest
 import requests
 
-from tests.e2e.helpers import admin_headers, api_service_url
+from tests.e2e.helpers import admin_headers, api_service_url, parse_sse_stream
 
 pytestmark = [
     pytest.mark.skipif(
@@ -38,7 +37,6 @@ _SESSION_ID = f"e2e-llm-{uuid.uuid4().hex[:8]}"
 
 def setup_module(module):
     """Create a dedicated agent for LLM tests."""
-    import json as _j
     import os as _os
 
     # Use existing agents if available
@@ -121,85 +119,6 @@ def teardown_module(module):
 
 
 # ── SSE Chat helper ────────────────────────────────────────────────────────
-
-
-def _parse_sse_stream(response, idle_timeout: int = 12) -> dict:
-    """Parse SSE stream from api-service into structured result.
-
-    Args:
-        response: requests.Response with stream=True
-        idle_timeout: Seconds of silence before we stop (LLM may hang on final conversion)
-
-    Returns dict with: events[], tool_calls[], final_text, errors[], status_msgs[]
-    """
-    import socket as _socket
-
-    result = {
-        "events": [],
-        "tool_calls": [],
-        "tool_results": [],
-        "final_text": "",
-        "errors": [],
-        "status_messages": [],
-    }
-
-    # Set idle timeout on the underlying socket
-    try:
-        # urllib3 chain: HTTPResponse._fp (http.client) .fp (SocketIO) ._sock
-        sock = getattr(
-            getattr(getattr(response.raw, "_fp", None), "fp", None), "_sock", None
-        )  # type: ignore[union-attr]
-        if sock is not None:
-            sock.settimeout(idle_timeout)
-    except (AttributeError, OSError):
-        pass
-
-    try:
-        for line_bytes in response.iter_lines():
-            if not line_bytes:
-                continue
-            line = line_bytes.decode("utf-8", errors="replace")
-            if not line.startswith("data: "):
-                continue
-
-            payload_str = line[6:]
-            try:
-                payload = json.loads(payload_str)
-            except json.JSONDecodeError:
-                continue
-
-            result["events"].append(payload)
-            ev_type = payload.get("type", "")
-
-            if ev_type == "status":
-                result["status_messages"].append(
-                    payload.get("message") or payload.get("phase", "")
-                )
-            elif ev_type == "tool_call":
-                result["tool_calls"].append(payload)
-            elif ev_type == "tool_result":
-                result["tool_results"].append(payload)
-            elif ev_type == "token":
-                result["final_text"] += payload.get("text", "")
-            elif ev_type == "error":
-                result["errors"].append(payload.get("text", str(payload)))
-            elif ev_type == "final":
-                result["final_text"] += payload.get("text", "")
-            elif ev_type == "done":
-                break
-    except (
-        requests.ConnectionError,
-        TimeoutError,
-        _socket.timeout,
-        _socket.error,
-        OSError,
-    ) as e:
-        # Socket timeout or connection closed = LLM finished or hung
-        # If we got any events, treat it as success
-        if not result["events"]:
-            result["errors"].append(str(e))
-
-    return result
 
 
 # ── Tests ──────────────────────────────────────────────────────────────────
@@ -302,7 +221,7 @@ class TestLLMChat:
         )
         assert r.status_code == 200, f"Chat: {r.status_code}"
 
-        parsed = _parse_sse_stream(r)
+        parsed = parse_sse_stream(r)
 
         # Must have received events
         assert len(parsed["events"]) > 0, "No SSE events"

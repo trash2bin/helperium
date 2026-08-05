@@ -324,17 +324,17 @@ def setup_module() -> None:
     print(f"     DB: {db_path} ({db_path.stat().st_size / 1024:.0f} KB)")
 
     # Step 2: Register tenant + rewrite
-    print(f"  🏗️  Registering tenant + config rewrite...")
+    print("  🏗️  Registering tenant + config rewrite...")
     _tid = _register_tenant(db_path)
     print(f"     Tenant ID: {_tid}")
 
     # Step 3: Create agent
     print(f"  🤖 Creating agent '{_agent_name}'...")
     _ensure_agent(_agent_name, _tid)
-    print(f"     Agent ready")
+    print("     Agent ready")
 
     # Step 4: Verify MCP
-    print(f"  🔌 Verifying MCP tools...")
+    print("  🔌 Verifying MCP tools...")
     names = _check_mcp_accessible(_tid)
     grep_count = len([n for n in names if n.startswith("grep_")])
     filter_count = len([n for n in names if n.startswith("filter_")])
@@ -351,7 +351,7 @@ def setup_module() -> None:
     # Check API is healthy
     resp = requests.get(f"{api_service_url()}/health", timeout=5)
     assert resp.status_code == 200, f"api-service health: {resp.status_code}"
-    print(f"     api-service healthy ✅")
+    print("     api-service healthy ✅")
 
 
 def teardown_module() -> None:
@@ -465,7 +465,6 @@ class TestLLME2E:
     @staticmethod
     def _log_result(result: dict) -> None:
         """Full verbose log: all events, reasoning, iterations, backlog reference."""
-        import urllib.request
 
         sid = result.get("session_id", "?")
         tc = result.get("tool_calls", [])
@@ -484,7 +483,7 @@ class TestLLME2E:
 
         # Status messages (empty rounds, retries)
         if status:
-            print(f"  \n  📋 Status flow:")
+            print("  \n  📋 Status flow:")
             for s in status:
                 print(f"     {s}")
 
@@ -510,7 +509,7 @@ class TestLLME2E:
 
         # Reasoning (model thinking)
         if reasoning:
-            print(f"  \n  🧠 Reasoning:")
+            print("  \n  🧠 Reasoning:")
             for line in reasoning.strip().split("\n"):
                 if line.strip():
                     print(f"     {line[:200]}")

@@ -106,7 +106,7 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 
 | Каталог | Что это | CI |
 |---|---|---|
-| `tests/e2e/` | **105 тестов + 1 skip**, без LLM, локальные SQLite | ✅ job `test-e2e` |
+| `tests/e2e/` | **124 теста**, без LLM, локальные SQLite | ✅ job `test-e2e` |
 | `tests/e2e-llm/` | реальный LLM (opt-in, скипается без ключа) | ❌ вне CI |
 | `tests/external/` | внешние БД (PostgreSQL и т.п.) — только документация | ❌ |
 
@@ -117,6 +117,7 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 ## 🧬 Verification
 
 ```
+Last verified: 2026-08-05 (HEAD `a54e816`; e2e: расширяемая архитектура TestTenant + factory-fixtures (tenant()/tenants()), автогенерация scenario БД (ensure_scenario_db — create_db.py/create_shop_db.py fallback), дедупликация SSE-парсера/темп-хелперов, фикс сломанного e2e-llm collect и совместного прогона; docker e2e **124 passed 0 skip**; скип-тест .bak заменён на test_config_write_is_atomic (temp+rename); доки синхронизированы (testing-guide, ci-cd, agent-db/README, tests/e2e/README, AGENTS.md))
 Last verified: 2026-08-04 (HEAD `618b192`; e2e ревизия: Docker-стек починен — 5 Dockerfile-фиксов (mcp-gateway go build ./cmd/, admin-dashboard go 1.26 + context корень, api-service python 3.13 + UV_PYTHON_PREFERENCE=only-system, data-service alpine вместо distroless, demo/web helperium-sdk COPY), compose e2e profile test, нативный + Docker прогон **105 passed + 1 skip**; ScriptedLLMProvider расширен 3→11 тестов (v5 db_*/filter_*, guard, record mode); структура e2e: tests/e2e (CI) + tests/e2e-llm (opt-in) + tests/external (docs); CI job test-e2e с docker layer cache (build-push-action type=gha); dev.sh e2e команда; доки синхронизированы (testing-guide, ci-cd, agent-db/README, tests/e2e-llm/README, tests/external/README))
 Last verified: 2026-08-03 (HEAD `c763ff0`; вычистка мёртвого кода в data-service: удалены BuildFind/BuildList, ReadOnlyDB, FormatFields, expression-конструкторы Eq..And, EntityResolver.ColumnFor/PublicFor/AllEntities, coerceValue, pagination readPagination/appendPagination/countQuery, SetAuditRecorder, SwaggerHandlerWithTenant + привязанные тесты/бенчмарки; deadcode 0, все тесты и -race зелёные)
 Обновлено 2026-08-03 (LLM-first tool surface, Фаза 2/2.5, НЕ закоммичено): 5 консолидированных `db_*` (map/describe/search/get/related через `/q/*`) + N пер-энтити `filter_{entity}`; get_*/count_*/distinct_* — opt-in `LLMToolPolicy`; db_map fallback при nil-схеме; EmptyHint → `db_describe(entity=...)` (был мёртвый `schema_{entity}`); синхронизированы все KB-доки (data-service/README, configgen/README, search-strategies, mcp-session-lifecycle, anti-abuse, config-migration, specs/README, specs/config.schema.md 2→4, корневые README, AGENTS.md 2a); смоук живой моделью Ollama: `filter_products(price__gt=100)` без перебора id; тесты: data-service -race 11 пакетов ok, E2E 25/25)
