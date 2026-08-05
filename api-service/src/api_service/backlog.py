@@ -137,12 +137,15 @@ class ModelBacklog:
         empty_rounds: int = 0,
         iterations: int = 0,
         final_length_chars: int = 0,
+        final_text: str = "",
         error_message: str = "",
     ) -> None:
         """Record the final aggregate for one turn.
 
         This is the KEY record for benchmark analysis — one line per turn
-        with ALL metrics summed up.
+        with ALL metrics summed up.  ``final_text`` (optional) is stored when
+        the caller provides it (bench runner), enabling retro-analysis without
+        SSE.
         """
         self._write(
             session_id,
@@ -164,6 +167,7 @@ class ModelBacklog:
                 "empty_rounds": empty_rounds,
                 "iterations": iterations,
                 "final_length_chars": final_length_chars,
+                "final_text": final_text[:2000],  # cap: enough for eval, no bloat
                 "error_message": error_message,
             },
         )

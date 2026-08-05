@@ -63,6 +63,20 @@ DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py runserver 0.0.0.0:8000
 > `pyproject.toml` в этом каталоге — helperium-owned дополнение (не из исходника),
 > изолированный uv-каталог, НЕ workspace helperium, не влияет на его uv.lock.
 
+### 4. Детерминированная база (для бенча) — helperium-owned
+
+Foreign `seed_data.py` использует `random`/`Faker` **без фиксации seed** — каждый
+запуск даёт разные данные → ground truth бенча ломается. Решение — helperium-owned
+скрипт (не из исходника), фиксирующий seed:
+
+```bash
+cd demo/autoparts-store
+DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell < seed_fixture.py
+# → детерминированная база (seed=42): 30 брендов, 117 категорий, 407 товаров, 6 заказов
+```
+
+> `seed_fixture.py` — helperium-owned (как `db/schema.sql`), не редактируется при re-copy.
+
 ## 🧪 Данные (после seed_massive)
 
 - 61 бренд (Bosch, TRW, NGK, Brembo, KYB…)

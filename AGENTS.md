@@ -93,7 +93,7 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 | **admin-dashboard** (Go) | :8085 | Admin Web UI (Alpine.js) | [README](admin-dashboard/README.md) |
 | **rag-service** (Python) | :8082 | ChromaDB, опционально | [README](rag/README.md) |
 | **demo/web** (Python) | :8080 | Dev-only reverse proxy | [README](demo/web/README.md) |
-| **agent-db** (Python) | — | Seedgen, materialize, e2e | [README](agent-db/README.md) |
+| **agent-db** (Python) | — | Seedgen, materialize, e2e, core benchmark | [README](agent-db/README.md) |
 | **helperium-go** (Go) | — | Config types, validation | [configgen/README.md](data-service/internal/configgen/README.md) |
 
 **Web Service Multi-Tenancy:** [web-service.md](doc/agents/web-service.md)
@@ -117,6 +117,7 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 ## 🧬 Verification
 
 ```
+Last verified: 2026-08-05 (core benchmark: детерминированный бенч без LLM-судьи в agent-db/agent_db/bench/ — runner (SSE→/api/chat/{agent}), backlog_parser (turn_end→BacklogData), evaluator (tool/retrieval/answer/hallucination/refusal/entity/recovery, empty_hint, синонимы статусов, пробелы в числах, проценты), report+cli (python -m agent_db.bench run <cases>), 49 кейсов autoparts, 26 pytest; проверен end-to-end: scripted-смоук + polza/deepseek-v4-flash (3 кейса PASS, $0.18/кейс); отдельный bench-лог (bench-backlog/, final_text в turn_end); order_number фильтруется (DefaultFilterableFieldRules); детерминированная база seed=42 (seed_fixture.py, helperium-owned); независимое ревью кейсов (oem/supplier пустые — переписаны, quantity дрейф, дубли убраны); rate-limit 30/мин — delay 2.5s)
 Last verified: 2026-08-05 (HEAD `a54e816`; e2e: расширяемая архитектура TestTenant + factory-fixtures (tenant()/tenants()), автогенерация scenario БД (ensure_scenario_db — create_db.py/create_shop_db.py fallback), дедупликация SSE-парсера/темп-хелперов, фикс сломанного e2e-llm collect и совместного прогона; docker e2e **124 passed 0 skip**; скип-тест .bak заменён на test_config_write_is_atomic (temp+rename); доки синхронизированы (testing-guide, ci-cd, agent-db/README, tests/e2e/README, AGENTS.md))
 Last verified: 2026-08-04 (HEAD `618b192`; e2e ревизия: Docker-стек починен — 5 Dockerfile-фиксов (mcp-gateway go build ./cmd/, admin-dashboard go 1.26 + context корень, api-service python 3.13 + UV_PYTHON_PREFERENCE=only-system, data-service alpine вместо distroless, demo/web helperium-sdk COPY), compose e2e profile test, нативный + Docker прогон **105 passed + 1 skip**; ScriptedLLMProvider расширен 3→11 тестов (v5 db_*/filter_*, guard, record mode); структура e2e: tests/e2e (CI) + tests/e2e-llm (opt-in) + tests/external (docs); CI job test-e2e с docker layer cache (build-push-action type=gha); dev.sh e2e команда; доки синхронизированы (testing-guide, ci-cd, agent-db/README, tests/e2e-llm/README, tests/external/README))
 Last verified: 2026-08-03 (HEAD `c763ff0`; вычистка мёртвого кода в data-service: удалены BuildFind/BuildList, ReadOnlyDB, FormatFields, expression-конструкторы Eq..And, EntityResolver.ColumnFor/PublicFor/AllEntities, coerceValue, pagination readPagination/appendPagination/countQuery, SetAuditRecorder, SwaggerHandlerWithTenant + привязанные тесты/бенчмарки; deadcode 0, все тесты и -race зелёные)

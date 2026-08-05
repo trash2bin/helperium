@@ -30,6 +30,7 @@ fixtures.json
 TECHNICAL_DOC.md
 .agent_memory.json
 backlog/
+bench-backlog/
 .coverage
 .data/
 .ruff_cache/

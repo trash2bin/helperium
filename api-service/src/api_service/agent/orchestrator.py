@@ -255,6 +255,7 @@ class LLMAgent:
                     final_length_chars=len(ctx.final_content)
                     if ctx.final_content
                     else 0,
+                    final_text=ctx.final_content or "",
                     error_message=_error_msg[:500] if _error_msg else "",
                 )
 

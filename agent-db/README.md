@@ -16,14 +16,23 @@ agent-db/
 │   │   ├── ddl.py              # Config entities → CREATE TABLE (driver-aware)
 │   │   ├── apply.py            # DDL + seed data insertion to SQLite/Postgres
 │   │   └── materialize.py      # scenario dir (config.json + seed.json) → populated .db
-│   └── bench/                   # Benchmark suite (сбор метрик, отчёты)
+│   └── bench/                   # Core Benchmark (детерминированный, без LLM-судьи)
 │       ├── __init__.py
-│       ├── models.py           # BenchConfig, BenchReport
-│       ├── parser.py           # Парсинг бэклогов
-│       ├── reader.py           # Чтение логов/бэклогов
-│       ├── runner.py           # Запуск бенчмарков
-│       └── reporter.py         # Генерация отчётов
+│       ├── cases/autoparts.json # 48 кейсов (lookup/filter/count/absence/status)
+│       ├── models.py           # TestCase, RunResult, BacklogData, EvalResult, BenchmarkReport
+│       ├── runner.py           # POST /api/chat/{agent} (SSE) + backlog + отдельный bench-лог
+│       ├── backlog_parser.py   # backlog JSONL → BacklogData (turn_end)
+│       ├── evaluator.py        # детерминированные проверки (retrieval/answer/halluc/refusal/entity/recovery)
+│       ├── report.py           # агрегация метрик + печать + JSON
+│       ├── cli.py              # typer CLI (python -m agent_db.bench run <cases>)
+│       ├── __main__.py         # точка входа
+│       ├── parser.py           # (legacy) backlog → TurnResult
+│       ├── reader.py           # чтение backlog-файлов
+│       ├── reporter.py         # (legacy) формат отчётов
+│       ├── smoke_scripted.py   # dev-смоук без LLM (ScriptedLLMProvider)
+│       └── README.md           # документация бенча
 ├── pyproject.toml
+├── tests/test_bench_core.py   # 26 pytest (детерминированные, без LLM/сети)
 └── README.md
 ```
 

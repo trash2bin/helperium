@@ -14,6 +14,7 @@ func DefaultFilterableFieldRules() []FieldRule {
 				"name", "article", "oem_number", "description",
 				"price", "old_price", "category", "brand", "supplier",
 				"label", "quantity", "status", "type", "active",
+				"order_number", // P4: пользователи фильтруют заказы по номеру
 			},
 			Reason: "Common filterable business fields",
 		},

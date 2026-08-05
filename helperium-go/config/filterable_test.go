@@ -200,6 +200,20 @@ func TestIsFilterableField_WithRules(t *testing.T) {
 	}
 }
 
+func TestIsFilterableField_DefaultRulesOrderNumber(t *testing.T) {
+	// order_number должен фильтроваться дефолтными правилами (P4).
+	rules := DefaultFilterableFieldRules()
+	field := EntityField{Name: "order_number", Column: "order_number", Type: FieldTypeString}
+	if !IsFilterableField(field, rules) {
+		t.Error("order_number should be filterable with default rules (P4)")
+	}
+	// invoice_number/другие *_number пока НЕ в allow — проверяем что не сломалось
+	field2 := EntityField{Name: "tracking_number", Column: "tracking_number", Type: FieldTypeString}
+	if IsFilterableField(field2, rules) {
+		t.Error("tracking_number should NOT be filterable by default (not in allow list)")
+	}
+}
+
 func TestIsFilterableField_ImplicitTakesPriority(t *testing.T) {
 	// Implicit rules should work even with empty/restrictive rules.
 	field := EntityField{Name: "brand_id", Type: FieldTypeInt}
