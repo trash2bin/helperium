@@ -1,16 +1,14 @@
-# E2E тесты
+# E2E тесты (tests/e2e/) — CI-ready
 
 Модульные e2e тесты для всех сервисов helperium. Используют Python seedgen
-для генерации тестовых БД — **не требуют Go компилятора или data-service seed-cli**.
+для генерации тестовых SQLite БД — **не требуют Go компилятора, внешних БД
+или реального LLM**. Готовы к запуску в CI.
 
 ## Запуск
 
 ```bash
-# Все e2e без LLM — 48 тестов, ~5 сек
+# Все e2e (без LLM) — 103 теста, ~2-3 мин
 uv run pytest tests/e2e/ -v
-
-# С LLM (требует MISTRAL_API_KEY из .env)
-uv run pytest tests/e2e/ -v --llm-key
 
 # Без traceback
 uv run pytest tests/e2e/ --no-traceback
@@ -19,23 +17,39 @@ uv run pytest tests/e2e/ --no-traceback
 Требуют все 6 сервисов (data-service :8084, mcp-gateway :8083, api-service :8081,
 demo-web :8080, rag :8082, admin-dashboard :8085).
 
+**Как поднять сервисы локально:**
+```bash
+./scripts/dev.sh start
+```
+
 ## Структура
 
 ```
-tests/e2e/
-├── conftest.py                # .env load, health-check, CLI args
-├── helpers.py                 # seed_database, register_tenant, mcp_call, admin_headers
+tests/
+├── e2e/                          # ← этот каталог: CI-ready, без LLM
+│   ├── conftest.py               # .env load, health-check, CLI args
+│   ├── helpers.py                # seed_database, register_tenant, mcp_call, admin_headers
+│   ├── README.md
+│   ├── test_admin_lifecycle.py   # 11 тестов: CRUD, stats, duplicate 409, delete, persistence
+│   ├── test_agents.py            # 10 тестов: agents CRUD, providers, widget
+│   ├── test_config_persistence.py# 4 теста: .data/tenants/{id}.json
+│   ├── test_data_isolation.py    # 9 тестов: tenant A ≠ B, ghost → 404, db_get denied
+│   ├── test_mcp_composite.py     # 5 тестов: composite mode, prefixed tools
+│   ├── test_mcp_dynamic.py       # 5 тестов: tools + cross-tenant isolation
+│   ├── test_mcp_validation.py    # 16 тестов: required-args, limits, tool composition
+│   ├── test_scripted_llm.py      # 11 тестов: pipeline через ScriptedLLMProvider (мок LLM)
+│   ├── test_search_strategies.py # 31 тест: grep/filter/schema/manifest
+│   └── test_sse_session.py       # 4 теста: SSE open, JSON-RPC, tools/list
 │
-├── test_data_isolation.py     # 6 тестов: tenant A ≠ B, ghost → 404
-├── test_admin_lifecycle.py    # 11 тестов: CRUD, stats, duplicate 409, delete, persistence
-├── test_config_persistence.py # 4 теста: .data/tenants/{id}.json
-├── test_mcp_dynamic.py        # 5 тестов: tools + cross-tenant isolation
-├── test_mcp_composite.py      # 5 тестов: composite mode, prefixed tools
-├── test_sse_session.py        # 4 теста: SSE open, JSON-RPC, tools/list
-├── test_agents.py             # 10 тестов: agents CRUD, providers, widget
+├── e2e-llm/                      # требует реальный LLM API ключ (не в CI)
+│   ├── conftest.py
+│   ├── test_implicit_intent.py   # LLM сам вызывает db_*/filter_* по интенту
+│   ├── test_llm_chat.py          # SSE chat, agent chat, tools + response
+│   ├── test_search_e2e.py        # discovery → search → filter → multiturn
+│   └── test_search_strategy.py   # grep/filter/schema через MCP
 │
-└── llm/
-    └── test_llm_chat.py       # 4 теста: SSE chat, agent chat, tools + response
+└── external/                     # требует внешние БД (документация)
+    └── README.md
 ```
 
 ## Как это работает
@@ -58,41 +72,31 @@ seed_database(db_path, scenario="sqlite-testseed")
 seed_database(db_path, seed_path=Path("specs/fixtures/seed.json"))
 ```
 
-Защита от PostgreSQL env vars: `seed_database()` всегда создаёт SQLite БД,
-даже если в .env установлены `DB_DRIVER=postgres` и `DATABASE_URL`.
-
 ### mcp_call()
 
-Полный SSE+JSON-RPC протокол для вызова MCP инструментов:
+Полный SSE+JSON-RPC протокол для вызова MCP инструментов (v5 surface):
 
 ```python
 from tests.e2e.helpers import mcp_call
 
-result = mcp_call("list_student", tenant_ids="e2e-uni")
+result = mcp_call("db_search", {"entity": "auto_parts", "pattern": "масло"}, tenant_ids="e2e-uni")
 assert result.success
 ```
 
-Открывает SSE сессию, получает endpoint URL, POST-запрос JSON-RPC.
-Поддерживает multi-tenant (composite) через `tenant_ids="a,b"`.
+Поддерживает multi-tenant (composite) через `tenant_ids="a,b"` → префикс `{tenantID}__`.
 
-### Проверка persistence
+### Тулсёрфейс v5 (для справки)
 
-```python
-from tests.e2e.helpers import save_and_check_persistence
+| Strategy | MCP tool | Параметры |
+|---|---|---|
+| map | `db_map` | — |
+| describe | `db_describe` | entity |
+| search | `db_search` | entity, pattern (required), limit, fields |
+| get | `db_get` | entity, id |
+| related | `db_related` | entity, id, relation |
+| filter | `filter_{entity}` | поля по IsFilterableField + `__gt/__lt/__gte/__lte/__like/__in/__neq` |
 
-config = save_and_check_persistence("my-tenant")
-assert config["version"] == 1
-```
-
-## LLM тесты (tests/e2e/llm/)
-
-Требуют API ключ Mistral из `.env` (`MISTRAL_API_KEY`).
-
-Используют socket timeout в SSE парсере (12 сек тишины = конец стрима),
-чтобы не висеть вечно при недоступности LLM API.
-
-User-Agent везде: `Mozilla/5.0 (compatible; HelperiumE2E/1.0)`
-— anti-abuse guard блокирует `python-requests` по умолчанию.
+`db_filter` НЕ существует; `grep_*/schema_*` per-entity НЕ эмитятся (консолидированы).
 
 ## Написание нового теста
 
@@ -100,3 +104,35 @@ User-Agent везде: `Mozilla/5.0 (compatible; HelperiumE2E/1.0)`
 2. Определить `setup_module`/`teardown_module` для seed + cleanup
 3. Использовать `seed_database()` + `register_tenant()` + `delete_tenant()` из helpers
 4. Проверить: `uv run pytest tests/e2e/test_my_feature.py -v`
+
+## CI
+
+В `.github/workflows/ci.yml` — job `test-e2e`: собирает образы сервисов
+(docker compose build), поднимает стек через `docker compose --profile test`
+и гоняет `tests/e2e/` в контейнере e2e. LLM-тесты в отдельном каталоге
+`tests/e2e-llm/` и в CI не участвуют.
+
+## Запуск в Docker (профиль test)
+
+```bash
+# Собрать образы сервисов
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
+  docker compose --profile test build data-service mcp-gateway api admin-dashboard web
+
+# Поднять стек и прогнать e2e в контейнере
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
+  docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
+
+# Остановить и удалить volumes
+ADMIN_TOKEN=ci-secret-token docker compose --profile test down -v
+```
+
+Как это устроено:
+- Сервис `e2e` (profile `test`) использует образ `helperium-api` и монтирует
+  проект в `/workspace` (rw) — чтобы тесты видели и создавали БД по тем же
+  путям, что и data-service.
+- В контейнер e2e доливается `pytest` + `agent-db` (seedgen) в `.venv`.
+- Сервисы доступны по внутренним именам compose-сети
+  (`data-service:8084`, `mcp-gateway:8083`, `api:8081`, `web:8080`).
+- `ADMIN_TOKEN`/`VIEWER_TOKEN` обязательны и пробрасываются во все сервисы
+  (data-service, api, admin-dashboard).

@@ -111,8 +111,12 @@ def test_list_tenants_includes_new():
 
 def test_tenant_accessible_via_api():
     """New tenant serves data via X-Tenant-ID."""
+    # v5: /students is the grep strategy endpoint and requires a pattern.
+    # Use the seeded isolation marker as the pattern and full format so the
+    # marker is present in the response body.
     r = requests.get(
         f"{data_service_url()}/students",
+        params={"pattern": "Lifecycle-Marker", "format": "full"},
         headers={"X-Tenant-ID": _TENANT_ID},
         timeout=10,
     )

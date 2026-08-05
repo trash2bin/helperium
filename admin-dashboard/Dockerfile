@@ -1,10 +1,15 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
+COPY helperium-go/go.mod helperium-go/go.sum ./helperium-go/
+RUN cd helperium-go && go mod download
+
+COPY admin-dashboard/go.mod admin-dashboard/go.sum ./admin-dashboard/
+WORKDIR /app/admin-dashboard
 RUN go mod download
 
-COPY . .
+COPY helperium-go/ /app/helperium-go/
+COPY admin-dashboard/ ./
 RUN CGO_ENABLED=0 go build -o /admin-dashboard ./cmd/server/
 
 FROM alpine:3.20

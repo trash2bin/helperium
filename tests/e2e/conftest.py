@@ -161,8 +161,8 @@ def _check_services():
     import requests
 
     services = {
-        "data-service": ("http://127.0.0.1:8084/health", False),
-        "mcp-gateway": ("http://127.0.0.1:8083/health", False),
+        "data-service": (os.environ.get("DATA_SERVICE_URL", "http://127.0.0.1:8084") + "/health", False),
+        "mcp-gateway": (os.environ.get("MCP_SERVICE_URL", "http://127.0.0.1:8083") + "/health", False),
     }
     fatal = []
     for name, (url, optional) in services.items():

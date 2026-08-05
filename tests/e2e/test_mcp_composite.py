@@ -2,27 +2,27 @@
 
 Tests that:
 1. Composite SSE session with multiple tenants opens correctly
-2. Tenant-prefixed tools are available (tenant-a__list_student)
+2. Tenant-prefixed tools are available (tenant-a__db_map)
 3. Each prefixed tool routes to the correct tenant
 4. Non-prefixed tools still work for single-tenant sessions
 5. Mixed tenant tools are all accessible in one session
+6. Cross-tenant access via a prefixed tool is blocked (isolation)
+
+Tool surface (v5, see .data/e2e_revision_ground_truth.md):
+- 5 consolidated db_* tools (db_map, db_describe, db_search, db_get, db_related)
+- In composite mode (X-Tenant-ID: a,b) tools are prefixed "{tenantID}__"
+  (mcp-gateway/internal/tools/tools.go:148)
 
 Does NOT require LLM. Requires data-service (:8084) + mcp-gateway (:8083) running.
 """
 
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 
-import pytest
-import requests
-
 from tests.e2e.helpers import (
-    admin_headers,
     cleanup_db,
-    data_service_url,
     delete_tenant,
     mcp_call,
     project_root,
@@ -55,6 +55,8 @@ def setup_module(module):
     for tid in _TENANTS:
         delete_tenant(tid)
 
+    # NOTE: mcp_tools key is IGNORED by data-service — manifest is regenerated
+    # from endpoints (v5: 5 db_* consolidated + per-entity filter_{entity}).
     uni_config = {
         "data_source": {"driver": "sqlite", "dsn": str(_DB_A), "read_only": True},
         "entities": [
@@ -104,20 +106,44 @@ def teardown_module(module):
         cleanup_db(_DB_A)
 
 
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+
+def _result_text(result) -> str:
+    """Extract concatenated text from an MCPCallResult's content blocks."""
+    content = result.result.get("content", [])
+    return "".join(c.get("text", "") for c in content if "text" in c)
+
+
+def _is_error(result) -> bool:
+    """True if the tool returned a business-level isError (e.g. unknown entity)."""
+    return bool(result.result.get("isError", False))
+
+
 # ── Tests ──────────────────────────────────────────────────────────────────
 
 
-def test_composite_uni_legacy_tool():
-    """Single-tenant session: list_student works (legacy mode, no prefix)."""
-    result = mcp_call("list_student", tenant_ids="e2e-comp-uni")
-    assert result, f"Composite uni list_student failed: {result.error}"
+def test_composite_uni_db_map():
+    """Single-tenant session: db_map works (no prefix)."""
+    result = mcp_call("db_map", {}, tenant_ids="e2e-comp-uni")
+    assert result, f"Composite uni db_map failed: {result.error}"
     assert result.result is not None, "Result should have content"
+    assert not _is_error(result), f"db_map returned isError: {_result_text(result)[:200]}"
+    text = _result_text(result)
+    assert "student" in text.lower(), f"db_map should mention student: {text[:200]}"
 
 
-def test_composite_shop_legacy_tool():
-    """Single-tenant session: list_product works for shop."""
-    result = mcp_call("list_product", tenant_ids="e2e-comp-shop")
-    assert result, f"Composite shop list_product failed: {result.error}"
+def test_composite_shop_db_search():
+    """Single-tenant session: db_search works for shop."""
+    result = mcp_call(
+        "db_search",
+        {"entity": "product", "pattern": "MacBook"},
+        tenant_ids="e2e-comp-shop",
+    )
+    assert result, f"Composite shop db_search failed: {result.error}"
+    assert not _is_error(result), f"db_search returned isError: {_result_text(result)[:200]}"
+    text = _result_text(result)
+    assert "MacBook" in text, f"db_search should find MacBook: {text[:300]}"
 
 
 def test_composite_both_tenants_in_one_session():
@@ -126,38 +152,53 @@ def test_composite_both_tenants_in_one_session():
     When X-Tenant-ID has comma-separated values, mcp-gateway
     creates a composite server with tenant-prefixed tools.
     """
-    # Call e2e-comp-uni__list_student (prefixed)
+    # Call e2e-comp-uni__db_map (prefixed)
     result = mcp_call(
-        "e2e-comp-uni__list_student",
+        "e2e-comp-uni__db_map",
+        {},
         tenant_ids="e2e-comp-uni,e2e-comp-shop",
     )
     assert result, (
-        f"Composite prefixed tool 'e2e-comp-uni__list_student' failed: {result.error}"
+        f"Composite prefixed tool 'e2e-comp-uni__db_map' failed: {result.error}"
     )
     assert result.result is not None, "Result should have content"
+    assert not _is_error(result), f"prefixed db_map returned isError: {_result_text(result)[:200]}"
+    text = _result_text(result)
+    assert "student" in text.lower(), f"prefixed db_map should mention student: {text[:200]}"
 
 
 def test_composite_prefixed_shop_tool():
-    """Composite session: e2e-comp-shop__list_product works."""
+    """Composite session: e2e-comp-shop__db_search works."""
     result = mcp_call(
-        "e2e-comp-shop__list_product",
+        "e2e-comp-shop__db_search",
+        {"entity": "product", "pattern": "iPhone"},
         tenant_ids="e2e-comp-uni,e2e-comp-shop",
     )
     assert result, (
-        f"Composite prefixed tool 'e2e-comp-shop__list_product' failed: {result.error}"
+        f"Composite prefixed tool 'e2e-comp-shop__db_search' failed: {result.error}"
     )
+    assert not _is_error(result), f"prefixed db_search returned isError: {_result_text(result)[:200]}"
+    text = _result_text(result)
+    assert "iPhone" in text, f"prefixed db_search should find iPhone: {text[:300]}"
 
 
 def test_composite_cross_tenant_blocked():
-    """Composite: shop tenant cannot access uni's tool via composite.
+    """Composite: shop tenant cannot access uni's student entity.
 
-    Even in composite mode, e2e-comp-shop__list_student should NOT exist
-    because shop tenant doesn't have students.
+    Even in composite mode, e2e-comp-shop__db_search(entity=student) should
+    return a business-level isError (unknown_entity) because the shop tenant
+    has no student entity.
     """
     result = mcp_call(
-        "e2e-comp-shop__list_student",
+        "e2e-comp-shop__db_search",
+        {"entity": "student", "pattern": "x"},
         tenant_ids="e2e-comp-uni,e2e-comp-shop",
     )
-    assert not result, (
-        "ISOLATION BREACH: shop tenant's prefixed tool list_student should NOT exist"
+    assert result.success, "prefixed tool should be reachable at JSON-RPC level"
+    assert _is_error(result), (
+        f"ISOLATION BREACH: shop tenant's prefixed db_search found students! {_result_text(result)[:200]}"
+    )
+    text = _result_text(result)
+    assert "unknown_entity" in text or "404" in text, (
+        f"Expected unknown_entity error, got: {text[:200]}"
     )

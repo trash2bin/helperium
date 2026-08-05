@@ -17,18 +17,18 @@ COPY data-service/ /build/data-service/
 RUN cd /build/data-service && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /data-service ./cmd/server/
 
 # ── Runtime ──
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates curl
+RUN adduser -D -u 1001 app
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /data-service /data-service
 
 EXPOSE 8084
 
-USER nonroot:nonroot
+USER app
 
-# distroless не содержит curl/wget — HEALTHCHECK невозможен без утилит.
-# Для запуска вне docker-compose используйте docker-compose healthcheck (через curl с host).
-# data-service имеет /health endpoint на порту 8084.
-HEALTHCHECK NONE
+HEALTHCHECK CMD curl -f http://localhost:8084/health || exit 1
 
 ENTRYPOINT ["/data-service"]

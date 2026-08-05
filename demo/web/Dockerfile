@@ -1,7 +1,6 @@
 # ============================================================
 # WEB server: static files + reverse-proxy to API
 # Core deps only — the lightest image (<100MB)
-# No SDK dependency — pure proxy layer
 # ============================================================
 FROM python:3.12-slim AS builder
 
@@ -9,6 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
+COPY helperium-sdk helperium-sdk/
 COPY demo/web/pyproject.toml demo/web/
 RUN uv sync --frozen --no-install-project --package demo-web --no-dev
 COPY demo/web/ demo/web/
@@ -26,6 +26,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --from=builder --chown=app:app /app/helperium-sdk /app/helperium-sdk
 COPY --from=builder --chown=app:app /app/demo/web /app/demo/web
 COPY --from=builder --chown=app:app /app/demo/settings.py /app/demo/settings.py
 COPY --from=builder --chown=app:app /app/demo/__init__.py /app/demo/__init__.py
@@ -44,4 +45,4 @@ WORKDIR /app
 
 EXPOSE 8080
 
-CMD ["python", "-m", "demo.web.server"]
+CMD ["/app/.venv/bin/python", "-m", "demo.web.server"]

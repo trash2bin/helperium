@@ -8,6 +8,7 @@
 #   ./scripts/dev.sh status        — healthcheck каждого
 #   ./scripts/dev.sh logs [svc]    — tail -f лога (svc: rag|mcp|api|web|data|all)
 #   ./scripts/dev.sh restart       — stop + start
+#   ./scripts/dev.sh e2e [args]    — нативный прогон tests/e2e/ (нужны поднятые сервисы)
 #
 # Сценарии data-service (фабрика тестовых БД):
 #   ./scripts/dev.sh db list                       — список сценариев + метаданные
@@ -777,6 +778,11 @@ case "${1:-help}" in
     shift
     cmd_db "$@"
     ;;
+  e2e)
+    shift
+    echo "🧪 Running e2e tests (no LLM): tests/e2e/"
+    .venv/bin/python3 -m pytest tests/e2e/ "$@"
+    ;;
   help|--help|-h)
     echo "Usage: $0 <command> [args]"
     echo ""
@@ -786,6 +792,7 @@ case "${1:-help}" in
     echo "  restart            — перезапустить"
     echo "  status             — healthcheck"
     echo "  logs [svc]         — tail -f логов (rag|mcp|api|web|data|all)"
+    echo "  e2e [pytest args]  — нативный прогон tests/e2e/ (нужны поднятые сервисы)"
     echo ""
     echo "Сценарии БД data-service (фабрика тестовых БД):"
     echo "  db list                — список сценариев с метаданными"

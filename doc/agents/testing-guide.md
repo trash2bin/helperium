@@ -51,26 +51,36 @@ cd api-service/embed && bash build.sh      # typecheck + esbuild
 ## 3. E2E (без LLM, pytest)
 
 ```bash
-uv run pytest tests/e2e/test_search_strategies.py -v -k "TestAutoShopStrategies or TestClinicStrategies"
+# Нативный прогон (нужны поднятые сервисы: ./scripts/dev.sh start)
+./scripts/dev.sh e2e            # полный прогон tests/e2e/
+
+# Или напрямую
+uv run pytest tests/e2e/ -v --tb=short
+
+# Docker (colima/docker desktop, profile test — всё поднимает сам)
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
+  docker-compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
 ```
+
+**105 тестов + 1 skip** (skip = `test_config_has_bak_file`, ожидаемо для свежих tenant'ов).
 
 ### 3a. Search Strategies E2E — `tests/e2e/test_search_strategies.py`
 
 Проверяет grep/filter/schema стратегии с авто-генерированным конфигом.
 Использует сценарии `auto-shop` и `clinic` (`data-service/testdata/scenarios/`).
 
-**31 тест — 3 класса:**
+**31 тест — 2 класса (v5):**
 
 | Класс | Тестов | Описание |
 |---|---|---|
-| `TestAutoShopStrategies` | 13 | grep/filter/schema/count на авто-магазине |
-| `TestClinicStrategies` | 13 | grep/filter/schema/count на клинике |
-| `TestLLMImplicitIntent` | 5 | LLM чат с неявным интентом (требует `OPENAI_API_KEY`) |
+| `TestAutoShopStrategies` | 16 | grep/filter/schema/count на авто-магазине (v5: `db_search`/`filter_*`) |
+| `TestClinicStrategies` | 15 | grep/filter/schema/count на клинике (v5) |
+
+> `TestLLMImplicitIntent` переехал в `tests/e2e-llm/test_implicit_intent.py` (opt-in, требует LLM-ключ).
 
 Проверяет: `/entity/grep`, `/entity/filter`, `/entity/schema`, `/entity/count`,
-`/entity/distinct` эндпоинты, MCP manifest (наличие grep/filter/schema,
-отсутствие search). **Никаких search_* тулов.** `find_*` и `list_*` — легитимны
-как backward compat для не-strategy entity.
+`/entity/distinct` эндпоинты, MCP manifest (v5: `db_map`/`db_describe`/`db_search`/`db_get`/
+`db_related`/`filter_{entity}`). Никаких `grep_*`/`schema_*`/`get_*`/`count_*` per-entity тулов.
 
 **Зависимости:** все сервисы запущены, `ADMIN_TOKEN` задан.
 
@@ -78,50 +88,69 @@ uv run pytest tests/e2e/test_search_strategies.py -v -k "TestAutoShopStrategies 
 
 Проверяет что MCP-гейтвей и data-service отклоняют пустые/невалидные вызовы.
 
-**9 тестов — 4 класса:**
+**Тесты (v5):**
 
-| Класс | Тестов | Описание |
-|---|---|---|
-| `TestGetWithRequired` | 3 | `get_*({})` → isError; с id → OK; несколько тулов |
-| `TestGrepWithRequired` | 4 | `grep_*({})` → isError; с pattern → OK; несколько тулов; длинный regex → isError |
-| `TestAllToolsHaveRequiredGuard` | 1 | Каждый tool (кроме count_*) имеет `required` параметр |
-| `TestLimitHasMaxBound` | 2 | limit в схеме; limit=9999999 → isError |
+| Класс | Описание |
+|---|---|
+| `TestDBSearchWithRequired` | `db_search({})` → isError; с pattern → OK; длинный regex → isError |
+| `TestDBGetWithRequired` | `db_get({})` → isError; с id → OK |
+| `TestAllToolsHaveRequiredGuard` | Каждый tool имеет `required` параметр |
+| `TestLimitHasMaxBound` | limit в схеме; limit=9999999 → isError |
+| `TestToolComposition` | 5 `db_*` + `filter_{entity}`; нет per-entity `grep_*`/`schema_*`; displayName |
 
 ### 3c. Scripted LLM — `tests/e2e/test_scripted_llm.py`
 
-Pipeline с `ScriptedLLMProvider` — без живой модели. Проверяет
-tool_call SSE события (имена не пустые), пустые вызовы блокируются,
-финальный ответ доходит.
+Pipeline с `ScriptedLLMProvider` — **без живой модели** (мок LLM, читает JSONL-скрипт).
+Поднимает api-service как subprocess с `USE_SCRIPTED_LLM=1`, гоняет тулы через
+реальный SSE endpoint. Не тратит деньги, детерминированно.
 
-## 4. E2E с LLM (дорогие, только в конце)
+**11 тестов (v5):**
+
+| Тест | Проверяет |
+|---|---|
+| `test_basic_pipeline` | тулы вызываются, имена не пустые, доходит до финала |
+| `test_empty_call_blocked` | пустые вызовы блокируются |
+| `test_tool_name_not_empty_in_sse` | SSE tool_call/tool_result имеют непустые имена |
+| `test_v5_tool_chain` | v5: `db_map`/`filter_auto_parts` доступны через MCP |
+| `test_v5_related_and_map` | `db_map` + `db_related` работают |
+| `test_v5_no_legacy_grep_tools` | per-entity `grep_*`/`schema_*` не существуют (v5) |
+| `test_error_recovery` | ошибка тула не валит pipeline |
+| `test_exhausted_script_guard` | скрипт закончился — pipeline не вечный цикл |
+| `test_empty_call_rejected_at_mcp` | `db_search({})` отклонён валидацией (required) |
+| `test_empty_llm_round_guard` | пустой LLM round → guard |
+| `test_recording_mode` | record_to пишет JSONL |
+
+Запуск: `USE_SCRIPTED_LLM=1 SCRIPTED_LLM_PATH=script.jsonl` (dev-режим api-service)
+или `./scripts/dev.sh e2e -k scripted`.
+
+### 3d. Остальные файлы `tests/e2e/`
+
+| Файл | Что проверяет |
+|---|---|
+| `test_admin_lifecycle.py` | регистрация/листинг/удаление tenant'ов через admin API |
+| `test_config_persistence.py` | конфиг tenant'а пишется в `.data/tenants/{id}.json` |
+| `test_data_isolation.py` | tenant A не видит данные tenant B |
+| `test_mcp_dynamic.py` | v5 тулы (`db_map`/`db_search`/`db_get`/`filter_*`) через MCP |
+| `test_mcp_composite.py` | composite mode (`X-Tenant-ID: a,b` → префикс `{tenantID}__`) |
+| `test_sse_session.py` | SSE-сессия mcp-gateway (endpoint, JSON-RPC initialize/tools_list) |
+
+## 4. E2E с LLM (opt-in, `tests/e2e-llm/`)
+
+**Не в CI.** Требуют реальный LLM API-ключ (OPENAI/LLM_API_KEY) и денег.
+Без ключа — все тесты скипаются (skipif), не падают.
 
 ```bash
-uv run pytest tests/e2e/llm/test_search_e2e.py -v -s
+uv run pytest tests/e2e-llm/ -v
 ```
 
-### 4a. LLM E2E — `tests/e2e/llm/test_search_e2e.py`
+| Файл | Что проверяет |
+|---|---|
+| `test_implicit_intent.py` | LLM сам догадывается вызвать `db_search`/`filter_*` (неявный интент) |
+| `test_llm_chat.py` | SSE chat через HTTP, agent endpoint, tool call + response |
+| `test_search_e2e.py` | discovery → search → filter → multiturn диалог |
+| `test_search_strategy.py` | grep/filter/schema через MCP (diagnostic) |
 
-**⚠️ Дорогой тест.** Каждый вызов LLM тратит ~12К prompt tokens + ~100 completion tokens.
-4 теста ≈ 50К токенов за прогон. Запускать только перед коммитом/PR, не в CI на каждый push.
-
-**Что делает:**
-1. Создаёт SQLite БД из seed-сценария (`auto-shop`)
-2. Регистрирует tenant на data-service + rewrite (introspect → generate config)
-3. Создаёт/пересоздаёт агента с этим tenant'ом
-4. Проверяет что MCP manifest содержит grep/filter/schema — без search
-5. Отправляет 4 вопроса с **рандомными session_id**:
-
-| Тест | Вопрос | Ожидание |
-|---|---|---|
-| `test_discovery_first_then_search` | "Какие есть запчасти для BMW?" | `schema_*` first → `grep_*`/`filter_*` |
-| `test_search_by_text` | "Найди глушители" | `grep_auto_parts(pattern="глушит")` |
-| `test_filter_by_category` | "Категория тормозная система" | `filter_auto_parts(category=...)` |
-| `test_multiturn_conversation` | "Сколько запчастей + дороже 10000" | `count` + `filter` |
-
-**Assert'ы:**
-- Должен быть хотя бы один `grep_*` или `filter_*` вызов
-- **Ни одного** `search_*`, `simple_*`, `find_*`, `list_*`
-- Пустые вызовы (`grep_product({})`) — автоматически rejected на уровне MCP gateway
+Подробнее: `tests/e2e-llm/README.md`.
 
 ### 4b. Логирование LLM E2E
 
@@ -134,10 +163,10 @@ uv run pytest tests/e2e/llm/test_search_e2e.py -v -s
 📋 Status flow: iteration=0 tool_calls, iteration=1 tool_calls, ...
 
 🛠️  Tool calls (4):
-  [0] schema_auto_parts({})
+  [0] db_describe({})
   [1] filter_auto_parts({"category": "Тормозная система"})
-  [2] get_auto_parts({"id": "16"})
-  [3] get_auto_parts({"id": "17"})
+  [2] db_get({"entity": "auto_parts", "id": "16"})
+  [3] db_get({"entity": "auto_parts", "id": "17"})
 
 🧠 Reasoning: (мысли модели, если есть в SSE)
 💬 Final answer: ... (текст ответа модели)
@@ -148,8 +177,8 @@ uv run pytest tests/e2e/llm/test_search_e2e.py -v -s
 === agent_e2e-llm-test_e2e-llm-abc123.jsonl ===
   🟢 START: Покажи запчасти из категории тормозная система
   🤖 LLM  iter=0 tokens=12150+85 dur=9741.54ms
-  🛠️  CALL iter=0 schema_auto_parts({})
-  📦 RESULT schema_auto_parts
+  🛠️  CALL iter=0 db_describe({})
+  📦 RESULT db_describe
   🤖 LLM  iter=1 tokens=12967+118 dur=28944.72ms
   🛠️  CALL iter=1 filter_auto_parts({"category": "Тормозная система"})
 ```
@@ -161,9 +190,9 @@ Backlog пишется в `backlog/` (управляется `BACKLOG_DIR`, `BAC
 
 | Проблема | Симптом | Решение |
 |---|---|---|
-| **Tenant не существует** | LLM отвечает текстом, `tool_calls=[]` | `test_search_e2e.py` создаёт tenant сам через `setup_module()` |
-| **search_* тулы всё ещё есть** | LLM вызывает `search_auto_parts` | Проверить что конфиг перегенерирован и `types.go` знает все стратегии |
-| **LiteLLM routing на неверный provider** | LLM зависает на десятки секунд | Убедиться что `provider_priority: ["polza"]` и `llm_config.provider: "polza"` |
+| **Tenant не существует** | LLM отвечает текстом, `tool_calls=[]` | e2e-llm тесты создают tenant сами через `setup_module()` |
+| **v4 тулы всё ещё в конфиге** | LLM вызывает `grep_auto_parts` (легаси) | Проверить что конфиг перегенерирован (v5: `db_*` + `filter_*`); `configgen` версия 4 |
+| **LiteLLM routing на неверный provider** | LLM зависает на десятки секунд | Убедиться что `provider_priority` и `llm_config.provider` совпадают |
 | **Схема большая (>10K chars)** | LLM "забывает" первые сущности | `_build_schema_message` — проверять длину в логах: `Injected schema ... (8707 chars)` — OK |
 | **Нет User-Agent заголовка** | `Request blocked: Blocked User-Agent` | Добавить `User-Agent: Mozilla/5.0 (compatible; HelperiumE2E/1.0)` |
 | **session_id повторяется** | Backlog дописывается, asserts по tool_calls неверные | Каждый тест генерирует **уникальный** session_id |
@@ -179,8 +208,8 @@ def test_my_scenario(self):
     _ensure_agent(agent_name, tid)        # ← создаёт/обновляет агента
 
     # 2. Проверить что MCP жив
-    tools = _check_mcp_accessible(tid)    # ← assert grep/filter/schema есть
-    assert not any("search_" in t for t in tools)
+    tools = _check_mcp_accessible(tid)    # ← assert v5: db_* + filter_* есть
+    assert not any(n.startswith(("grep_", "schema_")) for n in tools)
 
     # 3. Отправить вопрос (уникальный session_id!)
     result = _chat(agent_name, tid, "вопрос")
@@ -190,8 +219,8 @@ def test_my_scenario(self):
 
     # 5. Assert'ы
     tool_names = [tc["name"] for tc in result["tool_calls"]]
-    assert any(n.startswith("grep_") for n in tool_names)
-    assert not any(n.startswith("search_") for n in tool_names)
+    assert any(n.startswith(("db_", "filter_")) for n in tool_names)
+    assert not any(n.startswith(("grep_", "schema_")) for n in tool_names)
 ```
 
 ### Чего НЕ делать
@@ -208,7 +237,7 @@ def test_my_scenario(self):
 
 ```bash
 # Замерить время ToolDiscoveryStage + MCP handshake
-uv run pytest tests/e2e/llm/test_search_e2e.py -v -s --benchmark-only
+uv run pytest tests/e2e-llm/ -v -s --benchmark-only
 ```
 
 Планируемые метрики:
@@ -218,8 +247,6 @@ uv run pytest tests/e2e/llm/test_search_e2e.py -v -s --benchmark-only
 - **Token efficiency**: prompt_tokens / completion_tokens ratio
 
 ## 6. Mutation testing
-
-**Python (mutmut, ~30 мин):**
 ```bash
 ./scripts/run_mutmut.sh --build    # сборка Docker (1 раз)
 ./scripts/run_mutmut.sh --docker   # запуск

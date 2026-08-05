@@ -2,9 +2,11 @@
 # API server: LiteLLM agent, session history, backlog
 # Core deps + litellm + SDK — no torch, no chromadb
 # ============================================================
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV UV_PYTHON_PREFERENCE=only-system
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
@@ -14,7 +16,9 @@ RUN uv sync --frozen --no-install-project --package api-service --no-dev
 COPY . .
 RUN uv sync --frozen --package api-service --no-dev
 
-FROM python:3.12-slim
+FROM python:3.13-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 RUN groupadd --gid 1000 app && \
     useradd --uid 1000 --gid app --shell /bin/bash --create-home app
@@ -24,7 +28,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
-COPY --from=builder --chown=app:app /app/api-service /app/api-service
+# Копируем только нужное (src + готовый виджет dist), без node_modules (~81MB)
+COPY --from=builder --chown=app:app /app/api-service/src /app/api-service/src
+COPY --from=builder --chown=app:app /app/api-service/embed/dist /app/api-service/embed/dist
+COPY --from=builder --chown=app:app /app/api-service/pyproject.toml /app/api-service/pyproject.toml
 COPY --from=builder --chown=app:app /app/demo /app/demo
 COPY --from=builder --chown=app:app /app/helperium-sdk /app/helperium-sdk
 
@@ -42,4 +49,4 @@ WORKDIR /app
 
 EXPOSE 8081
 
-CMD ["python", "-m", "api_service.server"]
+CMD ["/app/.venv/bin/python", "-m", "api_service.server"]

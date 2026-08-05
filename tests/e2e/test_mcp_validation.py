@@ -1,20 +1,20 @@
-"""MCP validation: проверка консолидированных db_* тулов (Фаза 2).
+"""MCP validation: проверка консолидированных db_* тулов (Фаза 2/2.5).
 
 Проблема: LLM (deepseek) шлёт тулы с пустыми аргументами. MCP-гейтвей должен
 возвращать isError, а не выполнять запрос.
 
-Что тестируем (новый контракт Фазы 2 — 6 константных тулов):
+Что тестируем (v5 контракт — 5 консолидированных db_* + N пер-энтити filter_{entity}):
 1. db_get({}) → isError (требует entity + id)
 2. db_search({}) → isError (требует entity + pattern)
 3. db_get(entity, id) → OK
 4. db_search(entity, pattern) → OK
 5. db_describe(entity) → OK
-6. db_filter(entity, field__op) → OK
+6. filter_{entity}(field__op) → OK (пер-энтити; db_filter НЕ существует)
 7. Все db_* тулы имеют required параметры
 8. Long regex в db_search → isError (ReDoS защита)
 9. limit > 100 → isError
-10. Нет per-entity тулов (grep_*/filter_*/schema_*/get_*/count_*/distinct_*) — консолидированы
-11. Ровно 6 db_* тулов независимо от размера БД
+10. Нет per-entity тулов (grep_*/schema_*/get_*/count_*/distinct_*) — консолидированы
+11. Ровно 5 db_* тулов независимо от размера БД
 
 Создаёт собственный tenant через интроспекцию БД из auto-shop сценария.
 """
@@ -431,7 +431,7 @@ class TestLimitHasMaxBound:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. Консолидация (Фаза 2): ровно 6 db_* тулов, нет per-entity
+# 5. Консолидация (Фаза 2/2.5): ровно 5 db_* тулов, нет per-entity
 # ═══════════════════════════════════════════════════════════════════════════
 
 

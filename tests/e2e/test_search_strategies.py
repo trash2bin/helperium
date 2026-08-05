@@ -1,13 +1,14 @@
-"""E2E тесты для новой архитектуры search strategies (v4).
+"""E2E тесты для новой архитектуры search strategies (v5).
 
 Проверяет:
 1. Создание tenant'ов через интроспекцию (DB → introspect → Generate → rewrite)
-2. GrepStrategy — текстовый поиск (grep_{entity})
+2. GrepStrategy — текстовый поиск (db_search)
 3. FilterStrategy — фильтрация по полям (filter_{entity})
-4. SchemaStrategy — discovery (schema_{entity})
-5. Count/Distinct эндпоинты
-6. MCP инструменты grep_ / filter_ / schema_ доступны через manifest
-7. (Опционально) LLM чат с неявным интентом
+4. SchemaStrategy — discovery (db_describe)
+5. Count/Distinct REST эндпоинты
+6. MCP инструменты db_* + filter_* доступны через manifest
+
+LLM-чат с неявным интентом — в tests/e2e-llm/ (требует API ключ).
 """
 
 from __future__ import annotations
@@ -90,6 +91,17 @@ def _register_and_rewrite(tenant_id: str, db_path: Path) -> dict:
             "dsn": str(db_path),
             "read_only": True,
         },
+        # Кастомные filterable-поля для e2e: stock/city/experience/rating/reason
+        # не входят в DefaultFilterableFieldRules, поэтому filter по ним падал бы
+        # с 400 parse_error. rewrite сохраняет filterable_rules через
+        # ExtractIntent → Hydrate (configgen/intent.go), поэтому кладём их ДО rewrite.
+        "filterable_rules": [
+            {
+                "id": "e2e.allow",
+                "allow_names": ["stock", "city", "experience", "rating", "reason"],
+                "reason": "E2E: business fields for filter tests",
+            },
+        ],
     }
 
     resp = requests.post(
@@ -468,7 +480,7 @@ class TestAutoShopStrategies:
         assert data.get("count", 0) == 35, f"Expected 35 parts, got {data}"
 
     def test_manifest_has_correct_tools(self, auto_shop_tenant):
-        """MCP manifest содержит grep_*, filter_*, schema_*, НЕ search_*."""
+        """MCP manifest содержит консолидированные db_* и filter_{entity}, НЕ grep_*/schema_*."""
         tid, _ = auto_shop_tenant
         resp = requests.get(
             f"{data_service_url()}/mcp/manifest",
@@ -480,22 +492,28 @@ class TestAutoShopStrategies:
         tools = data.get("mcp_tools", data.get("tools", []))
         tool_names = [t.get("name") for t in tools]
 
-        # Должны быть новые тулы
-        assert "grep_auto_parts" in tool_names, (
-            f"grep_auto_parts not found in tools: {[n for n in tool_names if 'grep' in n or 'filter' in n]}"
-        )
+        # Должны быть консолидированные db_* тулы (v5)
+        for db_tool in ("db_map", "db_describe", "db_search", "db_get", "db_related"):
+            assert db_tool in tool_names, (
+                f"{db_tool} not found in tools: {tool_names}"
+            )
+
+        # Должны быть пер-энтити filter_{entity} тулы
         assert "filter_auto_parts" in tool_names, (
             f"filter_auto_parts not found"
         )
-        assert "schema_auto_parts" in tool_names, (
-            f"schema_auto_parts not found in tools: {[n for n in tool_names if 'schema' in n]}"
-        )
+        assert "filter_brands" in tool_names, f"filter_brands not found"
+        assert "filter_orders" in tool_names, f"filter_orders not found"
 
-        # Не должно быть устаревших тулов
-        bad_old = [n for n in tool_names if n.startswith(("search_", "simple_", "find_", "list_")) or "_by_" in n]
+        # НЕ должно быть per-entity grep_*/schema_*/get_*/count_*/distinct_* тулов (v5)
+        bad_old = [
+            n for n in tool_names
+            if n.startswith(("grep_", "schema_", "search_", "simple_", "find_", "list_", "get_", "count_", "distinct_"))
+            or "_by_" in n
+        ]
         assert len(bad_old) == 0, f"Legacy tools still present: {bad_old}"
 
-        print(f"\n  ✅ Manifest: только grep, filter, schema — нет легаси ({len(tool_names)} total)")
+        print(f"\n  ✅ Manifest: db_* + filter_* — нет легаси ({len(tool_names)} total)")
 
     def test_orders_filter_by_status(self, auto_shop_tenant):
         """Filter заказов по статусу."""
@@ -711,7 +729,7 @@ class TestClinicStrategies:
         assert total >= 15, f"Expected >=15 appointments in Feb, got {total}"
 
     def test_manifest_has_clinic_tools(self, clinic_tenant):
-        """MCP manifest имеет правильные инструменты для клиники."""
+        """MCP manifest имеет консолидированные db_* + filter_* для клиники."""
         tid, _ = clinic_tenant
         resp = requests.get(
             f"{data_service_url()}/mcp/manifest",
@@ -723,16 +741,21 @@ class TestClinicStrategies:
         tools = data.get("mcp_tools", data.get("tools", []))
         tool_names = [t.get("name") for t in tools]
 
-        # Проверка наличия grep_* и filter_* — без search_*
-        assert "grep_doctors" in tool_names, (
-            f"grep_doctors not found: {[n for n in tool_names if 'grep' in n or 'filter' in n]}"
-        )
-        assert "filter_doctors" in tool_names
-        assert "schema_doctors" in tool_names
+        # Консолидированные db_* тулы (v5)
+        for db_tool in ("db_map", "db_describe", "db_search", "db_get", "db_related"):
+            assert db_tool in tool_names, f"{db_tool} not found: {tool_names}"
 
-        # Никаких search_*
-        bad = [n for n in tool_names if n.startswith("search_")]
-        assert len(bad) == 0, f"Old search_* tools still present: {bad}"
+        # Пер-энтити filter_{entity}
+        assert "filter_doctors" in tool_names, f"filter_doctors not found"
+        assert "filter_appointments" in tool_names, f"filter_appointments not found"
+        assert "filter_patients" in tool_names, f"filter_patients not found"
+
+        # НЕ должно быть per-entity grep_*/schema_*/search_* тулов
+        bad = [
+            n for n in tool_names
+            if n.startswith(("grep_", "schema_", "search_", "get_", "count_", "distinct_"))
+        ]
+        assert len(bad) == 0, f"Legacy per-entity tools still present: {bad}"
 
     def test_grep_prescriptions_by_medication(self, clinic_tenant):
         """grep назначений: поиск лекарства."""
@@ -778,184 +801,3 @@ class TestClinicStrategies:
         assert resp2.status_code == 200
         data2 = resp2.json()
         print(f"  ✅ Grep 'кардиолог' → total={data2.get('total', 0)}")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# TESTS: LLM чат с неявным интентом (требует API ключ)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-@pytest.mark.skipif(
-    not (os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")),
-    reason="LLM API key not set",
-)
-class TestLLMImplicitIntent:
-    """LLM чат с неявным интентом — пользователь не знает про тулы.
-
-    Проверяет, что LLM сама догадывается вызвать правильный инструмент
-    (grep_*, filter_*, schema_*) по неявному запросу.
-    """
-
-    @pytest.fixture(scope="class")
-    def auto_shop_agent(self, auto_shop_tenant):
-        """Create LLM agent for auto-shop."""
-        tid, _ = auto_shop_tenant
-        llm_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")
-        llm_model = os.environ.get("OPENAI_MODEL", "openai/deepseek-v4-flash")
-        llm_api_base = os.environ.get("OPENAI_API_BASE", "https://polza.ai/api/v1")
-
-        agent_name = f"e2e-autoshop-{uuid.uuid4().hex[:6]}"
-
-        # Clean up from previous runs
-        try:
-            requests.delete(
-                f"{api_service_url()}/api/agents/{agent_name}",
-                headers=admin_headers(),
-                timeout=10,
-            )
-        except Exception:
-            pass
-
-        # Create agent with v4 tool names in system prompt
-        payload = {
-            "name": agent_name,
-            "provider_priority": ["polza"],
-            "tenant_ids": [tid],
-            "llm_config": {
-                "model": llm_model,
-                "provider": "openai",
-                "api_key": llm_key,
-                "api_base": llm_api_base,
-                "system_prompt": (
-                    "Ты — консультант магазина автозапчастей. У тебя есть доступ к каталогу "
-                    "автозапчастей через MCP-инструменты:\n"
-                    "- grep_auto_parts — текстовый поиск (pattern, regex, ignore_case)\n"
-                    "- filter_auto_parts — фильтрация по полям (category, price__gt, price__lt, stock__gt)\n"
-                    "- get_auto_parts — получить запчасть по ID\n"
-                    "- distinct_auto_parts(column) — уникальные значения колонки\n"
-                    "- schema_auto_parts() — мета-информация о каталоге\n"
-                    "- grep_customers — поиск клиентов по имени\n"
-                    "- filter_orders — фильтрация заказов по статусу\n\n"
-                    "Когда клиент спрашивает — сразу используй grep_ или filter_. "
-                    "Не говори 'я могу поискать', просто ищи сразу. "
-                    "Отвечай на русском языке."
-                ),
-            },
-            "widget_config": {
-                "title": "Автозапчасти",
-                "greeting": "Чем могу помочь?",
-                "position": "right",
-            },
-        }
-        resp = requests.post(
-            f"{api_service_url()}/api/agents",
-            json=payload,
-            headers=admin_headers(),
-            timeout=10,
-        )
-        if resp.status_code not in (200, 201):
-            pytest.skip(f"Could not create agent: {resp.status_code}: {resp.text[:200]}")
-
-        yield agent_name, tid
-
-        # Cleanup
-        try:
-            requests.delete(
-                f"{api_service_url()}/api/agents/{agent_name}",
-                headers=admin_headers(),
-                timeout=5,
-            )
-        except Exception:
-            pass
-
-    def test_ask_for_muffler(self, auto_shop_agent):
-        """'Мне нужен глушитель на BMW X5' → должен вызвать grep_ или filter_."""
-        agent_name, tid = auto_shop_agent
-        result = self._chat(agent_name, tid,
-            "Мне нужен глушитель на BMW X5, подскажи что есть?"
-        )
-        self._check_result(result)
-
-    def test_ask_for_cheap_brakes(self, auto_shop_agent):
-        """'Какие есть недорогие тормозные колодки?' → filter_ или grep_."""
-        agent_name, tid = auto_shop_agent
-        result = self._chat(agent_name, tid,
-            "Какие есть недорогие тормозные колодки, до 5000 рублей?"
-        )
-        self._check_result(result)
-
-    def test_ask_for_all_available(self, auto_shop_agent):
-        """'Что есть в наличии дешёвого для Vesta?'"""
-        agent_name, tid = auto_shop_agent
-        result = self._chat(agent_name, tid,
-            "Что есть в наличии для Лады Весты недорогое?"
-        )
-        self._check_result(result)
-
-    def test_ask_for_bmw_parts(self, auto_shop_agent):
-        """'Покажи запчасти для BMW X5'"""
-        agent_name, tid = auto_shop_agent
-        result = self._chat(agent_name, tid,
-            "Покажи запчасти которые подходят на BMW X5"
-        )
-        self._check_result(result)
-
-    def test_ask_for_engine_oil(self, auto_shop_agent):
-        """'Масло для Тойоты надо'"""
-        agent_name, tid = auto_shop_agent
-        result = self._chat(agent_name, tid,
-            "Масло моторное для Тойоты Камри нужно, что есть?"
-        )
-        self._check_result(result)
-
-    def _chat(self, agent_name: str, tenant_id: str, message: str) -> dict:
-        """Send chat message and parse SSE response."""
-        session_id = f"e2e-implicit-{uuid.uuid4().hex[:8]}"
-        resp = requests.post(
-            f"{api_service_url()}/api/chat/{agent_name}",
-            json={"message": message, "session_id": session_id},
-            headers={
-                "X-Tenant-ID": tenant_id,
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (compatible; HelperiumE2E/1.0)",
-            },
-            timeout=120,
-            stream=True,
-        )
-        if resp.status_code != 200:
-            return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}", "success": False}
-
-        return _parse_sse_stream(resp, idle_timeout=15)
-
-    def _check_result(self, result: dict):
-        """Check that LLM produced useful output."""
-        print(f"\n  📊 Tool calls: {len(result['tool_calls'])}")
-        if result["tool_calls"]:
-            for tc in result["tool_calls"]:
-                print(f"  🛠️  {tc.get('name', '?')}({json.dumps(tc.get('arguments', {}), ensure_ascii=False)[:100]})")
-        if result["errors"]:
-            for err in result["errors"][:3]:
-                print(f"  ❌ Error: {err[:200]}")
-        if result["final_text"]:
-            print(f"  💬 Response: {result['final_text'][:300]}")
-        else:
-            print("  💬 (no text response)")
-
-        # At minimum: tool was called OR text response was produced
-        has_tool_call = len(result["tool_calls"]) > 0
-        has_response = bool(result["final_text"].strip())
-
-        if has_tool_call:
-            tool_name = result["tool_calls"][0].get("name", "")
-            assert "grep_" in tool_name or "filter_" in tool_name, (
-                f"Expected grep_ or filter_ tool, got '{tool_name}'"
-            )
-            print(f"  ✅ LLM used '{tool_name}' — pipeline OK")
-            assert not result.get("errors"), f"Tool called but errors: {result['errors']}"
-        elif has_response:
-            print("  ⚠️  LLM answered without calling tools — check system prompt")
-            assert not result.get("errors"), f"Response but errors: {result['errors']}"
-        else:
-            if result.get("errors"):
-                pytest.fail(f"Pipeline failed: {result['errors']}")
-            pytest.fail("No output from LLM")

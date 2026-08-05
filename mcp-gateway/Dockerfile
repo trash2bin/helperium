@@ -11,14 +11,14 @@ RUN cd /build/mcp-gateway && go mod download
 # Копируем исходники и собираем
 COPY helperium-go/ /build/helperium-go/
 COPY mcp-gateway/ /build/mcp-gateway/
-RUN cd /build/mcp-gateway && CGO_ENABLED=0 go build -o /build/mcp-gateway ./cmd/main.go
+RUN cd /build/mcp-gateway && CGO_ENABLED=0 go build -o /build/bin/mcp-gateway ./cmd/
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates curl
 RUN adduser -D -u 1001 app
 USER app
 WORKDIR /app
-COPY --from=builder /build/mcp-gateway /app/mcp-gateway
+COPY --from=builder /build/bin/mcp-gateway /app/mcp-gateway
 
 EXPOSE 8083
 HEALTHCHECK CMD curl -f http://localhost:8083/health || exit 1

@@ -21,7 +21,7 @@ import requests
 
 from tests.e2e.helpers import mcp_gateway_url
 
-_MCP_URL = "http://127.0.0.1:8083"
+_MCP_URL = mcp_gateway_url()
 _TIMEOUT = 15
 
 

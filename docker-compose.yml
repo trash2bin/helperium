@@ -46,13 +46,18 @@ services:
     ports:
       - "127.0.0.1:8084:8084"
     volumes:
-      - app_data:/data/app:ro
+      - .:/workspace:rw
+      - app_data:/data/app:rw
       - uploads_data:/data/uploads:ro
     environment:
       - DB_DRIVER=${DB_DRIVER:-sqlite}
       - DB_PATH=/data/app/university.db
       - DATABASE_URL=${DATABASE_URL:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - DS_CONFIG=/workspace/specs/config.example.json
+      - TENANTS_DIR=/workspace/.data/tenants
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - VIEWER_TOKEN=${VIEWER_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8084/health"]
       <<: *hc-curl
@@ -156,8 +161,8 @@ services:
   admin-dashboard:
     image: helperium-admin:latest
     build:
-      context: ./admin-dashboard
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: admin-dashboard/Dockerfile
     ports:
       - "127.0.0.1:8085:8085"
     volumes:
@@ -204,6 +209,52 @@ services:
     networks:
       - helperium-net
     <<: *restart
+
+  # ──────────────────────────────────────────────────────────────────
+  # E2E tests (profile: test)
+  # ──────────────────────────────────────────────────────────────────
+  # Запуск: docker compose --profile test up e2e
+  # Гоняет tests/e2e/ (без LLM) внутри контейнера, ходя на сервисы по
+  # внутренним именам helperium-net. Весь workspace монтируется volume'ом
+  # (обходит .dockerignore, который исключает **/tests/).
+  e2e:
+    image: helperium-api:latest
+    profiles:
+      - test
+    working_dir: /workspace
+    volumes:
+      - .:/workspace:rw
+    environment:
+      # e2e ходит на сервисы по внутренним именам compose-сети
+      - DATA_SERVICE_URL=http://data-service:8084
+      - MCP_SERVICE_URL=http://mcp-gateway:8083
+      - API_SERVICE_URL=http://api:8081
+      - DEMO_WEB_URL=http://web:8080
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-ci-secret-token}
+      - VIEWER_TOKEN=${VIEWER_TOKEN:-ci-viewer-token}
+      - PROJECT_ROOT=/workspace
+      - LOG_LEVEL=info
+    depends_on:
+      data-service:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      admin-dashboard:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks:
+      - helperium-net
+    # Доливаем pytest + agent-db (seedgen) в .venv образа api;
+    # workspace монтируется rw, чтобы data-service (в том же compose)
+    # видел созданные тестами БД по тем же путям.
+    command: >-
+      sh -c "uv pip install --python /app/.venv/bin/python pytest &&
+             uv pip install --python /app/.venv/bin/python -e /workspace/agent-db &&
+             cd /workspace &&
+             PYTHONPATH=/workspace /app/.venv/bin/python -m pytest tests/e2e/ -v --tb=short"
 
   # CADDY (profile: prod): HTTPS + reverse-proxy to web
   caddy:

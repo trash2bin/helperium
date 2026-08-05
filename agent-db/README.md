@@ -82,11 +82,14 @@ agent-db drop <scenario> # remove scenario database
 New modular pytest tests in `tests/e2e/` — faster, self-documented, with proper fixtures.
 
 ```bash
-# All e2e without LLM — 48 tests, ~5 sec
+# All e2e without LLM — 105 tests + 1 skip, ~30 sec (нужны поднятые сервисы: ./scripts/dev.sh start)
+./scripts/dev.sh e2e
+
+# Или напрямую
 uv run pytest tests/e2e/ -v
 
-# With LLM tests (requires API key from .env)
-uv run pytest tests/e2e/ -v --llm-key
+# С LLM-тестами (opt-in, tests/e2e-llm/, требует API key из .env)
+uv run pytest tests/e2e-llm/ -v --llm-key
 
 # Traceback off (pass/fail only)
 uv run pytest tests/e2e/ --no-traceback
@@ -96,7 +99,7 @@ uv run pytest tests/e2e/test_data_isolation.py -v
 uv run pytest tests/e2e/test_agents.py -v
 uv run pytest tests/e2e/test_mcp_composite.py -v
 uv run pytest tests/e2e/test_sse_session.py -v
-uv run pytest tests/e2e/llm/test_llm_chat.py -v
+uv run pytest tests/e2e-llm/test_llm_chat.py -v
 ```
 
 ## Quick start — add your own database
@@ -139,8 +142,8 @@ curl -H "X-Tenant-ID: mydb" http://127.0.0.1:8084/health
 |---|---|---|
 | Seed generation | `data-service/cmd/seed-cli/` (Go, ~130 строк) | `agent-db/agent_db/seedgen/` (Python, ~650 строк) |
 | Materialize | `data-service --materialize` (в production binary) | `materialize()` из Python-пакета |
-| E2E tests | `cli.py` `_run_*` функции (~900 строк) | `tests/e2e/*.py` — модульные, 49 тестов |
-| LLM tests | — | `tests/e2e/llm/test_llm_chat.py — 4 теста |
+| E2E tests | `cli.py` `_run_*` функции (~900 строк) | `tests/e2e/*.py` — модульные, 105 тестов + 1 skip |
+| LLM tests | — | `tests/e2e-llm/test_llm_chat.py — 4 теста (opt-in) |
 | DB generation in e2e | `subprocess.run(["go", "run", "./cmd/seed-cli/"])` | `from agent_db.seedgen import materialize` |
 | CLI entry point | `cli.py` (root) | `agent_db/cli.py` |
 | Benchmark | — | `agent_db/bench/` — парсинг, прогон, отчёт |

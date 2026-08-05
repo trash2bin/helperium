@@ -104,8 +104,12 @@ def test_config_file_has_valid_content():
 
 def test_tenant_serves_data():
     """Tenant serves data before hypothetical restart."""
+    # v5: /students is the grep strategy endpoint and requires a pattern.
+    # Use the seeded isolation marker as the pattern and full format so the
+    # marker is present in the response body.
     r = requests.get(
         f"{data_service_url()}/students",
+        params={"pattern": "Persist-Marker", "format": "full"},
         headers={"X-Tenant-ID": _TENANT_ID},
         timeout=10,
     )
