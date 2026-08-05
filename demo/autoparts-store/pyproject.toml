@@ -1,0 +1,41 @@
+# ============================================================================
+# demo/autoparts-store — локальный uv-файл (helperium-owned дополнение)
+# ============================================================================
+# ⚠️ FOREIGN PROJECT. Этот pyproject.toml — НЕ часть исходного проекта
+# auto-parts-store, а helperium-owned дополнение для локальной разработки
+# БЕЗ Docker (как db/schema.sql). Он НЕ входит в workspace helperium и
+# не влияет на его uv.lock / зависимости.
+#
+# Основной способ запуска — docker (docker-compose.yml), как в оригинале.
+# uv нужен только опционально: `uv run manage.py ...` локально.
+#
+# Зависимости зеркалят requirements.txt оригинала (с версиями, фактически
+# установленными в контейнере). Не редактировать вручную — обновлять из
+# requirements.txt исходника при re-copy.
+# ============================================================================
+
+[project]
+name = "autoparts-store"
+version = "1.0.0"
+description = "AutoParts24 — foreign Django demo store (see README.foreign.md)"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.0,<5.1",
+    "psycopg2-binary>=2.9",
+    "Pillow>=10.0",
+    "Faker>=22.0",
+    "python-slugify>=8.0",
+    "django-debug-toolbar>=4.0",
+]
+
+[tool.uv]
+# Изолированный каталог: не workspace, не наследует root-helperium.
+# `uv run manage.py ...` работает отсюда; окружение в .venv этого каталога.
+package = false
+
+[tool.hatch.build.targets.wheel]
+packages = []
+
+# ── Django manage.py из корня этого каталога ──────────────────────────────
+# Запуск:  uv run --directory demo/autoparts-store manage.py runserver
+#   или    cd demo/autoparts-store && uv run manage.py migrate

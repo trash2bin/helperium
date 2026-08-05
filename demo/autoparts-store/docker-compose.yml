@@ -1,0 +1,38 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: autoparts-db
+    environment:
+      POSTGRES_DB: autoparts
+      POSTGRES_USER: autoparts
+      POSTGRES_PASSWORD: autoparts_secret_2024
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoparts -d autoparts"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: autoparts-web
+    command: >
+      sh -c "
+        python manage.py makemigrations catalog &&
+        python manage.py migrate &&
+        python manage.py seed_data &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

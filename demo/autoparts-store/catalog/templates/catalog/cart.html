@@ -1,0 +1,80 @@
+{% extends 'catalog/base.html' %}
+{% load catalog_tags %}
+
+{% block title %}Корзина — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <span>Корзина</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">🛒 Корзина</h1>
+
+{% if items %}
+<div class="cart-table">
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr>
+                <th>Товар</th>
+                <th>Артикул</th>
+                <th>Цена</th>
+                <th>Количество</th>
+                <th>Сумма</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td>
+                    <a href="{% url 'product_detail' item.product.slug %}" style="font-weight: 600;">
+                        {{ item.product.brand.name }} {{ item.product.name }}
+                    </a>
+                </td>
+                <td>{{ item.product.article }}</td>
+                <td>{{ item.price|floatformat:2 }} ₽</td>
+                <td>
+                    <form method="POST" action="{% url 'cart_update' item.id %}" style="display: flex; align-items: center; gap: 8px;">
+                        {% csrf_token %}
+                        <input type="number" name="quantity" value="{{ item.quantity }}" min="0" max="99" class="qty-input">
+                        <button type="submit" class="btn btn-sm btn-outline">Обн.</button>
+                    </form>
+                </td>
+                <td style="font-weight: 600;">{{ item.total|floatformat:2 }} ₽</td>
+                <td>
+                    <a href="{% url 'cart_remove' item.id %}" style="color: var(--primary); font-size: 20px;" onclick="return confirm('Удалить товар из корзины?')">✕</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="cart-summary" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <div class="row">
+            <span>Всего товаров:</span>
+            <span>{{ cart.total_items|ru_plural:"штука,штуки,штук" }}</span>
+        </div>
+        <div class="row total">
+            <span>Итого:</span>
+            <span>{{ cart.total_price|floatformat:2 }} ₽</span>
+        </div>
+    </div>
+    <div style="display: flex; gap: 12px;">
+        <a href="{% url 'catalog' %}" class="btn btn-outline">Продолжить покупки</a>
+        <a href="{% url 'checkout' %}" class="btn btn-primary btn-lg">Оформить заказ</a>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info" style="text-align: center; padding: 40px;">
+    <div style="font-size: 64px; margin-bottom: 16px;">🛒</div>
+    <h3 style="margin-bottom: 12px;">Корзина пуста</h3>
+    <p style="color: var(--text-light); margin-bottom: 24px;">Добавьте товары в корзину, чтобы оформить заказ</p>
+    <a href="{% url 'catalog' %}" class="btn btn-primary">Перейти в каталог</a>
+</div>
+{% endif %}
+{% endblock %}

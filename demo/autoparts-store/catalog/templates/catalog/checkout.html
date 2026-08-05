@@ -1,0 +1,108 @@
+{% extends 'catalog/base.html' %}
+{% load catalog_tags %}
+
+{% block title %}Оформление заказа — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <a href="{% url 'cart_view' %}">Корзина</a>
+    <span>Оформление</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">📋 Оформление заказа</h1>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+    <div class="order-form">
+        <form method="POST">
+            {% csrf_token %}
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Фамилия *</label>
+                    <input type="text" name="last_name" required placeholder="Иванов">
+                </div>
+                <div class="form-group">
+                    <label>Имя *</label>
+                    <input type="text" name="first_name" required placeholder="Иван">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Отчество</label>
+                    <input type="text" name="patronymic" placeholder="Иванович">
+                </div>
+                <div class="form-group">
+                    <label>Телефон *</label>
+                    <input type="tel" name="phone" required placeholder="+7 (999) 123-45-67">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Email *</label>
+                <input type="email" name="email" required placeholder="email@example.com">
+            </div>
+            <div class="form-group">
+                <label>Город</label>
+                <input type="text" name="city" value="Москва" placeholder="Москва">
+            </div>
+            <div class="form-group">
+                <label>Адрес доставки *</label>
+                <textarea name="address" required placeholder="Улица, дом, квартира"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Способ доставки</label>
+                    <select name="delivery_method">
+                        <option value="courier">Доставка курьером (500 ₽)</option>
+                        <option value="pickup">Самовывоз (бесплатно)</option>
+                        <option value="russian_post">Почта России</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Способ оплаты</label>
+                    <select name="payment_method">
+                        <option value="cash">Наличные</option>
+                        <option value="card">Картой при получении</option>
+                        <option value="online">Онлайн-оплата</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Комментарий к заказу</label>
+                <textarea name="comment" placeholder="Дополнительная информация по заказу"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;">Оформить заказ</button>
+        </form>
+    </div>
+
+    <div>
+        <div class="order-summary">
+            <h3>Ваш заказ</h3>
+            {% for item in items %}
+            <div class="item">
+                <span>{{ item.product.brand.name }} {{ item.product.name }} × {{ item.quantity }}</span>
+                <span>{{ item.total|floatformat:2 }} ₽</span>
+            </div>
+            {% endfor %}
+            <div class="item" style="border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;">
+                <span>Сумма</span>
+                <span><strong>{{ cart.total_price|floatformat:2 }} ₽</strong></span>
+            </div>
+            <div class="item">
+                <span>Доставка</span>
+                <span>от 0 ₽</span>
+            </div>
+        </div>
+        <div style="background: var(--white); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border);">
+            <h3 style="margin-bottom: 12px;">Почему выбирают нас</h3>
+            <ul style="font-size: 14px; color: var(--text-light);">
+                <li style="padding: 6px 0;">✅ Гарантия на все товары</li>
+                <li style="padding: 6px 0;">🚚 Быстрая доставка</li>
+                <li style="padding: 6px 0;">🔄 Возврат в течение 14 дней</li>
+                <li style="padding: 6px 0;">💳 Удобные способы оплаты</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

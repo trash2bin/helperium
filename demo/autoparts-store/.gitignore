@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+*.pyo
+*.swp
+.env
+.venv
+venv
+*.sqlite3
+.DS_Store
+catalog/migrations/__pycache__
+staticfiles/
+media/

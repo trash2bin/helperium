@@ -1,0 +1,31 @@
+{% extends 'catalog/base.html' %}
+{% load catalog_tags %}
+
+{% block title %}Производители автозапчастей — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <span>Бренды</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">🏭 Производители автозапчастей</h1>
+<p class="mb-20" style="color: var(--text-light);">В нашем каталоге представлены товары от {{ brands.count }} производителей</p>
+
+<div class="brands-grid">
+    {% for brand in brands %}
+    <a href="{% url 'brand_detail' brand.slug %}" class="brand-card">
+        <div class="name">{{ brand.name }}</div>
+        {% if brand.is_oem %}<div class="oem-badge">OEM</div>{% endif %}
+        <div class="country">{{ brand.country }}</div>
+        {% if brand.product_count %}
+        <div style="font-size: 12px; color: var(--text-light); margin-top: 8px;">
+            {{ brand.product_count|ru_plural:"товар,товара,товаров" }}
+        </div>
+        {% endif %}
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

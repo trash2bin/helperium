@@ -1,0 +1,91 @@
+{% extends 'catalog/base.html' %}
+{% load catalog_tags %}
+
+{% block title %}{{ product.brand.name }} {{ product.name }} — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <a href="{% url 'catalog' %}">Каталог</a>
+    {% if product.category.parent %}
+    <a href="{% url 'category_detail' product.category.parent.slug %}">{{ product.category.parent.name }}</a>
+    {% endif %}
+    <a href="{% url 'category_detail' product.category.slug %}">{{ product.category.name }}</a>
+    <span>{{ product.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="product-detail">
+    <div class="gallery">
+        <span class="no-img">🔧</span>
+    </div>
+    <div class="info">
+        <div class="brand-name" style="color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; font-size: 13px; margin-bottom: 4px;">{{ product.brand.name }}</div>
+        <h1>{{ product.name }}</h1>
+        <div class="article">Артикул: {{ product.article }}{% if product.oem_number %} | OEM: {{ product.oem_number }}{% endif %}</div>
+
+        <div class="price-row">
+            <span class="current-price">{{ product.price|floatformat:2 }} ₽</span>
+            {% if product.old_price %}
+            <span class="old-price">{{ product.old_price|floatformat:2 }} ₽</span>
+            {% endif %}
+        </div>
+
+        <div class="stock-info">
+            <span class="stock {% if product.is_available %}stock-in{% else %}stock-out{% endif %}" style="font-size: 16px;">
+                {% if product.is_available %}✅ В наличии — {{ product.quantity|ru_plural:"штука,штуки,штук" }}{% else %}❌ Нет в наличии{% endif %}
+            </span>
+            {% if product.warranty_months %}
+            <span style="margin-left: 16px;">🛡️ Гарантия {{ product.warranty_months|ru_plural:"месяц,месяца,месяцев" }}</span>
+            {% endif %}
+        </div>
+
+        {% if product.short_description %}
+        <p style="margin-bottom: 20px; color: var(--text-light);">{{ product.short_description }}</p>
+        {% endif %}
+
+        {% if product.characteristics %}
+        <div class="specs">
+            <h3 style="margin-bottom: 12px;">Характеристики</h3>
+            <table>
+                {% for key, value in product.characteristics.items %}
+                <tr>
+                    <td>{{ key }}</td>
+                    <td>{{ value }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% endif %}
+
+        {% if product.car_applicability %}
+        <div style="margin-bottom: 24px;">
+            <h3 style="margin-bottom: 12px;">Применимость</h3>
+            <div class="car-applicability">
+                {% for car in product.car_applicability %}
+                <span class="car-tag">🚗 {{ car }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if product.is_available %}
+        <form method="POST" action="" style="display: flex; gap: 12px;">
+            {% csrf_token %}
+            <input type="number" name="quantity" value="1" min="1" max="{{ product.quantity }}" style="width: 70px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 16px; text-align: center;">
+            <button type="submit" class="btn btn-primary btn-lg">В корзину</button>
+        </form>
+        {% else %}
+        <button class="btn btn-lg" style="background: var(--border); cursor: not-allowed;" disabled>Нет в наличии</button>
+        {% endif %}
+
+        {% if product.description %}
+        <div style="margin-top: 30px;">
+            <h3 style="margin-bottom: 12px;">Описание</h3>
+            <p style="color: var(--text-light); line-height: 1.7;">{{ product.description }}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

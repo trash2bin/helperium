@@ -1,0 +1,84 @@
+{% extends 'catalog/base.html' %}
+{% load catalog_tags %}
+
+{% block title %}Каталог автозапчастей — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <span class="sep">›</span>
+    <span>Каталог</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">📦 Каталог автозапчастей</h1>
+<p class="mb-20" style="color: var(--text-light);">
+    Найдено {{ page_obj.paginator.count|ru_plural:"товар,товара,товаров" }}
+</p>
+
+<div class="catalog-layout">
+    <!-- Filters -->
+    <aside class="filters">
+        <h3>Фильтры</h3>
+        <form method="GET" action="{% url 'catalog' %}">
+            <div class="filter-group">
+                <label style="font-weight: 600; margin-bottom: 8px;">Категория</label>
+                {% for cat in categories %}
+                <label>
+                    <input type="checkbox" name="category" value="{{ cat.slug }}"
+                    {% if cat.slug in selected_categories %}checked{% endif %}>
+                    {{ cat.name }}
+                </label>
+                {% endfor %}
+            </div>
+            <div class="filter-group">
+                <label style="font-weight: 600; margin-bottom: 8px;">В наличии</label>
+                <label>
+                    <input type="checkbox" name="in_stock" value="1" {% if request.GET.in_stock %}checked{% endif %}>
+                    Только в наличии
+                </label>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;">Применить</button>
+            <a href="{% url 'catalog' %}" class="btn btn-outline" style="width:100%; margin-top:8px; text-align:center;">Сбросить</a>
+        </form>
+    </aside>
+
+    <!-- Products -->
+    <div>
+        {% if products %}
+        <div class="products-grid">
+            {% for product in products %}
+            {% include 'catalog/includes/product_card.html' %}
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="pagination">
+            {% if page_obj.has_previous %}
+            <a href="?page=1{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">«</a>
+            <a href="?page={{ page_obj.previous_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">‹</a>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+            {% if num == page_obj.number %}
+            <span class="current">{{ num }}</span>
+            {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+            <a href="?page={{ num }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+            {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">›</a>
+            <a href="?page={{ page_obj.paginator.num_pages }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">»</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="alert alert-info">Товары не найдены. Попробуйте изменить параметры поиска.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

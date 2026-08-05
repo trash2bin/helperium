@@ -1,0 +1,73 @@
+{% extends 'catalog/base.html' %}
+{% load catalog_tags %}
+
+{% block title %}{{ category.name }} — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <a href="{% url 'catalog' %}">Каталог</a>
+    {% if category.parent %}
+    <a href="{% url 'category_detail' category.parent.slug %}">{{ category.parent.name }}</a>
+    {% endif %}
+    <span>{{ category.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">{{ category.icon|default:"" }} {{ category.name }}</h1>
+
+{% if category.description %}
+<p style="color: var(--text-light); margin-bottom: 20px;">{{ category.description }}</p>
+{% endif %}
+
+{% if subcategories %}
+<div class="mb-40">
+    <h3 style="margin-bottom: 16px;">Подкатегории</h3>
+    <div class="categories-grid">
+        {% for sub in subcategories %}
+        <a href="{% url 'category_detail' sub.slug %}" class="category-card">
+            <span class="icon">{{ sub.icon|default:"🔩" }}</span>
+            <div class="name">{{ sub.name }}</div>
+            {% if sub.products.count %}
+            <div class="count">{{ sub.products.count|ru_plural:"товар,товара,товаров" }}</div>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if products %}
+<div class="flex-between mb-20">
+    <p style="color: var(--text-light);">Найдено {{ page_obj.paginator.count|ru_plural:"товар,товара,товаров" }}</p>
+</div>
+<div class="products-grid">
+    {% for product in products %}
+    {% include 'catalog/includes/product_card.html' %}
+    {% endfor %}
+</div>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+    <a href="?page=1">«</a>
+    <a href="?page={{ page_obj.previous_page_number }}">‹</a>
+    {% endif %}
+    {% for num in page_obj.paginator.page_range %}
+    {% if num == page_obj.number %}
+    <span class="current">{{ num }}</span>
+    {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+    <a href="?page={{ num }}">{{ num }}</a>
+    {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}">›</a>
+    <a href="?page={{ page_obj.paginator.num_pages }}">»</a>
+    {% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="alert alert-info">В этой категории пока нет товаров.</div>
+{% endif %}
+{% endblock %}

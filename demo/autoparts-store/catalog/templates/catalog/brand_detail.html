@@ -1,0 +1,57 @@
+{% extends 'catalog/base.html' %}
+{% load catalog_tags %}
+
+{% block title %}{{ brand.name }} — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <a href="{% url 'brands_list' %}">Бренды</a>
+    <span>{{ brand.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">{{ brand.name }}</h1>
+<p class="mb-20" style="color: var(--text-light);">
+    {{ brand.country }}{% if brand.is_oem %} • OEM производитель{% endif %}
+    {% if brand.founded_year %} • Основан в {{ brand.founded_year }} году{% endif %}
+</p>
+
+{% if brand.description %}
+<p style="margin-bottom: 24px; color: var(--text-light);">{{ brand.description }}</p>
+{% endif %}
+
+{% if products %}
+<div class="flex-between mb-20">
+    <p style="color: var(--text-light);">Найдено {{ page_obj.paginator.count|ru_plural:"товар,товара,товаров" }}</p>
+</div>
+<div class="products-grid">
+    {% for product in products %}
+    {% include 'catalog/includes/product_card.html' %}
+    {% endfor %}
+</div>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+    <a href="?page=1">«</a>
+    <a href="?page={{ page_obj.previous_page_number }}">‹</a>
+    {% endif %}
+    {% for num in page_obj.paginator.page_range %}
+    {% if num == page_obj.number %}
+    <span class="current">{{ num }}</span>
+    {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+    <a href="?page={{ num }}">{{ num }}</a>
+    {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}">›</a>
+    <a href="?page={{ page_obj.paginator.num_pages }}">»</a>
+    {% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="alert alert-info">Товары этого производителя скоро появятся.</div>
+{% endif %}
+{% endblock %}

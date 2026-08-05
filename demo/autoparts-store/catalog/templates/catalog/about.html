@@ -1,0 +1,27 @@
+{% extends 'catalog/base.html' %}
+
+{% block title %}О компании — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <span>О компании</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">О компании</h1>
+<div class="page-content">
+    <p style="font-size: 16px; line-height: 1.8; margin-bottom: 16px;">
+        <strong>{{ site_settings.site_name }}</strong> — это надёжный интернет-магазин автозапчастей, работающий на рынке с 2015 года.
+        Мы специализируемся на продаже оригинальных запчастей и качественных аналогов для легковых автомобилей европейских, азиатских и американских марок.
+    </p>
+    <p style="font-size: 16px; line-height: 1.8; margin-bottom: 16px;">
+        Наш склад находится в Москве, что позволяет осуществлять доставку по городу в день заказа.
+        В регионы отправляем транспортными компаниями — от 1 дня.
+    </p>
+    <p style="font-size: 16px; line-height: 1.8;">
+        Мы работаем как с физическими, так и с юридическими лицами. Для постоянных клиентов — гибкая система скидок.
+    </p>
+</div>
+{% endblock %}

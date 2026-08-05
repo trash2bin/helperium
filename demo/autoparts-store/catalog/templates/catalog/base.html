@@ -1,0 +1,139 @@
+{% load static catalog_tags %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ site_settings.site_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'catalog/css/style.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Header Top -->
+    <div class="header-top">
+        <div class="container">
+            <span>🇷🇺 Интернет-магазин автозапчастей — {{ site_settings.phone }}</span>
+            <div>
+                <a href="{% url 'about' %}">О компании</a>
+                <span style="margin: 0 8px; opacity: 0.3;">|</span>
+                <a href="{% url 'contacts' %}">Контакты</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header Main -->
+    <header class="header">
+        <div class="container">
+            <div class="header-main">
+                <a href="{% url 'index' %}" class="logo">
+                    <span class="logo-icon">⚙️</span>
+                    <span>Авто</span>Запчасти
+                </a>
+
+                <form class="header-search" action="{% url 'search' %}" method="GET">
+                    <input type="text" name="q" placeholder="Поиск по артикулу, названию или OEM номеру..." value="{{ request.GET.q|default:'' }}">
+                    <button type="submit">Найти</button>
+                </form>
+
+                <div class="header-actions">
+                    <a href="tel:{{ site_settings.phone|cut:' '|cut:'('|cut:')'|cut:'-' }}">
+                        <span class="icon">📞</span>
+                        {{ site_settings.phone }}
+                    </a>
+                    <a href="{% url 'catalog' %}">
+                        <span class="icon">📦</span>
+                        Каталог
+                    </a>
+                    <a href="{% url 'brands_list' %}" style="position:relative;">
+                        <span class="icon">🏭</span>
+                        Бренды
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="nav">
+            <div class="container">
+                <ul class="nav-list">
+                    <li><a href="{% url 'index' %}">Главная</a></li>
+                    {% get_categories as categories %}
+                    {% for cat in categories %}
+                    <li>
+                        <a href="{% url 'category_detail' cat.slug %}">
+                            {{ cat.icon|default:'' }} {{ cat.name }}
+                        </a>
+                        {% if cat.children.all %}
+                        <div class="dropdown-menu">
+                            {% for child in cat.children.all %}
+                            <a href="{% url 'category_detail' child.slug %}">{{ child.name }}</a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                    <li><a href="{% url 'brands_list' %}">🏭 Бренды</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="container" style="margin-top: 20px;">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            {% block breadcrumbs %}{% endblock %}
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div>
+                    <h3>⚙️ {{ site_settings.site_name }}</h3>
+                    <p style="font-size: 14px; margin-bottom: 12px;">
+                        Продажа оригинальных и качественных аналогов автозапчастей с 2015 года.
+                    </p>
+                    <p style="font-size: 13px; opacity: 0.7;">
+                        Работаем с физическими и юридическими лицами.
+                    </p>
+                </div>
+                <div>
+                    <h3>Каталог</h3>
+                    {% for cat in categories|slice:":6" %}
+                    <a href="{% url 'category_detail' cat.slug %}">{{ cat.name }}</a>
+                    {% endfor %}
+                    <a href="{% url 'catalog' %}">Все категории</a>
+                </div>
+                <div>
+                    <h3>Информация</h3>
+                    <a href="{% url 'about' %}">О компании</a>
+                    <a href="{% url 'contacts' %}">Контакты</a>
+                </div>
+                <div>
+                    <h3>Контакты</h3>
+                    <ul class="contacts">
+                        <li>📞 {{ site_settings.phone }}</li>
+                        <li>✉️ {{ site_settings.email }}</li>
+                        <li>📍 {{ site_settings.address }}</li>
+                        <li>🕐 {{ site_settings.work_hours }}</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="copy">
+                © {% now "Y" %} {{ site_settings.site_name }}. Все права защищены.
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

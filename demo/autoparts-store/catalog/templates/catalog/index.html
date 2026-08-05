@@ -1,0 +1,88 @@
+{% extends 'catalog/base.html' %}
+{% load static catalog_tags %}
+
+{% block title %}{{ site_settings.site_name }} — интернет-магазин автозапчастей{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="hero">
+    <h1>🔧 Автозапчасти с доставкой по всей России</h1>
+    <p>Оригинальные запчасти и качественные аналоги от ведущих мировых производителей. Быстрая доставка, гарантия на все товары.</p>
+    <a href="{% url 'catalog' %}" class="btn btn-primary btn-lg">Перейти в каталог →</a>
+</section>
+
+<!-- Benefits -->
+<section class="benefits">
+    <div class="benefit-card">
+        <span class="icon">🚚</span>
+        <h3>Быстрая доставка</h3>
+        <p>Доставка по Москве за 2–4 часа, по России от 1 дня</p>
+    </div>
+    <div class="benefit-card">
+        <span class="icon">✅</span>
+        <h3>Гарантия качества</h3>
+        <p>Все товары сертифицированы, гарантия от 12 месяцев</p>
+    </div>
+    <div class="benefit-card">
+        <span class="icon">💰</span>
+        <h3>Лучшие цены</h3>
+        <p>Прямые поставки от производителей, без наценок</p>
+    </div>
+    <div class="benefit-card">
+        <span class="icon">🔄</span>
+        <h3>Лёгкий возврат</h3>
+        <p>Возврат и обмен в течение 14 дней без вопросов</p>
+    </div>
+</section>
+
+<!-- Categories -->
+<section class="mb-40">
+    <h2 class="section-title">Категории запчастей</h2>
+    <div class="categories-grid">
+        {% get_categories as categories %}
+        {% for cat in categories %}
+        <a href="{% url 'category_detail' cat.slug %}" class="category-card">
+            <span class="icon">{{ cat.icon|default:"🔩" }}</span>
+            <div class="name">{{ cat.name }}</div>
+            {% if cat.children.all %}
+            <div class="count">{{ cat.children.count }} подкатегорий</div>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Popular Products -->
+{% if popular_products %}
+<section class="mb-40">
+    <div class="flex-between mb-20">
+        <h2 class="section-title" style="border-bottom: none; margin-bottom: 0;">🔥 Популярные товары</h2>
+        <a href="{% url 'catalog' %}?popular=1" class="btn btn-outline btn-sm">Все популярные</a>
+    </div>
+    <div class="products-grid">
+        {% for product in popular_products %}
+        {% include 'catalog/includes/product_card.html' %}
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Brands -->
+{% if brands %}
+<section class="mb-40">
+    <div class="flex-between mb-20">
+        <h2 class="section-title" style="border-bottom: none; margin-bottom: 0;">🏭 Производители</h2>
+        <a href="{% url 'brands_list' %}" class="btn btn-outline btn-sm">Все бренды</a>
+    </div>
+    <div class="brands-grid" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));">
+        {% for brand in brands %}
+        <a href="{% url 'brand_detail' brand.slug %}" class="brand-card">
+            <div class="name">{{ brand.name }}</div>
+            {% if brand.is_oem %}<div class="oem-badge">OEM</div>{% endif %}
+            <div class="country">{{ brand.country }}</div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}

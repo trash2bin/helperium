@@ -1,0 +1,57 @@
+{% extends 'catalog/base.html' %}
+
+{% block title %}Контакты — {{ site_settings.site_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'index' %}">Главная</a>
+    <span>Контакты</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="border-bottom: none;">Контакты</h1>
+<div class="contacts-grid">
+    <div>
+        <div class="contact-card">
+            <span class="icon">📍</span>
+            <div>
+                <strong>Адрес</strong>
+                <p style="color: var(--text-light);">{{ site_settings.address }}</p>
+            </div>
+        </div>
+        <div class="contact-card">
+            <span class="icon">📞</span>
+            <div>
+                <strong>Телефон</strong>
+                <p style="color: var(--text-light);">{{ site_settings.phone }}</p>
+            </div>
+        </div>
+        <div class="contact-card">
+            <span class="icon">✉️</span>
+            <div>
+                <strong>Email</strong>
+                <p style="color: var(--text-light);">{{ site_settings.email }}</p>
+            </div>
+        </div>
+        <div class="contact-card">
+            <span class="icon">🕐</span>
+            <div>
+                <strong>Режим работы</strong>
+                <p style="color: var(--text-light);">{{ site_settings.work_hours }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="page-content">
+        <h3>Реквизиты</h3>
+        <table style="width: 100%; font-size: 14px;">
+            <tr><td style="padding: 8px 0; color: var(--text-light);">ИП</td><td>Иванов Иван Иванович</td></tr>
+            <tr><td style="padding: 8px 0; color: var(--text-light);">ИНН</td><td>771234567890</td></tr>
+            <tr><td style="padding: 8px 0; color: var(--text-light);">ОГРН</td><td>312774678900012</td></tr>
+            <tr><td style="padding: 8px 0; color: var(--text-light);">р/с</td><td>40702810123456789012</td></tr>
+            <tr><td style="padding: 8px 0; color: var(--text-light);">Банк</td><td>ПАО Сбербанк г. Москва</td></tr>
+            <tr><td style="padding: 8px 0; color: var(--text-light);">БИК</td><td>044525225</td></tr>
+        </table>
+    </div>
+</div>
+{% endblock %}

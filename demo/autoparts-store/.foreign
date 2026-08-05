@@ -1,0 +1,13 @@
+FOREIGN PROJECT — do not treat as helperium source.
+
+This directory is an unmodified copy of an external project:
+
+  Source:   https://github.com/ivan/auto-parts-store (local: /Users/ivan/code/auto-parts-store)
+  License:  none declared (private test project)
+  Purpose:  realistic benchmark/demo database (Django 5 / PostgreSQL 16, 1.7M products)
+
+Rules:
+- Do NOT edit files here for helperium features. It is a foreign, autonomous app.
+- Update by re-copying from the source repo (see demo/autoparts-store/README.foreign.md).
+- helperium code must never import from this directory (isolation).
+- The only helperium-owned additions: db/schema.sql (versioned DDL), README.foreign.md.
