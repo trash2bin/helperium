@@ -192,13 +192,8 @@ jobs:
 
       - name: Create data directories for bind mounts
         run: |
-          mkdir -p .data/app
-          mkdir -p .data/rag
-          mkdir -p .data/hf_cache
-          mkdir -p .data/uploads
-          mkdir -p .data/pg
-          mkdir -p .data/tenants
-
+          mkdir -p .data/app .data/rag .data/hf_cache .data/uploads .data/pg .data/tenants
+          sudo chown -R 1000:1000 .data
       - name: Run e2e tests (container, profile=test)
         run: docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
         env:
