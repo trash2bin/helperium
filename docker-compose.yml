@@ -128,11 +128,13 @@ services:
     volumes:
       - app_data:/data/app
     environment:
+      - USE_SCRIPTED_LLM=1
+      - HEALTH_CHECK_SKIP_LLM=true
+      - OLLAMA_URL=
       - MCP_SERVICE_URL=http://mcp-gateway:8083/mcp
       - DB_PATH=/data/app/university.db
       - DEMO_SESSION_DB_PATH=/data/app/demo_sessions.sqlite
       - BACKLOG_DIR=/data/app/backlog
-      - OLLAMA_URL=${OLLAMA_URL-}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:0.5b}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - MISTRAL_MODEL=${MISTRAL_MODEL:-mistral/mistral-small}
@@ -151,6 +153,7 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8081/health"]
       <<: *hc-curl
+      start_period: 30s
     depends_on:
       mcp-gateway:
         condition: service_healthy
