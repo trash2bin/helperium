@@ -193,10 +193,13 @@ jobs:
       - name: Prepare .data directories and workspace
         run: |
           mkdir -p .data/app .data/rag .data/hf_cache .data/uploads .data/pg .data/tenants
+          mkdir -p backlog
           # All containers run as UID 1000 via docker-compose.ci.yml
-          sudo chown -R 1000:1000 .data
+          sudo chown -R 1000:1000 .data backlog
           # data-service default tenant needs write access to scenario dirs for WAL mode
           sudo chmod -R 777 data-service/testdata/scenarios
+          # Generate shop data.db (gitignored, needed by mcp_composite/mcp_dynamic tests)
+          SHOP_DB=data-service/testdata/scenarios/shop/data.db uv run python data-service/testdata/scripts/create_shop_db.py
       - name: Run e2e tests (container, profile=test)
         run: |
           docker compose \
