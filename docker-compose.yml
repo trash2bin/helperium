@@ -151,9 +151,11 @@ services:
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-*}
       - DEMO_DEBUG=${DEMO_DEBUG:-false}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8081/health"]
-      <<: *hc-curl
-      start_period: 30s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     depends_on:
       mcp-gateway:
         condition: service_healthy
