@@ -194,6 +194,8 @@ jobs:
         run: |
           mkdir -p .data/app .data/rag .data/hf_cache .data/uploads .data/pg .data/tenants
           sudo chown -R 1000:1000 .data
+      - name: Fix workspace permissions for container user
+        run: sudo chown -R 1000:1000 .
       - name: Run e2e tests (container, profile=test)
         run: docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
         env:
