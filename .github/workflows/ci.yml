@@ -204,6 +204,7 @@ jobs:
         env:
           ADMIN_TOKEN: "ci-secret-token"
           VIEWER_TOKEN: "ci-viewer-token"
+          OLLAMA_URL: ""
       - name: Stop services
         if: always()
         run: docker compose --profile test down -v
