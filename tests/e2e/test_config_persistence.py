@@ -45,8 +45,7 @@ def setup_module(module):
     _DB_PATH = root / f".data/e2e_persist_{suffix}.db"
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    seed_path = root / "specs" / "fixtures" / "seed.json"
-    seed_database(_DB_PATH, seed_path=seed_path, project_root_dir=root)
+    seed_database(_DB_PATH, scenario="sqlite-testseed", project_root_dir=root)
 
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(

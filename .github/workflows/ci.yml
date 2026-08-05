@@ -190,23 +190,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Fix workspace permissions for containers
+      - name: Prepare .data directories
         run: |
           mkdir -p .data/app .data/rag .data/hf_cache .data/uploads .data/pg .data/tenants
-          # api/e2e = UID 1000, data-service/mcp-gateway = UID 1001.
-          # On Linux bind mounts preserve host UID → chmod 777 lets all write.
-          sudo chmod -R 777 .
+          # All containers run as UID 1000 via docker-compose.ci.yml
+          sudo chown -R 1000:1000 .data
       - name: Run e2e tests (container, profile=test)
-        run: docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            --profile test \
+            up --abort-on-container-exit --exit-code-from e2e
         env:
           ADMIN_TOKEN: "ci-secret-token"
           VIEWER_TOKEN: "ci-viewer-token"
       - name: Dump logs on failure
         if: failure()
         run: |
-          docker compose --profile test logs api
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs api
           echo '--- data-service logs ---'
-          docker compose --profile test logs data-service
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs data-service
       - name: Stop services
         if: always()
-        run: docker compose --profile test down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test down -v

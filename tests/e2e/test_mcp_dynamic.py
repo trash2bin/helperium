@@ -49,10 +49,8 @@ def setup_module(module):
     _DB_A.parent.mkdir(parents=True, exist_ok=True)
 
     # Seed university DB
-    seed_path = root / "specs" / "fixtures" / "seed.json"
+    seed_database(_DB_A, scenario="sqlite-testseed", project_root_dir=root)
     shop_db = root / "data-service" / "testdata" / "scenarios" / "shop" / "data.db"
-
-    seed_database(_DB_A, seed_path=seed_path, project_root_dir=root)
 
     # Register tenants — different schemas
     for tid, db_path in [(_TENANT_A, _DB_A), (_TENANT_B, shop_db)]:

@@ -44,9 +44,8 @@ def setup_module(module):
     db_b = root / f".data/e2e_iso_b_{suffix}.db"
     db_a.parent.mkdir(parents=True, exist_ok=True)
 
-    seed_shared = root / "specs" / "fixtures" / "seed.json"
-    seed_database(db_a, seed_path=seed_shared, project_root_dir=root)
-    seed_database(db_b, seed_path=seed_shared, project_root_dir=root)
+    seed_database(db_a, scenario="sqlite-testseed", project_root_dir=root)
+    seed_database(db_b, scenario="sqlite-testseed", project_root_dir=root)
 
     marker_a = f"ISO-A-{uuid.uuid4().hex[:6]}"
     marker_b = f"ISO-B-{uuid.uuid4().hex[:6]}"

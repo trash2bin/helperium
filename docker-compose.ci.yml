@@ -1,0 +1,20 @@
+# CI override: all services run as UID 1000 (matching api/e2e)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test up ...
+services:
+  data-service:
+    user: "1000:1000"
+
+  mcp-gateway:
+    user: "1000:1000"
+
+  api:
+    user: "1000:1000"
+
+  admin-dashboard:
+    user: "1000:1000"
+
+  web:
+    user: "1000:1000"
+
+  e2e:
+    user: "1000:1000"
