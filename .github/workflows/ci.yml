@@ -199,7 +199,7 @@ jobs:
           # data-service default tenant needs write access to scenario dirs for WAL mode
           sudo chmod -R 777 data-service/testdata/scenarios
           # Generate shop data.db (gitignored, needed by mcp_composite/mcp_dynamic tests)
-          SHOP_DB=data-service/testdata/scenarios/shop/data.db uv run python data-service/testdata/scripts/create_shop_db.py
+          SHOP_DB=data-service/testdata/scenarios/shop/data.db python3 data-service/testdata/scripts/create_shop_db.py
       - name: Run e2e tests (container, profile=test)
         run: |
           docker compose \
