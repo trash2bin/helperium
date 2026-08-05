@@ -190,11 +190,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Prepare .data directories
+      - name: Prepare .data directories and workspace
         run: |
           mkdir -p .data/app .data/rag .data/hf_cache .data/uploads .data/pg .data/tenants
           # All containers run as UID 1000 via docker-compose.ci.yml
           sudo chown -R 1000:1000 .data
+          # data-service default tenant needs write access to scenario dirs for WAL mode
+          sudo chmod -R 777 data-service/testdata/scenarios
       - name: Run e2e tests (container, profile=test)
         run: |
           docker compose \
