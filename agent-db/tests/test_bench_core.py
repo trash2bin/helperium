@@ -127,6 +127,24 @@ class TestEvaluator:
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.refusal_ok and res.hallucination and not res.success
 
+    # Фаза 2.5: absence-кейс, где модель зовёт db_map (схема) — это НЕ данные.
+    def test_absence_with_db_map_still_empty(self):
+        case = make_case(cid="abs3", gt_type="not_found", expected={"count": 0},
+                         expect_refusal=True,
+                         expected_tool={"must_call_any": ["db_search"]})
+        run = make_run(
+            final_text="Артикул ZZ-000-NOPE не найден в каталоге.",
+            tool_calls=[{"name": "db_map"}, {"name": "db_search"}],
+            tool_results=[
+                {"name": "db_map", "result": json.dumps({"entities": [{"name": "product"}]})},
+                {"name": "db_search",
+                 "result": json.dumps({"empty_hint": {"available_values": {"article": ["A1"]}}})},
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.retrieval_ok, f"db_map не данные, retrieval должен быть пуст: {res.reasons}"
+        assert res.refusal_ok and not res.hallucination and res.success, res.reasons
+
     def test_status_with_synonyms(self):
         case = make_case(expected={"status": "shipped"},
                          status_synonyms={"shipped": ["отправлен", "в пути"]})
@@ -167,6 +185,100 @@ class TestEvaluator:
                        tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}])
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.answer_ok, res.reasons
+        assert res.success, res.reasons
+
+    # ── Фаза 2.5 evaluator-fix: bool semantic matching ───────────────────
+    # Бенч (scout-1): GT {"available": true} ищет literal "true", а модель
+    # пишет «в наличии» → false-negative. Bool должен матчиться семантически.
+    def test_bool_available_ru_semantic(self):
+        case = make_case(expected={"available": True, "quantity": 23})
+        run = make_run(
+            final_text="Артикул EXT-01367 в наличии, 23 шт.",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get",
+                           "result": json.dumps({"is_available": True, "quantity": 23})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.answer_ok, f"bool True должен матчиться с «в наличии»: {res.reasons}"
+        assert res.success, res.reasons
+
+    def test_bool_not_available_ru_semantic(self):
+        case = make_case(expected={"available": False, "quantity": 0})
+        run = make_run(
+            final_text="Артикул закончился, на складе 0 шт.",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get",
+                           "result": json.dumps({"is_available": False, "quantity": 0})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.answer_ok, f"bool False должен матчиться с «закончился»: {res.reasons}"
+        assert res.success, res.reasons
+
+    # ── Фаза 2.5 evaluator-fix: производные числа (суммы) ───────────────
+    # Бенч (order-lookup-total): модель считает 677×3=2031 (line-items),
+    # эти числа в ответе, но не в tool_results → false-positive hallucination.
+    def test_derived_arithmetic_not_hallucination(self):
+        case = make_case(expected={"total": 7809})
+        run = make_run(
+            final_text="Заказ АП-100004: итого 7809 руб. (677×3 позиции = 2031 за детали)",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get",
+                           "result": json.dumps({"total": 7809})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.answer_ok and not res.hallucination, \
+            f"производная арифметика не галлюцинация: {res.reasons}"
+        assert res.success, res.reasons
+
+    def test_derived_count_not_hallucination(self):
+        case = make_case(cid="dc", gt_type="count", expected={"count": 42})
+        run = make_run(
+            final_text="Найдено 42 товара (плюс ещё 5 в других категориях)",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({"total": 42})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, f"производное «ещё 5» не галлюцинация: {res.reasons}"
+
+    # Фаза 2.5: сумма позиций заказа (2031 = 677×3, где 677 и 3 в tool_results).
+    def test_line_item_sum_not_hallucination(self):
+        case = make_case(expected={"total": 7809})
+        run = make_run(
+            final_text="Заказ: итого 7809 ₽. Позиция FLT-01188: 2 031 ₽ (677×3).",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({
+                "total": 7809,
+                "items": [{"price": 677, "quantity": 3}, {"price": 4585, "quantity": 1}],
+            })}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, f"сумма позиций не галлюцинация: {res.reasons}"
+        assert res.answer_ok and res.success, res.reasons
+
+    # ── Фаза 2.5 evaluator-fix: табличные № строк ───────────────────────
+    # Модель нумерует строки в таблице (1..10) — это не факты.
+    # ── Фаза 2.5 evaluator-fix: морфология стран ────────────────────────
+    # «из Германии» (предложный падеж) ≠ «Германия» — матчим по корню.
+    def test_country_morphology(self):
+        case = make_case(expected={"country": "Германия"})
+        run = make_run(
+            final_text="Бренд Bosch — из Германии, основан в 1886.",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"country": "Германия", "founded_year": 1886}, ensure_ascii=False)}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.answer_ok, f"«из Германии» должен матчиться с «Германия»: {res.reasons}"
+        assert res.success, res.reasons
+
+    def test_country_morphology_japan(self):
+        case = make_case(expected={"country": "Япония"})
+        run = make_run(
+            final_text="Производство Denso расположено в Японии.",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"country": "Япония"}, ensure_ascii=False)}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.answer_ok, f"«в Японии» должен матчиться с «Япония»: {res.reasons}"
         assert res.success, res.reasons
 
     def test_question_numbers_not_hallucination(self):

@@ -648,11 +648,13 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_brand",
-          "db_search"
+          "db_search",
+          "db_describe"
         ]
       },
       "tags": [
         "brand",
+        "db_describe-ok: COUNT(*) честный (аудит scout-3)",
         "count"
       ]
     },

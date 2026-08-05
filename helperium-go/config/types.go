@@ -48,14 +48,14 @@ func (m HTTPMethod) Valid() bool {
 type Op string
 
 const (
-	OpBuiltinHealth   Op = "builtin_health"
-	OpBuiltinStats    Op = "builtin_stats"
-	OpGetByID         Op = "get_by_id"
-	OpStrategy        Op = "strategy"
-	OpCustomQuery     Op = "custom_query"
-	OpDistinct        Op = "distinct"
-	OpCount           Op = "count"
-	OpQDispatch       Op = "q_dispatch"
+	OpBuiltinHealth Op = "builtin_health"
+	OpBuiltinStats  Op = "builtin_stats"
+	OpGetByID       Op = "get_by_id"
+	OpStrategy      Op = "strategy"
+	OpCustomQuery   Op = "custom_query"
+	OpDistinct      Op = "distinct"
+	OpCount         Op = "count"
+	OpQDispatch     Op = "q_dispatch"
 )
 
 // Valid проверяет, что op входит в whitelist.
@@ -80,9 +80,9 @@ func validStrategy(s string) bool {
 type RelationKind string
 
 const (
-	RelationManyToOne   RelationKind = "many_to_one"
-	RelationOneToMany   RelationKind = "one_to_many"
-	RelationManyToMany  RelationKind = "many_to_many"
+	RelationManyToOne  RelationKind = "many_to_one"
+	RelationOneToMany  RelationKind = "one_to_many"
+	RelationManyToMany RelationKind = "many_to_many"
 )
 
 // Valid проверяет, что kind входит в whitelist.
@@ -335,17 +335,33 @@ func (e Entity) FindColumn(fieldName string) string {
 	return ""
 }
 
-// FirstStringFieldColumn возвращает первую не-PK строковую колонку.
+// FirstStringFieldColumn возвращает колонку для preview name (compact-формат).
+//
+// Приоритет:
+//  1. Поле с публичным именем name/title/full_name (человекочитаемый заголовок).
+//  2. Иначе первая не-PK строковая колонка по схеме.
+//
+// Строковые PK пропускаются (selectClause compact использует этот helper —
+// иначе preview был бы [id,id] для string-id сущностей).
+// Фикс 2 (бенч scout-1): у Django article стоит раньше name — раньше preview
+// показывал артикул (EXT-01392) вместо названия товара.
 func (e Entity) FirstStringFieldColumn() string {
+	var first string
 	for _, f := range e.Fields {
 		if f.PrimaryKey != nil && *f.PrimaryKey {
 			continue
 		}
-		if f.Type == FieldTypeString {
+		if f.Type != FieldTypeString {
+			continue
+		}
+		if n := strings.ToLower(f.Name); n == "name" || n == "title" || n == "full_name" {
 			return f.Column
 		}
+		if first == "" {
+			first = f.Column
+		}
 	}
-	return ""
+	return first
 }
 
 // EntityField — поле сущности. name — публичное имя, column — имя колонки.

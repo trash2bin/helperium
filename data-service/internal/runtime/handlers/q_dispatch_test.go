@@ -19,7 +19,7 @@ import (
 func TestQSearch_UnknownEntity_404(t *testing.T) {
 	ctx, _ := newQTestCtx(t)
 
-	h := QSearchHandler(ctx, func(n string) bool { return false },
+	h := QSearchHandler(ctx, func(n string) (string, bool) { return "", false },
 		func(n string) http.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) {
 				t.Fatal("handler must not be called for unknown entity")
@@ -39,7 +39,7 @@ func TestQSearch_UnknownEntity_404(t *testing.T) {
 func TestQSearch_MissingEntity_400(t *testing.T) {
 	ctx, _ := newQTestCtx(t)
 
-	h := QSearchHandler(ctx, func(n string) bool { return true },
+	h := QSearchHandler(ctx, func(n string) (string, bool) { return n, true },
 		func(n string) http.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) {
 				t.Fatal("handler must not be called without entity")
@@ -61,7 +61,7 @@ func TestQSearch_StripsEntityParam(t *testing.T) {
 	ctx, _ := newQTestCtx(t)
 
 	var capturedQuery string
-	h := QSearchHandler(ctx, func(n string) bool { return true },
+	h := QSearchHandler(ctx, func(n string) (string, bool) { return n, true },
 		func(n string) http.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) {
 				capturedQuery = r.URL.RawQuery
@@ -88,7 +88,7 @@ func TestQSearch_StripsEntityParam(t *testing.T) {
 func TestQGet_UnknownEntity_404(t *testing.T) {
 	ctx, _ := newQTestCtx(t)
 
-	h := QGetHandler(ctx, func(n string) bool { return false },
+	h := QGetHandler(ctx, func(n string) (string, bool) { return "", false },
 		func(n string) http.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) {
 				t.Fatal("handler must not be called for unknown entity")
@@ -101,6 +101,78 @@ func TestQGet_UnknownEntity_404(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for unknown entity in db_get, got %d", w.Code)
+	}
+}
+
+// ── Фаза 2.5 fix: /q/* принимает display-имена ────────────────────────
+//
+// Бенч: модель шлёт entity="Brand" (display из db_map) → 404 unknown_entity.
+// Фикс: entityResolver резолвит display-имя в canonical (CanonicalEntityName).
+// Здесь тестируем, что make* колбэки получают canonical имя, а не display.
+func TestQSearch_ResolvesDisplayNameToCanonical(t *testing.T) {
+	ctx, _ := newQTestCtx(t)
+
+	// Резолвер имитирует CanonicalEntityName: "Brand" → "catalog_brand".
+	resolve := func(n string) (string, bool) {
+		switch n {
+		case "Brand", "brand", "Brand (catalog_brand)", "catalog_brand":
+			return "catalog_brand", true
+		}
+		return "", false
+	}
+
+	var gotEntity string
+	h := QSearchHandler(ctx, resolve,
+		func(n string) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				gotEntity = n
+				RespondJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+			}
+		})
+
+	// Модель прислала display-имя (первый токен db_map).
+	req := httptest.NewRequest(http.MethodGet, "/q/search?entity=Brand&pattern=Bosch", nil)
+	w := httptest.NewRecorder()
+	h(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for display name, got %d: %s", w.Code, w.Body.String())
+	}
+	// ВАЖНО: handler получил уже РАЗРЕШЁННОЕ canonical имя (не "Brand").
+	if gotEntity != "catalog_brand" {
+		t.Errorf("makeSearch handler must receive canonical entity, got %q", gotEntity)
+	}
+}
+
+// TestQSearch_CanonicalStillWorks — canonical имя по-прежнему проходит.
+func TestQSearch_CanonicalStillWorks(t *testing.T) {
+	ctx, _ := newQTestCtx(t)
+
+	resolve := func(n string) (string, bool) {
+		if n == "catalog_brand" || n == "Brand" {
+			return "catalog_brand", true
+		}
+		return "", false
+	}
+
+	var gotEntity string
+	h := QSearchHandler(ctx, resolve,
+		func(n string) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				gotEntity = n
+				RespondJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+			}
+		})
+
+	req := httptest.NewRequest(http.MethodGet, "/q/search?entity=catalog_brand&pattern=Bosch", nil)
+	w := httptest.NewRecorder()
+	h(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for canonical name, got %d", w.Code)
+	}
+	if gotEntity != "catalog_brand" {
+		t.Errorf("makeSearch handler must receive canonical entity, got %q", gotEntity)
 	}
 }
 

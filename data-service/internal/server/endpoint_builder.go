@@ -161,18 +161,34 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 			inst.schemaMu.RLock()
 			defer inst.schemaMu.RUnlock()
 			schema := inst.IntrospectedSchema
-			// schema может быть nil (после рестарта, до rewrite). GenerateSchemaForLLM
+			// schema может быть nil (после рестарта, до rewrite). GenerateSchemaForLLMCompact
 			// умеет строить карту из cfg.Entities (fallback на Relations) — Фаза 2.5,
 			// иначе модель слепа после рестарта data-service.
-			return configgen.GenerateSchemaForLLM(schema, inst.Config), true
+			// db_map (этот колбэк) — компактный cheat-sheet: полная схема уже в system prompt.
+			return configgen.GenerateSchemaForLLMCompact(schema, inst.Config), true
 		}
 
 		entityProvider := func(name string) (config.Entity, bool) {
-			e, ok := entityMap[name]
-			return e, ok
+			// Canonical имя — прямое попадание.
+			if e, ok := entityMap[name]; ok {
+				return e, true
+			}
+			// Display-имя из db_map ("Brand", "Brand (catalog_brand)") → canonical.
+			// Закрывает бенч-находку: модель копирует display-имя в entity-параметр.
+			displayPrefixes := cfg.DisplayPrefixes
+			if len(displayPrefixes) == 0 {
+				displayPrefixes = configgen.DefaultDisplayPrefixes()
+			}
+			cn := configgen.CanonicalEntityName(name, displayPrefixes, cfg.CustomShortNames, entityMap)
+			if cn != "" {
+				if e, ok := entityMap[cn]; ok {
+					return e, true
+				}
+			}
+			return config.Entity{}, false
 		}
 
-		qRoutes := handlers.MakeQDispatcher(ctx, entityProvider, dataSource, schemaForLLM)
+		qRoutes := handlers.MakeQDispatcher(ctx, entityProvider, entityMap, dataSource, schemaForLLM)
 		for path, h := range qRoutes {
 			r.Get(path, h)
 		}

@@ -27,9 +27,10 @@ type LLMEntity struct {
 	// Name — бизнес-имя сущности ("Товар (catalog_product)").
 	Name string `json:"name"`
 
-	// ToolPrefix — префикс для тулов, ссылающихся на эту сущность ("catalog_product").
-	// Нужен для построения правильных ссылок get_*, grep_*, filter_*, schema_*.
-	ToolPrefix string `json:"-"`
+	// ToolPrefix — canonical имя сущности ("catalog_product").
+	// Модель использует его в entity-параметре db_* тулов. НЕ скрываем (json:"-")
+	// — раньше скрывали, и модель копировала display-имя из name → 404 unknown_entity.
+	ToolPrefix string `json:"tool_prefix,omitempty"`
 
 	// Description — комментарий из БД либо авто-описание.
 	Description string `json:"description,omitempty"`
@@ -57,8 +58,8 @@ type FilterGroup struct {
 // FilterField — одна колонка-фильтр.
 type FilterField struct {
 	Name        string `json:"name"`
-	Column      string `json:"column"` // оригинальное имя в БД (snake_case)
-	Type        string `json:"type"`   // string/int/float/bool/date/enum
+	Column      string `json:"column,omitempty"` // оригинальное имя в БД (snake_case); только в полной схеме
+	Type        string `json:"type"`             // string/int/float/bool/date/enum
 	Description string `json:"description,omitempty"`
 	IsFK        bool   `json:"is_fk,omitempty"`     // true если это внешний ключ
 	FKEntity    string `json:"fk_entity,omitempty"` // имя сущности, на которую ссылается FK
@@ -80,7 +81,21 @@ type LLMRelation struct {
 // описание для LLM-агента. Никакого raw SQL.
 //
 // cfg — сгенерированный config.Config (нужен для entities, endpoints, FK).
+// Полная версия (для /mcp/schema → system prompt): включает column для
+// filter-подсказок и FK-прозу.
 func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *SchemaForLLM {
+	return generateSchemaForLLM(schema, cfg, false)
+}
+
+// GenerateSchemaForLLMCompact — компактная версия для /q/map (db_map).
+// Схема уже авто-инжектится в system prompt (/mcp/schema), db_map — это
+// cheat-sheet, который модель может перезапросить. Он не должен съедать
+// токен-бюджет (8K): без column-дублей, без FK-прозы, 1 hint вместо 3.
+func GenerateSchemaForLLMCompact(schema *datasource.Schema, cfg *config.Config) *SchemaForLLM {
+	return generateSchemaForLLM(schema, cfg, true)
+}
+
+func generateSchemaForLLM(schema *datasource.Schema, cfg *config.Config, compact bool) *SchemaForLLM {
 	// Resolve the display and plural config
 	displayPrefixes := cfg.DisplayPrefixes
 	if len(displayPrefixes) == 0 {
@@ -171,12 +186,15 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			continue
 		}
 
-		// Build name and description
+		// Build name and description.
+		// Показываем canonical ПЕРВЫМ: "catalog_brand (Brand)".
+		// Раньше было "Brand (catalog_brand)" — модель копировала первый токен
+		// (display) в entity-параметр → 404. Canonical первым убирает двусмысленность.
 		businessName := shortBusinessName(e.Name, displayPrefixes, customShortNames)
-		displayName := fmt.Sprintf("%s (%s)", businessName, e.Name)
+		displayName := fmt.Sprintf("%s (%s)", e.Name, businessName)
 
 		desc := e.Description
-		if desc == "" {
+		if desc == "" && !compact {
 			desc = fmt.Sprintf("Таблица %s", e.Name)
 		}
 
@@ -227,7 +245,7 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			}
 
 			fieldDesc := f.Description
-			if fkEntity != "" {
+			if fkEntity != "" && !compact {
 				if fieldDesc != "" {
 					fieldDesc += " | "
 				}
@@ -236,11 +254,13 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 
 			ff := FilterField{
 				Name:        shortColumnName(f.Name),
-				Column:      f.Column,
 				Type:        string(f.Type),
 				Description: fieldDesc,
 				IsFK:        fkRef != "",
 				FKEntity:    fkEntity,
+			}
+			if !compact {
+				ff.Column = f.Column
 			}
 
 			switch f.Type {
@@ -262,7 +282,7 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 			}
 			relations = append(relations, LLMRelation{
 				Field:            rel.LocalFK,
-				ReferencedEntity: shortBusinessName(targetName, displayPrefixes, customShortNames),
+				ReferencedEntity: targetName, // canonical имя (не display) — модель передаёт его в entity-параметр
 			})
 		}
 
@@ -312,6 +332,16 @@ func GenerateSchemaForLLM(schema *datasource.Schema, cfg *config.Config) *Schema
 	// Generate workflow hints
 	hintKey := func(h string) string {
 		return strings.ToLower(strings.TrimSpace(h))
+	}
+
+	// Compact (db_map): один компактный hint вместо трёх длинных.
+	// Модель уже получила полные hints в system prompt (/mcp/schema).
+	if compact {
+		hints = append(hints, "SEARCH-FIRST: search with db_search or filter_<entity> before db_get; never guess ids. Use db_describe to discover valid values.")
+		return &SchemaForLLM{
+			Entities:      entities,
+			WorkflowHints: hints,
+		}
 	}
 
 	// Доменно-нейтральные подсказки. Ссылаются на реальные тулы: db_map,

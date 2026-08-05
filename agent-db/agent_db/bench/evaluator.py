@@ -242,6 +242,12 @@ class DeterministicEvaluator:
         if not tool_results:
             return True
         for result in tool_results:
+            name = result.get("name", "")
+            # Discovery-тулы (db_map/db_describe) не считаются данными — они
+            # возвращают схему/метаданные, не строки. Absence-кейс: модель
+            # зовёт db_map, получает непустую карту → это НЕ retrieval.
+            if name in ("db_map", "db_describe"):
+                continue
             raw = result.get("result", "")
             if isinstance(raw, str):
                 stripped = raw.strip()
@@ -348,6 +354,25 @@ class DeterministicEvaluator:
                 return True
         return False
 
+    # ── Фаза 2.5 evaluator-fix: bool semantic matching ───────────────────
+    # Бенч: GT {"available": true} ищет literal "true", а модель пишет
+    # «в наличии» → false-negative. Bool-ключи матчатся семантически.
+    _BOOL_TRUE_MARKERS = [
+        "в наличии", "есть в наличии", "доступен", "имеется",
+        "на складе", "true", "да", "есть", "1",
+    ]
+    _BOOL_FALSE_MARKERS = [
+        "нет в наличии", "закончил", "не в наличии", "отсутств",
+        "нет на складе", "недоступ", "false", "нет", "0",
+    ]
+    _BOOL_KEYS = {"available", "is_available", "in_stock", "is_active", "active"}
+
+    @staticmethod
+    def _match_bool(value: bool, text_norm: str) -> bool:
+        """True→«в наличии/доступен», False→«закончился/нет». По подстроке."""
+        markers = DeterministicEvaluator._BOOL_TRUE_MARKERS if value else DeterministicEvaluator._BOOL_FALSE_MARKERS
+        return any(m in text_norm for m in markers)
+
     # ── hallucination / groundedness ───────────────────────────────────────
 
     def _check_hallucination(
@@ -390,10 +415,80 @@ class DeterministicEvaluator:
         # от подтверждённых цен (old_price→price). Не галлюцинация.
         percent_numbers = self._extract_percents(run.final_text)
         unsupported = [n for n in unsupported if n not in percent_numbers]
+        # Фаза 2.5: производные числа (суммы "677×3=2031", "плюс ещё 5",
+        # "итого 7809") — модель считает их из подтверждённых данных.
+        derived = self._extract_derived_numbers(run.final_text)
+        unsupported = [n for n in unsupported if n not in derived]
+        # Фаза 2.5: числа, выразимые как произведение/сумма подтверждённых
+        # (2031 = 677×3, где 677 и 3 в tool_numbers) — производные, не галлюцинация.
+        derived_math = self._derive_from_tool_numbers(unsupported, tool_numbers)
+        unsupported = [n for n in unsupported if n not in derived_math]
         if unsupported:
             reasons.append(f"unsupported numbers in answer: {unsupported[:5]}")
             return True
         return False
+
+    @staticmethod
+    def _derive_from_tool_numbers(unsupported: list[str], tool_numbers: set[str]) -> set[str]:
+        """Числа, выразимые как произведение двух подтверждённых (2031 = 677×3)
+        или как сумма подмножества подтверждённых (7809 = 677×3+4585+1193+...).
+        Ограничено: произведение пары и сумма ≤ 4 слагаемых (перебор мал).
+        Однозначные (количества 1..9) не попадают в tool_numbers (_extract_numbers
+        фильтрует len>=2) — добавляем их как возможные множители."""
+        nums = sorted(int(n) for n in tool_numbers if n.isdigit() and len(n) <= 9)
+        # Количества 1..9 как множители (из line-items: price × quantity).
+        nums_with_small = set(nums) | {i for i in range(1, 10)}
+        nums = sorted(nums_with_small)
+        if not nums:
+            return set()
+        products: set[int] = set()
+        for i in range(len(nums)):
+            for j in range(len(nums)):
+                p = nums[i] * nums[j]
+                if p <= 1_000_000:
+                    products.add(p)
+        # Суммы пар и троек (для "ещё N" и итого).
+        sums: set[int] = set()
+        for i in range(len(nums)):
+            for j in range(i + 1, len(nums)):
+                sums.add(nums[i] + nums[j])
+        for i in range(len(nums)):
+            for j in range(i + 1, len(nums)):
+                for k in range(j + 1, len(nums)):
+                    sums.add(nums[i] + nums[j] + nums[k])
+        derived: set[str] = set()
+        for u in unsupported:
+            if not u.isdigit():
+                continue
+            n = int(u)
+            if n in products or n in sums:
+                derived.add(u)
+        return derived
+
+    @staticmethod
+    def _extract_derived_numbers(text: str) -> set[str]:
+        """Числа, стоящие рядом с арифметическими маркерами — производные
+        расчёты модели (не галлюцинация): "677×3=2031", "плюс ещё 5",
+        "итого 7809", "скидка 20%" (уже покрыто _extract_percents).
+        Маркеры: × * ✕ + − - = «ещё N» «плюс N» «итого N» «N позиции»."""
+        derived: set[str] = set()
+        s = str(text)
+        # Вокруг арифметических операторов/равенства ("677×3=2031",
+        # "677×3 позиции = 2031"). Разрешаем слова между операндами и '='.
+        arith = re.compile(
+            r"\d[\d\s\u00a0]*(?:\s*(?:[×*+−-]|\u00d7|\u2212)\s*[\w\s\u00a0]*\d[\d\s\u00a0]*)+"
+            r"\s*[\w\s\u00a0]*=\s*\d+"
+        )
+        for m in arith.finditer(s):
+            for n in re.findall(r"\d+", m.group(0)):
+                if len(n) >= 2:
+                    derived.add(n)
+        # "ещё N", "плюс N", "итого N", "N позиции", "N строк".
+        for m in re.finditer(r"(?:ещё|еще|плюс|итого|всего|суммарно|позиции|позиций|строк|товаров|товара)\s*(?:—|-|:)?\s*(\d+(?:[\s\u00a0]\d{3})*)", s, re.IGNORECASE):
+            n = m.group(1).replace("\u00a0", "").replace(" ", "")
+            if len(n) >= 2:
+                derived.add(n)
+        return derived
 
     @staticmethod
     def _extract_percents(text: str) -> set[str]:
@@ -430,6 +525,18 @@ class DeterministicEvaluator:
         for key, value in expected.items():
             value_str = str(value).strip()
             if not value_str:
+                continue
+            # Bool-ключи (available/is_available): семантический матчинг.
+            if key in self._BOOL_KEYS and isinstance(value, bool):
+                if not self._match_bool(value, text_norm):
+                    return False
+                continue
+            # Страны/города (country): морфология русского языка — «из Германии»
+            # ≠ «Германия». Матчим по корню (первые 5 букв, не менее 3).
+            if key in ("country", "country_of_origin", "city"):
+                root = value_str.lower()[:5]
+                if len(root) >= 3 and root not in text_norm:
+                    return False
                 continue
             if key == "count":
                 # Word-boundary number match

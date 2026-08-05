@@ -251,7 +251,7 @@ func TestSchemaForLLM_SearchFieldsFilled(t *testing.T) {
 					{Name: "id", Type: "int"},
 					{Name: "name", Type: "string"},
 					{Name: "description", Type: "string"},
-					{Name: "price", Type: "float"},   // не searchable (не string)
+					{Name: "price", Type: "float"},      // не searchable (не string)
 					{Name: "image_url", Type: "string"}, // заблокировано дефолтным searchable-правилом (image/seo/json)
 				},
 			},
@@ -323,6 +323,7 @@ func TestGenerateMCPTools_NoGetByIDCountDistinct(t *testing.T) {
 	if names["db_filter"] {
 		t.Errorf("db_filter must NOT be consolidated (filter is per-entity in Phase 2.5)")
 	}
+
 	// filter_products — пер-энтити (имена полей в схеме тула).
 	if !names["filter_products"] {
 		t.Errorf("filter_products must be emitted (per-entity filter, Phase 2.5)")
@@ -344,6 +345,142 @@ func TestGenerateMCPTools_NoGetByIDCountDistinct(t *testing.T) {
 	}
 	if ops[config.OpCount] == 0 {
 		t.Error("REST count endpoint must remain (compat)")
+	}
+}
+
+// ── Фаза 2.5 fix: entity-name contract (db_map ↔ /q/*) ──────────────────
+//
+// Бенч (scout-0): модель копирует display-имя из db_map ("Brand") в entity-параметр
+// db_search/db_get → 404 unknown_entity. Фикс: db_map показывает canonical ПЕРВЫМ
+// ("catalog_brand (Brand)"), ToolPrefix не скрыт, FK-связи canonical.
+func TestSchemaForLLM_CanonicalNameFirst(t *testing.T) {
+	tPK := true
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{
+				Name:       "catalog_brand",
+				PrimaryKey: []string{"id"},
+				Columns:    []datasource.Column{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
+			},
+		},
+	}
+	cfg := &config.Config{
+		Entities: []config.Entity{
+			{
+				Name: "catalog_brand", Table: "catalog_brand", IDColumn: "id",
+				Fields: []config.EntityField{
+					{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: &tPK},
+					{Name: "name", Column: "name", Type: config.FieldTypeString},
+				},
+			},
+		},
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	}
+
+	result := GenerateSchemaForLLM(schema, cfg)
+	if len(result.Entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(result.Entities))
+	}
+	e := result.Entities[0]
+
+	// (а) canonical ПЕРВЫМ: "catalog_brand (Brand)", а не "Brand (catalog_brand)".
+	if !strings.HasPrefix(e.Name, "catalog_brand") {
+		t.Errorf("entity name must start with canonical, got %q", e.Name)
+	}
+	if !strings.Contains(e.Name, "Brand") {
+		t.Errorf("entity name must still contain display name, got %q", e.Name)
+	}
+
+	// (б) ToolPrefix (canonical) НЕ скрыт — модель должна видеть его как значение.
+	if e.ToolPrefix != "catalog_brand" {
+		t.Errorf("ToolPrefix must be serialized canonical, got %q", e.ToolPrefix)
+	}
+}
+
+// Фаза 2.5 fix: FK-связи в db_map показывают canonical имя связанной сущности,
+// чтобы модель не строила цепочку "Brand → catalog_brand" из двух словарей.
+func TestSchemaForLLM_RelationReferencesCanonical(t *testing.T) {
+	tPK := true
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{
+				Name:       "catalog_product",
+				PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "int"},
+					{Name: "name", Type: "string"},
+					{Name: "brand_id", Type: "int"},
+				},
+				ForeignKeys: []datasource.ForeignKey{
+					{Columns: []string{"brand_id"}, ReferencedTable: "catalog_brand", ReferencedColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+	cfg := &config.Config{
+		Entities: []config.Entity{
+			{
+				Name: "catalog_product", Table: "catalog_product", IDColumn: "id",
+				Fields: []config.EntityField{
+					{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: &tPK},
+					{Name: "name", Column: "name", Type: config.FieldTypeString},
+					{Name: "brand_id", Column: "brand_id", Type: config.FieldTypeInt},
+				},
+				Relations: []config.Relation{
+					{Field: "brand_id", Kind: config.RelationManyToOne, Table: "catalog_brand", LocalFK: "brand_id"},
+				},
+			},
+		},
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	}
+
+	result := GenerateSchemaForLLM(schema, cfg)
+	if len(result.Entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(result.Entities))
+	}
+	e := result.Entities[0]
+	if len(e.Relations) == 0 {
+		t.Fatalf("expected relation, got none")
+	}
+	// Связанная сущность — canonical, не display ("catalog_brand", не "Brand").
+	if e.Relations[0].ReferencedEntity != "catalog_brand" {
+		t.Errorf("relation must reference canonical name, got %q", e.Relations[0].ReferencedEntity)
+	}
+}
+
+// Фаза 2.5 fix: описания db_* тулов содержат пример canonical-имени,
+// чтобы модель не копировала display из db_map в entity-параметр.
+func TestMCPTools_DbToolsEntityParamHasExample(t *testing.T) {
+	schema := &datasource.Schema{
+		Driver: "sqlite",
+		Tables: []datasource.Table{
+			{
+				Name:       "catalog_product",
+				PrimaryKey: []string{"id"},
+				Columns:    []datasource.Column{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
+			},
+		},
+	}
+	cfg := Generate(schema, &config.Config{
+		DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
+	})
+
+	// Все db_* с entity-параметром должны упоминать пример canonical-имени.
+	for _, tool := range cfg.MCPTools {
+		if !strings.HasPrefix(tool.Name, "db_") {
+			continue
+		}
+		for _, p := range tool.Params {
+			if p.Name != "entity" {
+				continue
+			}
+			if !strings.Contains(p.Description, "catalog_product") {
+				t.Errorf("db_%s entity param should include canonical example, got: %q",
+					tool.Name, p.Description)
+			}
+		}
 	}
 }
 

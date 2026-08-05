@@ -94,7 +94,7 @@ func TestDBGet_OtherTenantID_Denied(t *testing.T) {
 
 	// db_get идёт через GetByIDHandler (id из query-параметра).
 	// Эмулируем GET /q/get?entity=product&id=2 (id=2 — запись tenant-b).
-	h := QGetHandler(ctx, func(n string) bool { return true },
+	h := QGetHandler(ctx, func(n string) (string, bool) { return n, true },
 		func(n string) http.HandlerFunc {
 			// подменяем URLParam на чтение query id (как в /q/get)
 			ctx.URLParam = func(r *http.Request, name string) string {
@@ -130,7 +130,7 @@ func TestDBGet_OwnTenantID_OK(t *testing.T) {
 		}
 		return ""
 	}
-	h := QGetHandler(ctx, func(n string) bool { return true },
+	h := QGetHandler(ctx, func(n string) (string, bool) { return n, true },
 		func(n string) http.HandlerFunc { return GetByIDHandler(ctx, n) })
 
 	req := httptest.NewRequest(http.MethodGet, "/q/get?entity=product&id=1", nil)
@@ -155,7 +155,7 @@ func TestDBGet_NoTenantID_Denied(t *testing.T) {
 		}
 		return ""
 	}
-	h := QGetHandler(ctx, func(n string) bool { return true },
+	h := QGetHandler(ctx, func(n string) (string, bool) { return n, true },
 		func(n string) http.HandlerFunc { return GetByIDHandler(ctx, n) })
 
 	req := httptest.NewRequest(http.MethodGet, "/q/get?entity=product&id=1", nil)

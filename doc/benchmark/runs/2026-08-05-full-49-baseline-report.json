@@ -1,0 +1,1353 @@
+{
+  "total_cases": 49,
+  "success_rate": 0.8163265306122449,
+  "retrieval_success_rate": 0.9795918367346939,
+  "answer_delivery_rate": 0.9387755102040817,
+  "hallucination_rate": 0.12244897959183673,
+  "groundedness_rate": 0.8775510204081632,
+  "refusal_correct_rate": 1.0,
+  "tool_error_rate": 0.2857142857142857,
+  "entity_name_accuracy": 0.7142857142857143,
+  "recovery_rate": 0.8571428571428571,
+  "avg_total_tokens": 37576.448979591834,
+  "avg_prompt_tokens": 36866.836734693876,
+  "avg_completion_tokens": 709.6122448979592,
+  "avg_llm_calls": 3.836734693877551,
+  "avg_tool_calls": 4.571428571428571,
+  "avg_iterations": 0.04081632653061224,
+  "avg_duration_ms": 14101.612244897959,
+  "p95_duration_ms": 28500.0,
+  "avg_cost_usd": 0.20745555102040814,
+  "total_cost_usd": 10.165321999999998,
+  "cases": [
+    {
+      "case_id": "product-lookup-article-001",
+      "question": "Сколько стоит артикул EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "forbidden tool called: ['db_map']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 13219.1,
+        "total_tokens": 53901,
+        "llm_calls": 5,
+        "tool_calls": 3,
+        "iterations": 1,
+        "cost_usd": 0.235384
+      },
+      "outcome": "final",
+      "final_text": "Товар с артикулом **EXT-01392** найден. Вот полная информация:\n\n---\n\n**Название:** Датчик ABS Bosch для Toyota Land Cruiser 200  \n**Артикул:** EXT-01392  \n**Цена:** **2 751 руб.**  \n**Наличие:** ✅ В наличии (13 шт.)  \n**Производитель:** Bosch (Германия)  \n**Гарантия:** 24 месяца  \n**Применимость:** Toyota Land Cruiser 200  \n\nТовар активен и доступен к заказу.Товар с артикулом **EXT-01392** найден. Вот полная информация:\n\n---\n\n**Название:** Датчик ABS Bosch для Toyota Land Cruiser 200  \n**Артикул"
+    },
+    {
+      "case_id": "product-lookup-name-001",
+      "question": "Сколько стоит Датчик ABS Bosch для Toyota Land Cruiser 200?",
+      "category": "lookup",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": false,
+        "answer_ok": false,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Brand' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)",
+          "expected {'price': 3064} not found in tool results",
+          "expected {'price': 3064} not in final answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 25060.2,
+        "total_tokens": 68642,
+        "llm_calls": 6,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.312612
+      },
+      "outcome": "final",
+      "final_text": "<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"filter_catalog_brand\">\n<｜DSML｜parameter name=\"name__like\" string=\"true\">Bosch</｜DSML｜parameter>\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"filter_catalog_product\">\n<｜DSML｜parameter name=\"name__like\" string=\"true\">ABS датчик</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls><｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"filter_catalog_brand\">\n<｜DSML｜parameter name=\"name__like\" string=\"true\">Bosch</｜DSML｜parameter>\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"filter_catalog_produ"
+    },
+    {
+      "case_id": "product-lookup-brand-001",
+      "question": "Какой бренд у товара с артикулом EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 10670.3,
+        "total_tokens": 34701,
+        "llm_calls": 4,
+        "tool_calls": 3,
+        "iterations": 0,
+        "cost_usd": 0.216476
+      },
+      "outcome": "final",
+      "final_text": "Товар с артикулом **EXT-01392** принадлежит бренду **Bosch** (Германия).\n\n📋 Полная информация:\n- **Название товара**: Датчик ABS Bosch для Toyota Land Cruiser 200\n- **Бренд**: Bosch (производитель OEM, основан в 1886 г.)\n- **Цена**: 2 751 ₽\n- **Наличие**: 13 шт. на складе\n- **Гарантия**: 24 месяца\n- **Страна происхождения**: ГерманияТовар с артикулом **EXT-01392** принадлежит бренду **Bosch** (Германия).\n\n📋 Полная информация:\n- **Название товара**: Датчик ABS Bosch для Toyota Land Cruiser 200\n- "
+    },
+    {
+      "case_id": "product-lookup-availability-001",
+      "question": "Есть ли в наличии артикул EXT-01367?",
+      "category": "lookup",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": false,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected {'available': True, 'quantity': 23} not in final answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 10593.5,
+        "total_tokens": 25847,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.130824
+      },
+      "outcome": "final",
+      "final_text": "✅ **Артикул EXT-01367 в наличии!**\n\nВот подробная информация о товаре:\n\n| Параметр | Значение |\n|---|---|\n| **Артикул** | EXT-01367 |\n| **Название** | Термостат Mahle для Toyota Camry V50 |\n| **Цена** | **2 418 ₽** |\n| **На складе** | **23 шт.** |\n| **Статус** | ✅ В наличии (активен и доступен) |\n| **Гарантия** | 6 месяцев |\n| **Страна** | Германия |\n| **Производитель** | Mahle |\n| **Применимость** | Toyota Camry V50 |\n\nТовар доступен к заказу. Хотите оформить заказ или узнать что-то ещё по этой"
+    },
+    {
+      "case_id": "product-lookup-hit-001",
+      "question": "Сколько стоит товар с меткой ХИТ артикул EXT-01401?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 9665.5,
+        "total_tokens": 25853,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.128851
+      },
+      "outcome": "final",
+      "final_text": "Товар с артикулом **EXT-01401** найден:\n\n| Параметр | Значение |\n|---|---|\n| **Наименование** | Датчик ABS Febi для Volkswagen Golf V |\n| **Артикул** | EXT-01401 |\n| **Цена** | **3 263 ₽** |\n| **Наличие** | 23 шт. |\n| **Гарантия** | 36 месяцев |\n\nОднако стоит отметить, что у данного товара в базе **нет метки «ХИТ»** — поле `label` имеет значение `\"none\"`, а флаги `is_popular` и `is_bestseller` установлены в `false`. Возможно, вы имели в виду другой товар? Если хотите, могу поискать товары с метк"
+    },
+    {
+      "case_id": "product-lookup-hella-001",
+      "question": "Сколько товаров бренда Hella в каталоге?",
+      "category": "count",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'brand' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 16234.1,
+        "total_tokens": 63095,
+        "llm_calls": 6,
+        "tool_calls": 5,
+        "iterations": 0,
+        "cost_usd": 0.253901
+      },
+      "outcome": "final",
+      "final_text": "В каталоге **5 товаров** бренда **Hella**.В каталоге **5 товаров** бренда **Hella**."
+    },
+    {
+      "case_id": "product-count-bosch-available-001",
+      "question": "Сколько товаров бренда Bosch в наличии?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 9842.4,
+        "total_tokens": 34068,
+        "llm_calls": 4,
+        "tool_calls": 3,
+        "iterations": 0,
+        "cost_usd": 0.145856
+      },
+      "outcome": "final",
+      "final_text": "**Общее количество доступных товаров бренда Bosch: 74.**\n\nИз них в предпросмотре показаны первые 10, но всего в наличии 74 товара этого бренда.**Общее количество доступных товаров бренда Bosch: 74.**\n\nИз них в предпросмотре показаны первые 10, но всего в наличии 74 товара этого бренда."
+    },
+    {
+      "case_id": "product-count-price-001",
+      "question": "Сколько товаров дороже 3000 рублей?",
+      "category": "aggregation",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "unsupported numbers in answer: ['12', '19', '28', '37', '12']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 8049.4,
+        "total_tokens": 18639,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.121471
+      },
+      "outcome": "final",
+      "final_text": "По данным из каталога, количество товаров с ценой **выше 3000 рублей** составляет **144 штуки**.\n\nВот их можно сгруппировать по категориям (по названиям товаров):\n\n| Тип товара | Количество |\n|---|---|\n| Тормозные колодки (BRK-) | 12 |\n| Тормозные диски (DISK-) | 19 |\n| Шины/рулевое (SHP-) | 28 |\n| Свечи зажигания/катушки (SPK-) | 37 |\n| Масла/фильтры (OIL-) | 12 |\n| Расширительные бачки/экстерьер (EXT-) | 12 |\n| И прочие... | |\n\nЕсли нужно уточнить по конкретной категории, бренду или увидеть по"
+    },
+    {
+      "case_id": "product-count-price-002",
+      "question": "Сколько товаров дешевле 1000 рублей?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Product' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 15985.7,
+        "total_tokens": 41354,
+        "llm_calls": 4,
+        "tool_calls": 3,
+        "iterations": 0,
+        "cost_usd": 0.199921
+      },
+      "outcome": "final",
+      "final_text": "В каталоге **83 товара** с ценой ниже 1000 рублей. 🎉\n\nВот небольшая выборка из них:\n\n| Артикул | Название (ID) |\n|---------|--------------|\n| FLT-01109 | Фильтр (id 923) |\n| FLT-01113 | Фильтр (id 927) |\n| ... | ... |\n| EXT-01268 | EXT-01268 (id 1082) |\n| EXT-01269 | EXT-01269 (id 1083) |\n| ... | ... |\n| EXT-01366 | EXT-01366 (id 1180) |\n\nВсего **83 товара** дешевле 1000 рублей. Если хотите узнать конкретные названия, цены или отфильтровать по бренду/категории — дайте знать!В каталоге **83 товар"
+    },
+    {
+      "case_id": "product-count-category-001",
+      "question": "Сколько товаров в категории Колодки тормозные?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Category' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 15840.2,
+        "total_tokens": 63145,
+        "llm_calls": 6,
+        "tool_calls": 5,
+        "iterations": 0,
+        "cost_usd": 0.281172
+      },
+      "outcome": "final",
+      "final_text": "В категории **«Колодки тормозные»** (ID: 236) содержится **60 товаров**.В категории **«Колодки тормозные»** (ID: 236) содержится **60 товаров**."
+    },
+    {
+      "case_id": "product-count-category-002",
+      "question": "Сколько товаров в категории Свечи зажигания?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Category' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 21183.6,
+        "total_tokens": 75413,
+        "llm_calls": 7,
+        "tool_calls": 6,
+        "iterations": 0,
+        "cost_usd": 0.313754
+      },
+      "outcome": "final",
+      "final_text": "В категории **«Свечи зажигания»** находится **36 товаров**.В категории **«Свечи зажигания»** находится **36 товаров**."
+    },
+    {
+      "case_id": "product-filter-price-001",
+      "question": "Покажи товары дешевле 2000 рублей",
+      "category": "filter",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Product' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)",
+          "unsupported numbers in answer: ['10', '10']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 12171.2,
+        "total_tokens": 17569,
+        "llm_calls": 2,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.11532
+      },
+      "outcome": "final",
+      "final_text": "<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"filter_catalog_product\">\n<｜DSML｜parameter name=\"price__lt\" string=\"false\">2000</｜DSML｜parameter>\n<｜DSML｜parameter name=\"is_active\" string=\"false\">true</｜DSML｜parameter>\n<｜DSML｜parameter name=\"limit\" string=\"false\">10</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls><｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"filter_catalog_product\">\n<｜DSML｜parameter name=\"price__lt\" string=\"false\">2000</｜DSML｜parameter>\n<｜DSML｜parameter name=\"is_active\" string=\"false\">true</"
+    },
+    {
+      "case_id": "product-filter-category-001",
+      "question": "Покажи товары из категории Масляные фильтры",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Category' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 30938.5,
+        "total_tokens": 101199,
+        "llm_calls": 9,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.421045
+      },
+      "outcome": "final",
+      "final_text": "Конечно! Сначала найду категорию \"Масляные фильтры\" в базе данных.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Category</｜DSML｜parameter>\n<｜DSML｜parameter name=\"pattern\" string=\"true\">Масляные фильтры</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>Конечно! Сначала найду категорию \"Масляные фильтры\" в базе данных.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Category</｜DSML｜parameter>\n<｜"
+    },
+    {
+      "case_id": "product-absence-001",
+      "question": "Есть ли у вас артикул FAKE-ARTICLE-999?",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 6247.0,
+        "total_tokens": 17548,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.111018
+      },
+      "outcome": "final",
+      "final_text": "К сожалению, артикул **FAKE-ARTICLE-999** в нашей базе данных **не найден**. 🙁\n\nВ каталоге на данный момент присутствуют товары со следующими артикулами: `BRK-01001`, `BRK-01002`, `BRK-01003`, `BRK-01004`, `BRK-01005` и другие.\n\nВозможно, вы ошиблись в номере? Если у вас есть другое название или артикул детали — напишите, я проверю!К сожалению, артикул **FAKE-ARTICLE-999** в нашей базе данных **не найден**. 🙁\n\nВ каталоге на данный момент присутствуют товары со следующими артикулами: `BRK-01001`,"
+    },
+    {
+      "case_id": "order-lookup-status-001",
+      "question": "Какой статус заказа АП-100005?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 10321.5,
+        "total_tokens": 25923,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.194697
+      },
+      "outcome": "final",
+      "final_text": "Заказ **АП-100005** найден. Вот его информация:\n\n📋 **Детали заказа:**\n- **Статус:** 🔵 **new** (новый)\n- **ФИО:** Лебедева Валерия Тихонович\n- **Телефон:** +7 (988) 235-71-19\n- **Email:** gavrila1984@example.org\n- **Город:** Санкт-Петербург\n- **Адрес:** д. Петрозаводск, алл. Придорожная, д. 2/1 к. 722, 669784\n- **Способ доставки:** pickup (самовывоз)\n- **Способ оплаты:** cash (наличные)\n- **Сумма:** 9 703 ₽ (товары) + 500 ₽ (доставка) = **10 203 ₽**\n- **Дата оформления:** 05.08.2026\n\n**Состав зак"
+    },
+    {
+      "case_id": "order-lookup-status-002",
+      "question": "Какой статус заказа АП-100006?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Order' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 21194.1,
+        "total_tokens": 72671,
+        "llm_calls": 7,
+        "tool_calls": 6,
+        "iterations": 0,
+        "cost_usd": 0.287174
+      },
+      "outcome": "final",
+      "final_text": "Статус заказа **АП-100006** — **«confirmed» (подтверждён)**.\n\n**Детали заказа:**\n- **Заказчик:** Кононова Фадей Августович\n- **Телефон:** +7 (999) 932-27-92\n- **Email:** fedoseevterenti@example.com\n- **Город:** Санкт-Петербург\n- **Способ доставки:** Курьер\n- **Способ оплаты:** Онлайн\n- **Сумма:** 20 218 ₽ (включая доставку 500 ₽)\n\nЗаказ подтверждён, информация актуальна на 05.08.2026.Статус заказа **АП-100006** — **«confirmed» (подтверждён)**.\n\n**Детали заказа:**\n- **Заказчик:** Кононова Фадей А"
+    },
+    {
+      "case_id": "order-lookup-total-001",
+      "question": "Сколько стоит заказ АП-100004?",
+      "category": "lookup",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "unsupported numbers in answer: ['2031', '2031']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 16696.6,
+        "total_tokens": 35025,
+        "llm_calls": 4,
+        "tool_calls": 2,
+        "iterations": 1,
+        "cost_usd": 0.156753
+      },
+      "outcome": "final",
+      "final_text": "Заказ **АП-100004** (статус: новый) на сумму **7 809 ₽**.\n\nДоставка — бесплатная (0 ₽), итоговая стоимость заказа: **7 809 ₽**.\n\n### Состав заказа:\n\n| Товар | Артикул | Цена | Кол-во | Сумма |\n|------|---------|:----:|:------:|:-----:|\n| Febi Моторный фильтр Febi для Hyundai Solaris | FLT-01188 | 677 ₽ | 3 шт | 2 031 ₽ |\n| Brembo Диск тормозной передний для Ford Focus Перфорированный | DISK-01072 | 4 585 ₽ | 1 шт | 4 585 ₽ |\n| Bosch Термостат Bosch для Volkswagen Passat B6 | EXT-01361 | 1 193 ₽ "
+    },
+    {
+      "case_id": "order-count-status-003",
+      "question": "Сколько заказов со статусом new?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 4884.5,
+        "total_tokens": 16735,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.164362
+      },
+      "outcome": "final",
+      "final_text": "По данным из каталога, на текущий момент **2 заказа** имеют статус **\"new\"**. Это заказы с номерами **АП-100004** и **АП-100005**.По данным из каталога, на текущий момент **2 заказа** имеют статус **\"new\"**. Это заказы с номерами **АП-100004** и **АП-100005**."
+    },
+    {
+      "case_id": "order-count-status-002",
+      "question": "Сколько заказов со статусом delivered?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 6555.0,
+        "total_tokens": 16688,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.101225
+      },
+      "outcome": "final",
+      "final_text": "Нашлось **3 заказа** со статусом **delivered** (доставлено).Нашлось **3 заказа** со статусом **delivered** (доставлено)."
+    },
+    {
+      "case_id": "order-lookup-delivery-001",
+      "question": "Каким способом доставки отправлен заказ АП-100005?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 8660.1,
+        "total_tokens": 25714,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.192141
+      },
+      "outcome": "final",
+      "final_text": "Заказ **АП-100005** отправлен способом доставки: **самовывоз (pickup)**.\n\nДетали заказа:\n- **Номер заказа:** АП-100005\n- **Статус:** новый\n- **Способ доставки:** самовывоз (pickup)\n- **Стоимость доставки:** 500 ₽\n- **Город:** Санкт-Петербург\n- **Общая сумма:** 10 203 ₽Заказ **АП-100005** отправлен способом доставки: **самовывоз (pickup)**.\n\nДетали заказа:\n- **Номер заказа:** АП-100005\n- **Статус:** новый\n- **Способ доставки:** самовывоз (pickup)\n- **Стоимость доставки:** 500 ₽\n- **Город:** Санкт"
+    },
+    {
+      "case_id": "order-lookup-payment-001",
+      "question": "Как оплачен заказ АП-100003?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 10059.4,
+        "total_tokens": 25847,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.195275
+      },
+      "outcome": "final",
+      "final_text": "Заказ **АП-100003** найден, вот его статус по оплате:\n\n| Параметр | Значение |\n|---|---|\n| **Номер заказа** | АП-100003 |\n| **Способ оплаты** | **Онлайн (online)** |\n| **Статус заказа** | **Доставлен (delivered)** |\n| **Сумма к оплате** | **14 385 ₽** (из них 500 ₽ доставка) |\n| **Клиент** | Владилен Матвеевич Лыткина |\n| **Телефон** | +7 (983) 269-16-60 |\n| **Email** | zhdanovkuprijan@example.net |\n\nЗаказ **оплачен онлайн** (банковской картой/электронным платежом через сайт) и имеет статус **«д"
+    },
+    {
+      "case_id": "order-absence-001",
+      "question": "Существует ли заказ ORD-2024-001234?",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 5403.3,
+        "total_tokens": 17282,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.172571
+      },
+      "outcome": "final",
+      "final_text": "Заказ с номером **ORD-2024-001234** в нашей базе данных **не найден**.\n\nВ системе используются заказы с номерами в формате **АП-XXXXX** (например, АП-100001, АП-100002 и т.д.). Возможно, вы ошиблись в формате номера. \n\nПопробуйте уточнить номер заказа — он должен выглядеть как **АП-100001**...**АП-100005** или подобный. Если у вас есть другие данные (например, ФИО, телефон или email), я могу помочь найти заказ по ним.Заказ с номером **ORD-2024-001234** в нашей базе данных **не найден**.\n\nВ систе"
+    },
+    {
+      "case_id": "brand-lookup-001",
+      "question": "Из какой страны бренд Bosch?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 7068.4,
+        "total_tokens": 25299,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.185091
+      },
+      "outcome": "final",
+      "final_text": "Бренд **Bosch** — из **Германии** 🇩🇪\n\nВот подробная информация из базы:\n\n- **Страна:** Германия\n- **Год основания:** 1886\n- **OEM-производитель:** Да\n- **Сайт:** https://www.bosch.com\n- **Описание:** Bosch — OEM производитель автозапчастей из Германии.Бренд **Bosch** — из **Германии** 🇩🇪\n\nВот подробная информация из базы:\n\n- **Страна:** Германия\n- **Год основания:** 1886\n- **OEM-производитель:** Да\n- **Сайт:** https://www.bosch.com\n- **Описание:** Bosch — OEM производитель автозапчастей из Герма"
+    },
+    {
+      "case_id": "brand-lookup-002",
+      "question": "Из какой страны бренд Denso?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 7641.7,
+        "total_tokens": 25245,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.183971
+      },
+      "outcome": "final",
+      "final_text": "Бренд **Denso** — из **Японии** (Япония). Это OEM-производитель автозапчастей, основанный в 1949 году.Бренд **Denso** — из **Японии** (Япония). Это OEM-производитель автозапчастей, основанный в 1949 году."
+    },
+    {
+      "case_id": "brand-count-001",
+      "question": "Сколько всего брендов в каталоге?",
+      "category": "aggregation",
+      "success": false,
+      "eval": {
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_brand', 'db_search'], called ['db_describe']",
+          "unsupported numbers in answer: ['10', '11', '12', '13', '14']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 7033.5,
+        "total_tokens": 17959,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.179791
+      },
+      "outcome": "final",
+      "final_text": "В каталоге всего **30 брендов**. Вот их список:\n\n| № | Бренд |\n|---|-------|\n| 1 | Bosch |\n| 2 | Brembo |\n| 3 | CTR |\n| 4 | Castrol |\n| 5 | ContiTech |\n| 6 | Dayco |\n| 7 | Denso |\n| 8 | Elring |\n| 9 | Febi |\n| 10 | Gates |\n| 11 | Hella |\n| 12 | Jurid |\n| 13 | KYB |\n| 14 | Lemförder |\n| 15 | Liqui Moly |\n| 16 | Mahle |\n| 17 | Mann-Filter |\n| 18 | Meyle |\n| 19 | Mobil |\n| 20 | Monroe |\n\n… и ещё 10 брендов помимо перечисленных. Если хотите узнать полный список всех 30 брендов с деталями (страна, го"
+    },
+    {
+      "case_id": "category-count-001",
+      "question": "Сколько всего категорий в каталоге?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Category' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 28500.0,
+        "total_tokens": 108942,
+        "llm_calls": 9,
+        "tool_calls": 8,
+        "iterations": 0,
+        "cost_usd": 0.528785
+      },
+      "outcome": "final",
+      "final_text": "В каталоге всего **117 категорий**. Это подтверждается данными из базы.В каталоге всего **117 категорий**. Это подтверждается данными из базы."
+    },
+    {
+      "case_id": "category-lookup-001",
+      "question": "Какая родительская категория у Колодки тормозные?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 11059.6,
+        "total_tokens": 34428,
+        "llm_calls": 4,
+        "tool_calls": 3,
+        "iterations": 0,
+        "cost_usd": 0.213109
+      },
+      "outcome": "final",
+      "final_text": "Родительская категория для **«Колодки тормозные»** — это **«Тормозная система»** (ID: 235). Это корневая категория, у неё нет своей родительской категории.\n\n**Дерево категорий:**\n\n- **Тормозная система** (родительская категория)\n  - **Колодки тормозные** (дочерняя категория)Родительская категория для **«Колодки тормозные»** — это **«Тормозная система»** (ID: 235). Это корневая категория, у неё нет своей родительской категории.\n\n**Дерево категорий:**\n\n- **Тормозная система** (родительская категор"
+    },
+    {
+      "case_id": "product-filter-brand-001",
+      "question": "Покажи товары бренда Hella",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 18448.0,
+        "total_tokens": 36995,
+        "llm_calls": 4,
+        "tool_calls": 7,
+        "iterations": 0,
+        "cost_usd": 0.244364
+      },
+      "outcome": "final",
+      "final_text": "Вот все **5 товаров бренда Hella** (Германия), которые есть в наличии:\n\n---\n\n### 🔧 Датчики ABS Hella\n\n| № | Наименование | Артикул | Применимость | Цена | В наличии |\n|---|-------------|---------|-------------|:----:|:--------:|\n| 1 | **Датчик ABS Hella для BMW X5 E53** | EXT-01403 | BMW X5 E53 | **3 343 ₽** | 22 шт. |\n| 2 | **Датчик ABS Hella для Mercedes-Benz W210** | EXT-01404 | Mercedes-Benz W210 | ~~3 523 ₽~~ **2 936 ₽** 🔥 | 5 шт. |\n| 3 | **Датчик ABS Hella для Audi A6 C6** 🏷️ | EXT-01405 |"
+    },
+    {
+      "case_id": "product-filter-category-002",
+      "question": "Покажи товары из категории Амортизаторы",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Category' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 25376.8,
+        "total_tokens": 78193,
+        "llm_calls": 7,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.432586
+      },
+      "outcome": "final",
+      "final_text": "Для начала найду категорию «Амортизаторы» в базе данных.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Category</｜DSML｜parameter>\n<｜DSML｜parameter name=\"pattern\" string=\"true\">Амортизаторы</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>Для начала найду категорию «Амортизаторы» в базе данных.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Category</｜DSML｜parameter>\n<｜DSML｜parameter name=\"pat"
+    },
+    {
+      "case_id": "product-filter-price-002",
+      "question": "Покажи товары дороже 5000 рублей",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Product' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 25717.4,
+        "total_tokens": 18024,
+        "llm_calls": 2,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.186806
+      },
+      "outcome": "final",
+      "final_text": "Похоже, `db_get` не поддерживается. Вместо этого я получу детальную информацию о каждом товаре через текстовый поиск по названию.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Product</｜DSML｜parameter>\n<｜DSML｜parameter name=\"pattern\" string=\"true\">SHP-01085</｜DSML｜parameter>\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Product</｜DSML｜parameter>\n<｜DSML｜parameter name=\"pattern\" string=\"true\">SHP-0108"
+    },
+    {
+      "case_id": "product-filter-availability-001",
+      "question": "Покажи доступные товары бренда Febi",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Brand' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 21934.7,
+        "total_tokens": 47230,
+        "llm_calls": 5,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.202677
+      },
+      "outcome": "final",
+      "final_text": "Бренд Febi найден (id=62). Сейчас получу все доступные товары.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"filter_catalog_product\">\n<｜DSML｜parameter name=\"brand_id\" string=\"false\">62</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>Бренд Febi найден (id=62). Сейчас получу все доступные товары.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"filter_catalog_product\">\n<｜DSML｜parameter name=\"brand_id\" string=\"false\">62</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>"
+    },
+    {
+      "case_id": "product-filter-label-001",
+      "question": "Покажи товары с меткой sale",
+      "category": "filter",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "unsupported numbers in answer: ['37', '37']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 26151.4,
+        "total_tokens": 32997,
+        "llm_calls": 3,
+        "tool_calls": 10,
+        "iterations": 0,
+        "cost_usd": 0.27248
+      },
+      "outcome": "final",
+      "final_text": "Нашёл **42 товара** с меткой **sale**. Вот детальная информация по ним (первые 10 для наглядности, полный список доступен):\n\n### Товары со скидкой (метка \"sale\")\n\n| Артикул | Название | Цена | Старая цена |\n|---------|----------|------|-------------|\n| BRK-01004 | ? | ? | ? |\n| BRK-01008 | ? | ? | ? |\n| BRK-01016 | ? | ? | ? |\n| BRK-01020 | ? | ? | ? |\n| BRK-01028 | ? | ? | ? |\n| ... и ещё 37 товаров | | | |\n\nЧтобы показать полные названия и цены, давайте получим подробную информацию по каждому "
+    },
+    {
+      "case_id": "product-search-partial-name-001",
+      "question": "Найди датчик ABS на Toyota Land Cruiser",
+      "category": "search",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Product' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 23862.0,
+        "total_tokens": 78004,
+        "llm_calls": 7,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.303633
+      },
+      "outcome": "final",
+      "final_text": "<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Product</｜DSML｜parameter>\n<｜DSML｜parameter name=\"pattern\" string=\"true\">датчик ABS Toyota Land Cruiser</｜DSML｜parameter>\n<｜DSML｜parameter name=\"limit\" string=\"false\">20</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls><｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_search\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">Product</｜DSML｜parameter>\n<｜DSML｜parameter name=\"pattern\" string=\"true\">датчик ABS Toy"
+    },
+    {
+      "case_id": "product-count-category-003",
+      "question": "Сколько товаров в категории Диски тормозные?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": false,
+        "reasons": [
+          "invalid entity name: 'Category' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...)"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 19497.2,
+        "total_tokens": 75457,
+        "llm_calls": 7,
+        "tool_calls": 6,
+        "iterations": 0,
+        "cost_usd": 0.289182
+      },
+      "outcome": "final",
+      "final_text": "В категории **«Диски тормозные»** (ID = 237) находится **24 товара**. Все они активны.В категории **«Диски тормозные»** (ID = 237) находится **24 товара**. Все они активны."
+    },
+    {
+      "case_id": "product-count-brand-002",
+      "question": "Сколько товаров бренда Gates в каталоге?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 7941.8,
+        "total_tokens": 25270,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.122691
+      },
+      "outcome": "final",
+      "final_text": "В каталоге **5 товаров** бренда **Gates**.В каталоге **5 товаров** бренда **Gates**."
+    },
+    {
+      "case_id": "product-count-total-001",
+      "question": "Сколько всего товаров в каталоге?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_product', 'db_search'], called ['db_describe']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 4565.9,
+        "total_tokens": 19730,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.18749
+      },
+      "outcome": "final",
+      "final_text": "В каталоге всего **407 товаров**. Это количество подтверждается данными из базы (поле `total` в `catalog_product`).В каталоге всего **407 товаров**. Это количество подтверждается данными из базы (поле `total` в `catalog_product`)."
+    },
+    {
+      "case_id": "order-count-total-001",
+      "question": "Сколько всего заказов в системе?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_order', 'db_search'], called ['db_describe']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 5328.2,
+        "total_tokens": 17572,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.172907
+      },
+      "outcome": "final",
+      "final_text": "В системе **всего 6 заказов**. Вот их статусы:\n\n| Статус | Количество |\n|--------|-----------|\n| 🔵 **new** (новые) | Есть |\n| 🟡 **confirmed** (подтверждённые) | Есть |\n| 🟢 **delivered** (доставленные) | Есть |\n\nЕсли нужно, могу показать детальную информацию по каждому заказу или отфильтровать по статусу. Что вас интересует?В системе **всего 6 заказов**. Вот их статусы:\n\n| Статус | Количество |\n|--------|-----------|\n| 🔵 **new** (новые) | Есть |\n| 🟡 **confirmed** (подтверждённые) | Есть |\n| 🟢 **d"
+    },
+    {
+      "case_id": "product-absence-002",
+      "question": "Есть ли в наличии товар артикул ZZ-000-NOPE?",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 10257.5,
+        "total_tokens": 27706,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.149545
+      },
+      "outcome": "final",
+      "final_text": "**Товар с артикулом ZZ-000-NOPE в наличии нет.** 🙅‍♂️\n\nПоиск по базе не дал результатов — данный артикул **отсутствует** в нашем каталоге.\n\nВот какие артикулы сейчас есть в системе (для примера):\n\n| Артикул | Наименование |\n|---------|-------------|\n| BRK-01001 | Амортизатор передний Audi A6 C7 |\n| BRK-01002 | Амортизатор передний BMW E46 |\n| BRK-01003 | Амортизатор передний Honda Accord 8 |\n| BRK-01004 | Амортизатор передний Mercedes-Benz W211 |\n| BRK-01005 | Амортизатор передний Toyota Land Cr"
+    },
+    {
+      "case_id": "product-absence-003",
+      "question": "Покажи товары бренда НЕСУЩЕСТВУЮЩИЙ",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_product', 'db_search'], called ['filter_catalog_brand']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 6800.9,
+        "total_tokens": 17227,
+        "llm_calls": 2,
+        "tool_calls": 1,
+        "iterations": 0,
+        "cost_usd": 0.172974
+      },
+      "outcome": "final",
+      "final_text": "Бренд **«НЕСУЩЕСТВУЮЩИЙ»** не найден в нашей базе данных. Такого бренда нет в каталоге.\n\n### Вот какие бренды реально доступны:\n\n| Бренд | Страна |\n|:---:|:---:|\n| 🔩 **Bosch** | Германия |\n| 🛞 **Brembo** | Италия |\n| ⚙️ **CTR** | Корея |\n| 🛢️ **Castrol** | Великобритания |\n| 🔧 **ContiTech** | Германия |\n\nЕсли вы хотите посмотреть товары одного из этих брендов, просто напишите его название — я с радостью покажу! 😊Бренд **«НЕСУЩЕСТВУЮЩИЙ»** не найден в нашей базе данных. Такого бренда нет в катало"
+    },
+    {
+      "case_id": "brand-lookup-003",
+      "question": "Из какой страны бренд Brembo?",
+      "category": "lookup",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": false,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected {'country': 'Италия'} not in final answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 8371.2,
+        "total_tokens": 25332,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.185611
+      },
+      "outcome": "final",
+      "final_text": "Бренд **Brembo** — из **Италии** 🇮🇹\n\nОснован в 1961 году. Является OEM-производителем (поставляет тормозные системы напрямую на конвейеры автозаводов). Официальный сайт: [brembo.com](https://www.brembo.com)Бренд **Brembo** — из **Италии** 🇮🇹\n\nОснован в 1961 году. Является OEM-производителем (поставляет тормозные системы напрямую на конвейеры автозаводов). Официальный сайт: [brembo.com](https://www.brembo.com)"
+    },
+    {
+      "case_id": "product-lookup-origin-001",
+      "question": "Какая страна происхождения у товара EXT-01401?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 9703.5,
+        "total_tokens": 25710,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.127916
+      },
+      "outcome": "final",
+      "final_text": "Страна происхождения товара **EXT-01401** — **Германия**.\n\n### Подробнее о товаре:\n- **Наименование:** Датчик ABS Febi для Volkswagen Golf V\n- **Артикул:** EXT-01401\n- **Производитель (бренд):** Febi\n- **Цена:** 3 263 ₽\n- **Наличие:** 23 шт.\n- **Гарантия:** 6 месяцев\n- **Страна происхождения:** 🇩🇪 **Германия**Страна происхождения товара **EXT-01401** — **Германия**.\n\n### Подробнее о товаре:\n- **Наименование:** Датчик ABS Febi для Volkswagen Golf V\n- **Артикул:** EXT-01401\n- **Производитель (брен"
+    },
+    {
+      "case_id": "product-filter-combined-001",
+      "question": "Покажи тормозные колодки бренда Bosch в наличии",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 18880.0,
+        "total_tokens": 26256,
+        "llm_calls": 3,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.202632
+      },
+      "outcome": "final",
+      "final_text": "<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_get\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">catalog_product</｜DSML｜parameter>\n<｜DSML｜parameter name=\"id\" string=\"false\">827</｜DSML｜parameter>\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"db_get\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">catalog_product</｜DSML｜parameter>\n<｜DSML｜parameter name=\"id\" string=\"false\">828</｜DSML｜parameter>\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"db_get\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">catalog_product</｜DSML｜paramete"
+    },
+    {
+      "case_id": "product-lookup-warranty-001",
+      "question": "Какой гарантийный срок у товара EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 9733.9,
+        "total_tokens": 25835,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.194941
+      },
+      "outcome": "final",
+      "final_text": "## 🔍 Гарантийный срок для товара EXT-01392\n\n**Товар:** Датчик ABS Bosch для Toyota Land Cruiser 200  \n**Артикул:** EXT-01392  \n**Цена:** 2 751 ₽  \n**Наличие:** ✅ В наличии (13 шт.)\n\n### 📋 Гарантийный срок\n\nСогласно данным из системы, гарантийный срок на данный товар составляет **24 месяца** (2 года).\n\n📌 *Обратите внимание:* в описании товара указано «Гарантия 36 месяцев», однако в структурированных данных продукта (поле `warranty_months`) зафиксировано значение **24 месяца**. Рекомендую уточнить"
+    },
+    {
+      "case_id": "product-lookup-country-001",
+      "question": "Какая страна происхождения у товара EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 8853.6,
+        "total_tokens": 25707,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.128054
+      },
+      "outcome": "final",
+      "final_text": "Страна происхождения товара **EXT-01392** — **Германия**. 🇩🇪\n\nВот краткая информация о товаре:\n\n| Параметр | Значение |\n|---|---|\n| **Артикул** | EXT-01392 |\n| **Наименование** | Датчик ABS Bosch для Toyota Land Cruiser 200 |\n| **Производитель (бренд)** | Bosch |\n| **Цена** | 2 751 ₽ |\n| **Страна происхождения** | **Германия** |\n| **Гарантия** | 24 месяца |\n| **Вес** | 1.5 кг |\n\nЕсли нужны дополнительные данные по этому товару — обращайтесь!Страна происхождения товара **EXT-01392** — **Германия*"
+    },
+    {
+      "case_id": "product-filter-category-003",
+      "question": "Покажи товары из категории Салонные фильтры",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 31228.6,
+        "total_tokens": 27506,
+        "llm_calls": 3,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.160635
+      },
+      "outcome": "final",
+      "final_text": "Отлично! В категории **«Салонные фильтры»** (ID: 343) найдено **32 товара**. Чтобы не перегружать ответ, покажу информацию по первым 8 позициям с деталями (для получения остальных уточните, пожалуйста).\n\nПолучаю подробные данные:\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"db_get\">\n<｜DSML｜parameter name=\"entity\" string=\"true\">catalog_product</｜DSML｜parameter>\n<｜DSML｜parameter name=\"id\" string=\"false\">939</｜DSML｜parameter>\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"db_get\">\n<｜DSML｜parameter name=\"entity\" st"
+    },
+    {
+      "case_id": "product-count-category-006",
+      "question": "Сколько товаров в категории Наконечники рулевые?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 7619.2,
+        "total_tokens": 25252,
+        "llm_calls": 3,
+        "tool_calls": 2,
+        "iterations": 0,
+        "cost_usd": 0.122131
+      },
+      "outcome": "final",
+      "final_text": "В категории **«Наконечники рулевые»** содержится **20 товаров**.В категории **«Наконечники рулевые»** содержится **20 товаров**."
+    },
+    {
+      "case_id": "product-count-category-005",
+      "question": "Сколько товаров в категории Лямбда-зонды?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 11777.2,
+        "total_tokens": 34337,
+        "llm_calls": 4,
+        "tool_calls": 3,
+        "iterations": 0,
+        "cost_usd": 0.211684
+      },
+      "outcome": "final",
+      "final_text": "В категории **«Лямбда-зонды»** содержится **20 товаров**.В категории **«Лямбда-зонды»** содержится **20 товаров**."
+    },
+    {
+      "case_id": "product-count-discount-001",
+      "question": "Сколько товаров сейчас по скидке?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 21128.3,
+        "total_tokens": 44413,
+        "llm_calls": 4,
+        "tool_calls": 4,
+        "iterations": 0,
+        "cost_usd": 0.235205
+      },
+      "outcome": "final",
+      "final_text": "Отличный вопрос! Давайте разберёмся.\n\nЧтобы определить товары со скидкой, я проверил два критерия:\n\n1. **Товары с пометкой \"sale\"** (распродажа) — таких **42** товара.\n2. **Товары с пометкой \"promo\"** (акция) — таких **7** товаров.\n3. **Товары, у которых указана старая цена (old_price > 0)** — это самый точный признак того, что товар продаётся со скидкой. Таких товаров — **72**.\n\n✅ **Всего товаров, у которых установлена старая цена (т.е. реальная скидка):** **72 товара**.\n\nИз них:\n- 42 помечены "
+    },
+    {
+      "case_id": "product-filter-discount-001",
+      "question": "Покажи товары со скидкой",
+      "category": "filter",
+      "success": false,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "unsupported numbers in answer: ['7200', '5870', '6000', '4850', '6800']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 17023.3,
+        "total_tokens": 17761,
+        "llm_calls": 2,
+        "tool_calls": 11,
+        "iterations": 0,
+        "cost_usd": 0.116628
+      },
+      "outcome": "final",
+      "final_text": "Отлично! Вот **товары со скидкой**, которые удалось найти (первые 10 из 72):\n\n## 🔥 Товары со скидкой\n\n| № | Название | Старая цена | Новая цена | Скидка | В наличии |\n|---|----------|------------|-----------|-------|----------|\n| 1 | **Амортизатор передний Audi A4 B5** (KYB) | 7 500 ₽ | **6 142 ₽** | **−18%** | 3 шт |\n| 2 | **Амортизатор передний Volkswagen Touareg** (KYB) | 7 500 ₽ | **5 664 ₽** | **−24%** | 7 шт |\n| 3 | **Амортизатор передний Audi A6 C5** (KYB) | 7 200 ₽ | **5 870 ₽** | **−18%"
+    }
+  ],
+  "wall_duration_ms": 812808.385249984
+}

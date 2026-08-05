@@ -1,6 +1,56 @@
 package search
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/trash2bin/helperium/helperium-go/config"
+)
+
+// ── Фаза 2.5 fix: selectClause compact использует name-preference helper ─
+// и skip'ает строковый PK (раньше [id,id] для string-id сущностей).
+func TestSelectClause_Compact_PrefersNameAndSkipsStringPK(t *testing.T) {
+	tPK := true
+	// String PK + article раньше name — раньше дал бы [id, id] (баг).
+	entity := config.Entity{
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "sku", Column: "sku", Type: config.FieldTypeString, PrimaryKey: &tPK},
+			{Name: "article", Column: "article", Type: config.FieldTypeString},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+		},
+	}
+	cl := selectClause(entity, map[string][]string{}, &testAdapter{})
+	if len(cl.Columns) != 2 {
+		t.Fatalf("compact selectClause must have exactly 2 columns (id + name), got %v", cl.Columns)
+	}
+	// Первая — id (не строковый PK sku!).
+	if cl.Columns[0] != `"id"` {
+		t.Errorf("first column must be id, got %v", cl.Columns)
+	}
+	// Вторая — name (предпочтение name, не article).
+	if cl.Columns[1] != `"name"` {
+		t.Errorf("second column must be name (prefer name over article), got %v", cl.Columns)
+	}
+}
+
+func TestSelectClause_Compact_NoNameField_FirstString(t *testing.T) {
+	tPK := true
+	entity := config.Entity{
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: &tPK},
+			{Name: "code", Column: "code", Type: config.FieldTypeString},
+			{Name: "desc", Column: "desc", Type: config.FieldTypeString},
+		},
+	}
+	cl := selectClause(entity, map[string][]string{}, &testAdapter{})
+	if len(cl.Columns) != 2 {
+		t.Fatalf("compact selectClause must have 2 columns, got %v", cl.Columns)
+	}
+	if cl.Columns[1] != `"code"` {
+		t.Errorf("second column must be first string (code), got %v", cl.Columns)
+	}
+}
 
 func TestParseOffset_Capped(t *testing.T) {
 	tests := []struct {

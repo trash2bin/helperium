@@ -1,0 +1,95 @@
+Loaded 49 cases from agent_db/bench/cases/autoparts.json
+Agent: autoparts-assistant | Tenant: autoparts | API: http://127.0.0.1:8081
+Backlog dir: /Users/ivan/code/helperium/backlog
+[1/49] lookup: Сколько стоит артикул EXT-01392?
+[2/49] lookup: Сколько стоит Датчик ABS Bosch для Toyota Land Cruiser 200?
+[3/49] lookup: Какой бренд у товара с артикулом EXT-01392?
+[4/49] lookup: Есть ли в наличии артикул EXT-01367?
+[5/49] lookup: Сколько стоит товар с меткой ХИТ артикул EXT-01401?
+[6/49] count: Сколько товаров бренда Hella в каталоге?
+[7/49] aggregation: Сколько товаров бренда Bosch в наличии?
+[8/49] aggregation: Сколько товаров дороже 3000 рублей?
+[9/49] aggregation: Сколько товаров дешевле 1000 рублей?
+[10/49] aggregation: Сколько товаров в категории Колодки тормозные?
+[11/49] aggregation: Сколько товаров в категории Свечи зажигания?
+[12/49] filter: Покажи товары дешевле 2000 рублей
+[13/49] filter: Покажи товары из категории Масляные фильтры
+[14/49] absence: Есть ли у вас артикул FAKE-ARTICLE-999?
+[15/49] lookup: Какой статус заказа АП-100005?
+[16/49] lookup: Какой статус заказа АП-100006?
+[17/49] lookup: Сколько стоит заказ АП-100004?
+[18/49] aggregation: Сколько заказов со статусом new?
+[19/49] aggregation: Сколько заказов со статусом delivered?
+[20/49] lookup: Каким способом доставки отправлен заказ АП-100005?
+[21/49] lookup: Как оплачен заказ АП-100003?
+[22/49] absence: Существует ли заказ ORD-2024-001234?
+[23/49] lookup: Из какой страны бренд Bosch?
+[24/49] lookup: Из какой страны бренд Denso?
+[25/49] aggregation: Сколько всего брендов в каталоге?
+[26/49] aggregation: Сколько всего категорий в каталоге?
+[27/49] lookup: Какая родительская категория у Колодки тормозные?
+[28/49] filter: Покажи товары бренда Hella
+[29/49] filter: Покажи товары из категории Амортизаторы
+[30/49] filter: Покажи товары дороже 5000 рублей
+[31/49] filter: Покажи доступные товары бренда Febi
+[32/49] filter: Покажи товары с меткой sale
+[33/49] search: Найди датчик ABS на Toyota Land Cruiser
+[34/49] aggregation: Сколько товаров в категории Диски тормозные?
+[35/49] aggregation: Сколько товаров бренда Gates в каталоге?
+[36/49] aggregation: Сколько всего товаров в каталоге?
+[37/49] aggregation: Сколько всего заказов в системе?
+[38/49] absence: Есть ли в наличии товар артикул ZZ-000-NOPE?
+[39/49] absence: Покажи товары бренда НЕСУЩЕСТВУЮЩИЙ
+[40/49] lookup: Из какой страны бренд Brembo?
+[41/49] lookup: Какая страна происхождения у товара EXT-01401?
+[42/49] filter: Покажи тормозные колодки бренда Bosch в наличии
+[43/49] lookup: Какой гарантийный срок у товара EXT-01392?
+[44/49] lookup: Какая страна происхождения у товара EXT-01392?
+[45/49] filter: Покажи товары из категории Салонные фильтры
+[46/49] aggregation: Сколько товаров в категории Наконечники рулевые?
+[47/49] aggregation: Сколько товаров в категории Лямбда-зонды?
+[48/49] aggregation: Сколько товаров сейчас по скидке?
+[49/49] filter: Покажи товары со скидкой
+╔══════════════════════════════════════════════╗
+║           CORE BENCHMARK REPORT              ║
+╚══════════════════════════════════════════════╝
+
+Total cases: 49
+Success rate: 81.6%
+Retrieval success: 98.0%
+Answer delivery: 93.9%
+Hallucination rate: 12.2%
+Groundedness: 87.8%
+Refusal correct: 100.0%
+Tool error rate: 28.6%
+Entity name accuracy: 71.4%
+Recovery rate (errors→final): 85.7%
+
+Avg tokens: 37576
+Avg duration: 14102ms
+P95 duration: 28500ms
+Avg cost: $0.2075
+Total cost: $10.1653
+
+Failed cases:
+  - product-lookup-name-001: Сколько стоит Датчик ABS Bosch для Toyota Land Cruiser 200?
+      tool=True retrieval=False answer=False halluc=False | invalid entity name: 'Brand' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...); expected {'price': 3064} not found in tool results; expected {'price': 3064} not in final answer
+  - product-lookup-availability-001: Есть ли в наличии артикул EXT-01367?
+      tool=True retrieval=True answer=False halluc=False | expected {'available': True, 'quantity': 23} not in final answer
+  - product-count-price-001: Сколько товаров дороже 3000 рублей?
+      tool=True retrieval=True answer=True halluc=True | unsupported numbers in answer: ['12', '19', '28', '37', '12']
+  - product-filter-price-001: Покажи товары дешевле 2000 рублей
+      tool=True retrieval=True answer=True halluc=True | invalid entity name: 'Product' (valid: ['catalog_brand', 'catalog_cart', 'catalog_cartitem']...); unsupported numbers in answer: ['10', '10']
+  - order-lookup-total-001: Сколько стоит заказ АП-100004?
+      tool=True retrieval=True answer=True halluc=True | unsupported numbers in answer: ['2031', '2031']
+  - brand-count-001: Сколько всего брендов в каталоге?
+      tool=False retrieval=True answer=True halluc=True | expected tool in ['filter_catalog_brand', 'db_search'], called ['db_describe']; unsupported numbers in answer: ['10', '11', '12', '13', '14']
+  - product-filter-label-001: Покажи товары с меткой sale
+      tool=True retrieval=True answer=True halluc=True | unsupported numbers in answer: ['37', '37']
+  - brand-lookup-003: Из какой страны бренд Brembo?
+      tool=True retrieval=True answer=False halluc=False | expected {'country': 'Италия'} not in final answer
+  - product-filter-discount-001: Покажи товары со скидкой
+      tool=True retrieval=True answer=True halluc=True | unsupported numbers in answer: ['7200', '5870', '6000', '4850', '6800']
+
+Report written to /Users/ivan/code/helperium/bench-full-report.json
+⚠️  Success rate 81.6% < 100% — exit 1

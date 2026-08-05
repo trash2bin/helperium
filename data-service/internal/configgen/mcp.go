@@ -16,6 +16,7 @@ import (
 //   - N пер-энтити filter_{entity} (поля в схеме тула) — живой REST /{entity}/filter
 //   - 5 консолидированных db_* (db_map, db_describe, db_search, db_get, db_related)
 //     через /q/* диспетчер.
+//
 // Остальные per-entity тулы (grep_*, schema_*) не эмитятся.
 //
 // LLMToolPolicy (opt-in): если ExposeGetByID/Count/Distinct=true, в ДОПОЛНЕНИЕ
@@ -134,7 +135,7 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 				"No guessing: see actual values first.",
 			Params: []config.EndpointParam{
 				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map)."},
+					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
 			},
 		},
 		{
@@ -145,7 +146,7 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 				"Finds records by words/phrases in searchable fields (see db_map).",
 			Params: []config.EndpointParam{
 				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map)."},
+					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
 				{Name: "pattern", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
 					Description: "Search query. Example: 'blue widget'."},
 				{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: ptrBool(false),
@@ -163,9 +164,11 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 				"NEVER enumerate ids (id=1, id=2, ...) — search first.",
 			Params: []config.EndpointParam{
 				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map)."},
+					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
 				{Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Record id (from a previous db_search/filter_<entity> result)."},
+					Description: "Parent record id."},
+				{Name: "relation", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
+					Description: "FK column name (from db_map relations). Optional if entity has one relation."},
 			},
 		},
 		{
@@ -177,7 +180,7 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 				"One query, no JOINs.",
 			Params: []config.EndpointParam{
 				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map)."},
+					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
 				{Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
 					Description: "Parent record id."},
 				{Name: "relation", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),

@@ -64,6 +64,69 @@ func shortColumnName(name string) string {
 	return result
 }
 
+// CanonicalEntityName резолвит display-имя сущности (которое модель видит в
+// db_map / mcp-манифесте) обратно в canonical имя (catalog_*), которое принимает
+// /q/* резолвер. Это закрывает контрактную дыру: db_map показывал "Brand (catalog_brand)",
+// модель копировала "Brand" в entity-параметр → 404 unknown_entity.
+//
+// Принимает (case-insensitive):
+//   - canonical имя: "catalog_brand" → "catalog_brand"
+//   - display-имя: "Brand" → "catalog_brand"
+//   - полное display-имя из db_map: "Brand (catalog_brand)" → "catalog_brand"
+//   - titleCase без префикса: "Products" → "catalog_product" (мн. число)
+//
+// Возвращает "" для неизвестного имени (вызывающий отвечает 404).
+func CanonicalEntityName(name string, displayPrefixes []string, customShortNames map[string]string, entityMap map[string]config.Entity) string {
+	if name == "" {
+		return ""
+	}
+
+	// 1. Прямое попадание canonical.
+	if _, ok := entityMap[name]; ok {
+		return name
+	}
+
+	// 2. Полное display-имя из db_map: "Brand (catalog_brand)".
+	// Вытаскиваем часть в скобках — это canonical.
+	if open := strings.LastIndex(name, "("); open >= 0 {
+		if close := strings.Index(name[open:], ")"); close >= 0 {
+			inner := strings.TrimSpace(name[open+1 : open+close])
+			if _, ok := entityMap[inner]; ok {
+				return inner
+			}
+		}
+	}
+
+	// 3. Display-имя (titleCase) или его lowercase → ищем по reverse-индексу.
+	// Строим reverse-индекс display → canonical из той же логики shortBusinessName,
+	// что генерирует db_map — гарантия, что то, что система показывает, она и принимает.
+	canonicalByName := make(map[string]string, len(entityMap))
+	for cn := range entityMap {
+		display := shortBusinessName(cn, displayPrefixes, customShortNames)
+		canonicalByName[strings.ToLower(display)] = cn
+		// Мн. число display-имени (модель может прислать "Products").
+		canonicalByName[strings.ToLower(pluralizeEntity(cn, displayPrefixes, nil))] = cn
+	}
+	if cn, ok := canonicalByName[strings.ToLower(strings.TrimSpace(name))]; ok {
+		return cn
+	}
+
+	// 4. Display-имя без префикса (catalog_ отрезан) → canonical с префиксом.
+	// Например "brand" → "catalog_brand".
+	for cn := range entityMap {
+		for _, pfx := range displayPrefixes {
+			if strings.HasPrefix(cn, pfx) {
+				short := strings.TrimPrefix(cn, pfx)
+				if strings.EqualFold(strings.TrimSpace(name), short) {
+					return cn
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
 // pluralizeEntity returns the English plural form of an entity name.
 func pluralizeEntity(name string, displayPrefixes []string, customPlurals map[string]string) string {
 	// сначала проверяем customPlurals из конфига

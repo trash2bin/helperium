@@ -4,11 +4,12 @@
 // from explicit mcp_tools in the config file.
 //
 // HTTP routes called (through httpclient.Client and ragclient.Client):
-//   data-service:GET /mcp/manifest  (via FetchConfigWithTenant, on every tool call)
-//   data-service:GET /{endpoint}    (via client.Call, the actual data query)
-//   rag:POST /search                (via ragClient.SearchDocuments)
-//   rag:POST /documents/list        (via ragClient.ListDocuments)
-//   rag:POST /context               (via ragClient.GetRagContext)
+//
+//	data-service:GET /mcp/manifest  (via FetchConfigWithTenant, on every tool call)
+//	data-service:GET /{endpoint}    (via client.Call, the actual data query)
+//	rag:POST /search                (via ragClient.SearchDocuments)
+//	rag:POST /documents/list        (via ragClient.ListDocuments)
+//	rag:POST /context               (via ragClient.GetRagContext)
 package tools
 
 import (
@@ -18,14 +19,15 @@ import (
 	"log/slog"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/mcp-gateway/internal/httpclient"
 	"github.com/trash2bin/helperium/mcp-gateway/internal/ragclient"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // Registry manages auto-generated + explicit MCP tools.
@@ -108,7 +110,7 @@ func (r *Registry) buildTools() {
 	// to avoid duplicates with the explicit ones.
 	if len(r.cfg.MCPTools) > 0 {
 		for _, mt := range r.cfg.MCPTools {
-				auto[mt.Name] = toolDef{
+			auto[mt.Name] = toolDef{
 				Name:        mt.Name,
 				DisplayName: mt.DisplayName,
 				Endpoint:    mt.Endpoint,
@@ -193,8 +195,6 @@ func (r *Registry) registerRagTools(mcpServer *server.MCPServer) {
 	)
 	mcpServer.AddTool(contextTool, MakeAuditHandler("get_rag_context", r.tenantID, r.makeRagHandler("context")))
 }
-
-
 
 // makeRagHandler creates a handler that delegates to RAG service via HTTP.
 func (r *Registry) makeRagHandler(kind string) server.ToolHandlerFunc {
@@ -287,6 +287,13 @@ func registerOne(mcpServer *server.MCPServer, td toolDef, client *httpclient.Cli
 		propOpts := []mcp.PropertyOption{mcp.Description(p.Description)}
 		if p.Required != nil && *p.Required {
 			propOpts = append(propOpts, mcp.Required())
+		}
+		// ArrayOf-параметр (напр. category_id__in): data-service принимает CSV-строку
+		// ("255,341") — объявляем как string, чтобы модель слала строку, а не массив
+		// (mcp-go не имеет WithArray, а Call() не умеет сериализовать массив в query).
+		if p.ArrayOf != "" {
+			opts = append(opts, mcp.WithString(p.Name, propOpts...))
+			continue
 		}
 		switch p.Type {
 		case config.ParamTypeInt, config.ParamTypeFloat:
@@ -498,8 +505,6 @@ func deriveParams(ep config.Endpoint, entities []config.Entity) []config.Endpoin
 		})
 	}
 
-
-
 	return params
 }
 
@@ -571,6 +576,39 @@ func validateArgs(args map[string]any, params []config.EndpointParam) []error {
 			continue // unknown param, ignore
 		}
 
+		// ArrayOf-параметр (напр. category_id__in): принимает CSV-строку
+		// ("255,341") или массив ([255, 341]) — модель по описанию "Comma-separated
+		// values" шлёт строку, а раньше валидация ждала скаляр → 400.
+		// Валидируем каждый элемент по типу элемента (ArrayOf).
+		if def.ArrayOf != "" {
+			elemType := def.ArrayOf
+			// Нормализуем в []string: CSV-строка сплитится, []any/[]int — конвертится.
+			var elems []string
+			switch n := v.(type) {
+			case string:
+				elems = strings.Split(n, ",")
+			case []any:
+				for _, item := range n {
+					elems = append(elems, fmt.Sprintf("%v", item))
+				}
+			case []string:
+				elems = n
+			default:
+				errs = append(errs, fmt.Errorf("param %q: expected array or CSV string, got %T", k, v))
+				continue
+			}
+			for _, el := range elems {
+				el = strings.TrimSpace(el)
+				if el == "" {
+					continue // пустой элемент (двойная запятая) — пропускаем
+				}
+				if err := validateScalar(k, el, elemType); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			continue
+		}
+
 		switch def.Type {
 		case config.ParamTypeInt, config.ParamTypeFloat:
 			var val float64
@@ -614,6 +652,35 @@ func validateArgs(args map[string]any, params []config.EndpointParam) []error {
 	}
 
 	return errs
+}
+
+// validateScalar валидирует одно значение (строку) по типу элемента для
+// ArrayOf-параметров. Возвращает nil если валидно.
+func validateScalar(paramName, val string, t config.ParamType) error {
+	switch t {
+	case config.ParamTypeInt, config.ParamTypeFloat:
+		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		if err != nil {
+			return fmt.Errorf("param %q: element %q is not numeric", paramName, val)
+		}
+		if f < 0 {
+			return fmt.Errorf("param %q: negative value %.0f is not allowed", paramName, f)
+		}
+		if f > MaxNumericParamValue {
+			return fmt.Errorf("param %q: value %.0f exceeds maximum allowed value %d", paramName, f, MaxNumericParamValue)
+		}
+		return nil
+	case config.ParamTypeString:
+		if len(val) > MaxStringParamLength {
+			return fmt.Errorf("param %q: string length %d exceeds maximum allowed length %d", paramName, len(val), MaxStringParamLength)
+		}
+		return nil
+	case config.ParamTypeBool:
+		// Booleans не валидируются.
+		return nil
+	default:
+		return nil
+	}
 }
 
 // truncateResult truncates a result string to at most maxLen characters.

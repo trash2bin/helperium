@@ -1,0 +1,103 @@
+{
+  "total_cases": 3,
+  "success_rate": 1.0,
+  "retrieval_success_rate": 1.0,
+  "answer_delivery_rate": 1.0,
+  "hallucination_rate": 0.0,
+  "groundedness_rate": 1.0,
+  "refusal_correct_rate": 1.0,
+  "tool_error_rate": 0.0,
+  "entity_name_accuracy": 1.0,
+  "recovery_rate": 1.0,
+  "avg_total_tokens": 0.0,
+  "avg_prompt_tokens": 0.0,
+  "avg_completion_tokens": 0.0,
+  "avg_llm_calls": 0.0,
+  "avg_tool_calls": 0.0,
+  "avg_iterations": 0.0,
+  "avg_duration_ms": 0.0,
+  "p95_duration_ms": 0.0,
+  "avg_cost_usd": 0.0,
+  "total_cost_usd": 0.0,
+  "cases": [
+    {
+      "case_id": "brand-lookup-001",
+      "question": "Из какой страны бренд Bosch?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0
+      },
+      "outcome": "final",
+      "final_text": "Бренд **Bosch** — из **Германии** 🇩🇪\n\nЭто немецкая компания, основанная в 1886 году, которая является OEM-производителем автозапчастей.Бренд **Bosch** — из **Германии** 🇩🇪\n\nЭто немецкая компания, основанная в 1886 году, которая является OEM-производителем автозапчастей."
+    },
+    {
+      "case_id": "product-absence-002",
+      "question": "Есть ли в наличии товар артикул ZZ-000-NOPE?",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0
+      },
+      "outcome": "final",
+      "final_text": "Товар с артикулом **ZZ-000-NOPE** в нашей базе данных **не найден**.\n\nНа текущий момент в каталоге представлены следующие артикулы:\n- BRK-01001\n- BRK-01002\n- BRK-01003\n- BRK-01004\n- BRK-01005\n\nВозможно, вы ошиблись в написании артикула. Если у вас есть точное название или артикул другой детали — я с радостью помогу проверить её наличие!Товар с артикулом **ZZ-000-NOPE** в нашей базе данных **не найден**.\n\nНа текущий момент в каталоге представлены следующие артикулы:\n- BRK-01001\n- BRK-01002\n- BRK-"
+    },
+    {
+      "case_id": "product-absence-003",
+      "question": "Покажи товары бренда НЕСУЩЕСТВУЮЩИЙ",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0
+      },
+      "outcome": "final",
+      "final_text": "Бренд **«НЕСУЩЕСТВУЮЩИЙ»** не найден в нашей базе данных. К сожалению, такого производителя у нас нет.\n\nВ наличии следующие бренды:\n\n| Бренд | Страна |\n|------|--------|\n| **Bosch** | Германия |\n| **Brembo** | Италия |\n| **CTR** | Корея |\n| **Castrol** | Великобритания |\n| **ContiTech** | Германия |\n\nЕсли вы хотели посмотреть товары одного из этих брендов — просто уточните название, и я покажу все доступные товары с ценами и артикулами.Бренд **«НЕСУЩЕСТВУЮЩИЙ»** не найден в нашей базе данных. К "
+    }
+  ],
+  "wall_duration_ms": 30892.083666985855
+}

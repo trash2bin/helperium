@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/trash2bin/helperium/data-service/internal/configgen"
 	"github.com/trash2bin/helperium/data-service/internal/search"
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
@@ -37,6 +38,8 @@ func QMapHandler(getSchema SchemaForLLMCallback) http.HandlerFunc {
 }
 
 // QDescribeHandler — GET /q/describe?entity=X → SchemaStrategy (метаданные сущности).
+// entityResolver возвращает canonical имя (резолвит display → canonical) —
+// чтобы make* колбэк получил то, что реально принимает /q/*.
 func QDescribeHandler(c *Context, entityResolver EntityResolverFunc, makeSchema func(entityName string) http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		entityName := stripEntityParam(r)
@@ -44,12 +47,13 @@ func QDescribeHandler(c *Context, entityResolver EntityResolverFunc, makeSchema 
 			RespondError(w, http.StatusBadRequest, "missing_entity", "entity parameter is required")
 			return
 		}
-		if !entityResolver(entityName) {
+		canonical, ok := entityResolver(entityName)
+		if !ok {
 			RespondError(w, http.StatusNotFound, "unknown_entity",
 				"unknown entity. Call db_map to see available entities.")
 			return
 		}
-		makeSchema(entityName)(w, r)
+		makeSchema(canonical)(w, r)
 	}
 }
 
@@ -62,12 +66,13 @@ func QSearchHandler(c *Context, entityResolver EntityResolverFunc, makeGrep func
 			RespondError(w, http.StatusBadRequest, "missing_entity", "entity parameter is required")
 			return
 		}
-		if !entityResolver(entityName) {
+		canonical, ok := entityResolver(entityName)
+		if !ok {
 			RespondError(w, http.StatusNotFound, "unknown_entity",
 				"unknown entity. Call db_map to see available entities.")
 			return
 		}
-		makeGrep(entityName)(w, r)
+		makeGrep(canonical)(w, r)
 	}
 }
 
@@ -79,12 +84,13 @@ func QFilterHandler(c *Context, entityResolver EntityResolverFunc, makeFilter fu
 			RespondError(w, http.StatusBadRequest, "missing_entity", "entity parameter is required")
 			return
 		}
-		if !entityResolver(entityName) {
+		canonical, ok := entityResolver(entityName)
+		if !ok {
 			RespondError(w, http.StatusNotFound, "unknown_entity",
 				"unknown entity. Call db_map to see available entities.")
 			return
 		}
-		makeFilter(entityName)(w, r)
+		makeFilter(canonical)(w, r)
 	}
 }
 
@@ -97,12 +103,13 @@ func QGetHandler(c *Context, entityResolver EntityResolverFunc, makeGet func(ent
 			RespondError(w, http.StatusBadRequest, "missing_entity", "entity parameter is required")
 			return
 		}
-		if !entityResolver(entityName) {
+		canonical, ok := entityResolver(entityName)
+		if !ok {
 			RespondError(w, http.StatusNotFound, "unknown_entity",
 				"unknown entity. Call db_map to see available entities.")
 			return
 		}
-		makeGet(entityName)(w, r)
+		makeGet(canonical)(w, r)
 	}
 }
 
@@ -116,17 +123,21 @@ func QRelatedHandler(c *Context, entityResolver EntityResolverFunc, makeRelated 
 			RespondError(w, http.StatusBadRequest, "missing_entity", "entity parameter is required")
 			return
 		}
-		if !entityResolver(entityName) {
+		canonical, ok := entityResolver(entityName)
+		if !ok {
 			RespondError(w, http.StatusNotFound, "unknown_entity",
 				"unknown entity. Call db_map to see available entities.")
 			return
 		}
-		makeRelated(entityName)(w, r)
+		makeRelated(canonical)(w, r)
 	}
 }
 
-// EntityResolverFunc — проверяет существование entity по имени (whitelist).
-type EntityResolverFunc func(name string) bool
+// EntityResolverFunc резолвит entity-имя в canonical (для make* колбэков).
+// Возвращает (canonical, true) если имя известно, иначе ("", false).
+// Резолвер построен поверх whitelist-границы: display-имена из db_map
+// ("Brand", "Brand (catalog_brand)") → canonical ("catalog_brand").
+type EntityResolverFunc func(name string) (string, bool)
 
 // stripEntityParam извлекает и УДАЛЯЕТ параметр entity из query.
 // Возвращает пустую строку, если entity не задан.
@@ -150,24 +161,43 @@ func stripEntityParam(r *http.Request) string {
 // не runtime.Entity). Возвращает мапу route → handler.
 //
 // routes:
-//   /q/map       → QMapHandler
-//   /q/describe  → QDescribeHandler
-//   /q/search    → QSearchHandler
-//   /q/filter    → QFilterHandler
-//   /q/get       → QGetHandler
-//   /q/related   → QRelatedHandler
+//
+//	/q/map       → QMapHandler
+//	/q/describe  → QDescribeHandler
+//	/q/search    → QSearchHandler
+//	/q/filter    → QFilterHandler
+//	/q/get       → QGetHandler
+//	/q/related   → QRelatedHandler
 func MakeQDispatcher(
 	c *Context,
 	entityProvider func(name string) (config.Entity, bool),
+	entityMap map[string]config.Entity,
 	dataSourceForSchema any, // datasource.DataSource или nil (fallback legacy)
 	schemaForLLM SchemaForLLMCallback,
 ) map[string]http.HandlerFunc {
+	// Резолвер: display-имя ("Brand", "Brand (catalog_brand)") → canonical ("catalog_brand").
+	// Строит reverse-индекс через configgen.CanonicalEntityName — ту же логику,
+	// что генерирует db_map. Whitelist остаётся: неизвестное имя → false.
+	resolve := func(n string) (string, bool) {
+		// entityProvider в endpoint_builder уже резолвит display → canonical
+		// (CanonicalEntityName). Возвращаем canonical ИМЯ, а не вход (n="Brand"
+		// → вернуть "catalog_brand"), иначе NewStrategyHandler внутри резолвит
+		// runtime-резолвером по "Brand" → 500 entity not found.
+		if e, ok := entityProvider(n); ok {
+			return e.Name, true
+		}
+		cn := configgen.CanonicalEntityName(n, configgen.DefaultDisplayPrefixes(), nil, entityMap)
+		if cn != "" {
+			if e, ok := entityProvider(cn); ok {
+				return e.Name, true
+			}
+		}
+		return "", false
+	}
+
 	return map[string]http.HandlerFunc{
 		"/q/map": QMapHandler(schemaForLLM),
-		"/q/describe": QDescribeHandler(c, func(n string) bool {
-			_, ok := entityProvider(n)
-			return ok
-		}, func(entityName string) http.HandlerFunc {
+		"/q/describe": QDescribeHandler(c, resolve, func(entityName string) http.HandlerFunc {
 			// SchemaStrategy через provider (или legacy).
 			entity, ok := entityProvider(entityName)
 			if !ok {
@@ -178,10 +208,7 @@ func MakeQDispatcher(
 			strategy := search.NewSchemaStrategy(idCol, nameCol)
 			return NewStrategySchemaHandler(c, strategy, entity).ServeHTTP
 		}),
-		"/q/search": QSearchHandler(c, func(n string) bool {
-			_, ok := entityProvider(n)
-			return ok
-		}, func(entityName string) http.HandlerFunc {
+		"/q/search": QSearchHandler(c, resolve, func(entityName string) http.HandlerFunc {
 			entity, ok := entityProvider(entityName)
 			if !ok {
 				return notFoundHandler()
@@ -193,10 +220,7 @@ func MakeQDispatcher(
 			strategy := search.NewGrepStrategy(idCol, nameCol)
 			return NewStrategyHandler(c, strategy, entityName, entity)
 		}),
-		"/q/filter": QFilterHandler(c, func(n string) bool {
-			_, ok := entityProvider(n)
-			return ok
-		}, func(entityName string) http.HandlerFunc {
+		"/q/filter": QFilterHandler(c, resolve, func(entityName string) http.HandlerFunc {
 			entity, ok := entityProvider(entityName)
 			if !ok {
 				return notFoundHandler()
@@ -206,10 +230,7 @@ func MakeQDispatcher(
 			strategy := search.NewFilterStrategy(idCol, nameCol)
 			return NewStrategyHandler(c, strategy, entityName, entity)
 		}),
-		"/q/get": QGetHandler(c, func(n string) bool {
-			_, ok := entityProvider(n)
-			return ok
-		}, func(entityName string) http.HandlerFunc {
+		"/q/get": QGetHandler(c, resolve, func(entityName string) http.HandlerFunc {
 			if _, ok := entityProvider(entityName); !ok {
 				return notFoundHandler()
 			}
@@ -233,10 +254,7 @@ func MakeQDispatcher(
 				base(w, r)
 			}
 		}),
-		"/q/related": QRelatedHandler(c, func(n string) bool {
-			_, ok := entityProvider(n)
-			return ok
-		}, func(entityName string) http.HandlerFunc {
+		"/q/related": QRelatedHandler(c, resolve, func(entityName string) http.HandlerFunc {
 			entity, ok := entityProvider(entityName)
 			if !ok {
 				return notFoundHandler()

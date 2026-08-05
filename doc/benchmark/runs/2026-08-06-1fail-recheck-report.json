@@ -1,0 +1,51 @@
+{
+  "total_cases": 1,
+  "success_rate": 1.0,
+  "retrieval_success_rate": 1.0,
+  "answer_delivery_rate": 1.0,
+  "hallucination_rate": 0.0,
+  "groundedness_rate": 1.0,
+  "refusal_correct_rate": 0.0,
+  "tool_error_rate": 0.0,
+  "entity_name_accuracy": 1.0,
+  "recovery_rate": 1.0,
+  "avg_total_tokens": 0.0,
+  "avg_prompt_tokens": 0.0,
+  "avg_completion_tokens": 0.0,
+  "avg_llm_calls": 0.0,
+  "avg_tool_calls": 0.0,
+  "avg_iterations": 0.0,
+  "avg_duration_ms": 0.0,
+  "p95_duration_ms": 0.0,
+  "avg_cost_usd": 0.0,
+  "total_cost_usd": 0.0,
+  "cases": [
+    {
+      "case_id": "order-lookup-total-001",
+      "question": "Сколько стоит заказ АП-100004?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0
+      },
+      "outcome": "final",
+      "final_text": "Заказ **АП-100004** (статус: «новый») оформлен на **Моисея Рогова** (Екатеринбург, доставка курьером, оплата онлайн).\n\n### Состав заказа и стоимость\n\n| № | Товар | Кол-во | Цена | Сумма |\n|---|------|:------:|:----:|:-----:|\n| 1 | **Febi Моторный фильтр** для Hyundai Solaris (арт. FLT-01188) | 3 шт. | 677 ₽ | **2 031 ₽** |\n| 2 | **Brembo Диск тормозной передний** для Ford Focus, перфорированный (арт. DISK-01072) | 1 шт. | 4 585 ₽ | **4 585 ₽** |\n| 3 | **Bosch Термостат** для Volkswagen Passat B6"
+    }
+  ],
+  "wall_duration_ms": 12603.219165990595
+}

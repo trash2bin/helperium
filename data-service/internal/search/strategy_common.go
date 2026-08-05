@@ -199,13 +199,12 @@ func selectClause(entity config.Entity, q map[string][]string, a Adapter) query.
 		return query.SelectClause{Columns: cols}
 	case query.FormatCount:
 		return query.SelectClause{}
-	default: // compact: id + first string field
+	default: // compact: id + name-колонка (через единый helper FirstStringFieldColumn).
+		// Раньше логика дублировалась здесь БЕЗ skip строкового PK → [id,id]
+		// для string-id сущностей (бенч scout-1). Теперь единый источник.
 		cols := []string{a.QuoteIdentifier(entity.IDColumn)}
-		for _, f := range entity.Fields {
-			if f.Type == config.FieldTypeString {
-				cols = append(cols, a.QuoteIdentifier(f.Column))
-				break
-			}
+		if nameCol := entity.FirstStringFieldColumn(); nameCol != "" {
+			cols = append(cols, a.QuoteIdentifier(nameCol))
 		}
 		return query.SelectClause{Columns: cols}
 	}

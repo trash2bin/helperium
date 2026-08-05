@@ -126,11 +126,19 @@ DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell < seed_fixture.py
 7. **`order_number` фильтруется** — `filter_catalog_order({order_number:"АП-100005"})` работает (добавлено в дефолтные filterable-правила).
 8. **Модель** — для прогона нужна без лимита (local ollama или polza/deepseek). Облачные `:cloud` могут иметь сессионный лимит.
 
+### Фаза 2.5: evaluator-фиксы (по рой-аудиту, 2026-08-06)
+
+9. **Bool-значения** (`available: true`) матчатся семантически: «в наличии/доступен» ↔ `True`, «закончился/нет» ↔ `False` (не literal `"true"`).
+10. **Морфология стран** (`country: Германия`) — матчинг по корню: «из Германии» ✓ (не строгий substring).
+11. **Производные числа** — суммы/произведения подтверждённых данных НЕ галлюцинация: `677×3=2031` (regex), `2031` как произведение/сумма tool_numbers, «плюс ещё 5», «итого N».
+12. **Discovery-тулы** (`db_map`, `db_describe`) НЕ считаются данными в absence-кейсах — модель зовёт их, получает схему (непусто), но retrieval остаётся пустым.
+13. **Табличные № строк** (1..10 в markdown-таблице) — одиночные цифры, не факты (уже фильтровались; закреплено тестом).
+
 ## Тесты
 
 ```bash
 uv run --package agent-db pytest tests/test_bench_core.py -q
-# 26 тестов: evaluator (tool/retrieval/answer/hallucination/refusal/entity/recovery),
+# 34 теста: evaluator (tool/retrieval/answer/hallucination/refusal/entity/recovery),
 # backlog parser, report aggregation, SSE parsing — без LLM, без сети.
 ```
 
