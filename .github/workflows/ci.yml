@@ -196,6 +196,9 @@ jobs:
           mkdir -p backlog
           # All containers run as UID 1000 via docker-compose.ci.yml
           sudo chown -R 1000:1000 .data backlog
+          # e2e container (UID 1000) needs write access to workspace root
+          # for demo_sessions.sqlite and test DB creation
+          sudo chmod 777 .
           # Generate shop data.db (gitignored, needed by mcp_composite/mcp_dynamic tests)
           SHOP_DB=data-service/testdata/scenarios/shop/data.db python3 data-service/testdata/scripts/create_shop_db.py
           # data-service needs write access for WAL mode (UID 1000 vs runner UID 1001)

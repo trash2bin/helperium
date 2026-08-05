@@ -238,6 +238,8 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:-ci-secret-token}
       - VIEWER_TOKEN=${VIEWER_TOKEN:-ci-viewer-token}
       - PROJECT_ROOT=/workspace
+      - DEMO_SESSION_DB_PATH=/tmp/demo_sessions.sqlite
+      - BACKLOG_DIR=/tmp/backlog
       - LOG_LEVEL=info
     depends_on:
       data-service:

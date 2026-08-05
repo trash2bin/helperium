@@ -111,13 +111,13 @@ def teardown_module(module):
 
 
 def _students_grep(tenant_id: str | None = None) -> requests.Response:
-    """GET /students?pattern=a — grep по students (REST strategy-эндпоинт)."""
+    """GET /students?pattern=Иван — grep по students (REST strategy-эндпоинт)."""
     headers = {}
     if tenant_id:
         headers["X-Tenant-ID"] = tenant_id
     return requests.get(
         f"{data_service_url()}/students",
-        params={"pattern": "a"},
+        params={"pattern": "\u0418\u0432\u0430\u043d"},  # "Иван" — guaranteed in seed data
         headers=headers,
         timeout=10,
     )

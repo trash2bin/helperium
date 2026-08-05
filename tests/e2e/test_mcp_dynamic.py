@@ -151,7 +151,7 @@ def test_mcp_uni_tool_search_then_get():
     # 1. Search first to obtain a real id
     search = mcp_call(
         "db_search",
-        {"entity": "student", "pattern": "Игнатов"},
+        {"entity": "student", "pattern": "Иван"},  # guaranteed in sqlite-testseed
         tenant_ids=_TENANT_A,
     )
     assert search, f"MCP db_search failed: {search.error}"
@@ -159,7 +159,7 @@ def test_mcp_uni_tool_search_then_get():
     text = _result_text(search)
     assert '"id"' in text, f"db_search should return an id: {text[:300]}"
 
-    # Extract the first id (uuid form in seed.json)
+    # Extract the first id from db_search result
     m = re.search(r'"id"\s*:\s*"([^"]+)"', text)
     assert m, f"db_search should return a quoted id: {text[:300]}"
     sid = m.group(1)
