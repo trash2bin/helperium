@@ -6,30 +6,27 @@
  * `window.__agentTutorSetAgent` bridge for runtime agent switching.
  */
 
-import type { WidgetConfig, AddMessageOptions } from './types';
+
+import CSS_TEXT from './_bundle.css';
 import { parseConfig } from './config';
-import { ICONS, escapeHtml } from './icons';
-import { getSessionId } from './storage';
-import { buildWidget } from './dom';
+import { buildWidget,
+  findMsgNode,
+  removeMsgRow,
+  scrollToBottom,} from './dom';
+import { escapeHtml, } from './icons';
+import { addMessage, restoreHistory } from './messages';
 import { streamChat } from './sse';
+import { createStorage, getSessionId } from './storage';
+import { ensureToolStrip } from './tools';
+import type { AddMessageOptions, WidgetConfig } from './types';
+import { appendToken, setFinalText } from './typewriter';
 import {
   createVoiceState,
+  playAudioBase64,
   startVoiceRecording,
   stopVoiceRecording,
   streamVoiceChat,
-  playAudioBase64,
 } from './voice';
-import {
-  findMsgNode,
-  removeMsgRow,
-  scrollToBottom,
-} from './dom';
-import { ensureToolStrip } from './tools';
-import { appendToken, setFinalText } from './typewriter';
-import { addMessage, restoreHistory } from './messages';
-import { createStorage } from './storage';
-
-import CSS_TEXT from './_bundle.css';
 
 /* ─── Constants ─── */
 const MAX_RETRIES = 3;

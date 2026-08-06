@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
-import { findMsgNode, removeMsgRow, scrollToBottom, isScrolledNearBottom } from '../src/dom';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { findMsgNode, isScrolledNearBottom, removeMsgRow, scrollToBottom } from '../src/dom';
 
 describe('findMsgNode', () => {
   it('returns the node itself if it has class at-msg', () => {

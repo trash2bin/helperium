@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, } from 'vitest';
 import { parseConfig } from '../src/config';
 
 // Mock document.currentScript

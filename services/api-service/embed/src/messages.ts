@@ -5,11 +5,11 @@
  * These functions take their dependencies as parameters (no closures).
  */
 
-import type { WidgetConfig, AddMessageOptions, StoredMessage } from './types';
+import { scrollToBottom } from './dom';
 import { ICONS } from './icons';
 import { renderMarkdown } from './markdown';
-import { scrollToBottom } from './dom';
 import { makeToolStrip } from './tools';
+import type { AddMessageOptions, WidgetConfig } from './types';
 
 /**
  * Creates a message element and appends it to the messages container.

@@ -1,56 +1,52 @@
 // types.test.ts — type-level contracts and runtime checks
 import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
 import type {
+  // Abuse
+  AbuseGlobalSettings,
+  // Agents
+  AgentInfo,
+  // API Log
+  ApiLogEntry,
   // Response
   ApiResponse,
-  // Domain
-  DomainModule,
-  // Tenant
-  TenantInfo,
+  ApiToast,
+  // Audit
+  AuditEntry,
+  ComputedSummary,
   // Dashboard
   DashboardData,
   // Config
   DataSourceConfig,
-  EntityConfig,
-  FieldConfig,
+  // Domain
+  DomainModule,
+  // Emergency
+  EmergencyStatus,
   EndpointConfig,
-  McpToolConfig,
-  TenantConfig,
-  SkipRule,
-  ComputedSummary,
-  // Tools
-  ManifestData,
-  ManifestEndpoint,
-  // RAG
-  RagHealth,
-  RagDoc,
-  RagSettings,
-  RagStats,
-  // Agents
-  AgentInfo,
-  VoiceConfig,
+  EntityConfig,
   // LLM
   LlmConfig,
   LlmProvider,
-  LlmProviderListResponse,
   LlmProviderListItem,
-  // Abuse
-  AbuseGlobalSettings,
-  // Emergency
-  EmergencyStatus,
-  // Audit
-  AuditEntry,
+  // Tools
+  ManifestData,
+  McpToolConfig,
+  RagDoc,
+  // RAG
+  RagHealth,
+  RagSettings,
+  SkipRule,
+  TenantConfig,
+  // Tenant
+  TenantInfo,
+  VoiceConfig,
   // Voice
   VoiceConfigData,
-  VoiceProviderEntry,
-  // API Log
-  ApiLogEntry,
-  ApiToast,
 } from '../src/types.js';
 
 describe('Types — type-level contracts', () => {

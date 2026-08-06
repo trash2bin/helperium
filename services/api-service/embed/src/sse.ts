@@ -5,8 +5,8 @@
  * token/tool/final/done/error events from the ReadableStream.
  */
 
-import type { WidgetConfig } from './types';
 import { ICONS } from './icons';
+import type { WidgetConfig } from './types';
 
 /** Callbacks for SSE stream events. */
 export interface StreamChatCallbacks {
@@ -216,7 +216,6 @@ export function streamChat(opts: StreamChatOpts): void {
     retryAttempts,
     maxRetries,
     callbacks,
-    addMessage,
     removeMsgRow,
     scheduleRetry,
     retryChat,

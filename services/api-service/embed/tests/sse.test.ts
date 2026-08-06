@@ -6,7 +6,7 @@
  * Uses controlled ReadableStream to verify event dispatch and
  * absence of Promise chain leaks.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readSSEStream, type SSEReadCallbacks } from '../src/sse';
 
 // ─── Helpers ───────────────────────────────────────────────────────────

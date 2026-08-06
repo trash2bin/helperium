@@ -1,5 +1,5 @@
 // registry.test.ts — tests for AppRegistry core module
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Registry is a side-effect module that attaches to window.AppRegistry.
 // We must clear it before each test.

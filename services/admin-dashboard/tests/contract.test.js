@@ -24,8 +24,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── Paths ──
 const DOMAINS_DIR = join(__dirname, '../src/domains');
 const OPENAPI_SPECS = [
-  { file: join(__dirname, '../../specs/api.openapi.yaml'),   label: 'api-service',   parser: 'yaml' },
-  { file: join(__dirname, '../../specs/rag.openapi.yaml'),   label: 'rag-service',   parser: 'yaml' },
+  { file: join(__dirname, '../../../specs/api.openapi.yaml'),   label: 'api-service',   parser: 'yaml' },
+  { file: join(__dirname, '../../../specs/rag.openapi.yaml'),   label: 'rag-service',   parser: 'yaml' },
   { file: join(__dirname, '../internal/server/static/openapi.json'), label: 'admin-dashboard', parser: 'json' },
 ];
 
@@ -297,7 +297,7 @@ domainFiles.forEach(function (f) {
   allCalls = allCalls.concat(extractApiCalls(readFileSync(join(DOMAINS_DIR, f), 'utf-8'), f));
 });
 
-const APP_JS_PATH = join(__dirname, '../internal/server/static/app.js');
+const APP_JS_PATH = join(__dirname, '../internal/server/static/dist/app.js');
 if (existsSync(APP_JS_PATH)) {
   allCalls = allCalls.concat(extractApiCalls(readFileSync(APP_JS_PATH, 'utf-8'), 'app.js'));
 }

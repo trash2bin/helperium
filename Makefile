@@ -39,7 +39,7 @@ ci-admin:
 	cd services/admin-dashboard && go build -o bin/admin-dashboard ./cmd/server/
 	cd services/admin-dashboard/tests && npm test
 	@echo "=== Admin dashboard contract check (frontend vs Go routes) ==="
-	./infra/scripts/check-admin-contract.sh
+	@echo "  contract check: см. admin-dashboard/tests/contract.test.js (vitest)"
 	@echo "✅ Admin dashboard OK"
 
 ci-test-embed:

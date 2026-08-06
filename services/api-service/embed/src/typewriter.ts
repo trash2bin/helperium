@@ -4,8 +4,8 @@
  * Gradually reveals text with a blinking cursor.
  */
 
+import { isScrolledNearBottom, scrollToBottom } from './dom';
 import { renderMarkdown } from './markdown';
-import { scrollToBottom, isScrolledNearBottom } from './dom';
 
 const TYPEWRITER_INTERVAL = 20;
 const TYPEWRITER_BURST = 3;

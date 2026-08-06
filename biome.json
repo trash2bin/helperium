@@ -3,10 +3,12 @@
 	"files": {
 		"includes": [
 			"services/admin-dashboard/internal/server/static/*.js",
-			"services/api-service/embed/src/**/*.js",
-			"services/api-service/embed/tests/**/*.js",
+			"services/api-service/embed/src/**/*.ts",
+			"services/api-service/embed/tests/**/*.ts",
+			"services/admin-dashboard/src/**/*.ts",
+			"services/admin-dashboard/tests/**/*.{ts,js}",
 			"demo/web/static/**/*.js",
-			"services/admin-dashboard/tests/**/*.js"
+			"!**/dist/**"
 		]
 	},
 	"javascript": {
@@ -35,7 +37,9 @@
 			"MutationObserver",
 			"IntersectionObserver",
 			"requestAnimationFrame",
-			"cancelAnimationFrame"
+			"cancelAnimationFrame",
+			"AppRegistry",
+			"__"
 		]
 	},
 	"linter": {

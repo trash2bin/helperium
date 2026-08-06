@@ -5,9 +5,9 @@
  * voice chat streaming, and base64 audio playback.
  */
 
-import type { WidgetConfig } from './types';
-import { readSSEStream, type SSEReadCallbacks } from './sse';
 import { ICONS } from './icons';
+import { readSSEStream, type SSEReadCallbacks } from './sse';
+import type { WidgetConfig } from './types';
 
 /** Mutable state for voice recording session. */
 export interface VoiceState {

@@ -5,8 +5,8 @@
  * Returns typed references to all interactive elements (UIRefs).
  */
 
+import { escapeHtml, ICONS } from './icons';
 import type { UIRefs, WidgetConfig } from './types';
-import { ICONS, escapeHtml } from './icons';
 
 /**
  * Creates an HTML element with className and optional innerHTML.
