@@ -192,10 +192,10 @@ jobs:
 
       - name: Prepare .data directories and workspace
         run: |
-          mkdir -p .data/app .data/rag .data/hf_cache .data/uploads .data/pg .data/tenants
+          mkdir -p infra/.data/app infra/.data/rag infra/.data/hf_cache infra/.data/uploads infra/.data/pg infra/.data/tenants
           mkdir -p backlog
           # All containers run as UID 1000 via docker-compose.ci.yml
-          sudo chown -R 1000:1000 .data backlog
+          sudo chown -R 1000:1000 infra/.data backlog
           # e2e container (UID 1000) needs write access to workspace root
           # for demo_sessions.sqlite and test DB creation
           sudo chmod 777 .
