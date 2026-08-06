@@ -117,6 +117,14 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 ## 🧬 Verification
 
 ```
+Last verified: 2026-08-06 (реструктуризация репозитория: `services/` + `infra/`; HEAD `ca6c95a`):
+  - **services/**: 8 сервисов перенесены из корня (git mv, история сохранена): api-service, data-service, mcp-gateway, admin-dashboard, rag, agent-db, helperium-go, helperium-sdk
+  - **infra/**: docker/, scripts/ (dev.sh, stack.sh, mutmut), docker-compose*.yml, Caddyfile
+  - **demo/** (foreign Django-магазин) и **tests/**, **specs/**, **doc/** — остались в корне (жёстко связаны с контуром тестирования/сборки)
+  - Пути обновлены: pyproject (uv workspace members), go.work, Makefile, .pre-commit, biome.json, pyrightconfig, CI (dockerfile → services/*, compose -f infra/), 6 Dockerfile (context = корень репо), infra/scripts (PROJECT_ROOT = ../..), docker-compose (context → ../services/*, workspace mount → ..), symlink api-service/specs → ../../specs, uv.lock (editable → services/*), tests/e2e/helpers.py (services/data-service/testdata)
+  - 0 битых markdown-ссылок (сканер замкнутого контура доков)
+  - Тесты зелёные: data-service ok (11 пакетов), mcp-gateway ok, admin-dashboard ok, helperium-go ok, api-service 511 passed, rag 91 passed, helperium-sdk 71 passed, demo/web 73 passed, agent-db 34 passed
+  - Граф знаний переиндексирован (9264 узла, пути актуальные)
 Last verified: 2026-08-06 (фиксы по рой-аудиту data-service — см. doc/benchmark/data-service-audit.md; бенч **46/49 = 93.9%** (было 81.6%), e2e **124 passed**):
   - **entity display-name resolution**: db_map показывает canonical первым ("catalog_brand (Brand)"), ToolPrefix раскрыт (json:"tool_prefix"), FK-связи canonical, описания db_* с примером catalog_product; /q/* резолвит display-имена ("Brand"→"catalog_brand") через configgen.CanonicalEntityName + entityProvider — убрал 177× unknown_entity → entity_name accuracy 100% (было 71.4%)
   - **preview name-preference**: FirstStringFieldColumn предпочитает name/title/full_name (не article), selectClause compact использует единый helper + skip строкового PK (фикс [id,id])
