@@ -75,11 +75,11 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
       - name: Run RAG unit tests
-        run: uv run pytest rag/tests/unit/ -v --tb=short
+        run: uv run pytest services/rag/tests/unit/ -v --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}
       - name: Run RAG search quality benchmark (CI mode — mock embeddings)
-        run: uv run pytest rag/tests/benchmark/ -v --tb=short
+        run: uv run pytest services/rag/tests/benchmark/ -v --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}
 

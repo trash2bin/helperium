@@ -42,7 +42,7 @@ def project_root() -> Path:
 
 
 def scenarios_dir() -> Path:
-    return project_root() / "data-service" / "testdata" / "scenarios"
+    return project_root() / "services/data-service" / "testdata" / "scenarios"
 
 
 def tenants_data_dir() -> Path:

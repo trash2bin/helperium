@@ -235,7 +235,7 @@ def scripted_server(tmp_path_factory):
             "--port", str(port),
             "--log-level", "info",
         ],
-        cwd=str(root / "api-service" / "src"),
+        cwd=str(root / "services/api-service/src"),
         env=env,
         stdout=open(log_path, "w", buffering=1),
         stderr=subprocess.STDOUT,

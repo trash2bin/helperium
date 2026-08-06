@@ -8,7 +8,7 @@
 #   ./scripts/dev.sh status        — healthcheck каждого
 #   ./scripts/dev.sh logs [svc]    — tail -f лога (svc: rag|mcp|api|web|data|all)
 #   ./scripts/dev.sh restart       — stop + start
-#   ./scripts/dev.sh e2e [args]    — нативный прогон tests/e2e/ (нужны поднятые сервисы)
+#   ./scripts/dev.sh e2e [args]    — нативный прогон services/agent-db/tests/e2e/ (нужны поднятые сервисы)
 #
 # Сценарии data-service (фабрика тестовых БД):
 #   ./scripts/dev.sh db list                       — список сценариев + метаданные
@@ -30,7 +30,7 @@ PID_DIR="$PROJECT_ROOT/.data/pids"
 
 SERVICES=("data" "rag" "mcp" "admin" "api" "web")
 declare -A SERVICE_CMD=(
-  [data]="LOG_LEVEL=info $PROJECT_ROOT/services/services/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
+  [data]="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
   [rag]="uv run --package rag python -m rag.service"
   [mcp]="$PROJECT_ROOT/services/mcp-gateway/mcp-gateway"
   # Legacy (Python): раскомментировать для отладки
@@ -132,7 +132,7 @@ cmd_start() {
 
   # Если DATABASE_URL задана — переопределяем data-service на PG-конфиг
   if [ -n "${DATABASE_URL:-}" ]; then
-    SERVICE_CMD[data]="LOG_LEVEL=info $PROJECT_ROOT/services/services/data-service/bin/data-service --config $PROJECT_ROOT/specs/config.postgres.json"
+    SERVICE_CMD[data]="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service --config $PROJECT_ROOT/specs/config.postgres.json"
   fi
 
   # Проверка uv
@@ -631,7 +631,7 @@ cmd_db_serve() {
 
   cd "$PROJECT_ROOT/services/data-service"
   exec env CONFIG_SCHEMA="$CONFIG_SCHEMA" PORT="$DATA_PORT" \
-    "$PROJECT_ROOT/services/services/data-service/bin/data-service" \
+    "$PROJECT_ROOT/services/data-service/bin/data-service" \
     --config "$dir/config.json"
 }
 
@@ -664,7 +664,7 @@ cmd_db_test() {
     postgres-testseed)
       echo "ℹ️  PostgreSQL-сценарий требует запущенного PostgreSQL."
       echo "    docker compose up -d db"
-      echo "    uv run pytest tests/e2e/ -v --tb=short -k test_admin_lifecycle"
+      echo "    uv run pytest services/agent-db/tests/e2e/ -v --tb=short -k test_admin_lifecycle"
       exit 0
       ;;
     *)
@@ -780,8 +780,8 @@ case "${1:-help}" in
     ;;
   e2e)
     shift
-    echo "🧪 Running e2e tests (no LLM): tests/e2e/"
-    .venv/bin/python3 -m pytest tests/e2e/ "$@"
+    echo "🧪 Running e2e tests (no LLM): services/agent-db/tests/e2e/"
+    .venv/bin/python3 -m pytest services/agent-db/tests/e2e/ "$@"
     ;;
   help|--help|-h)
     echo "Usage: $0 <command> [args]"
@@ -792,7 +792,7 @@ case "${1:-help}" in
     echo "  restart            — перезапустить"
     echo "  status             — healthcheck"
     echo "  logs [svc]         — tail -f логов (rag|mcp|api|web|data|all)"
-    echo "  e2e [pytest args]  — нативный прогон tests/e2e/ (нужны поднятые сервисы)"
+    echo "  e2e [pytest args]  — нативный прогон services/agent-db/tests/e2e/ (нужны поднятые сервисы)"
     echo ""
     echo "Сценарии БД data-service (фабрика тестовых БД):"
     echo "  db list                — список сценариев с метаданными"

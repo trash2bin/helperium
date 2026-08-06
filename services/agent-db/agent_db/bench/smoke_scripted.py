@@ -17,9 +17,9 @@ import time
 import uuid
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]  # helperium/
-sys.path.insert(0, str(ROOT / "tests" / "e2e"))
-sys.path.insert(0, str(ROOT))  # for tests.e2e package
+ROOT = Path(__file__).resolve().parents[4]  # repo root (helperium/)
+sys.path.insert(0, str(ROOT / "services/agent-db"))  # for tests.e2e package
+sys.path.insert(0, str(ROOT))  # for helperium root imports
 
 from tests.e2e.helpers import (  # noqa: E402
     find_free_port,

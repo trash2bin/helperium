@@ -171,7 +171,7 @@ def project_root() -> Path:
 @pytest.fixture(scope="session")
 def scenarios_dir(project_root: Path) -> Path:
     """Scenario data directory."""
-    return project_root / "data-service" / "testdata" / "scenarios"
+    return project_root / "services/data-service" / "testdata" / "scenarios"
 
 
 @pytest.fixture(scope="session")

@@ -46,8 +46,8 @@ echo "" | tee -a "$REPORT"
 # For now, Python is covered by `make ci-test-py`
 echo "" | tee -a "$REPORT"
 echo "━━━ [4/3] Python test suite (baseline coverage)" | tee -a "$REPORT"
-uv run pytest api-service/src/api_service/tests demo/web/tests rag/tests/unit \
-  --ignore=tests/e2e --ignore=rag/tests/integration \
+uv run pytest services/api-service/src/api_service/tests demo/web/tests services/rag/tests/unit \
+  --ignore=services/agent-db/tests/e2e --ignore=services/rag/tests/integration \
   -q --tb=short --timeout=30 2>&1 | tail -5 | tee -a "$REPORT"
 echo "" | tee -a "$REPORT"
 

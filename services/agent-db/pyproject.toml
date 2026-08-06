@@ -30,3 +30,6 @@ packages = ["agent_db"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/test_bench_core.py"]

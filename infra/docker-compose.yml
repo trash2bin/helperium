@@ -261,7 +261,7 @@ services:
       sh -c "uv pip install --python /app/.venv/bin/python pytest &&
              uv pip install --python /app/.venv/bin/python -e /workspace/services/agent-db &&
              cd /workspace &&
-             PYTHONPATH=/workspace /app/.venv/bin/python -m pytest tests/e2e/ -v --tb=short"
+             PYTHONPATH=/workspace /app/.venv/bin/python -m pytest services/agent-db/tests/e2e/ -v --tb=short"
 
   # CADDY (profile: prod): HTTPS + reverse-proxy to web
   caddy:
