@@ -9,7 +9,7 @@ WORKDIR /app/services/admin-dashboard
 RUN go mod download
 
 COPY services/helperium-go/ /app/services/helperium-go/
-COPY services/admin-dashboard/ ./services/admin-dashboard/
+COPY services/admin-dashboard/ .
 RUN CGO_ENABLED=0 go build -o /admin-dashboard ./cmd/server/
 
 FROM alpine:3.20
