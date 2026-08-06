@@ -1,0 +1,71 @@
+/*
+ * Trigger Button
+ *
+ * Floating glass-morphic action button.
+ * Spring-animated entrance, pulse ring, hover lift.
+ */
+.at-trigger {
+  position: fixed;
+  bottom: 20px;
+  width: 58px;
+  height: 58px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+  color: white;
+  cursor: pointer;
+  box-shadow: var(--shadow-trigger);
+  z-index: 2147483647;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.35s var(--ease-spring), box-shadow 0.3s var(--ease-smooth);
+  padding: 0;
+  outline: none;
+  animation: at-trigger-in 0.6s var(--ease-spring) both;
+  animation-delay: 0.3s;
+}
+
+/* Pulse ring — subtle breathing */
+.at-trigger::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  animation: at-pulse-ring 3s ease-out infinite;
+  animation-delay: 2s;
+}
+
+/* Hover: lift + glow */
+.at-trigger:hover {
+  transform: scale(1.1) translateY(-2px);
+  box-shadow:
+    0 6px 20px rgba(var(--accent-rgb), 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Active: press down */
+.at-trigger:active {
+  transform: scale(0.92);
+  transition-duration: 0.1s;
+}
+
+/* Position variants */
+.at-trigger.at-right { right: 20px; }
+.at-trigger.at-left { left: 20px; }
+
+/* SVG icon */
+.at-trigger svg {
+  width: 26px;
+  height: 26px;
+  position: relative;
+  z-index: 1;
+  transition: transform 0.2s var(--ease-spring);
+}
+
+.at-trigger:hover svg {
+  transform: scale(1.05);
+}

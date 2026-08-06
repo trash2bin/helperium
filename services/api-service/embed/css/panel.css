@@ -1,0 +1,47 @@
+/*
+ * Chat Panel
+ *
+ * Frosted glass panel with backdrop-blur.
+ * Spring-animated open/close from bottom corner.
+ */
+.at-panel {
+  position: fixed;
+  bottom: 20px;
+  width: min(400px, calc(100vw - 24px));
+  height: min(640px, calc(100vh - 40px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-panel);
+  z-index: 2147483646;
+  transition: opacity 0.3s var(--ease-smooth),
+              transform 0.4s var(--ease-spring);
+  transform-origin: bottom right;
+}
+
+/* Position variants */
+.at-panel.at-right {
+  right: 20px;
+  transform-origin: bottom right;
+}
+.at-panel.at-left {
+  left: 20px;
+  transform-origin: bottom left;
+}
+
+/* Hidden state: scale down + fade */
+.at-panel.at-hidden {
+  opacity: 0;
+  transform: translateY(16px) scale(0.92);
+  pointer-events: none;
+}
+
+/* Visible state: spring up */
+.at-panel:not(.at-hidden) {
+  animation: at-panel-in 0.45s var(--ease-spring) both;
+}

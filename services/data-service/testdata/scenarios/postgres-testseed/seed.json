@@ -1,0 +1,121 @@
+{
+  "groups": [
+    {
+      "id": "g1",
+      "name": "ИВТ-21",
+      "speciality": "Информационные системы и технологии"
+    },
+    {
+      "id": "g2",
+      "name": "ПИ-20",
+      "speciality": "Программная инженерия"
+    }
+  ],
+  "students": [
+    {
+      "id": "s1",
+      "name": "Иван Петров Иванович",
+      "group_id": "g1",
+      "course": 2
+    },
+    {
+      "id": "s2",
+      "name": "Мария Сидорова Ивановна",
+      "group_id": "g2",
+      "course": 3
+    }
+  ],
+  "teachers": [
+    {
+      "id": "t1",
+      "name": "Оксана Ниловна Константинова",
+      "disciplines": [
+        "Базы данных",
+        "Веб-технологии"
+      ]
+    }
+  ],
+  "disciplines": [
+    {
+      "id": "d1",
+      "name": "Алгоритмы и структуры данных",
+      "description": "Базы"
+    },
+    {
+      "id": "d2",
+      "name": "Базы данных",
+      "description": "Реляционные"
+    },
+    {
+      "id": "d3",
+      "name": "Веб-технологии",
+      "description": "HTTP"
+    }
+  ],
+  "schedule": [
+    {
+      "id": "sch1",
+      "group_id": "g1",
+      "day": "Понедельник",
+      "lessons": [
+        {
+          "discipline_id": "d1",
+          "discipline_name": "Алгоритмы и структуры данных",
+          "teacher_name": "Оксана Ниловна Константинова",
+          "type": "Лекция",
+          "room": 301,
+          "time_slot": "9:00-10:30",
+          "week_type": "числитель"
+        },
+        {
+          "discipline_id": "d2",
+          "discipline_name": "Базы данных",
+          "teacher_name": "Оксана Ниловна Константинова",
+          "type": "Практика",
+          "room": 205,
+          "time_slot": "10:45-12:15",
+          "week_type": "знаменатель"
+        }
+      ]
+    },
+    {
+      "id": "sch2",
+      "group_id": "g1",
+      "day": "Вторник",
+      "lessons": [
+        {
+          "discipline_id": "d3",
+          "discipline_name": "Веб-технологии",
+          "teacher_name": "Другой Преподаватель",
+          "type": "Лекция",
+          "room": 310,
+          "time_slot": "11:00-12:30",
+          "week_type": "каждую"
+        }
+      ]
+    }
+  ],
+  "grades": [
+    {
+      "id": "gr1",
+      "student_id": "s1",
+      "discipline_id": "d1",
+      "grade": "5",
+      "date": "2026-04-10"
+    },
+    {
+      "id": "gr2",
+      "student_id": "s1",
+      "discipline_id": "d2",
+      "grade": "4",
+      "date": "2026-06-15"
+    },
+    {
+      "id": "gr3",
+      "student_id": "s2",
+      "discipline_id": "d3",
+      "grade": "3",
+      "date": "2026-04-20"
+    }
+  ]
+}

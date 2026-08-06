@@ -1,0 +1,24 @@
+/*
+ * Helperium — Embeddable Chat Widget
+ *
+ * Main CSS entry point. Imports all component styles.
+ * This file is embedded into the JS bundle via esbuild --loader:.css=text
+ * for Shadow DOM isolation.
+ */
+
+/* Design tokens */
+@import './variables.css';
+
+/* Components */
+@import './trigger.css';
+@import './panel.css';
+@import './header.css';
+@import './messages.css';
+@import './form.css';
+@import './tools.css';
+
+/* Animations */
+@import './animations.css';
+
+/* Responsive */
+@import './responsive.css';

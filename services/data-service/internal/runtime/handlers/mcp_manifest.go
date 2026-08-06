@@ -1,0 +1,53 @@
+package handlers
+
+import (
+	"net/http"
+
+	"github.com/trash2bin/helperium/data-service/internal/configgen"
+	"github.com/trash2bin/helperium/helperium-go/config"
+)
+
+// MCPManifestHandler возвращает манифест MCP-инструментов,
+// сформированный из конфига data-service — единственный source of truth.
+//
+// MCPTools генерируются runtime из эндпоинтов через configgen.GenerateMCPTools,
+// чтобы не зависеть от того, есть ли mcp_tools в дисковом config.json.
+//
+// mcp-gateway вызывает этот эндпоинт при старте вместо того,
+// чтобы парсить config.json самостоятельно.
+//
+// Результат кэшируется — генерируем tools только один раз при старте сервиса.
+func MCPManifestHandler(cfg *config.Config) http.HandlerFunc {
+	// Генерация MCPTools из эндпоинтов при каждом запросе.
+	// Не используем cfg.MCPTools — он может быть устаревшим на диске.
+	// Всегда регенерируем из текущих cfg.Endpoints.
+	displayPrefixes := cfg.DisplayPrefixes
+	if len(displayPrefixes) == 0 {
+		displayPrefixes = configgen.DefaultDisplayPrefixes()
+	}
+	customPlurals := cfg.CustomPlurals
+	if customPlurals == nil {
+		customPlurals = make(map[string]string)
+	}
+	tools := configgen.GenerateMCPTools(cfg.Endpoints, cfg.Entities, displayPrefixes, customPlurals,
+		configgen.ResolveFieldRules(configgen.DefaultFilterableFieldRules(), cfg.DisabledDefaultFilterableRules, cfg.FilterableRules),
+		configgen.ResolveFieldRules(configgen.DefaultSearchableFieldRules(), cfg.DisabledDefaultSearchableRules, cfg.SearchableRules),
+		cfg.LLMToolPolicy)
+	// Определяем read-only режим
+	readOnly := cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly
+
+	manifest := map[string]any{
+		"endpoints":      cfg.Endpoints,
+		"entities":       cfg.Entities,
+		"custom_queries": cfg.CustomQueries,
+		"mcp_tools":      tools,
+		"read_only":      readOnly,
+		"data_source": map[string]any{
+			"read_only": readOnly,
+		},
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		RespondJSON(w, http.StatusOK, manifest)
+	}
+}

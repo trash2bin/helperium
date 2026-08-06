@@ -1,0 +1,13 @@
+db = "mewt.sqlite"
+
+[log]
+level = "info"
+
+[targets]
+include = ["cmd/**/*.go", "internal/**/*.go"]
+ignore = ["test", "vendor", "mock", "/mcp-gateway"]
+
+[run]
+
+[test]
+cmd = "go test ./... -count=1 -timeout 180s"

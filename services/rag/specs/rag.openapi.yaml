@@ -1,0 +1,889 @@
+components:
+  schemas:
+    AdminConfigResponse:
+      description: RAG-конфиг для админ-панели (embedding_api_key маскируется).
+      properties:
+        cache_enabled:
+          default: true
+          description: Кэш поиска включён
+          title: Cache Enabled
+          type: boolean
+        cache_maxsize:
+          default: 256
+          description: Максимальный размер кэша
+          title: Cache Maxsize
+          type: integer
+        cache_ttl:
+          default: 300
+          description: TTL кэша в секундах
+          title: Cache Ttl
+          type: integer
+        chroma_collection:
+          default: university_documents
+          description: Коллекция ChromaDB
+          title: Chroma Collection
+          type: string
+        chroma_path:
+          default: ''
+          description: Путь к ChromaDB
+          title: Chroma Path
+          type: string
+        chunk_overlap:
+          default: 160
+          description: Перекрытие чанков
+          title: Chunk Overlap
+          type: integer
+        chunk_size:
+          default: 768
+          description: Размер чанка (токенов)
+          title: Chunk Size
+          type: integer
+        chunker_type:
+          default: semantic
+          description: Тип чанкера
+          title: Chunker Type
+          type: string
+        context_max_tokens:
+          default: 8000
+          description: Максимум токенов в контексте
+          title: Context Max Tokens
+          type: integer
+        embedding_api_base:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Базовый URL API эмбеддингов
+          title: Embedding Api Base
+        embedding_api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: API-ключ эмбеддингов (маскирован)
+          title: Embedding Api Key
+        embedding_batch_size:
+          default: 64
+          description: Размер батча эмбеддингов
+          title: Embedding Batch Size
+          type: integer
+        embedding_device:
+          default: cpu
+          description: 'Устройство: cpu | cuda'
+          title: Embedding Device
+          type: string
+        embedding_dimensions:
+          default: 1536
+          description: Размерность вектора для API-провайдеров
+          title: Embedding Dimensions
+          type: integer
+        embedding_local_files_only:
+          default: false
+          description: Только локальные файлы модели
+          title: Embedding Local Files Only
+          type: boolean
+        embedding_model:
+          default: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+          description: Модель эмбеддингов
+          title: Embedding Model
+          type: string
+        embedding_passage_prefix:
+          default: ''
+          description: Префикс для passage
+          title: Embedding Passage Prefix
+          type: string
+        embedding_provider:
+          default: local
+          description: 'Провайдер эмбеддингов: local | litellm'
+          title: Embedding Provider
+          type: string
+        embedding_query_prefix:
+          default: ''
+          description: Префикс для query
+          title: Embedding Query Prefix
+          type: string
+        page_overlap_tokens:
+          default: 50
+          description: Перекрытие между страницами
+          title: Page Overlap Tokens
+          type: integer
+        rag_db_path:
+          default: ''
+          description: Путь к SQLite RAG
+          title: Rag Db Path
+          type: string
+        rag_instruction:
+          default: Ответь на вопрос только по найденным фрагментам документов.
+          description: Инструкция для LLM о том, как использовать RAG-контекст
+          title: Rag Instruction
+          type: string
+        reranker_b:
+          default: 0.75
+          description: Параметр B BM25
+          title: Reranker B
+          type: number
+        reranker_dense_factor:
+          default: 3
+          description: Множитель dense-кандидатов перед BM25
+          title: Reranker Dense Factor
+          type: integer
+        reranker_enabled:
+          default: true
+          description: BM25 reranker включён
+          title: Reranker Enabled
+          type: boolean
+        reranker_k1:
+          default: 1.5
+          description: Параметр K1 BM25
+          title: Reranker K1
+          type: number
+        search_limit_max:
+          default: 20
+          description: Максимальный лимит поиска
+          title: Search Limit Max
+          type: integer
+      title: AdminConfigResponse
+      type: object
+    AdminConfigUpdateRequest:
+      description: Обновление RAG-конфига (все поля опциональны).
+      properties:
+        cache_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Cache Enabled
+        cache_maxsize:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Cache Maxsize
+        cache_ttl:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Cache Ttl
+        chroma_collection:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Chroma Collection
+        chunk_overlap:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Chunk Overlap
+        chunk_size:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Chunk Size
+        chunker_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Chunker Type
+        context_max_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Context Max Tokens
+        embedding_api_base:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Embedding Api Base
+        embedding_api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: API-ключ эмбеддингов. Если прислать "***" — оставить текущий.
+            Если прислать пустую строку — очистить. Если прислать новый ключ — применить.
+          title: Embedding Api Key
+        embedding_batch_size:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Embedding Batch Size
+        embedding_device:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Embedding Device
+        embedding_dimensions:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Embedding Dimensions
+        embedding_local_files_only:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Embedding Local Files Only
+        embedding_model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Embedding Model
+        embedding_passage_prefix:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Embedding Passage Prefix
+        embedding_provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Embedding Provider
+        embedding_query_prefix:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Embedding Query Prefix
+        page_overlap_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Page Overlap Tokens
+        rag_instruction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rag Instruction
+        reranker_b:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Reranker B
+        reranker_dense_factor:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Reranker Dense Factor
+        reranker_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Reranker Enabled
+        reranker_k1:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Reranker K1
+        search_limit_max:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Search Limit Max
+      title: AdminConfigUpdateRequest
+      type: object
+    AdminStatsResponse:
+      description: Статистика RAG-сервиса.
+      properties:
+        chroma_size_mb:
+          description: Размер хранилища ChromaDB в мегабайтах
+          title: Chroma Size Mb
+          type: number
+        chunk_count:
+          description: Количество чанков в индексе
+          title: Chunk Count
+          type: integer
+        document_count:
+          description: Количество документов в индексе
+          title: Document Count
+          type: integer
+      required:
+      - document_count
+      - chunk_count
+      - chroma_size_mb
+      title: AdminStatsResponse
+      type: object
+    Body_upload_document_documents_upload_post:
+      properties:
+        discipline_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ID дисциплины для привязки
+          title: Discipline Id
+        discipline_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Название дисциплины
+          title: Discipline Name
+        file:
+          contentMediaType: application/octet-stream
+          description: Файл документа (PDF, DOCX, TXT, MD, HTML)
+          title: File
+          type: string
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Человекочитаемое название
+          title: Title
+      required:
+      - file
+      title: Body_upload_document_documents_upload_post
+      type: object
+    ContextRequest:
+      description: Запрос готового RAG-контекста для LLM.
+      properties:
+        discipline_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ID дисциплины для фильтрации
+          title: Discipline Id
+        limit:
+          default: 5
+          description: Фрагментов в контексте (1–20)
+          maximum: 20.0
+          minimum: 1.0
+          title: Limit
+          type: integer
+        query:
+          description: Вопрос пользователя
+          minLength: 1
+          title: Query
+          type: string
+      required:
+      - query
+      title: ContextRequest
+      type: object
+    ContextResponse:
+      description: Сформированный контекст для LLM.
+      properties:
+        context:
+          description: Объединённый текст релевантных фрагментов
+          title: Context
+          type: string
+        sources:
+          description: Список источников, использованных в контексте
+          items:
+            $ref: '#/components/schemas/RagSearchResult'
+          title: Sources
+          type: array
+      required:
+      - context
+      - sources
+      title: ContextResponse
+      type: object
+    DeleteDocumentRequest:
+      description: Запрос удаления документа.
+      properties:
+        document_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ID документа
+          title: Document Id
+        path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Путь к файлу документа
+          title: Path
+      title: DeleteDocumentRequest
+      type: object
+    DeleteDocumentResponse:
+      description: Результат удаления документа.
+      properties:
+        deleted:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ID удалённого документа
+          title: Deleted
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Сообщение о результате (например, если документ не найден)
+          title: Message
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Название удалённого документа
+          title: Title
+      title: DeleteDocumentResponse
+      type: object
+    Document:
+      description: Документ, загруженный в RAG-индекс.
+      properties:
+        created_at:
+          title: Created At
+          type: string
+        discipline_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Discipline Id
+        discipline_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Discipline Name
+        id:
+          title: Id
+          type: string
+        mime_type:
+          title: Mime Type
+          type: string
+        source_path:
+          title: Source Path
+          type: string
+        title:
+          title: Title
+          type: string
+      required:
+      - id
+      - title
+      - source_path
+      - mime_type
+      - created_at
+      title: Document
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    HealthResponse:
+      description: Состояние RAG-сервиса и его зависимостей.
+      properties:
+        chroma:
+          additionalProperties: true
+          description: Статус ChromaDB-индекса
+          title: Chroma
+          type: object
+        database:
+          additionalProperties: true
+          description: Статус SQLite-доступа
+          title: Database
+          type: object
+        embedding:
+          additionalProperties: true
+          description: Статус embedding-модели
+          title: Embedding
+          type: object
+        status:
+          default: ok
+          enum:
+          - ok
+          - degraded
+          title: Status
+          type: string
+      title: HealthResponse
+      type: object
+    ImportDocumentRequest:
+      description: Запрос импорта документа.
+      properties:
+        discipline_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ID дисциплины для привязки
+          title: Discipline Id
+        discipline_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Название дисциплины (сохраняется при импорте)
+          title: Discipline Name
+        path:
+          description: Путь к файлу (PDF, DOCX, TXT, MD, HTML)
+          minLength: 1
+          title: Path
+          type: string
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Человекочитаемое название
+          title: Title
+      required:
+      - path
+      title: ImportDocumentRequest
+      type: object
+    ImportDocumentResponse:
+      description: Результат импорта документа.
+      properties:
+        chunks_count:
+          description: Количество созданных чанков
+          title: Chunks Count
+          type: integer
+        document:
+          $ref: '#/components/schemas/Document'
+          description: Метаданные импортированного документа
+      required:
+      - document
+      - chunks_count
+      title: ImportDocumentResponse
+      type: object
+    ListDocumentsRequest:
+      description: Запрос списка документов.
+      properties:
+        discipline_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ID дисциплины для фильтрации
+          title: Discipline Id
+        limit:
+          anyOf:
+          - maximum: 1000.0
+            minimum: 1.0
+            type: integer
+          - type: 'null'
+          description: Максимум документов (1–1000)
+          title: Limit
+      title: ListDocumentsRequest
+      type: object
+    ListDocumentsResponse:
+      description: Список документов в индексе.
+      properties:
+        count:
+          description: Общее количество найденных документов
+          title: Count
+          type: integer
+        documents:
+          description: Список документов в индексе
+          items:
+            $ref: '#/components/schemas/Document'
+          title: Documents
+          type: array
+      required:
+      - documents
+      - count
+      title: ListDocumentsResponse
+      type: object
+    RagSearchResult:
+      description: Результат семантического поиска по документам.
+      properties:
+        chunk_id:
+          title: Chunk Id
+          type: string
+        chunk_index:
+          title: Chunk Index
+          type: integer
+        content:
+          title: Content
+          type: string
+        discipline_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Discipline Id
+        document_id:
+          title: Document Id
+          type: string
+        document_title:
+          title: Document Title
+          type: string
+        page:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Page
+        score:
+          title: Score
+          type: number
+        source_path:
+          title: Source Path
+          type: string
+      required:
+      - document_id
+      - document_title
+      - source_path
+      - chunk_id
+      - chunk_index
+      - score
+      - content
+      title: RagSearchResult
+      type: object
+    SearchRequest:
+      description: Запрос семантического поиска.
+      properties:
+        discipline_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ID дисциплины для фильтрации
+          title: Discipline Id
+        limit:
+          default: 5
+          description: Количество результатов (1–20)
+          maximum: 20.0
+          minimum: 1.0
+          title: Limit
+          type: integer
+        query:
+          description: Поисковый запрос
+          minLength: 1
+          title: Query
+          type: string
+      required:
+      - query
+      title: SearchRequest
+      type: object
+    SearchResponse:
+      description: Результаты семантического поиска.
+      properties:
+        count:
+          description: Общее количество результатов
+          title: Count
+          type: integer
+        results:
+          description: Список найденных фрагментов
+          items:
+            $ref: '#/components/schemas/RagSearchResult'
+          title: Results
+          type: array
+      required:
+      - results
+      - count
+      title: SearchResponse
+      type: object
+    ValidationError:
+      properties:
+        ctx:
+          title: Context
+          type: object
+        input:
+          title: Input
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+info:
+  description: HTTP API for RAG pipeline (indexing and semantic search)
+  title: RAG Service
+  version: 1.1.0
+openapi: 3.1.0
+paths:
+  /admin/config:
+    get:
+      description: Возвращает текущую конфигурацию RAG (embedding_api_key маскирован).
+      operationId: admin_get_config_admin_config_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigResponse'
+          description: Successful Response
+      summary: Получить RAG-конфиг
+    put:
+      description: 'Применяет новые параметры конфигурации RAG. После обновления сбрасывает
+        pipeline — новый pipeline создастся при следующем вызове get_pipeline() с
+        обновлённым конфигом. embedding_api_key: "***" = оставить текущий, пустая
+        строка = очистить, новое значение = применить.'
+      operationId: admin_put_config_admin_config_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConfigUpdateRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Обновить RAG-конфиг
+  /admin/stats:
+    get:
+      description: Возвращает количество документов, чанков и размер ChromaDB.
+      operationId: admin_get_stats_admin_stats_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsResponse'
+          description: Successful Response
+      summary: Статистика RAG
+  /context:
+    post:
+      description: Формирует итоговую строку контекста для передачи в LLM.
+      operationId: context_context_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContextRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContextResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Сборка контекста
+  /documents/delete:
+    post:
+      description: Удаляет документ и его векторы из индекса по пути или ID. Идемпотентно.
+      operationId: delete_document_documents_delete_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteDocumentRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteDocumentResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Удаление документа
+  /documents/import:
+    post:
+      description: Загружает файл в RAG-индекс, разбивает на чанки и индексирует векторы.
+      operationId: import_document_documents_import_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportDocumentRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportDocumentResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Импорт документа
+  /documents/list:
+    post:
+      description: Возвращает список документов в индексе с фильтрацией по дисциплине.
+      operationId: list_documents_documents_list_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListDocumentsRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDocumentsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Список документов
+  /documents/upload:
+    post:
+      description: Принимает multipart-файл, сохраняет во временную директорию и импортирует
+        в RAG-индекс.
+      operationId: upload_document_documents_upload_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_document_documents_upload_post'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportDocumentResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Загрузка файла и импорт
+  /health:
+    get:
+      description: Проверяет доступность SQLite, ChromaDB и загрузку embedding-модели.
+      operationId: health_health_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+          description: Successful Response
+      summary: Проверка состояния сервиса
+  /search:
+    post:
+      description: Ищет наиболее релевантные фрагменты документов по текстовому запросу.
+      operationId: search_search_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Семантический поиск

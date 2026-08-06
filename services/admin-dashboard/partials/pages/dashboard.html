@@ -1,0 +1,53 @@
+      <div x-show="page === 'dashboard'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 x-text="__('page.dashboard.title')"></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="refreshDashboard()" class="btn btn-sm" x-text="__('btn.refresh')"></button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" x-text="dashboard.tenant_count ?? '—'"></div>
+            <div class="stat-label" x-text="__('stat.tenants')"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="font-size:16px;word-break:break-all;" x-text="dashboard.data_service ?? '—'"></div>
+            <div class="stat-label" x-text="__('stat.dataService')"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">
+              <span x-show="dashboard.status === 'ok'" style="color:#3fb950;">✓</span>
+              <span x-show="dashboard.status !== 'ok' && dashboard.status" style="color:#f85149;">✗</span>
+              <span x-show="!dashboard.status" style="color:#8b949e;">—</span>
+            </div>
+            <div class="stat-label" x-text="__('stat.status')"></div>
+          </div>
+        </div>
+        <div class="card" x-show="dashboard.tenants && dashboard.tenants.length">
+          <h3 x-text="__('label.tenants')"></h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th x-text="__('label.id')"></th>
+                <th x-text="__('label.status')"></th>
+                <th x-text="__('label.actions')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="t in dashboard.tenants" :key="t.id">
+                <tr>
+                  <td x-text="t.id"></td>
+                  <td><span class="badge badge-green" x-text="t.status || 'active'"></span></td>
+                  <td>
+                    <button @click="selectTenant(t.id)" class="btn btn-sm" x-text="__('btn.open')"></button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tenants Page -->

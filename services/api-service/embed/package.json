@@ -1,0 +1,19 @@
+{
+  "name": "@helperium/embed-widget",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Helperium embeddable chat widget (TypeScript)",
+  "scripts": {
+    "build": "bash build.sh",
+    "typecheck": "tsc --noEmit",
+    "dev": "npm run typecheck && esbuild src/index.ts --bundle --format=iife --target=es2018 --loader:.css=text --loader:.svg=text --sourcemap --outfile=dist/embed.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.1.0"
+  }
+}

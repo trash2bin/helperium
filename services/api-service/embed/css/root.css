@@ -1,0 +1,15 @@
+/*
+ * Root Container
+ *
+ * Base styles for the Shadow DOM root element.
+ */
+.at-root {
+  all: initial;
+  display: block;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -1,0 +1,1206 @@
+{
+  "cases": [
+    {
+      "id": "product-lookup-article-001",
+      "question": "Сколько стоит артикул EXT-01392?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT price FROM catalog_product WHERE article = 'EXT-01392'",
+        "expected": {
+          "price": 2751
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ],
+        "must_not_call": [
+          "db_map",
+          "db_describe"
+        ]
+      },
+      "tags": [
+        "product",
+        "price",
+        "article",
+        "simple"
+      ]
+    },
+    {
+      "id": "product-lookup-name-001",
+      "question": "Сколько стоит Датчик ABS Bosch для Toyota Land Cruiser 200?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT price FROM catalog_product WHERE name LIKE '%Датчик ABS Bosch%'",
+        "expected": {
+          "price": 2751
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "price",
+        "name"
+      ]
+    },
+    {
+      "id": "product-lookup-brand-001",
+      "question": "Какой бренд у товара с артикулом EXT-01392?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT b.name FROM catalog_product p JOIN catalog_brand b ON p.brand_id=b.id WHERE p.article='EXT-01392'",
+        "expected": {
+          "brand": "Bosch"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "brand",
+        "article"
+      ]
+    },
+    {
+      "id": "product-lookup-availability-001",
+      "question": "Есть ли в наличии артикул EXT-01367?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT is_available, quantity FROM catalog_product WHERE article='EXT-01367'",
+        "expected": {
+          "available": true,
+          "quantity": 23
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "availability"
+      ]
+    },
+    {
+      "id": "product-lookup-hit-001",
+      "question": "Сколько стоит товар с меткой ХИТ артикул EXT-01401?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT price FROM catalog_product WHERE article='EXT-01401'",
+        "expected": {
+          "price": 3263
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "price",
+        "hit"
+      ]
+    },
+    {
+      "id": "product-lookup-hella-001",
+      "question": "Сколько товаров бренда Hella в каталоге?",
+      "category": "count",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_brand b ON p.brand_id=b.id WHERE b.name='Hella'",
+        "expected": {
+          "count": 5
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "brand",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-bosch-available-001",
+      "question": "Сколько товаров бренда Bosch в наличии?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_brand b ON p.brand_id=b.id WHERE b.name='Bosch' AND p.is_available=true AND p.quantity>0",
+        "expected": {
+          "count": 74
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "brand",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-price-001",
+      "question": "Сколько товаров дороже 3000 рублей?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product WHERE price > 3000",
+        "expected": {
+          "count": 144
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "price",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-price-002",
+      "question": "Сколько товаров дешевле 1000 рублей?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product WHERE price < 1000",
+        "expected": {
+          "count": 83
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "price",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-category-001",
+      "question": "Сколько товаров в категории Колодки тормозные?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Колодки тормозные'",
+        "expected": {
+          "count": 60
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-category-002",
+      "question": "Сколько товаров в категории Свечи зажигания?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Свечи зажигания'",
+        "expected": {
+          "count": 36
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "count"
+      ]
+    },
+    {
+      "id": "product-filter-price-001",
+      "question": "Покажи товары дешевле 2000 рублей",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product WHERE price < 2000 LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "price",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-filter-category-001",
+      "question": "Покажи товары из категории Масляные фильтры",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Масляные фильтры' LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-absence-001",
+      "question": "Есть ли у вас артикул FAKE-ARTICLE-999?",
+      "category": "absence",
+      "ground_truth": {
+        "type": "not_found",
+        "query": "SELECT COUNT(*) FROM catalog_product WHERE article='FAKE-ARTICLE-999'",
+        "expected": {
+          "count": 0
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search"
+        ]
+      },
+      "expect_refusal": true,
+      "tags": [
+        "product",
+        "absence"
+      ]
+    },
+    {
+      "id": "order-lookup-status-001",
+      "question": "Какой статус заказа АП-100005?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT status FROM catalog_order WHERE order_number='АП-100005'",
+        "expected": {
+          "status": "new"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "status_synonyms": {
+        "shipped": [
+          "отправлен",
+          "в пути",
+          "shipped",
+          "передан в доставку"
+        ],
+        "delivered": [
+          "доставлен",
+          "получен",
+          "delivered"
+        ],
+        "processing": [
+          "в обработке",
+          "обрабатывается",
+          "processing"
+        ],
+        "new": [
+          "новый",
+          "new",
+          "создан"
+        ],
+        "confirmed": [
+          "подтверждён",
+          "confirmed"
+        ],
+        "cancelled": [
+          "отменён",
+          "cancelled"
+        ]
+      },
+      "tags": [
+        "order",
+        "status"
+      ]
+    },
+    {
+      "id": "order-lookup-status-002",
+      "question": "Какой статус заказа АП-100006?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT status FROM catalog_order WHERE order_number='АП-100006'",
+        "expected": {
+          "status": "confirmed"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "status_synonyms": {
+        "shipped": [
+          "отправлен",
+          "в пути",
+          "shipped",
+          "передан в доставку"
+        ],
+        "delivered": [
+          "доставлен",
+          "получен",
+          "delivered"
+        ],
+        "processing": [
+          "в обработке",
+          "обрабатывается",
+          "processing"
+        ],
+        "new": [
+          "новый",
+          "new",
+          "создан"
+        ],
+        "confirmed": [
+          "подтверждён",
+          "confirmed"
+        ],
+        "cancelled": [
+          "отменён",
+          "cancelled"
+        ]
+      },
+      "tags": [
+        "order",
+        "status"
+      ]
+    },
+    {
+      "id": "order-lookup-total-001",
+      "question": "Сколько стоит заказ АП-100004?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT total FROM catalog_order WHERE order_number='АП-100004'",
+        "expected": {
+          "total": 7809
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "order",
+        "total"
+      ]
+    },
+    {
+      "id": "order-count-status-003",
+      "question": "Сколько заказов со статусом new?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_order WHERE status='new'",
+        "expected": {
+          "count": 2
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order"
+        ]
+      },
+      "status_synonyms": {
+        "new": [
+          "новый",
+          "new",
+          "создан"
+        ]
+      },
+      "tags": [
+        "order",
+        "status",
+        "count"
+      ]
+    },
+    {
+      "id": "order-count-status-002",
+      "question": "Сколько заказов со статусом delivered?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_order WHERE status='delivered'",
+        "expected": {
+          "count": 3
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order"
+        ]
+      },
+      "status_synonyms": {
+        "shipped": [
+          "отправлен",
+          "в пути",
+          "shipped",
+          "передан в доставку"
+        ],
+        "delivered": [
+          "доставлен",
+          "получен",
+          "delivered"
+        ]
+      },
+      "tags": [
+        "order",
+        "status",
+        "count"
+      ]
+    },
+    {
+      "id": "order-lookup-delivery-001",
+      "question": "Каким способом доставки отправлен заказ АП-100005?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT delivery_method FROM catalog_order WHERE order_number='АП-100005'",
+        "expected": {
+          "delivery": "pickup"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "order",
+        "delivery"
+      ]
+    },
+    {
+      "id": "order-lookup-payment-001",
+      "question": "Как оплачен заказ АП-100003?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT payment_method FROM catalog_order WHERE order_number='АП-100003'",
+        "expected": {
+          "payment": "online"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "order",
+        "payment"
+      ]
+    },
+    {
+      "id": "order-absence-001",
+      "question": "Существует ли заказ ORD-2024-001234?",
+      "category": "absence",
+      "ground_truth": {
+        "type": "not_found",
+        "query": "SELECT COUNT(*) FROM catalog_order WHERE order_number='ORD-2024-001234'",
+        "expected": {
+          "count": 0
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order",
+          "db_search"
+        ]
+      },
+      "expect_refusal": true,
+      "tags": [
+        "order",
+        "absence"
+      ]
+    },
+    {
+      "id": "brand-lookup-001",
+      "question": "Из какой страны бренд Bosch?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT country FROM catalog_brand WHERE name='Bosch'",
+        "expected": {
+          "country": "Германия"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_brand",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "brand",
+        "country"
+      ]
+    },
+    {
+      "id": "brand-lookup-002",
+      "question": "Из какой страны бренд Denso?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT country FROM catalog_brand WHERE name='Denso'",
+        "expected": {
+          "country": "Япония"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_brand",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "brand",
+        "country"
+      ]
+    },
+    {
+      "id": "brand-count-001",
+      "question": "Сколько всего брендов в каталоге?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_brand",
+        "expected": {
+          "count": 30
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_brand",
+          "db_search",
+          "db_describe"
+        ]
+      },
+      "tags": [
+        "brand",
+        "db_describe-ok: COUNT(*) честный (аудит scout-3)",
+        "count"
+      ]
+    },
+    {
+      "id": "category-count-001",
+      "question": "Сколько всего категорий в каталоге?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_category",
+        "expected": {
+          "count": 117
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_category",
+          "db_search"
+        ]
+      },
+      "tags": [
+        "category",
+        "count"
+      ]
+    },
+    {
+      "id": "category-lookup-001",
+      "question": "Какая родительская категория у Колодки тормозные?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT parent.name FROM catalog_category c JOIN catalog_category parent ON c.parent_id=parent.id WHERE c.name='Колодки тормозные'",
+        "expected": {
+          "parent": "Тормозная система"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_category",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "category",
+        "parent"
+      ]
+    },
+    {
+      "id": "product-filter-brand-001",
+      "question": "Покажи товары бренда Hella",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product p JOIN catalog_brand b ON p.brand_id=b.id WHERE b.name='Hella' LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "brand",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-filter-category-002",
+      "question": "Покажи товары из категории Амортизаторы",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Амортизаторы' LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-filter-price-002",
+      "question": "Покажи товары дороже 5000 рублей",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product WHERE price > 5000 LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "price",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-filter-availability-001",
+      "question": "Покажи доступные товары бренда Febi",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product p JOIN catalog_brand b ON p.brand_id=b.id WHERE b.name='Febi' AND p.is_available=true LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "brand",
+        "availability",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-filter-label-001",
+      "question": "Покажи товары с меткой sale",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product WHERE label='sale' LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "label",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-search-partial-name-001",
+      "question": "Найди датчик ABS на Toyota Land Cruiser",
+      "category": "search",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product WHERE name LIKE '%датчик abs%' AND name LIKE '%toyota land cruiser%' LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "search",
+        "name"
+      ]
+    },
+    {
+      "id": "product-count-category-003",
+      "question": "Сколько товаров в категории Диски тормозные?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Диски тормозные'",
+        "expected": {
+          "count": 24
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-brand-002",
+      "question": "Сколько товаров бренда Gates в каталоге?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_brand b ON p.brand_id=b.id WHERE b.name='Gates'",
+        "expected": {
+          "count": 5
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "brand",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-total-001",
+      "question": "Сколько всего товаров в каталоге?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product",
+        "expected": {
+          "count": 407
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search"
+        ]
+      },
+      "tags": [
+        "product",
+        "count",
+        "total"
+      ]
+    },
+    {
+      "id": "order-count-total-001",
+      "question": "Сколько всего заказов в системе?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_order",
+        "expected": {
+          "count": 6
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_order",
+          "db_search"
+        ]
+      },
+      "tags": [
+        "order",
+        "count",
+        "total"
+      ]
+    },
+    {
+      "id": "product-absence-002",
+      "question": "Есть ли в наличии товар артикул ZZ-000-NOPE?",
+      "category": "absence",
+      "ground_truth": {
+        "type": "not_found",
+        "query": "SELECT COUNT(*) FROM catalog_product WHERE article='ZZ-000-NOPE'",
+        "expected": {
+          "count": 0
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search"
+        ]
+      },
+      "expect_refusal": true,
+      "tags": [
+        "product",
+        "absence"
+      ]
+    },
+    {
+      "id": "product-absence-003",
+      "question": "Покажи товары бренда НЕСУЩЕСТВУЮЩИЙ",
+      "category": "absence",
+      "ground_truth": {
+        "type": "not_found",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_brand b ON p.brand_id=b.id WHERE b.name='НЕСУЩЕСТВУЮЩИЙ'",
+        "expected": {
+          "count": 0
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search"
+        ]
+      },
+      "expect_refusal": true,
+      "tags": [
+        "product",
+        "absence"
+      ]
+    },
+    {
+      "id": "brand-lookup-003",
+      "question": "Из какой страны бренд Brembo?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT country FROM catalog_brand WHERE name='Brembo'",
+        "expected": {
+          "country": "Италия"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_brand",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "brand",
+        "country"
+      ]
+    },
+    {
+      "id": "product-lookup-origin-001",
+      "question": "Какая страна происхождения у товара EXT-01401?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT country_of_origin FROM catalog_product WHERE article = 'EXT-01401'",
+        "expected": {
+          "country": "Германия"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "origin",
+        "lookup"
+      ]
+    },
+    {
+      "id": "product-filter-combined-001",
+      "question": "Покажи тормозные колодки бренда Bosch в наличии",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id JOIN catalog_brand b ON p.brand_id=b.id WHERE c.name='Колодки тормозные' AND b.name='Bosch' AND p.is_available=true LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "brand",
+        "availability",
+        "combined"
+      ]
+    },
+    {
+      "id": "product-lookup-warranty-001",
+      "question": "Какой гарантийный срок у товара EXT-01392?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT warranty_months FROM catalog_product WHERE article='EXT-01392'",
+        "expected": {
+          "warranty": 24
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "warranty",
+        "lookup"
+      ]
+    },
+    {
+      "id": "product-lookup-country-001",
+      "question": "Какая страна происхождения у товара EXT-01392?",
+      "category": "lookup",
+      "ground_truth": {
+        "type": "exact_value",
+        "query": "SELECT country_of_origin FROM catalog_product WHERE article='EXT-01392'",
+        "expected": {
+          "country": "Германия"
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search",
+          "db_get"
+        ]
+      },
+      "tags": [
+        "product",
+        "country",
+        "lookup"
+      ]
+    },
+    {
+      "id": "product-filter-category-003",
+      "question": "Покажи товары из категории Салонные фильтры",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Салонные фильтры' LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "filter"
+      ]
+    },
+    {
+      "id": "product-count-category-006",
+      "question": "Сколько товаров в категории Наконечники рулевые?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Наконечники рулевые'",
+        "expected": {
+          "count": 20
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-category-005",
+      "question": "Сколько товаров в категории Лямбда-зонды?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product p JOIN catalog_category c ON p.category_id=c.id WHERE c.name='Лямбда-зонды'",
+        "expected": {
+          "count": 20
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "category",
+        "count"
+      ]
+    },
+    {
+      "id": "product-count-discount-001",
+      "question": "Сколько товаров сейчас по скидке?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product WHERE old_price > 0",
+        "expected": {
+          "count": 72
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "discount",
+        "count"
+      ]
+    },
+    {
+      "id": "product-filter-discount-001",
+      "question": "Покажи товары со скидкой",
+      "category": "filter",
+      "ground_truth": {
+        "type": "list_ids",
+        "query": "SELECT article FROM catalog_product WHERE old_price > 0 LIMIT 10",
+        "expected": {
+          "min_count": 1
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product"
+        ]
+      },
+      "tags": [
+        "product",
+        "discount",
+        "filter"
+      ]
+    }
+  ]
+}

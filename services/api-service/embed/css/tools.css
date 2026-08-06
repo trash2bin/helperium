@@ -1,0 +1,113 @@
+/*
+ * Tool Strip & Tables
+ *
+ * Tool call pills with glass effect.
+ * Modern table styling with subtle borders.
+ */
+
+/* Tool call pills */
+.at-tool-strip {
+  align-self: flex-start;
+  max-width: 92%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.at-tool-strip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.06);
+  border: 1px solid rgba(var(--accent-rgb), 0.1);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  animation: at-msg-in 0.3s var(--ease-spring) both;
+}
+
+/* Markdown table */
+.at-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 10px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.at-table-wrap table {
+  min-width: 520px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.at-table-wrap th,
+.at-table-wrap td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.at-table-wrap th {
+  background: rgba(0, 0, 0, 0.02);
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.at-table-wrap tr:last-child td { border-bottom: 0; }
+.at-table-wrap tr:hover td { background: rgba(0, 0, 0, 0.015); }
+
+/* Retry button */
+.at-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 18px;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font);
+  outline: none;
+  transition: all 0.2s var(--ease-smooth);
+}
+
+.at-retry-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.25);
+}
+
+.at-retry-btn:active {
+  transform: translateY(0);
+}
+
+/* Retry countdown */
+.at-msg.at-retry-countdown {
+  align-self: center;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  max-width: 100%;
+  font-weight: 500;
+}

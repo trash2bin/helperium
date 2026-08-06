@@ -1,0 +1,23 @@
+# Caddyfile для prod-профиля (caddy-сервис в docker compose)
+# Автоматически получает TLS через Let's Encrypt для DOMAIN из env.
+# Если DOMAIN не задан — работает на порту 80 (dev-режим).
+
+{$DOMAIN:localhost} {
+    # Web UI
+    handle_path /api/* {
+        reverse_proxy web:8080 {
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    # Статика и корень через web
+    handle {
+        reverse_proxy web:8080
+    }
+
+    # Логи
+    log {
+        output stdout
+        format json
+    }
+}

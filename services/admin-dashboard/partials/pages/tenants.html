@@ -1,0 +1,102 @@
+      <div x-show="page === 'tenants'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 x-text="__('page.tenants.title')"></h2>
+          </div>
+          <div class="page-header-right">
+            <button @click="showNewTenantForm = !showNewTenantForm" class="btn" x-text="__('tenant.btnNew')"></button>
+          </div>
+        </div>
+
+        <!-- New Tenant Form -->
+        <div x-show="showNewTenantForm" class="card" x-cloak>
+          <h3 x-text="__('tenant.formTitle')"></h3>
+          <form @submit.prevent="createTenantWithUpload()" class="form">
+            <div class="form-group">
+              <label x-text="__('tenant.labelId')"></label>
+              <input type="text" x-model="newTenant.tenant_id" :placeholder="__('tenant.placeholderId')" required>
+            </div>
+            <div class="form-group">
+              <label x-text="__('tenant.labelDriver')"></label>
+              <select x-model="newTenant.driver" @change="newTenantUploadFile = null; newTenant.dsn = ''">
+                <option value="sqlite3" x-text="__('tenant.driverSqlite')"></option>
+                <option value="postgres" x-text="__('tenant.driverPostgres')"></option>
+              </select>
+            </div>
+
+            <!-- SQLite: загрузка файла -->
+            <div x-show="newTenant.driver === 'sqlite3'" x-cloak>
+              <label class="upload-zone" for="tenantFileInput"
+                @dragover.prevent="$el.classList.add('dragover')"
+                @dragleave.prevent="$el.classList.remove('dragover')">
+                <div x-show="!newTenantUploadFile">
+                  <div style="font-size:32px;margin-bottom:8px;">🗄️</div>
+                  <div style="font-weight:600;" x-text="__('tenant.uploadZone')"></div>
+                  <div style="font-size:11px;color:#8b949e;margin-top:4px;" x-text="__('tenant.uploadDesc')"></div>
+                </div>
+                <div x-show="newTenantUploadFile" style="display:flex;align-items:center;gap:10px;">
+                  <div style="font-size:24px;">📄</div>
+                  <div style="text-align:left;">
+                    <div x-text="newTenantUploadFile?.name || ''" style="font-weight:600;"></div>
+                    <div style="font-size:11px;color:#8b949e;" x-text="newTenantUploadFile ? (newTenantUploadFile.size / 1024).toFixed(1) + ' KB' : ''"></div>
+                  </div>
+                  <button type="button" @click.prevent="newTenantUploadFile = null; $el.closest('label').querySelector('input').value = ''" class="btn btn-sm" style="margin-left:auto;">✕</button>
+                </div>
+                <input type="file" id="tenantFileInput" accept=".db,.sqlite,.sqlite3"
+                  @change="newTenantUploadFile = $event.target.files[0]"
+                  style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+              </label>
+            </div>
+
+            <!-- PostgreSQL: DSN -->
+            <div x-show="newTenant.driver === 'postgres'" x-cloak>
+              <div class="form-group">
+                <label x-text="__('tenant.labelDsn')"></label>
+                <input type="text" x-model="newTenant.dsn"
+                  :placeholder="__('tenant.placeholderDsn')">
+                <small class="text-muted" style="font-size:11px;margin-top:2px;" x-text="__('tenant.dsnFormat') + ': '">
+                  <code>postgres://user:password@host:port/dbname?sslmode=disable</code>
+                </small>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" :disabled="creating || (newTenant.driver === 'sqlite3' && !newTenantUploadFile)">
+                <span x-show="creating">⏳</span>
+                <span x-show="!creating" x-text="__('btn.create')"></span>
+              </button>
+              <button type="button" @click="showNewTenantForm = false" class="btn" x-text="__('btn.cancel')"></button>
+            </div>
+          </form>
+          <div x-show="createResult" class="mt-1">
+            <pre x-text="JSON.stringify(createResult, null, 2)" class="code-block"></pre>
+          </div>
+        </div>
+
+        <!-- Tenant List -->
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th x-text="__('label.id')"></th>
+                <th x-text="__('label.status')"></th>
+                <th x-text="__('label.actions')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="t in tenants" :key="t.id">
+                <tr>
+                  <td x-text="t.id"></td>
+                  <td><span class="badge badge-green" x-text="t.status || 'active'"></span></td>
+                  <td class="actions">
+                    <button @click="selectTenant(t.id)" class="btn btn-sm" x-text="__('btn.config')"></button>
+                    <button @click="deleteTenant(t.id)" class="btn btn-sm btn-danger">🗑️</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Config Page -->

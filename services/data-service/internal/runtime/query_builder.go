@@ -1,0 +1,499 @@
+package runtime
+
+import (
+	"strconv"
+	"strings"
+)
+
+// Package-level replacer for LIKE wildcard escaping.
+// Created once to avoid allocation on every search query.
+var escapeReplacer = strings.NewReplacer("%", "\\%", "_", "\\_")
+
+// Builder — собирает SELECT-запросы по конфигу Entity/CustomQuery
+// с использованием адаптера для placeholder'ов и квотирования.
+//
+// Builder не делает сетевых вызовов — только строит Query.
+// Выполнение запроса — задача вызывающего кода (обычно handler).
+//
+// Все методы безопасны для конкурентного использования, поскольку
+// Builder не хранит состояние между вызовами.
+type Builder struct {
+	// adapter — урезанный интерфейс (см. AdapterSubset в types.go).
+	// Это разрывает цикл импортов runtime → datasource.
+	adapter AdapterSubset
+}
+
+// NewBuilder создаёт Builder поверх адаптера.
+//
+// Адаптер должен быть уже подключён к БД (если Builder используется
+// только для сборки строк — подключение не нужно, но и не вредит).
+func NewBuilder(adapter AdapterSubset) *Builder {
+	return &Builder{adapter: adapter}
+}
+
+// BuildGetByID собирает SELECT всех колонок сущности с фильтром по PK.
+//
+// Пример результата для customers (id, email, created_at):
+//
+//	SELECT "id", "email", "created_at" FROM "customers" WHERE "id" = ?
+//
+// Args: [idValue]. Caller передаёт значение PK как any (часто int64 или string).
+func (b *Builder) BuildGetByID(entity Entity, idValue any) (Query, error) {
+	if entity.Table == "" {
+		return Query{}, &QueryError{
+			Op:     "BuildGetByID",
+			Reason: "entity has empty Table",
+		}
+	}
+	if entity.IDColumn == "" {
+		return Query{}, &QueryError{
+			Op:     "BuildGetByID",
+			Reason: "entity has empty IDColumn",
+		}
+	}
+
+	cols := buildColumnList(b.adapter, entity)
+	ph := b.adapter.TranslatePlaceholder(1)
+
+	// Прямое квотирование PK-колонки — допустимо: имя приходит из конфига,
+	// не из user input. В SQL это часть статической структуры запроса.
+	q := Query{
+		SQL:  `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table) + ` WHERE ` + b.adapter.QuoteIdentifier(entity.IDColumn) + ` = ` + ph,
+		Args: []any{idValue},
+	}
+	return q, nil
+}
+
+// BuildFilter собирает SELECT с фильтрацией по нескольким полям.
+
+// isPostgres checks if the adapter uses PostgreSQL-style placeholders ($1, $2, ...).
+// Used to choose ILIKE (PostgreSQL) vs LIKE (SQLite) for case-insensitive search.
+func (b *Builder) isPostgres() bool {
+	return strings.Contains(b.adapter.TranslatePlaceholder(1), "$")
+}
+// Поддерживает LIKE-поиск для string-полей и exact match для int/float/bool.
+// Поддерживает limit/offset для пагинации.
+//
+// filterCols — список колонок для фильтрации (имена колонок БД).
+// filterVals — значения фильтров (порядок соответствует filterCols).
+// filterOps  — типы операций: "like" для string, "eq" для чисел/bool.
+//
+// Пример:
+//
+//	filterCols: ["name", "status", "city"]
+//	filterVals: ["Ivan", "active", "Moscow"]
+//	filterOps:  ["like", "eq", "eq"]
+//
+// Результат:
+//
+//	SELECT ... FROM customers WHERE "name" ILIKE ? AND "status" = ? AND "city" = ?
+//	Args: ["%Ivan%", "active", "Moscow"]
+func (b *Builder) BuildFilter(entity Entity, filterCols []string, filterVals []any, filterOps []string) (Query, error) {
+	if entity.Table == "" {
+		return Query{}, &QueryError{
+			Op:     "BuildFilter",
+			Reason: "entity has empty Table",
+		}
+	}
+
+	cols := buildColumnList(b.adapter, entity)
+	var conditions []string
+	var args []any
+	phIdx := 1
+
+	// PostgreSQL uses ILIKE for case-insensitive search; SQLite LIKE is already case-insensitive.
+	likeOp := "LIKE"
+	if b.isPostgres() {
+		likeOp = "ILIKE"
+	}
+
+	for i, colName := range filterCols {
+		if i >= len(filterVals) || i >= len(filterOps) {
+			break
+		}
+
+		// Найти колонку в entity
+		column, ok := b.columnFor(entity, colName)
+		if !ok {
+			continue // пропускаем неизвестные колонки
+		}
+
+		val := filterVals[i]
+		op := filterOps[i]
+
+		ph := b.adapter.TranslatePlaceholder(phIdx)
+
+		switch op {
+		case "like":
+			// LIKE/ILIKE поиск с экранированием wildcards
+			s, ok := val.(string)
+			if !ok {
+				continue
+			}
+			escaped := escapeReplacer.Replace(s)
+			args = append(args, "%"+escaped+"%")
+			// ESCAPE '\\' обязателен: escapeReplacer экранирует %→\%, _→\_,
+			// но без ESCAPE-клаузы (SQLite) \ — литерал, wildcard остаётся активным.
+			// Согласовано с query.Engine (builder.go).
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" "+likeOp+" "+ph+" ESCAPE '\\'")
+			phIdx++
+		case "eq":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" = "+ph)
+			phIdx++
+		case "neq":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" != "+ph)
+			phIdx++
+		case "gt":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" > "+ph)
+			phIdx++
+		case "gte":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" >= "+ph)
+			phIdx++
+		case "lt":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" < "+ph)
+			phIdx++
+		case "lte":
+			args = append(args, val)
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" <= "+ph)
+			phIdx++
+		case "in":
+			// val is comma-separated string from query param
+			s, ok := val.(string)
+			if !ok {
+				continue
+			}
+			parts := strings.Split(s, ",")
+			if len(parts) > 100 {
+				continue // safety cap
+			}
+			var placeholders []string
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p == "" {
+					continue
+				}
+				placeholders = append(placeholders, b.adapter.TranslatePlaceholder(phIdx))
+				args = append(args, p)
+				phIdx++
+			}
+			if len(placeholders) == 0 {
+				continue
+			}
+			conditions = append(conditions, b.adapter.QuoteIdentifier(column)+" IN ("+strings.Join(placeholders, ", ")+")")
+		}
+	}
+
+	q := Query{SQL: `SELECT ` + cols + ` FROM ` + b.adapter.QuoteIdentifier(entity.Table)}
+	if len(conditions) > 0 {
+		q.SQL += ` WHERE ` + strings.Join(conditions, ` AND `)
+	}
+	q.Args = args
+	return q, nil
+}
+
+// BuildCustomQuery собираёт запрос из CustomQuery с prepared args.
+//
+// Подставляет нативные placeholder'ы вместо generic '? в cq.SQL.
+// Если длина args не совпадает с длиной cq.Params — возвращает ошибку
+// QueryError. Это защита от рассинхрона caller-side.
+//
+// Валидация: cq.SQL ДОЛЖЕН начинаться с SELECT (case-insensitive) —
+// это whitelist-защита от destructive SQL в custom_query админом.
+func (b *Builder) BuildCustomQuery(cq CustomQuery, args []any) (Query, error) {
+	if !isValidSelect(cq.SQL) {
+		return Query{}, &QueryError{
+			Op:     "BuildCustomQuery",
+			Reason: "custom query must be a SELECT statement, got: " + summarizeSQL(cq.SQL),
+		}
+	}
+	if len(args) != len(cq.Params) {
+		return Query{}, &QueryError{
+			Op:     "BuildCustomQuery",
+			Reason: paramCountMismatchReason(len(cq.Params), len(args)),
+		}
+	}
+
+	out := cq.SQL
+	// Заменяем '?' слева направо по индексу параметра, но ТОЛЬКО вне
+	// строковых литералов: '?' внутри 'what?' / оператора JSONB (?)
+	// не является placeholder'ом. Идём посимвольно, отслеживая состояние
+	// строкового литерала ('...'; '' — экранированная кавычка внутри),
+	// комментариев (-- ... и /* ... */), PG dollar-строк ($$...$$, $tag$...$tag$)
+	// и JSONB-операторов (?|, ?&, ? 'key').
+	paramIdx := 0
+	inSingleQuote := false
+	inLineComment := false
+	inBlockComment := false
+	dollarTag := "" // текущая dollar-строка ("$$" или "$tag$"); "" = вне
+	var sb strings.Builder
+	for i := 0; i < len(out); i++ {
+		ch := out[i]
+		switch {
+		case inLineComment:
+			sb.WriteByte(ch)
+			if ch == '\n' {
+				inLineComment = false
+			}
+		case inBlockComment:
+			sb.WriteByte(ch)
+			if ch == '*' && i+1 < len(out) && out[i+1] == '/' {
+				sb.WriteByte('/')
+				i++
+				inBlockComment = false
+			}
+		case dollarTag != "":
+			// Внутри dollar-строки: ищем закрывающий тег (пишем его целиком,
+			// не дублируя текущий символ).
+			if strings.HasPrefix(out[i:], dollarTag) {
+				sb.WriteString(dollarTag)
+				i += len(dollarTag) - 1
+				dollarTag = ""
+			} else {
+				sb.WriteByte(ch)
+			}
+		case inSingleQuote:
+			// ' внутри литерала: '' — экранированная кавычка (продолжаем),
+			// иначе — конец литерала.
+			sb.WriteByte(ch)
+			if ch == '\'' {
+				if i+1 < len(out) && out[i+1] == '\'' {
+					sb.WriteByte('\'')
+					i++
+				} else {
+					inSingleQuote = false
+				}
+			}
+		case ch == '\'' && !inSingleQuote:
+			inSingleQuote = true
+			sb.WriteByte(ch)
+		case ch == '-' && i+1 < len(out) && out[i+1] == '-':
+			inLineComment = true
+			sb.WriteByte(ch)
+			// второй '-' запишется следующей итерацией (в inLineComment)
+		case ch == '/' && i+1 < len(out) && out[i+1] == '*':
+			inBlockComment = true
+			sb.WriteByte(ch)
+			// второй символ '*' запишется следующей итерацией (в inBlockComment)
+		case ch == '$':
+			// PG dollar-quote: $$ или $tag$. Если Params пуст и это просто $N
+			// (уже нативный плейсхолдер) — не трогаем.
+			if tag := matchDollarQuote(out[i:]); tag != "" {
+				dollarTag = tag
+				sb.WriteString(tag)
+				i += len(tag) - 1
+			} else {
+				sb.WriteByte(ch)
+			}
+		case ch == '?' && !inSingleQuote:
+			// JSONB-операторы НЕ placeholder'ы: ?|, ?& (следующий | или &),
+			// и ? 'key' (пробел + кавычка). Простой `? ` перед комментарием/концом
+			// — placeholder (в IN (?, ?) / = ? идёт пробел/запятая/скобка).
+			if i+1 < len(out) && (out[i+1] == '|' || out[i+1] == '&') {
+				sb.WriteByte(ch)
+			} else if i+2 < len(out) && out[i+1] == ' ' && out[i+2] == '\'' {
+				sb.WriteByte(ch)
+			} else {
+				paramIdx++
+				sb.WriteString(b.adapter.TranslatePlaceholder(paramIdx))
+			}
+		default:
+			sb.WriteByte(ch)
+		}
+	}
+	if paramIdx < len(cq.Params) {
+		// Меньше placeholder'ов, чем параметров — это программная
+		// ошибка cq.SQL, защищаемся явно.
+		return Query{}, &QueryError{
+			Op:     "BuildCustomQuery",
+			Reason: "placeholder count mismatch in SQL: fewer '?' than Params",
+		}
+	}
+	out = sb.String()
+
+	return Query{SQL: out, Args: args}, nil
+}
+
+// matchDollarQuote определяет PG dollar-quote тег в начале s: "$$", "$tag$".
+// Возвращает "" если s не начинается с dollar-quote.
+func matchDollarQuote(s string) string {
+	if len(s) < 2 || s[0] != '$' {
+		return ""
+	}
+	if s[1] == '$' {
+		return "$$"
+	}
+	// $tag$ — буквы/цифры/underscore между $ и $.
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if c == '$' && i > 1 {
+			return s[:i+1]
+		}
+		if !isDollarTagChar(c) {
+			return ""
+		}
+	}
+	return ""
+}
+
+// isDollarTagChar — допустимый символ в теге dollar-quoted строки
+// ($tag$...$tag$): буква, цифра или underscore.
+func isDollarTagChar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+}
+
+// buildColumnList — внутренний helper: список квотированных колонок через запятую.
+//
+// Если Fields пуст — возвращается "*", чтобы SQL-запрос оставался валидным.
+func buildColumnList(adapter AdapterSubset, entity Entity) string {
+	if len(entity.Fields) == 0 {
+		return "*"
+	}
+	// entity.Fields содержит публичные имена; в SELECT подставляются
+	// реальные колонки БД (Column) — это часть маппинга, который
+	// builder обязан выполнять. Имена колонок квотируются через
+	// адаптер для консистентности с FROM/WHERE и для имён с пробелами.
+	parts := make([]string, 0, len(entity.Fields))
+	for _, f := range entity.Fields {
+		parts = append(parts, adapter.QuoteIdentifier(f.Column))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// columnFor — поиск имени колонки по публичному имени поля.
+// Инкапсулирован в Builder, чтобы не зависеть от EntityResolver
+// (builder принимает Entity напрямую).
+func (b *Builder) columnFor(entity Entity, publicField string) (string, bool) {
+	for _, f := range entity.Fields {
+		if f.Name == publicField {
+			return f.Column, true
+		}
+	}
+	return "", false
+}
+
+// paramCountMismatchReason — человеко-читаемое сообщение об ошибке
+// валидации числа аргументов для custom_query.
+func paramCountMismatchReason(expected, got int) string {
+	return "arg count mismatch: query expects " +
+		strconv.Itoa(expected) + " params, got " + strconv.Itoa(got)
+}
+
+// isValidSelect — проверяет, что SQL является безопасным SELECT-выражением.
+//
+// Валидация:
+//   - Удаляет SQL-комментарии (-- и /* */) перед проверкой.
+//   - Должен начинаться с SELECT или WITH (CTE — это SELECT).
+//   - Не должен содержать ';' (защита от multi-statement инъекций).
+//   - Не должен содержать опасные ключевые слова как standalone-токены:
+//     INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, EXEC, EXECUTE.
+//
+// Все проверки case-insensitive.
+func isValidSelect(sql string) bool {
+	s := strings.TrimSpace(sql)
+	if s == "" {
+		return false
+	}
+
+	// 1. Удаляем block comments /* ... */
+	for {
+		start := strings.Index(s, "/*")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(s[start+2:], "*/")
+		if end < 0 {
+			// Незакрытый block comment — считаем невалидным.
+			return false
+		}
+		s = s[:start] + s[start+2+end+2:]
+	}
+
+	// 2. Удаляем line comments -- (до конца строки)
+	lines := strings.Split(s, "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		idx := strings.Index(line, "--")
+		if idx >= 0 {
+			line = line[:idx]
+		}
+		cleaned = append(cleaned, line)
+	}
+	s = strings.Join(cleaned, "\n")
+
+	// 3. Trim после удаления комментариев
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+
+	// 4. Проверка multi-statement: ';' запрещён
+	if strings.Contains(s, ";") {
+		return false
+	}
+
+	// 5. Проверка опасных ключевых слов (standalone-токены)
+	// SELECT ... INTO в PostgreSQL — DDL (создаёт таблицу), не read-only.
+	// REPLACE — MySQL-специфичная альтернатива INSERT.
+	// LOAD DATA / LOAD FILE — file I/O на сервере БД.
+	// ATTACH / DETACH — SQLite: присоединение/отсоединение баз данных.
+	dangerousKeywords := []string{
+		"INSERT", "UPDATE", "DELETE", "DROP",
+		"ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE",
+		"INTO", "REPLACE", "LOAD", "ATTACH", "DETACH",
+	}
+	upper := strings.ToUpper(s)
+	for _, kw := range dangerousKeywords {
+		if hasStandaloneWord(upper, kw) {
+			return false
+		}
+	}
+
+	// 6. SQL должен начинаться с SELECT или WITH (CTE)
+	switch {
+	case strings.HasPrefix(upper, "SELECT"):
+		return true
+	case strings.HasPrefix(upper, "WITH"):
+		return true
+	default:
+		return false
+	}
+}
+
+// hasStandaloneWord — проверяет, встречается ли word как самостоятельный токен
+// в строке s (регистро-чувствительно; вызывающий должен нормализовать регистр).
+// Токен считается standalone, если перед ним и после него не буква, не цифра и не '_'.
+func hasStandaloneWord(s, word string) bool {
+	if len(word) > len(s) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(word); i++ {
+		if s[i:i+len(word)] == word {
+			beforeOK := i == 0 || !isIdentChar(s[i-1])
+			afterOK := i+len(word) >= len(s) || !isIdentChar(s[i+len(word)])
+			if beforeOK && afterOK {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isIdentChar — возвращает true для букв, цифр и '_' (символы SQL-идентификатора).
+func isIdentChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+}
+
+// summarizeSQL — обрезает SQL до первых N символов для сообщения об ошибке.
+func summarizeSQL(sql string) string {
+	const maxLen = 60
+	s := strings.TrimSpace(sql)
+	if len(s) > maxLen {
+		s = s[:maxLen] + "..."
+	}
+	return `"` + s + `"`
+}

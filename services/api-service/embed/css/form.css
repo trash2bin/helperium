@@ -1,0 +1,210 @@
+/*
+ * Input Form
+ *
+ * Glass-morphic bottom bar with frosted textarea.
+ * Smooth focus transitions, modern button design.
+ */
+
+/* Form container */
+.at-form {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  flex-shrink: 0;
+}
+
+/* Horizontal row */
+.at-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+/* Textarea — glass input, matches button height */
+.at-form textarea {
+  flex: 1;
+  resize: none;
+  min-height: 38px;
+  max-height: 120px;
+  border: 1px solid var(--line);
+  border-radius: 19px;
+  padding: 8px 14px;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  box-sizing: border-box;
+}
+
+.at-form textarea:focus {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.08);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.at-form textarea::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Mic button */
+.at-mic-btn {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--ink-light);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s, transform 0.25s var(--ease-spring);
+}
+
+.at-mic-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--ink);
+  transform: scale(1.08);
+}
+
+/* Recording state */
+.at-mic-btn.at-mic-recording {
+  background: var(--rose);
+  color: white;
+  transform: scale(1.1);
+  animation: at-mic-pulse 1.2s ease-in-out infinite;
+}
+
+/* Disabled */
+.at-mic-btn.at-mic-disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Send button — gradient accent */
+.at-send-btn {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: transform 0.25s var(--ease-spring), opacity 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.25);
+}
+
+.at-send-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.35);
+}
+
+.at-send-btn:active {
+  transform: scale(0.9);
+  transition-duration: 0.1s;
+}
+
+.at-send-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.at-send-btn svg { width: 18px; height: 18px; }
+
+/* Mic recording timer */
+.at-mic-timer {
+  text-align: center;
+  color: var(--rose);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 0 2px;
+  letter-spacing: 0.03em;
+  display: none;
+}
+
+.at-mic-timer-visible { display: block; }
+
+/* ─── Telegram-style animated button swap ─── */
+
+/* Container for the morphing mic/send button */
+.at-swap-btn {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+/* Both buttons stacked absolutely */
+.at-swap-btn .at-mic-btn,
+.at-swap-btn .at-send-btn {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.3s var(--ease-spring), opacity 0.25s ease;
+}
+
+/* Mic visible, send hidden */
+.at-swap-btn.at-show-mic .at-mic-btn {
+  transform: scale(1) rotate(0deg);
+  opacity: 1;
+  pointer-events: auto;
+}
+.at-swap-btn.at-show-mic .at-send-btn {
+  transform: scale(0.3) rotate(-90deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Send visible, mic hidden */
+.at-swap-btn.at-show-send .at-send-btn {
+  transform: scale(1) rotate(0deg);
+  opacity: 1;
+  pointer-events: auto;
+}
+.at-swap-btn.at-show-send .at-mic-btn {
+  transform: scale(0.3) rotate(90deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Hold-to-record visual feedback */
+.at-swap-btn .at-mic-btn.at-mic-holding {
+  transform: scale(1.15);
+  background: var(--rose);
+  color: white;
+}
+
+/* Legacy mode: both visible side by side (no swap, overrides at-show-*) */
+.at-swap-btn.at-legacy .at-mic-btn,
+.at-swap-btn.at-legacy .at-send-btn {
+  position: static;
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+.at-swap-btn.at-legacy {
+  display: contents;
+}
+.at-swap-btn.at-legacy .at-mic-btn {
+  display: flex;
+}
+.at-swap-btn.at-legacy .at-send-btn {
+  display: flex;
+}
