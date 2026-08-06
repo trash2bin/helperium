@@ -35,7 +35,7 @@ func upstreamSpecs(t *testing.T) map[string]map[string]bool {
 	collectPaths(dsSpec, dsPaths)
 
 	// api-service и rag-service: парсим YAML-спеки (мини-парсер, только paths).
-	repoRoot := filepath.Clean(filepath.Join("..", "..", ".."))
+	repoRoot := filepath.Clean(filepath.Join("..", "..", "..", ".."))
 	apiPaths := map[string]bool{}
 	parseYamlPaths(t, filepath.Join(repoRoot, "specs", "api.openapi.yaml"), apiPaths)
 	ragPaths := map[string]bool{}
