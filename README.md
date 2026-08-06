@@ -232,3 +232,4 @@ The core platform is available under the Mozilla Public License 2.0 (MPL 2.0). Y
 The project also uses a [Contributor License Agreement](CLA.md). Contributions submitted via pull requests may be used by the maintainer in any form, including commercial and proprietary distributions. At the maintainer's discretion, contributors may be granted commercial usage rights as a reward for their involvement in the project.
 
 For enterprise deployment assistance, custom integrations, and security audits — commercial services are available.
+# CI trigger
