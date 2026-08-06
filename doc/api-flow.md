@@ -4,8 +4,8 @@ This document describes all HTTP communication between microservices.
 It serves as ground truth for cross-service dependency mapping.
 
 **Source of truth references:**
-- [AGENTS.md](./AGENTS.md) — general architecture, data flow diagrams, tool workflow
-- [mcp-gateway/README.md](../mcp-gateway/README.md) — MCP session lifecycle, tool registry, caching details
+- [AGENTS.md](../AGENTS.md) — general architecture, data flow diagrams, tool workflow
+- [mcp-gateway/README.md](../services/mcp-gateway/README.md) — MCP session lifecycle, tool registry, caching details
 
 ## Service Map
 
@@ -72,7 +72,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 ### 4. mcp-gateway → data-service (MCP tool backend)
 
-**Source:** `mcp-gateway/internal/httpclient/client.go`
+**Source:** `services/mcp-gateway/internal/httpclient/client.go`
 **Target:** `data-service:8084`
 
 | HTTP Call | Route | Method | Purpose |
@@ -94,7 +94,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 ### 5. api-service → mcp-gateway (display_name mapping)
 
-**Source:** `api-service/src/api_service/agent/mcp_client.py` (`fetch_tool_mapping()`)
+**Source:** `services/api-service/src/api_service/agent/mcp_client.py` (`fetch_tool_mapping()`)
 **Target:** `mcp-gateway:8083`
 
 | HTTP Call | Route | Method | Purpose |
@@ -106,7 +106,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 ### 6. api-service → mcp-gateway (MCP SSE + JSON-RPC)
 
-**Source:** `api-service/src/api_service/agent/mcp_client.py`
+**Source:** `services/api-service/src/api_service/agent/mcp_client.py`
 **Target:** `mcp-gateway:8083`
 
 | Step | Protocol | Purpose |
@@ -127,7 +127,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 ### 7. api-service → rag (RAG context for agent)
 
-**Source:** `helperium-sdk/src/helperium_sdk/rag/client.py`
+**Source:** `services/helperium-sdk/src/helperium_sdk/rag/client.py`
 **Target:** `rag:8082`
 
 | HTTP Call | Route | Method | Purpose |
@@ -141,7 +141,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 ### 8. admin-dashboard → data-service (admin API)
 
-**Source:** `admin-dashboard/internal/server/server.go`
+**Source:** `services/admin-dashboard/internal/server/server.go`
 **Target:** `data-service:8084`
 
 | HTTP Call | Route | Method | Purpose |
@@ -156,7 +156,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 ### 9. admin-dashboard → api-service (abuse + agent config)
 
-**Source:** `admin-dashboard/internal/server/abuse.go`
+**Source:** `services/admin-dashboard/internal/server/abuse.go`
 **Target:** `api-service:8081`
 
 | HTTP Call | Route | Method | Purpose |
@@ -169,7 +169,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 ### 10. admin-dashboard → rag (admin config)
 
-**Source:** `admin-dashboard/internal/server/server.go` (via `RagClient`)
+**Source:** `services/admin-dashboard/internal/server/server.go` (via `RagClient`)
 **Target:** `rag:8082`
 
 | HTTP Call | Route | Method | Purpose |

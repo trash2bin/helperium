@@ -2,11 +2,11 @@
 	"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
 	"files": {
 		"includes": [
-			"admin-dashboard/internal/server/static/*.js",
-			"api-service/embed/src/**/*.js",
-			"api-service/embed/tests/**/*.js",
+			"services/admin-dashboard/internal/server/static/*.js",
+			"services/api-service/embed/src/**/*.js",
+			"services/api-service/embed/tests/**/*.js",
 			"demo/web/static/**/*.js",
-			"admin-dashboard/tests/**/*.js"
+			"services/admin-dashboard/tests/**/*.js"
 		]
 	},
 	"javascript": {

@@ -1,7 +1,7 @@
 # Core Benchmark — операционная документация
 
 > Реализация дизайна из [doc/benchmark/README.md](README.md). Живой код — в
-> `agent-db/agent_db/bench/` (см. его [README](../../agent-db/agent_db/bench/README.md)).
+> `services/agent-db/agent_db/bench/` (см. его [README](../../services/agent-db/agent_db/bench/README.md)).
 
 ## Что это
 
@@ -133,4 +133,4 @@ Ground truth сверен с data-service (источник правды): це�
 - [README.md](README.md) — дизайн бенча (для ревью)
 - [plan-for-review.md](plan-for-review.md) — план и известные gaps логгирования
 - [incident-camry.md](incident-camry.md) — кейс, мотивировавший детерминизм
-- [agent_db/bench/README.md](../../agent-db/agent_db/bench/README.md) — код, метрики, тесты
+- [agent_db/bench/README.md](../../services/agent-db/agent_db/bench/README.md) — код, метрики, тесты

@@ -23,9 +23,9 @@ jobs:
           pip install uv
           uv sync --frozen
       - name: Ruff lint
-        run: uv run ruff check api-service/src/
+        run: uv run ruff check services/api-service/src/
       - name: Ruff format check
-        run: uv run ruff format --check api-service/src/
+        run: uv run ruff format --check services/api-service/src/
       - name: Pyright type check
         run: |
           npm install -g pyright
@@ -61,7 +61,7 @@ jobs:
           pip install uv
           uv sync --frozen
       - name: Run API tests
-        run: uv run pytest api-service/src/api_service/tests/ -v --tb=short
+        run: uv run pytest services/api-service/src/api_service/tests/ -v --tb=short
         env:
           OLLAMA_URL: "http://localhost:11434"
           OLLAMA_MODEL: "qwen2.5:0.5b"
@@ -71,7 +71,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
       - name: Run SDK tests
-        run: uv run pytest helperium-sdk/tests/ -v --tb=short
+        run: uv run pytest services/helperium-sdk/tests/ -v --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}
       - name: Run RAG unit tests
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dir: [data-service, mcp-gateway]
+        dir: [services/data-service, services/mcp-gateway]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dir: [data-service, mcp-gateway]
+        dir: [services/data-service, services/mcp-gateway]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -144,7 +144,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: data-service/Dockerfile
+          file: services/data-service/Dockerfile
           tags: helperium-data:latest
           load: true
           cache-from: type=gha
@@ -154,7 +154,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: mcp-gateway/Dockerfile
+          file: services/mcp-gateway/Dockerfile
           tags: helperium-mcp-gateway:latest
           load: true
           cache-from: type=gha
@@ -164,7 +164,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: api-service/Dockerfile
+          file: services/api-service/Dockerfile
           tags: helperium-api:latest
           load: true
           cache-from: type=gha
@@ -174,7 +174,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: admin-dashboard/Dockerfile
+          file: services/admin-dashboard/Dockerfile
           tags: helperium-admin:latest
           load: true
           cache-from: type=gha
@@ -200,14 +200,14 @@ jobs:
           # for demo_sessions.sqlite and test DB creation
           sudo chmod 777 .
           # Generate shop data.db (gitignored, needed by mcp_composite/mcp_dynamic tests)
-          SHOP_DB=data-service/testdata/scenarios/shop/data.db python3 data-service/testdata/scripts/create_shop_db.py
+          SHOP_DB=services/data-service/testdata/scenarios/shop/data.db python3 services/data-service/testdata/scripts/create_shop_db.py
           # data-service needs write access for WAL mode (UID 1000 vs runner UID 1001)
-          sudo chmod -R 777 data-service/testdata/scenarios
+          sudo chmod -R 777 services/data-service/testdata/scenarios
       - name: Run e2e tests (container, profile=test)
         run: |
           docker compose \
-            -f docker-compose.yml \
-            -f docker-compose.ci.yml \
+            -f infra/docker-compose.yml \
+            -f infra/docker-compose.ci.yml \
             --profile test \
             up --abort-on-container-exit --exit-code-from e2e
         env:
@@ -216,9 +216,9 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs api
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --profile test logs api
           echo '--- data-service logs ---'
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs data-service
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --profile test logs data-service
       - name: Stop services
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test down -v
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --profile test down -v

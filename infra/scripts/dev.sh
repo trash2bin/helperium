@@ -24,20 +24,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="$PROJECT_ROOT/.data/logs"
 PID_DIR="$PROJECT_ROOT/.data/pids"
 
 SERVICES=("data" "rag" "mcp" "admin" "api" "web")
 declare -A SERVICE_CMD=(
-  [data]="LOG_LEVEL=info $PROJECT_ROOT/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
+  [data]="LOG_LEVEL=info $PROJECT_ROOT/services/services/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
   [rag]="uv run --package rag python -m rag.service"
-  [mcp]="$PROJECT_ROOT/mcp-gateway/mcp-gateway"
+  [mcp]="$PROJECT_ROOT/services/mcp-gateway/mcp-gateway"
   # Legacy (Python): раскомментировать для отладки
 
   [api]="uv run --package api-service python -m api_service.server"
   [web]="uv run --package demo-web python -m demo.web.server"
-  [admin]="$PROJECT_ROOT/admin-dashboard/bin/admin-dashboard"
+  [admin]="$PROJECT_ROOT/services/admin-dashboard/bin/admin-dashboard"
 )
 
 # Дефолтные порты (перебиваются из .env)
@@ -132,7 +132,7 @@ cmd_start() {
 
   # Если DATABASE_URL задана — переопределяем data-service на PG-конфиг
   if [ -n "${DATABASE_URL:-}" ]; then
-    SERVICE_CMD[data]="LOG_LEVEL=info $PROJECT_ROOT/data-service/bin/data-service --config $PROJECT_ROOT/specs/config.postgres.json"
+    SERVICE_CMD[data]="LOG_LEVEL=info $PROJECT_ROOT/services/services/data-service/bin/data-service --config $PROJECT_ROOT/specs/config.postgres.json"
   fi
 
   # Проверка uv
@@ -146,7 +146,7 @@ cmd_start() {
     echo "⚠️  .venv not found, running uv sync..."
     # uv sync ставит dev-зависимости, uv pip install -e — workspace members
     # (чтобы их транзитивные зависимости тоже установились)
-    (cd "$PROJECT_ROOT" && uv sync --group dev && uv pip install -e helperium-sdk -e rag -e api-service -e demo/web -e fixtures)
+    (cd "$PROJECT_ROOT" && uv sync --group dev && uv pip install -e services/helperium-sdk -e services/rag -e services/api-service -e demo/web)
 
     # .pth для editable install: hatchling кладёт папку пакета на sys.path вместо корня проекта
     local pyver=$("$PROJECT_ROOT/.venv/bin/python3" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
@@ -164,37 +164,37 @@ cmd_start() {
 
   # Собираем Go-бинарники
   echo "  🔨 Building data-service..."
-  mkdir -p "$PROJECT_ROOT/data-service/bin"
-  (cd "$PROJECT_ROOT/data-service" && go build -o bin/data-service ./cmd/server/) || {
+  mkdir -p "$PROJECT_ROOT/services/data-service/bin"
+  (cd "$PROJECT_ROOT/services/data-service" && go build -o bin/data-service ./cmd/server/) || {
     echo "  ❌ Failed to build data-service"
     exit 1
   }
   echo "  ✅ data-service built"
 
   echo "  🔨 Building mcp-gateway..."
-  (cd "$PROJECT_ROOT/mcp-gateway" && go build -o mcp-gateway ./cmd/) || {
+  (cd "$PROJECT_ROOT/services/mcp-gateway" && go build -o mcp-gateway ./cmd/) || {
     echo "  ❌ Failed to build mcp-gateway"
     exit 1
   }
   echo "  ✅ mcp-gateway built"
 
   echo "  🎨 Building admin-dashboard frontend..."
-  (cd "$PROJECT_ROOT/admin-dashboard" && bash build.sh) || {
+  (cd "$PROJECT_ROOT/services/admin-dashboard" && bash build.sh) || {
     echo "  ❌ Failed to build admin-dashboard frontend"
     exit 1
   }
   echo "  ✅ admin-dashboard frontend built"
 
   echo "  🔨 Building admin-dashboard (Go)..."
-  mkdir -p "$PROJECT_ROOT/admin-dashboard/bin"
-  (cd "$PROJECT_ROOT/admin-dashboard" && go build -o bin/admin-dashboard ./cmd/server/) || {
+  mkdir -p "$PROJECT_ROOT/services/admin-dashboard/bin"
+  (cd "$PROJECT_ROOT/services/admin-dashboard" && go build -o bin/admin-dashboard ./cmd/server/) || {
     echo "  ❌ Failed to build admin-dashboard"
     exit 1
   }
   echo "  ✅ admin-dashboard built"
 
   echo "  🎨 Building embed widget frontend..."
-  (cd "$PROJECT_ROOT/api-service/embed" && npm run build) || {
+  (cd "$PROJECT_ROOT/services/api-service/embed" && npm run build) || {
     echo "  ❌ Failed to build embed widget"
     exit 1
   }
@@ -350,12 +350,12 @@ _stop_svc_by_pgrep() {
   local svc="$1"
   local pattern
   case "$svc" in
-    data) pattern="data-service/bin/data-service" ;;
+    data) pattern="services/data-service/bin/data-service" ;;
     rag) pattern="python -m rag.service" ;;
-    mcp) pattern="mcp-gateway" ;; # Go-бинарник
+    mcp) pattern="services/mcp-gateway/mcp-gateway" ;; # Go-бинарник
     api) pattern="python -m api_service.server" ;;
     web) pattern="python -m demo.web.server" ;;
-    admin) pattern="admin-dashboard/bin/admin-dashboard" ;;
+    admin) pattern="services/admin-dashboard/bin/admin-dashboard" ;;
   esac
   local pids
   pids=$(pgrep -f "$pattern" 2>/dev/null || echo "")
@@ -606,7 +606,7 @@ cmd_db_materialize() {
   fi
   [ -n "$force" ] && echo "   force: enabled (SQLite file will be removed first)"
 
-  (cd "$PROJECT_ROOT/data-service" && \
+  (cd "$PROJECT_ROOT/services/data-service" && \
     CONFIG_SCHEMA="$CONFIG_SCHEMA" \
     go run ./cmd/server/ --materialize "$dir" $force)
 }
@@ -620,7 +620,7 @@ cmd_db_serve() {
   load_env; ensure_dirs
 
   echo "🔨 Building data-service..."
-  (cd "$PROJECT_ROOT/data-service" && \
+  (cd "$PROJECT_ROOT/services/data-service" && \
     go build -o bin/data-service ./cmd/server/) || {
       echo "❌ Failed to build data-service"; exit 1
   }
@@ -629,9 +629,9 @@ cmd_db_serve() {
   echo "   (logs: $(logfile data) if started via start; foreground here)"
   echo ""
 
-  cd "$PROJECT_ROOT/data-service"
+  cd "$PROJECT_ROOT/services/data-service"
   exec env CONFIG_SCHEMA="$CONFIG_SCHEMA" PORT="$DATA_PORT" \
-    "$PROJECT_ROOT/data-service/bin/data-service" \
+    "$PROJECT_ROOT/services/services/data-service/bin/data-service" \
     --config "$dir/config.json"
 }
 
@@ -642,7 +642,7 @@ cmd_db_test() {
   local name="${1:-all}"
   if [ "$name" = "all" ]; then
     echo "🧪 Running scenario tests for ALL scenarios..."
-    (cd "$PROJECT_ROOT/data-service" && \
+    (cd "$PROJECT_ROOT/services/data-service" && \
       CONFIG_SCHEMA="$CONFIG_SCHEMA" \
       go test ./internal/server/... -run TestScenario -v)
     return
@@ -674,7 +674,7 @@ cmd_db_test() {
   esac
 
   echo "🧪 Running scenario tests for: $scenario_name ($func)"
-  (cd "$PROJECT_ROOT/data-service" && \
+  (cd "$PROJECT_ROOT/services/data-service" && \
     CONFIG_SCHEMA="$CONFIG_SCHEMA" \
     go test ./internal/server/... -run "$func" -v)
 }

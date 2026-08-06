@@ -11,7 +11,7 @@
 
 ### Интерфейс
 
-`data-service/internal/datasource/datasource.go`:
+`services/data-service/internal/datasource/datasource.go`:
 
 ```go
 type DataSource interface {
@@ -80,7 +80,7 @@ type FieldFilter struct {
 
 #### datasource.Adapter — подключение, интроспекция
 
-`data-service/internal/datasource/adapter.go`:
+`services/data-service/internal/datasource/adapter.go`:
 
 ```go
 type Adapter interface {
@@ -94,7 +94,7 @@ type Adapter interface {
 
 #### query.AdapterSubset — для поискового движка
 
-`data-service/internal/query/builder.go`:
+`services/data-service/internal/query/builder.go`:
 
 ```go
 type AdapterSubset interface {
@@ -125,11 +125,11 @@ func (MySQLAdapter) Introspect(ctx, conn) (*Schema, error)  // SHOW TABLES/COLUM
 
 **Шаг 2: Зарегистрировать**
 
-`data-service/internal/datasource/registry.go` → `NewDefaultRegistry()` → `r.Register(MySQLAdapter{})`
+`services/data-service/internal/datasource/registry.go` → `NewDefaultRegistry()` → `r.Register(MySQLAdapter{})`
 
 **Шаг 3: Driver const + Valid()**
 
-`helperium-go/config/types.go` → добавить `DriverMySQL` в enum и `Valid()`.
+`services/helperium-go/config/types.go` → добавить `DriverMySQL` в enum и `Valid()`.
 
 **Шаг 4: Тесты**
 

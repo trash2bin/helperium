@@ -26,11 +26,11 @@ prep_src() {
     mkdir -p src
 
     info "Building flat src/..."
-    rsync -a api-service/src/api_service/ src/api_service/ --exclude='__pycache__'
+    rsync -a services/api-service/src/api_service/ src/api_service/ --exclude='__pycache__'
     rsync -a demo/ src/demo/ --exclude='__pycache__'
     rsync -a helperium-sdk/src/helperium_sdk/ src/helperium_sdk/ --exclude='__pycache__'
     rsync -a agent-db/agent_db/ src/agent_db/ --exclude='__pycache__'
-    rsync -a api-service/src/api_service/tests/ src/api_service/tests/ --exclude='__pycache__'
+    rsync -a services/api-service/src/api_service/tests/ src/api_service/tests/ --exclude='__pycache__'
 
     local count
     count=$(find src -name '*.py' | wc -l)
@@ -53,7 +53,7 @@ run_go() {
         GOMUTEST="$HOME/go/bin/go-mutesting"
     fi
 
-    for dir in data-service mcp-gateway; do
+    for dir in services/data-service services/mcp-gateway; do
         if [ -d "$dir" ]; then
             info "  $dir..."
             cd "$PROJECT/$dir"
@@ -165,7 +165,7 @@ case "$MODE" in
         if [ ! -d src ] || [ ! -f src/api_service/__init__.py ]; then
             prep_src
         fi
-        bash scripts/build_mutmut_docker.sh
+        bash infra/scripts/build_mutmut_docker.sh
         ;;
     --docker|-d)
         run_docker

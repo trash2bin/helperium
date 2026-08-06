@@ -60,7 +60,7 @@ pytest баг с class-scoped yield fixtures в pytest 9.x).
 ### seed_database()
 
 Генерирует SQLite БД из seed-сценария. Использует **Python seedgen**
-(`agent-db/agent_db/seedgen/`), не Go код:
+(`services/agent-db/agent_db/seedgen/`), не Go код:
 
 ```python
 from tests.e2e.helpers import seed_database
@@ -70,7 +70,7 @@ seed_database(db_path, scenario="sqlite-testseed")
 ```
 
 Параметр `seed_path`/`seed.json` удалён — все e2e используют сценарии из
-`data-service/testdata/scenarios/` (legacy `seed_database(seed_path=...)`
+`services/data-service/testdata/scenarios/` (legacy `seed_database(seed_path=...)`
 выпилен в 2026-08, gitignored `specs/fixtures/seed.json` больше не нужен).
 
 ### mcp_call()

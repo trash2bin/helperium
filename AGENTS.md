@@ -18,7 +18,7 @@ B2B self-hosting SaaS: клиент подключает свою БД → ин�
 
 ### ⚠️ data-service — не semantic search
 
-Search strategies (`data-service/internal/search/`): **grep** (multi-token AND, regex, ignore_case, invert) · **filter** (field-based: `field__gt`, `__like`, `__in`) · **schema** (discovery: distinct, min/max/avg, total). Детали: [search-strategies.md](doc/agents/search-strategies.md), [adapter-pattern.md](doc/agents/adapter-pattern.md).
+Search strategies (`services/data-service/internal/search/`): **grep** (multi-token AND, regex, ignore_case, invert) · **filter** (field-based: `field__gt`, `__like`, `__in`) · **schema** (discovery: distinct, min/max/avg, total). Детали: [search-strategies.md](doc/agents/search-strategies.md), [adapter-pattern.md](doc/agents/adapter-pattern.md).
 
 ### Agent pipeline (Protocol-based DI)
 
@@ -65,7 +65,7 @@ POST /admin/tenants → bootstrap; POST /admin/config/rewrite → интросп
 ### 2c. Config
 **Авто:** entities[], endpoints[], mcp_tools[], read_only: `true`. **Вручную:** custom_queries{}, auth{}, mcp_tools[].description, introspection{}.
 **Strategy-эндпоинты:** `endpoints[].strategy = grep | filter | schema`.
-**Схема:** `helperium-go/config/types.go:Config`. [specs/config.schema.md](specs/config.schema.md), [config-migration.md](doc/agents/config-migration.md).
+**Схема:** `services/helperium-go/config/types.go:Config`. [specs/config.schema.md](specs/config.schema.md), [config-migration.md](doc/agents/config-migration.md).
 
 ### 2d. Adapter Pattern
 `datasource.Adapter` (Driver, Connect, Introspect, TranslatePlaceholder, QuoteIdentifier). [adapter-pattern.md](doc/agents/adapter-pattern.md).
@@ -87,14 +87,14 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 
 | Сервис | Порт | Роль | README |
 |---|---|---|---|
-| **api-service** (Python) | :8081 | Embed-виджет, оркестратор, LiteLLM | [README](api-service/README.md) |
-| **data-service** (Go) | :8084 | Expression AST → SQL, search strategies | [README](data-service/README.md) |
-| **mcp-gateway** (Go) | :8083 | MCP SSE/JSON-RPC, composite, кэш манифеста | [README](mcp-gateway/README.md) |
-| **admin-dashboard** (Go) | :8085 | Admin Web UI (Alpine.js) | [README](admin-dashboard/README.md) |
-| **rag-service** (Python) | :8082 | ChromaDB, опционально | [README](rag/README.md) |
+| **api-service** (Python) | :8081 | Embed-виджет, оркестратор, LiteLLM | [README](services/api-service/README.md) |
+| **data-service** (Go) | :8084 | Expression AST → SQL, search strategies | [README](services/data-service/README.md) |
+| **mcp-gateway** (Go) | :8083 | MCP SSE/JSON-RPC, composite, кэш манифеста | [README](services/mcp-gateway/README.md) |
+| **admin-dashboard** (Go) | :8085 | Admin Web UI (Alpine.js) | [README](services/admin-dashboard/README.md) |
+| **rag-service** (Python) | :8082 | ChromaDB, опционально | [README](services/rag/README.md) |
 | **demo/web** (Python) | :8080 | Dev-only reverse proxy | [README](demo/web/README.md) |
-| **agent-db** (Python) | — | Seedgen, materialize, e2e, core benchmark | [README](agent-db/README.md) |
-| **helperium-go** (Go) | — | Config types, validation | [configgen/README.md](data-service/internal/configgen/README.md) |
+| **agent-db** (Python) | — | Seedgen, materialize, e2e, core benchmark | [README](services/agent-db/README.md) |
+| **helperium-go** (Go) | — | Config types, validation | [configgen/README.md](services/data-service/internal/configgen/README.md) |
 
 **Web Service Multi-Tenancy:** [web-service.md](doc/agents/web-service.md)
 
@@ -112,7 +112,7 @@ Tenant_id недоступен LLM как field__op; field whitelist по `findC
 
 **Запуск:** нативно `./scripts/dev.sh e2e` (нужны поднятые сервисы) · Docker `docker-compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e`.
 
-**ScriptedLLMProvider** (`api-service/src/api_service/agent/scripted_provider.py`): мок LLM через env `USE_SCRIPTED_LLM=1 SCRIPTED_LLM_PATH=script.jsonl` — детерминированный прогон pipeline (chat → tool_call → tool_result → SSE) **без реальной модели и без денег**. 11 тестов в `tests/e2e/test_scripted_llm.py` (v5: `db_*`/`filter_*`), включая record mode, guard'ы, recovery.
+**ScriptedLLMProvider** (`services/api-service/src/api_service/agent/scripted_provider.py`): мок LLM через env `USE_SCRIPTED_LLM=1 SCRIPTED_LLM_PATH=script.jsonl` — детерминированный прогон pipeline (chat → tool_call → tool_result → SSE) **без реальной модели и без денег**. 11 тестов в `tests/e2e/test_scripted_llm.py` (v5: `db_*`/`filter_*`), включая record mode, guard'ы, recovery.
 
 ## 🧬 Verification
 
@@ -134,7 +134,7 @@ Last verified: 2026-08-03 (HEAD `c763ff0`; вычистка мёртвого к�
 Следущая плановая: 2026-09-01 или после изменения config типов.
 После любой правки документа — обновить дату и хеш коммита здесь.
 
-OpenAPI-контракты admin-dashboard (2026-08-03, после HEAD `3aa1cdbc`): Gap A/B тесты + фикс DELETE — [admin-dashboard/README.md](admin-dashboard/README.md#openapi-контракты-и-прокси-2026-08-03).
+OpenAPI-контракты admin-dashboard (2026-08-03, после HEAD `3aa1cdbc`): Gap A/B тесты + фикс DELETE — [admin-dashboard/README.md](services/admin-dashboard/README.md#openapi-контракты-и-прокси-2026-08-03).
 
 Аудит-проход 2026-08-03 (после OpenAPI-контрактов): убран dead `replace data-service` из `admin-dashboard/go.mod`; доки синхронизированы: `openapigen` → `helperium-go/openapigen` (specs/README, data-service/README), config version 3→4 (data-service/README), ApprovedTool-упоминания вычищены (config-migration.md), configgen версия 2→4 в таблице, RAG admin-токен: `ADMIN_API_TOKEN` должен совпадать с `ADMIN_TOKEN` (docker-compose + .env.example + rag/README + api-flow), dead `RAG_ADMIN_TOKEN` убран из monitoring.md.
 

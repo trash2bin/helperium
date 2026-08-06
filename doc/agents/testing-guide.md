@@ -101,7 +101,7 @@ def test_isolation(tenants):
 ### 3a. Search Strategies E2E — `tests/e2e/test_search_strategies.py`
 
 Проверяет grep/filter/schema стратегии с авто-генерированным конфигом.
-Использует сценарии `auto-shop` и `clinic` (`data-service/testdata/scenarios/`).
+Использует сценарии `auto-shop` и `clinic` (`services/data-service/testdata/scenarios/`).
 
 **31 тест — 2 класса (v5):**
 

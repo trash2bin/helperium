@@ -67,7 +67,7 @@ WHERE "category" = ? ORDER BY "created_at" DESC AND "tenant_id" = ? LIMIT ? OFFS
 
 ### C5 — migration: legacy `list` → `strategy:"filter"` = постоянный 400 ✅
 
-`helperium-go/config/migration.go:42-47` конвертит `op="list"` → `op="strategy", strategy="filter"`. Но `FilterStrategy.ParseRequest` (filter.go:303-305) возвращает ошибку **"at least one filter parameter is required"** при нулевых условиях.
+`services/helperium-go/config/migration.go:42-47` конвертит `op="list"` → `op="strategy", strategy="filter"`. Но `FilterStrategy.ParseRequest` (filter.go:303-305) возвращает ошибку **"at least one filter parameter is required"** при нулевых условиях.
 
 Старый `list` (list.go, удалён в 1ea1a03) возвращал **все записи без фильтров** («Returns all %s. Use filters to narrow results»). Мигрированный `GET /products` (без параметров) теперь → **400** вместо списка. Любой v2-конфиг с `list` молча ломается.
 

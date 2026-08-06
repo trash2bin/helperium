@@ -99,7 +99,7 @@ Browser (Embed Widget → POST /api/chat/{name}
 
 **demo/autoparts-store** — FOREIGN: копия внешнего Django-магазина автозапчастей (Django 5 / PG 16, 1.7M товаров, дерево категорий, JSONB `car_applicability`/`characteristics`). Реалистичная БД для бенчей/демо. Автономен, helperium подключается к его PostgreSQL как к tenant. Не модифицировать — см. `demo/autoparts-store/README.foreign.md`.
 
-**Note:** data-service is **not** a semantic search engine. It provides three search strategies — `grep` (multi-token AND text search, regex), `filter` (field-based with `field__gt`, `__like`, `__in` operators), and `schema` (metadata discovery with distinct values and numeric ranges) — plus custom_queries (pre-approved SELECT statements configured per tenant). LLM decides which tool to call and with which parameters. The LLM tool surface is **N per-entity `filter_{entity}`** (field names live in the tool schema) **+ 5 consolidated `db_*`** (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related` via `/q/*`) — see `data-service/README.md`.
+**Note:** data-service is **not** a semantic search engine. It provides three search strategies — `grep` (multi-token AND text search, regex), `filter` (field-based with `field__gt`, `__like`, `__in` operators), and `schema` (metadata discovery with distinct values and numeric ranges) — plus custom_queries (pre-approved SELECT statements configured per tenant). LLM decides which tool to call and with which parameters. The LLM tool surface is **N per-entity `filter_{entity}`** (field names live in the tool schema) **+ 5 consolidated `db_*`** (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related` via `/q/*`) — see `services/data-service/README.md`.
 
 - **Mechanical workloads** (MCP gateway, admin dashboard, data-service) are written in Go for throughput and full async concurrency.
 - **AI workloads** (agent orchestration, LLM integration, embed widget serving, RAG, embeddings) are written in Python using FastAPI, LiteLLM, and Sentence Transformers.
@@ -153,14 +153,14 @@ The platform runs without Docker overhead via a shell script:
 git clone https://github.com/trash2bin/helperium
 cd helperium
 uv sync
-./scripts/dev.sh start
+./infra/scripts/dev.sh start
 open http://127.0.0.1:8080
 ```
 
 Default LLM is Ollama at `http://127.0.0.1:11434` with `qwen2.5:0.5b`. Switch providers via environment variables:
 
 ```bash
-MISTRAL_API_KEY=<token> MISTRAL_MODEL=mistral-medium ./scripts/dev.sh restart
+MISTRAL_API_KEY=<token> MISTRAL_MODEL=mistral-medium ./infra/scripts/dev.sh restart
 ```
 
 ### CLI for data management and testing
@@ -208,7 +208,7 @@ Widget state is isolated via Shadow DOM — no CSS conflicts with the host site.
 
 **Note:** The widget sends requests directly to the api-service at `POST /api/chat/{agent}` (text) and `POST /api/chat/voice` (audio). It does **not** pass through demo/web. Tenant resolution happens server-side from the agent's stored configuration. Voice recording supports both Telegram-style hold-to-record (default) and classic toggle mode.
 
-See [`api-service/embed/README.md`](api-service/embed/README.md) for full documentation on the SSE protocol, CSP requirements, CSS variable customization, and multi-widget configurations.
+See [`services/api-service/embed/README.md`](services/api-service/embed/README.md) for full documentation on the SSE protocol, CSP requirements, CSS variable customization, and multi-widget configurations.
 
 ## Documentation
 
@@ -218,10 +218,10 @@ See [`api-service/embed/README.md`](api-service/embed/README.md) for full docume
 | [`doc/FINAL_TASK.md`](doc/FINAL_TASK.md) | Migration plan and readiness criteria for pre-final version |
 | [`doc/RUNBOOK.md`](doc/RUNBOOK.md) | Internal deployment cheat sheet: server setup, widget embedding, monitoring |
 | [`doc/PENTEST-CHEK.md`](doc/PENTEST-CHEK.md) | Security checklist and coverage status per attack vector |
-| [`docker/grafana/MONITORING.md`](docker/grafana/MONITORING.md) | Prometheus metrics, Grafana dashboard, troubleshooting |
+|  [`doc/monitoring.md`](doc/monitoring.md) | Prometheus metrics, Grafana dashboard, troubleshooting |
 | [`.env.example`](.env.example) | All environment variables documented |
 
-Service-level READMEs are located in each service directory (`data-service/`, `mcp-gateway/`, `admin-dashboard/`, `rag/`, `api-service/`, `demo/web/`).
+Service-level READMEs are located in each service directory (`services/data-service/`, `services/mcp-gateway/`, `services/admin-dashboard/`, `services/rag/`, `services/api-service/`, `demo/web/`).
 
 ## License and Commercial Support
 

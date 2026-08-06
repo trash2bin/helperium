@@ -43,7 +43,7 @@ flowchart LR
 
 ### Layer 1 — LiteLLM `add_function_to_prompt`
 
-**Где:** `api-service/src/api_service/agent/litellm_provider.py`
+**Где:** `services/api-service/src/api_service/agent/litellm_provider.py`
 
 **Что делает:** глобальный флаг `litellm.add_function_to_prompt = True` включает конвертацию `tools/{'function':{...}}` в текстовый промпт для моделей без нативной поддержки. LiteLLM сама инжектит описание тулов в system prompt и **парсит ответ обратно** в `msg.tool_calls`.
 
@@ -53,7 +53,7 @@ flowchart LR
 
 ### Layer 2 — ToolCallParser (fallback)
 
-**Где:** `api-service/src/api_service/agent/tool_parser.py`, вызов в `stages.py`
+**Где:** `services/api-service/src/api_service/agent/tool_parser.py`, вызов в `stages.py`
 
 **Что делает:** если LiteLLM не распарсила тулы (вернула JSON текстом в `content`), `ToolCallParser.extract_tool_calls()` парсит его вручную. Поддержка форматов:
 
@@ -73,7 +73,7 @@ flowchart LR
 
 ### Layer 3 — Safety Net (`_looks_like_raw_json_tool_calls`)
 
-**Где:** `api-service/src/api_service/agent/stages.py`, функция `_looks_like_raw_json_tool_calls()`
+**Где:** `services/api-service/src/api_service/agent/stages.py`, функция `_looks_like_raw_json_tool_calls()`
 
 **Что делает:** эвристическая проверка контента на наличие `{"name": ... "arguments": ...}` или `[...{"name":...}]`. Если контент похож на JSON тула — **не пускаем `final`**, вместо этого шлём `error`. Это последняя линия.
 
@@ -109,7 +109,7 @@ elif response.content:
 
 ### Iteration не расходуется на tool-round
 
-**Где:** `api-service/src/api_service/agent/pipeline.py`
+**Где:** `services/api-service/src/api_service/agent/pipeline.py`
 
 ```python
 if not ctx.had_tool_calls_this_iteration:

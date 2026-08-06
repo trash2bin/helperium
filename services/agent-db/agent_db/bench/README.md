@@ -146,5 +146,5 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 
 - Один прогон = один вопрос (no multi-turn).
 - Без LLM-судьи (v2).
-- JSONB-поиск (car_applicability) — не поддерживается тулами (см. [search-strategies.md](../../doc/agents/search-strategies.md)).
+- JSONB-поиск (car_applicability) — не поддерживается тулами (см. [search-strategies.md](../../../../doc/agents/search-strategies.md)).
 - `final_text` в backlog обрезается до 2000 символов (для полного — SSE или bench-лог).

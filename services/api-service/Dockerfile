@@ -10,8 +10,8 @@ ENV UV_PYTHON_PREFERENCE=only-system
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-COPY helperium-sdk helperium-sdk/
-COPY api-service/pyproject.toml api-service/
+COPY services/helperium-sdk services/helperium-sdk/
+COPY services/api-service/pyproject.toml services/api-service/
 RUN uv sync --frozen --no-install-project --package api-service --no-dev
 COPY . .
 RUN uv sync --frozen --package api-service --no-dev
@@ -29,11 +29,11 @@ RUN apt-get update && \
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 # Копируем только нужное (src + готовый виджет dist), без node_modules (~81MB)
-COPY --from=builder --chown=app:app /app/api-service/src /app/api-service/src
-COPY --from=builder --chown=app:app /app/api-service/embed/dist /app/api-service/embed/dist
-COPY --from=builder --chown=app:app /app/api-service/pyproject.toml /app/api-service/pyproject.toml
+COPY --from=builder --chown=app:app /app/services/api-service/src /app/services/api-service/src
+COPY --from=builder --chown=app:app /app/services/api-service/embed/dist /app/services/api-service/embed/dist
+COPY --from=builder --chown=app:app /app/services/api-service/pyproject.toml /app/services/api-service/pyproject.toml
 COPY --from=builder --chown=app:app /app/demo /app/demo
-COPY --from=builder --chown=app:app /app/helperium-sdk /app/helperium-sdk
+COPY --from=builder --chown=app:app /app/services/helperium-sdk /app/services/helperium-sdk
 
 
 ENV PATH=/app/.venv/bin:$PATH \

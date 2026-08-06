@@ -67,4 +67,4 @@ Ground truth заранее: пары `{question, sql}` (пишет челове
 
 - `doc/benchmark/README.md` — полный дизайн + выводы из инцидента
 - `doc/benchmark/incident-camry.md` — расследование конкретного ответа (лог в `backlog/agent_autoparts_55618253-*.jsonl`)
-- `agent-db/agent_db/bench/` — текущий бенч-тулчейн (runner/parser/reporter), на него опираемся
+- `services/agent-db/agent_db/bench/` — текущий бенч-тулчейн (runner/parser/reporter), на него опираемся

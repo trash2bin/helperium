@@ -42,11 +42,11 @@ services:
     image: helperium-data:latest
     build:
       context: .
-      dockerfile: data-service/Dockerfile
+      dockerfile: ../services/data-service/Dockerfile
     ports:
       - "127.0.0.1:8084:8084"
     volumes:
-      - .:/workspace:rw
+      - ..:/workspace:rw
       - app_data:/data/app:rw
       - uploads_data:/data/uploads:ro
     environment:
@@ -70,7 +70,7 @@ services:
     image: helperium-rag:latest
     build:
       context: .
-      dockerfile: rag/Dockerfile
+      dockerfile: ../services/rag/Dockerfile
     profiles:
       - rag
     ports:
@@ -101,7 +101,7 @@ services:
     image: helperium-mcp-gateway:latest
     build:
       context: .
-      dockerfile: mcp-gateway/Dockerfile
+      dockerfile: ../services/mcp-gateway/Dockerfile
     ports:
       - "127.0.0.1:8083:8083"
     environment:
@@ -122,7 +122,7 @@ services:
     image: helperium-api:latest
     build:
       context: .
-      dockerfile: api-service/Dockerfile
+      dockerfile: ../services/api-service/Dockerfile
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
@@ -167,7 +167,7 @@ services:
     image: helperium-admin:latest
     build:
       context: .
-      dockerfile: admin-dashboard/Dockerfile
+      dockerfile: ../services/admin-dashboard/Dockerfile
     ports:
       - "127.0.0.1:8085:8085"
     volumes:
@@ -192,7 +192,7 @@ services:
     image: helperium-web:latest
     build:
       context: .
-      dockerfile: demo/web/Dockerfile
+      dockerfile: ../demo/web/Dockerfile
     ports:
       - "127.0.0.1:8080:8080"
     environment:
@@ -228,7 +228,7 @@ services:
       - test
     working_dir: /workspace
     volumes:
-      - .:/workspace:rw
+      - ..:/workspace:rw
     environment:
       # e2e ходит на сервисы по внутренним именам compose-сети
       - DATA_SERVICE_URL=http://data-service:8084
@@ -259,7 +259,7 @@ services:
     # видел созданные тестами БД по тем же путям.
     command: >-
       sh -c "uv pip install --python /app/.venv/bin/python pytest &&
-             uv pip install --python /app/.venv/bin/python -e /workspace/agent-db &&
+             uv pip install --python /app/.venv/bin/python -e /workspace/services/agent-db &&
              cd /workspace &&
              PYTHONPATH=/workspace /app/.venv/bin/python -m pytest tests/e2e/ -v --tb=short"
 
@@ -272,7 +272,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:

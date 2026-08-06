@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --target-version, py313]
-        files: ^api-service/
+        files: ^services/api-service/
       - id: ruff-format
         files: ^api-service/
 
@@ -14,24 +14,24 @@ repos:
         name: Biome JS lint
         entry: npx @biomejs/biome check
         language: system
-        files: ^(admin-dashboard/internal/server/static/.*\.js|api-service/embed/(src|tests)/.*\.js|demo/web/static/.*\.js)$
+        files: ^(services/admin-dashboard/internal/server/static/.*\.js|services/api-service/embed/(src|tests)/.*\.js|demo/web/static/.*\.js)$
         pass_filenames: false
 
   - repo: local
     hooks:
       - id: pyright
         name: Pyright type check
-        entry: bash -c 'pyright api-service/src/api_service/agent/'
+        entry: bash -c 'pyright services/api-service/src/api_service/agent/'
         language: system
         types: [python]
         pass_filenames: false
-        exclude: ^api-service/src/api_service/tests/
+        exclude: ^services/api-service/src/api_service/tests/
 
   - repo: local
     hooks:
       - id: go-vet-data
         name: go vet (data-service)
-        entry: bash -c 'cd data-service && go vet ./...'
+        entry: bash -c 'cd services/data-service && go vet ./...'
         language: system
         types: [go]
         pass_filenames: false
@@ -40,7 +40,7 @@ repos:
     hooks:
       - id: go-vet-mcp
         name: go vet (mcp-gateway)
-        entry: bash -c 'cd mcp-gateway && go vet ./...'
+        entry: bash -c 'cd services/mcp-gateway && go vet ./...'
         language: system
         types: [go]
         pass_filenames: false
@@ -58,18 +58,18 @@ repos:
     hooks:
       - id: admin-dashboard-contract
         name: admin-dashboard contract check (frontend vs Go routes)
-        entry: scripts/check-admin-contract.sh
+        entry: infra/scripts/check-admin-contract.sh
         language: script
-        files: ^admin-dashboard/(internal/server/server\.go|src/)
+        files: ^services/admin-dashboard/(internal/server/server\.go|src/)
         pass_filenames: false
 
   - repo: local
     hooks:
       - id: admin-dashboard-tests
         name: admin-dashboard JS tests
-        entry: bash -c 'cd admin-dashboard/tests && npm test'
+        entry: bash -c 'cd services/admin-dashboard/tests && npm test'
         language: system
-        files: ^admin-dashboard/(src|tests)/
+        files: ^services/admin-dashboard/(src|tests)/
         pass_filenames: false
 
   - repo: https://github.com/gitleaks/gitleaks

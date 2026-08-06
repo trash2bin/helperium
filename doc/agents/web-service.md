@@ -1,8 +1,8 @@
 # Web Service (demo-web) — Reverse Proxy для разработки и демо
 
 > 📘 Полное описание сервиса: [`demo/web/README.md`](../../demo/web/README.md)
-> 📘 Embed-виджет (основной клиент): [`api-service/embed/README.md`](../../api-service/embed/README.md)
-> 📘 Админ-панель: [`admin-dashboard/README.md`](../../admin-dashboard/README.md)
+> 📘 Embed-виджет (основной клиент): [`services/api-service/embed/README.md`](../../services/api-service/embed/README.md)
+> 📘 Админ-панель: [`services/admin-dashboard/README.md`](../../services/admin-dashboard/README.md)
 
 `demo/web/server.py` — reverse-proxy для локальной разработки и демонстрации.
 

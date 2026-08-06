@@ -1,5 +1,5 @@
 {
-  "include": ["api-service/src"],
+  "include": ["services/api-service/src"],
   "venvPath": ".",
   "venv": ".venv",
   "typeCheckingMode": "standard",

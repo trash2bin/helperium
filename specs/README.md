@@ -36,14 +36,14 @@ X-Tenant-ID: <tenant_id>
 Authorization: Bearer <admin_token>
 ```
 
-→ `adminRewriteHandler()` → [`data-service/internal/configgen/configgen.go`](../data-service/internal/configgen/configgen.go)
+→ `adminRewriteHandler()` → [`data-service/internal/configgen/configgen.go`](../services/data-service/internal/configgen/configgen.go)
 
 1. `adapter.Connect(ctx, dsn)` — коннект к БД tenant'а
 2. `adapter.Introspect(ctx, conn)` — читает схему (таблицы, колонки, PK)
 3. `configgen.Generate(schema, dsConfig, skipPrefixes)` — генерирует:
    - `entities[]` — по одной на таблицу
    - `endpoints[]` — `GET /{entity}/{id}`, `GET /{entity}` (find по name)
-   - `mcp_tools[]` — (Фаза 2/2.5) 5 консолидированных `db_*` (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related` → `/q/*`) + N пер-энтити `filter_{entity}` (strategy-based, поля в схеме тула). `get_{entity}`/`count_{entity}`/`distinct_{entity}` — только opt-in через `LLMToolPolicy` (default false). `find`/`list` эндпоинты REST существуют, но `GenerateMCPTools()` их скипает (см. [`data-service/internal/configgen/mcp.go`](../data-service/internal/configgen/mcp.go))
+   - `mcp_tools[]` — (Фаза 2/2.5) 5 консолидированных `db_*` (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related` → `/q/*`) + N пер-энтити `filter_{entity}` (strategy-based, поля в схеме тула). `get_{entity}`/`count_{entity}`/`distinct_{entity}` — только opt-in через `LLMToolPolicy` (default false). `find`/`list` эндпоинты REST существуют, но `GenerateMCPTools()` их скипает (см. [`data-service/internal/configgen/mcp.go`](../services/data-service/internal/configgen/mcp.go))
    - `stats.counters[]` — по одному счётчику на entity
    - `read_only: true` — по умолчанию (защита от записи)
 4. `SaveTenantConfig()` → пишет `.data/tenants/{id}.json`
@@ -71,7 +71,7 @@ Authorization: Bearer <admin_token>
 
 ### 2. Загрузка конфига
 
-Путь загрузки: [`helperium-go/config/loader.go`](../helperium-go/config/loader.go)
+Путь загрузки: [`helperium-go/config/loader.go`](../services/helperium-go/config/loader.go)
 
 ```
 Load(path string) (*Config, error)
@@ -89,7 +89,7 @@ ReadFile(path) → Envsubst() → json.Unmarshal() → cfg.Validate()
 4. **cfg.Validate()** — семантическая валидация на Go-типах
 
 **Никакой внешний JSON Schema файл больше не требуется.**
-Валидация живёт в Go-коде: [`helperium-go/config/types.go`](../helperium-go/config/types.go) — метод `Config.Validate()`.
+Валидация живёт в Go-коде: [`helperium-go/config/types.go`](../services/helperium-go/config/types.go) — метод `Config.Validate()`.
 
 ---
 
@@ -110,7 +110,7 @@ ReadFile(path) → Envsubst() → json.Unmarshal() → cfg.Validate()
 
 Валидация происходит **один раз** — при загрузке конфига в data-service.
 
-Функция: [`helperium-go/config/validate.go`](../helperium-go/config/validate.go)
+Функция: [`helperium-go/config/validate.go`](../services/helperium-go/config/validate.go)
 
 ```go
 func Validate(rawJSON []byte) error   // для admin API
@@ -142,7 +142,7 @@ func (cfg *Config) Validate() error   // для Load() — проверяет в
 | `stats.counters[]` | ✅ | Счётчики для `/stats` |
 | `data_source.read_only` | ✅ | `true` — write по умолчанию выключен |
 
-> **Source of truth:** [`data-service/internal/configgen/`](../data-service/internal/configgen/) — [`configgen.go`](../data-service/internal/configgen/configgen.go), [`mcp.go`](../data-service/internal/configgen/mcp.go).
+> **Source of truth:** [`data-service/internal/configgen/`](../services/data-service/internal/configgen/) — [`configgen.go`](../services/data-service/internal/configgen/configgen.go), [`mcp.go`](../services/data-service/internal/configgen/mcp.go).
 > Полное описание тулов и стратегий: [AGENTS.md](../AGENTS.md) §2a MCP Архитектура.
 
 ### 6. Что нужно писать вручную
@@ -162,9 +162,9 @@ func (cfg *Config) Validate() error   // для Load() — проверяет в
 Если в entities/endpoints/MCP-тулах ошибка — значит баг в генераторе,
 и его надо править в коде, а не патчить конфиг:
 
-- [`data-service/internal/configgen/configgen.go`](../data-service/internal/configgen/configgen.go) — `Generate()`, `tableToEntity()`, `GenerateMCPTools()`
-- [`data-service/internal/datasource/{sqlite,postgres}_adapter.go`](../data-service/internal/datasource/) — `Introspect()`
-- [`helperium-go/config/types.go`](../helperium-go/config/types.go) — `Config.Validate()`
+- [`data-service/internal/configgen/configgen.go`](../services/data-service/internal/configgen/configgen.go) — `Generate()`, `tableToEntity()`, `GenerateMCPTools()`
+- [`data-service/internal/datasource/{sqlite,postgres}_adapter.go`](../services/data-service/internal/datasource/) — `Introspect()`
+- [`helperium-go/config/types.go`](../services/helperium-go/config/types.go) — `Config.Validate()`
 
 **Почему:** После следующего `POST /admin/config/rewrite` ручные правки будут
 перезаписаны автоматикой. Если же rewrite не делать — баг останется навсегда.

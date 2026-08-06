@@ -11,7 +11,7 @@ mkdir -p mutmut-build
 echo "==> Preparing build context..."
 
 # ── 1. Copy all workspace member dirs ─────────────────────
-for dir in api-service helperium-sdk agent-db embed demo specs; do
+for dir in services/api-service services/helperium-sdk services/agent-db services/api-service/embed demo specs; do
     [ -d "$dir" ] && cp -r "$dir" mutmut-build/
 done
 
@@ -33,7 +33,7 @@ sed -i '' -e '/"rag\[cli"/d' -e '/"rag\[pg"/d' mutmut-build/pyproject.toml
 
 # Dockerfile + entrypoint
 cp Dockerfile.mutmut mutmut-build/
-cp scripts/run_mutmut_docker.sh mutmut-build/
+cp infra/scripts/run_mutmut_docker.sh mutmut-build/
 
 # ── 2. .dockerignore (NO **/tests/!) ──────────────────────
 cat > mutmut-build/.dockerignore << 'EOF'

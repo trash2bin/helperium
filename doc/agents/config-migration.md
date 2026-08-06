@@ -1,7 +1,7 @@
 # Config Schema Migration
 
 > **Who this is for:** developers adding or changing fields in the tenant config
-> JSON schema (`helperium-go/config/types.go`).
+> JSON schema (`services/helperium-go/config/types.go`).
 >
 > **Core principle:** every historical config on disk must continue to load
 > without manual intervention. The loader (`config.Load()`) detects the schema
@@ -185,7 +185,7 @@ if e.NewField != "" && !isValidValue(e.NewField) {
 ### Step E — Update configgen (if applicable)
 
 If the field should be auto-generated during `POST /admin/config/rewrite`,
-update `data-service/internal/configgen/configgen.go`:
+update `services/data-service/internal/configgen/configgen.go`:
 
 ```go
 result := &config.Config{
@@ -238,7 +238,7 @@ That's it for the migration itself. The heavy lifting is done by:
 
 ### Configgen changes
 
-`data-service/internal/configgen/configgen.go` — `Generate()` now produces:
+`services/data-service/internal/configgen/configgen.go` — `Generate()` now produces:
 
 ```go
 result := &config.Config{
@@ -410,7 +410,7 @@ func TestNormalize_V2ToV3(t *testing.T) {
 }
 ```
 
-All migration tests live in `helperium-go/config/migration_test.go`.
+All migration tests live in `services/helperium-go/config/migration_test.go`.
 
 ### Running migration tests
 
@@ -483,14 +483,14 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 
 | File | Purpose |
 |------|---------|
-| `helperium-go/config/migration.go` | `Normalize()`, version chain, `ConfigMeta` |
-| `helperium-go/config/types.go` | All config types, `Validate()`, `String()` |
-| `helperium-go/config/loader.go` | `Load()` — the Normalize → Validate pipeline |
-| `helperium-go/config/validate.go` | `Validate(rawJSON)` — convenience for admin API |
-| `helperium-go/config/migration_test.go` | Migration tests |
-| `data-service/internal/configgen/configgen.go` | Config generator (produces latest version) — now emits `grep`, `filter`, `schema` endpoints with `strategy` |
-| `data-service/internal/configgen/mcp.go` | `GenerateMCPTools()` — generates MCP tools from strategy endpoints using `Strategy.ToolParams()` |
-| `data-service/internal/server/endpoint_builder.go` | Strategy-based HTTP routing — uses `ep.Strategy` to construct search handlers |
+| `services/helperium-go/config/migration.go` | `Normalize()`, version chain, `ConfigMeta` |
+| `services/helperium-go/config/types.go` | All config types, `Validate()`, `String()` |
+| `services/helperium-go/config/loader.go` | `Load()` — the Normalize → Validate pipeline |
+| `services/helperium-go/config/validate.go` | `Validate(rawJSON)` — convenience for admin API |
+| `services/helperium-go/config/migration_test.go` | Migration tests |
+| `services/data-service/internal/configgen/configgen.go` | Config generator (produces latest version) — now emits `grep`, `filter`, `schema` endpoints with `strategy` |
+| `services/data-service/internal/configgen/mcp.go` | `GenerateMCPTools()` — generates MCP tools from strategy endpoints using `Strategy.ToolParams()` |
+| `services/data-service/internal/server/endpoint_builder.go` | Strategy-based HTTP routing — uses `ep.Strategy` to construct search handlers |
 | `specs/config.example.json` | Example config (kept at latest version) |
 | `specs/config.schema.md` | Human-readable format reference |
 | `doc/agents/tenant-lifecycle.md` | How configs are created and persisted |

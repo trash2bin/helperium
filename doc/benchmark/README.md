@@ -1,7 +1,7 @@
 # Helperium benchmark design — for senior review
 
 > **Статус: реализовано (2026-08-05).** Core-часть (уровни 1-2, детерминированные проверки) —
-> в `agent-db/agent_db/bench/`, операционная документация — [core-benchmark.md](core-benchmark.md),
+> в `services/agent-db/agent_db/bench/`, операционная документация — [core-benchmark.md](core-benchmark.md),
 > дизайн ниже — исходная постановка для ревью.
 
 > Статус: черновик на ревью. Автор: ivan. Цель — получить независимую оценку дизайна бенча

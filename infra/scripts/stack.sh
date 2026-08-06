@@ -11,7 +11,7 @@
 # =============================================================================
 #set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 DOCKER_COMPOSE="docker compose"
@@ -29,7 +29,7 @@ check_docker() {
 # ─────── up ───────
 up() {
   echo -e "${YELLOW}[1/2] Поднимаю нативные сервисы (dev.sh start)...${NC}"
-  "$PROJECT_ROOT/scripts/dev.sh" start || {
+  "$PROJECT_ROOT/infra/scripts/dev.sh" start || {
     echo -e "${RED}dev.sh start failed${NC}"
     exit 1
   }
@@ -45,7 +45,7 @@ up() {
 # ─────── down ───────
 down() {
   echo -e "${YELLOW}Останавливаю нативные сервисы...${NC}"
-  "$PROJECT_ROOT/scripts/dev.sh" stop || true
+  "$PROJECT_ROOT/infra/scripts/dev.sh" stop || true
 
   echo -e "${YELLOW}Останавливаю Docker стек...${NC}"
   check_docker || true

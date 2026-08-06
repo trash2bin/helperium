@@ -26,7 +26,7 @@ GET /mcp (клиент — api-service/widget)
   │ ctx.Done() → defer delete
 ```
 
-**Ключевые файлы:** `mcp-gateway/cmd/main.go` — `sseHandler()`, `mcpPostHandler()`, `createCompositeServer()`
+**Ключевые файлы:** `services/mcp-gateway/cmd/main.go` — `sseHandler()`, `mcpPostHandler()`, `createCompositeServer()`
 
 ## Tool Registry
 

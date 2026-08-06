@@ -19,7 +19,7 @@ func specPath(t *testing.T, name string) string {
 	}
 	candidates := []string{
 		filepath.Join(wd, "..", "specs", name),      // из helperium-go/config/ → specs/
-		filepath.Join(wd, "..", "..", "specs", name), // из helperium-go/ → repo/specs
+		filepath.Join(wd, "..", "..", "..", "specs", name), // из services/helperium-go/config/ → repo/specs
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {

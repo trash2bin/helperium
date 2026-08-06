@@ -93,7 +93,7 @@
 git clone https://github.com/trash2bin/helperium
 cd helperium
 uv sync
-./scripts/dev.sh start
+./infra/scripts/dev.sh start
 # Открыть http://127.0.0.1:8080
 ```
 
@@ -134,7 +134,7 @@ docker compose up -d
 
 Изоляция между клиентами на трёх уровнях: отдельные файлы баз, раздельные инструменты, раздельные заголовки запросов. Проверено тестами.
 
-**Важно:** data-service не умеет semantic search. Он предоставляет три поисковые стратегии — `grep` (текстовый поиск с multi-token AND и regex), `filter` (фильтрация по полям с операторами `field__gt`, `__like`, `__in`) и `schema` (метаданные: distinct-значения, числовые диапазоны), плюс custom_queries (заранее утверждённые SELECT-запросы). LLM сама решает, какой инструмент вызвать. Поверхность LLM-тулов — N пер-энтити `filter_{entity}` (поля в схеме тула) + 5 консолидированных `db_*` (`db_map`/`db_describe`/`db_search`/`db_get`/`db_related` через `/q/*`) — см. `data-service/README.md`.
+**Важно:** data-service не умеет semantic search. Он предоставляет три поисковые стратегии — `grep` (текстовый поиск с multi-token AND и regex), `filter` (фильтрация по полям с операторами `field__gt`, `__like`, `__in`) и `schema` (метаданные: distinct-значения, числовые диапазоны), плюс custom_queries (заранее утверждённые SELECT-запросы). LLM сама решает, какой инструмент вызвать. Поверхность LLM-тулов — N пер-энтити `filter_{entity}` (поля в схеме тула) + 5 консолидированных `db_*` (`db_map`/`db_describe`/`db_search`/`db_get`/`db_related` через `/q/*`) — см. `services/data-service/README.md`.
 
 ---
 

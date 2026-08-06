@@ -118,10 +118,10 @@ def seed_database(
     """
     root = project_root_dir or project_root()
 
-    sc_dir = root / "agent-db" / "scenarios" / scenario
+    sc_dir = root / "services/agent-db" / "scenarios" / scenario
     if not (sc_dir / "config.json").exists():
         # Scenarios live in data-service/testdata (no agent-db/scenarios dir yet)
-        sc_dir = root / "data-service" / "testdata" / "scenarios" / scenario
+        sc_dir = root / "services/data-service" / "testdata" / "scenarios" / scenario
     if not (sc_dir / "config.json").exists():
         raise FileNotFoundError(
             f"Scenario not found: {scenario} (tried {sc_dir / 'config.json'})"
@@ -661,10 +661,10 @@ def create_scenario_db(scenario: str, project_root_dir: Path | None = None) -> P
         RuntimeError: If database creation fails.
     """
     root = project_root_dir or project_root()
-    sc_dir = root / "data-service" / "testdata" / "scenarios" / scenario
+    sc_dir = root / "services/data-service" / "testdata" / "scenarios" / scenario
     if not sc_dir.exists():
         # Fallback: some scenarios in agent-db
-        sc_dir = root / "agent-db" / "scenarios" / scenario
+        sc_dir = root / "services/agent-db" / "scenarios" / scenario
     if not sc_dir.exists():
         raise FileNotFoundError(f"Scenario dir not found: {sc_dir}")
 
@@ -706,7 +706,7 @@ def ensure_scenario_db(
     Returns the path to the valid DB.
     """
     root = project_root_dir or project_root()
-    sc_dir = root / "data-service" / "testdata" / "scenarios" / scenario
+    sc_dir = root / "services/data-service" / "testdata" / "scenarios" / scenario
     db_path = sc_dir / "data.db"
 
     def _valid(p: Path) -> bool:
@@ -734,7 +734,7 @@ def ensure_scenario_db(
         return create_scenario_db(scenario, project_root_dir=root)
 
     # Fallback: shop — генератор в testdata/scripts/create_shop_db.py (как CI-workflow)
-    generator = root / "data-service" / "testdata" / "scripts" / "create_shop_db.py"
+    generator = root / "services/data-service" / "testdata" / "scripts" / "create_shop_db.py"
     if generator.exists():
         env = {**os.environ, "SHOP_DB": str(db_path)}
         result = subprocess.run(

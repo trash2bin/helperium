@@ -44,6 +44,6 @@ LLM склонна вызывать инструменты с пустыми а�
 - `mcp_client.py`: логгирует `[MCP] Calling tool X with args=Y`, результат `[MCP] Tool X completed: N blocks, M chars`
 - `server.py`: SSE events `token`/`audio` только в DEBUG; `tool_call`/`tool_result`/`final`/`error`/`done` — INFO
 
-**Детали:** `data-service/internal/search/`, `data-service/internal/configgen/mcp.go`, [search-strategies.md](search-strategies.md)
+**Детали:** `services/data-service/internal/search/`, `services/data-service/internal/configgen/mcp.go`, [search-strategies.md](search-strategies.md)
 ---
 **Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

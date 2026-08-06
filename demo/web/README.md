@@ -206,7 +206,7 @@ uv run agent-db e2e-full
 ### Интеграционные тесты
 ```bash
 # Все 591 Go-тест (data-service: 470 в 14 пакетах, mcp-gateway: 121 в 5)
-go test ./data-service/... ./mcp-gateway/... -count=1
+go test ./services/data-service/... ./services/mcp-gateway/... -count=1
 ```
 
 ## Ключевые особенности

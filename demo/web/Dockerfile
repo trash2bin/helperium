@@ -8,7 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-COPY helperium-sdk helperium-sdk/
+COPY services/helperium-sdk services/helperium-sdk/
 COPY demo/web/pyproject.toml demo/web/
 RUN uv sync --frozen --no-install-project --package demo-web --no-dev
 COPY demo/web/ demo/web/
@@ -26,7 +26,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
-COPY --from=builder --chown=app:app /app/helperium-sdk /app/helperium-sdk
+COPY --from=builder --chown=app:app /app/services/helperium-sdk /app/services/helperium-sdk
 COPY --from=builder --chown=app:app /app/demo/web /app/demo/web
 COPY --from=builder --chown=app:app /app/demo/settings.py /app/demo/settings.py
 COPY --from=builder --chown=app:app /app/demo/__init__.py /app/demo/__init__.py

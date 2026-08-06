@@ -136,9 +136,9 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 
 ## 📚 Ссылки
 
-- [AGENTS.md](../AGENTS.md) — общая архитектура проекта, data flow, правила работы
-- [doc/agents/mcp-session-lifecycle.md](../doc/agents/mcp-session-lifecycle.md) — полный lifecycle MCP-сессии
-- [doc/agents/search-strategies.md](../doc/agents/search-strategies.md) — стратегии поиска (grep, filter, schema)
+- [AGENTS.md](../../AGENTS.md) — общая архитектура проекта, data flow, правила работы
+- [doc/agents/mcp-session-lifecycle.md](../../doc/agents/mcp-session-lifecycle.md) — полный lifecycle MCP-сессии
+- [doc/agents/search-strategies.md](../../doc/agents/search-strategies.md) — стратегии поиска (grep, filter, schema)
 - [mcp-gateway/internal/tools/tools.go](internal/tools/tools.go) — реестр инструментов (source of truth)
 
 ## Переменные окружения

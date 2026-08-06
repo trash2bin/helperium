@@ -79,7 +79,7 @@ def find_backlog_dir(backlog_dir: str | None = None) -> Path:
     candidates = [
         root / ".data" / "backlog",
         root / "backlog",
-        root / "api-service" / "src" / "backlog",
+        root / "services/api-service" / "src" / "backlog",
     ]
     for c in candidates:
         if c.exists() and list(c.glob("*.jsonl")):

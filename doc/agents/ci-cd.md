@@ -97,8 +97,8 @@ admin-dashboard/internal/server/static/
 
 ### Три уровня защиты
 
-1. **JS unit-тесты** (`admin-dashboard/tests/api.test.js`, 16 тестов) — парсинг 200/204/422/401, ошибки.
-2. **Contract-тесты** (`admin-dashboard/tests/contract.test.js`) — сканируют domain-модули и сверяют вызовы с 3 контрактными JSON (api-service, rag, admin endpoints).
+1. **JS unit-тесты** (`services/admin-dashboard/tests/api.test.js`, 16 тестов) — парсинг 200/204/422/401, ошибки.
+2. **Contract-тесты** (`services/admin-dashboard/tests/contract.test.js`) — сканируют domain-модули и сверяют вызовы с 3 контрактными JSON (api-service, rag, admin endpoints).
 3. **Pre-commit хуки:** stale-бинарник и vitest при изменении `app.js`/domain-модулей.
 
 ```bash

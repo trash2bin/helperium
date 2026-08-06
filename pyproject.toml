@@ -21,10 +21,10 @@ demo-web = { workspace = true }
 
 [tool.uv.workspace]
 members = [
-    "agent-db",
-    "helperium-sdk",
-    "rag",
-    "api-service",
+    "services/agent-db",
+    "services/helperium-sdk",
+    "services/rag",
+    "services/api-service",
     "demo/web",
 ]
 
@@ -49,9 +49,9 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = [
-    "helperium-sdk/tests",
-    "rag/tests",
-    "api-service/src/api_service/tests",
+    "services/helperium-sdk/tests",
+    "services/rag/tests",
+    "services/api-service/src/api_service/tests",
     "demo/web/tests",
 ]
 python_files = "test_*.py"

@@ -1,14 +1,14 @@
 # HTTP Client Layer — Как сервисы общаются
 
 > Детальные описания сервисов и их API — в соответствующих README:
-> - [`mcp-gateway/README.md`](../../mcp-gateway/README.md) — MCP-шлюз, SSE-сессии
-> - [`data-service/README.md`](../../data-service/README.md) — CRUD, query builder
-> - [`api-service/README.md`](../../api-service/README.md) — оркестратор, LLM, виджет
+> - [`services/mcp-gateway/README.md`](../../services/mcp-gateway/README.md) — MCP-шлюз, SSE-сессии
+> - [`services/data-service/README.md`](../../services/data-service/README.md) — CRUD, query builder
+> - [`services/api-service/README.md`](../../services/api-service/README.md) — оркестратор, LLM, виджет
 > - [`demo/web/README.md`](../../demo/web/README.md) — reverse-proxy для разработки
 
 ## mcp-gateway → data-service
 
-`mcp-gateway/internal/httpclient/client.go`:
+`services/mcp-gateway/internal/httpclient/client.go`:
 - `FetchConfigWithTenant(tenantID)` → GET `http://data-service:8084/mcp/manifest?tenant={id}`
 - `FetchSchemaWithTenant(tenantID)` → GET `http://data-service:8084/mcp/schema`
 - `Call(ctx, endpoint, params)` → GET `http://data-service:8084/{endpoint}?{params}` с `X-Tenant-ID`
@@ -22,7 +22,7 @@
 
 ## api-service (MCPClient) → mcp-gateway
 
-`api-service/src/api_service/agent/mcp_client.py`:
+`services/api-service/src/api_service/agent/mcp_client.py`:
 - Один persistent SSE-сеанс на tenant (GET /mcp + очередь POST)
 - `mcp.client.sse.sse_client()` из официального Python MCP SDK
 - `asyncio.Lock` на сессию, `LOCK_ACQUIRE_TIMEOUT = 10s`, `TOOL_EXECUTION_TIMEOUT = 15s`, `sse_read_timeout = 30 min`

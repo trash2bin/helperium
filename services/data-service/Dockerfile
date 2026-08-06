@@ -7,14 +7,14 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 
 # Кешируем зависимости
-COPY helperium-go/go.mod helperium-go/go.sum /build/helperium-go/
-COPY data-service/go.mod data-service/go.sum /build/data-service/
-RUN cd /build/data-service && go mod download
+COPY services/helperium-go/go.mod services/helperium-go/go.sum /build/services/helperium-go/
+COPY services/data-service/go.mod services/data-service/go.sum /build/services/data-service/
+RUN cd /build/services/data-service && go mod download
 
 # Копируем исходники и собираем
-COPY helperium-go/ /build/helperium-go/
-COPY data-service/ /build/data-service/
-RUN cd /build/data-service && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /data-service ./cmd/server/
+COPY services/helperium-go/ /build/services/helperium-go/
+COPY services/data-service/ /build/services/data-service/
+RUN cd /build/services/data-service && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/data-service ./cmd/server/
 
 # ── Runtime ──
 FROM alpine:3.21
@@ -23,7 +23,7 @@ RUN apk add --no-cache ca-certificates curl
 RUN adduser -D -u 1001 app
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /data-service /data-service
+COPY --from=builder /app/data-service /app/data-service
 
 EXPOSE 8084
 
@@ -31,4 +31,4 @@ USER app
 
 HEALTHCHECK CMD curl -f http://localhost:8084/health || exit 1
 
-ENTRYPOINT ["/data-service"]
+ENTRYPOINT ["/app/data-service"]

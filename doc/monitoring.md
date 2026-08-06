@@ -68,9 +68,9 @@ Grafana визуализирует данные с Prometheus-датасорса
 | Request Duration (p99) | `histogram_quantile(0.99, sum(rate(data_request_duration_ms_bucket[5m])) by (le))` | ms | <100ms | >200ms → >500ms |
 
 **Где копать при аномалиях:**
-- **Рост длительности** → `data-service/internal/server/tenant.go` (рутер), `data-service/internal/datasource/postgres_adapter.go` (PG-запросы)
-- **Ошибки 404** → неверный путь/entity в конфиге tenant'а `helperium-go/config/types.go`
-- **Ошибки 500** → баг в generic-хендлере `data-service/internal/server/handlers/default.go`
+- **Рост длительности** → `services/data-service/internal/server/tenant.go` (рутер), `services/data-service/internal/datasource/postgres_adapter.go` (PG-запросы)
+- **Ошибки 404** → неверный путь/entity в конфиге tenant'а `services/helperium-go/config/types.go`
+- **Ошибки 500** → баг в generic-хендлере `services/data-service/internal/server/handlers/default.go`
 
 ### 🔌 MCP Gateway
 
@@ -82,9 +82,9 @@ Grafana визуализирует данные с Prometheus-датасорса
 | Errors (tool calls) | `mcp_tool_calls_total{status!="ok"}` | шт | 0 | >0 |
 
 **Где копать при аномалиях:**
-- **Rate limit >0** → увеличить RPS/burst в `mcp-gateway/cmd/ratelimit.go`
-- **Сессии падают** → `mcp-gateway/cmd/main.go` (SSE-хендлер, idle-таймауты)
-- **Tool call errors** → `mcp-gateway/internal/tools/` (маппинг инструментов), `mcp-gateway/internal/httpclient/client.go` (HTTP к data-service)
+- **Rate limit >0** → увеличить RPS/burst в `services/mcp-gateway/cmd/ratelimit.go`
+- **Сессии падают** → `services/mcp-gateway/cmd/main.go` (SSE-хендлер, idle-таймауты)
+- **Tool call errors** → `services/mcp-gateway/internal/tools/` (маппинг инструментов), `services/mcp-gateway/internal/httpclient/client.go` (HTTP к data-service)
 
 ### 🧠 API — LLM & Chat
 
@@ -100,10 +100,10 @@ Grafana визуализирует данные с Prometheus-датасорса
 | Backlog Queue | `backlog_records_total - backlog_records_created` | шт | 0 | >10 |
 
 **Где копать при аномалиях:**
-- **LLM долгий** → `api-service/src/api_service/agent/orchestrator.py` (цикл _run_turn), провайдер LiteLLM
-- **Cost растёт** → сменить модель/провайдера в `api-service/src/api_service/agent/llm_provider.py`
-- **Abuse blocks** → `api-service/src/api_service/agent/guard_checker.py` (prompt injection, repeated text)
-- **Backlog растёт** → worker'ы не успевают, `api-service/src/api_service/agent/backlog.py`
+- **LLM долгий** → `services/api-service/src/api_service/agent/orchestrator.py` (цикл _run_turn), провайдер LiteLLM
+- **Cost растёт** → сменить модель/провайдера в `services/api-service/src/api_service/agent/llm_provider.py`
+- **Abuse blocks** → `services/api-service/src/api_service/agent/guard_checker.py` (prompt injection, repeated text)
+- **Backlog растёт** → worker'ы не успевают, `services/api-service/src/api_service/agent/backlog.py`
 
 ### 📄 RAG Service
 

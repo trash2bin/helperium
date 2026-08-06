@@ -233,6 +233,6 @@ go test ./data-service/internal/runtime/handlers/ -run TestTenantFilter -v   # t
 
 ## Related
 
-- `data-service/README.md` — обзор сервиса
-- `data-service/internal/configgen/README.md` — FieldRules, генерация тулов
+- `services/data-service/README.md` — обзор сервиса
+- `services/data-service/internal/configgen/README.md` — FieldRules, генерация тулов
 - `doc/api-flow.md` — HTTP-матрица

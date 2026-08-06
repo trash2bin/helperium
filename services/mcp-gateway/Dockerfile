@@ -1,25 +1,28 @@
-# Multi-stage build for mcp-gateway
 FROM golang:1.26-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates
 
 WORKDIR /build
 
-# Кешируем зависимости
-COPY helperium-go/go.mod helperium-go/go.sum /build/helperium-go/
-COPY mcp-gateway/go.mod mcp-gateway/go.sum /build/mcp-gateway/
-RUN cd /build/mcp-gateway && go mod download
+COPY services/helperium-go/go.mod services/helperium-go/go.sum /build/services/helperium-go/
+COPY services/mcp-gateway/go.mod services/mcp-gateway/go.sum /build/services/mcp-gateway/
+RUN cd /build/services/mcp-gateway && go mod download
 
-# Копируем исходники и собираем
-COPY helperium-go/ /build/helperium-go/
-COPY mcp-gateway/ /build/mcp-gateway/
-RUN cd /build/mcp-gateway && CGO_ENABLED=0 go build -o /build/bin/mcp-gateway ./cmd/
+COPY services/helperium-go/ /build/services/helperium-go/
+COPY services/mcp-gateway/ /build/services/mcp-gateway/
+RUN cd /build/services/mcp-gateway && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/mcp-gateway ./cmd/
 
+# ── Runtime ──
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates curl
+
+RUN apk add --no-cache ca-certificates
 RUN adduser -D -u 1001 app
-USER app
-WORKDIR /app
-COPY --from=builder /build/bin/mcp-gateway /app/mcp-gateway
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /app/mcp-gateway /app/mcp-gateway
 
 EXPOSE 8083
-HEALTHCHECK CMD curl -f http://localhost:8083/health || exit 1
+
+USER app
+
 ENTRYPOINT ["/app/mcp-gateway"]
