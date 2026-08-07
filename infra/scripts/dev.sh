@@ -435,7 +435,7 @@ cmd_logs() {
 # Архитектура: data-service/README.md § "Сценарии — фабрика тестовых БД"
 # =============================================================================
 
-SCENARIOS_DIR="$PROJECT_ROOT/scenarios"
+SCENARIOS_DIR="$PROJECT_ROOT/services/data-service/testdata/scenarios"
 CONFIG_SCHEMA=""
 
 # Delegate db commands to agent-db CLI

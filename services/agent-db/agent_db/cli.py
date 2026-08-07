@@ -105,7 +105,7 @@ def materialize(scenario: str, force: bool):
         click.echo(f"⚠️  Only SQLite supported for materialize (got {driver})", err=True)
         sys.exit(1)
 
-    db_path = PROJECT_ROOT / dsn
+    db_path = PROJECT_ROOT / dsn.lstrip("/") if dsn.startswith("services/") else PROJECT_ROOT / dsn
     if force and db_path.exists():
         click.echo(f"🗑️  Removing existing: {db_path}")
         db_path.unlink(missing_ok=True)
@@ -135,7 +135,7 @@ def materialize(scenario: str, force: bool):
             env={
                 **dict(subprocess.os.environ),
                 "SHOP_DB": str(db_path),
-                "DATA_SERVICE_DIR": str(PROJECT_ROOT / "data-service"),
+                "DATA_SERVICE_DIR": str(PROJECT_ROOT / "services" / "data-service"),
             },
         )
         if bootstrap_result.returncode != 0:
@@ -259,7 +259,7 @@ def drop(scenario: str):
     dsn = config.get("data_source", {}).get("dsn")
 
     if driver == "sqlite":
-        db_path = PROJECT_ROOT / dsn
+        db_path = PROJECT_ROOT / dsn.lstrip("/") if dsn.startswith("services/") else PROJECT_ROOT / dsn
         if db_path.exists():
             click.echo(f"🗑️  Removing: {db_path}")
             db_path.unlink(missing_ok=True)
