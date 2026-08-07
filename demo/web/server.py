@@ -304,7 +304,9 @@ async def _proxy_to_data_service(
     url = f"{DATA_SERVICE_URL}{data_path}"
     headers = await _get_proxy_headers(request)
     logger.debug("data-service proxy: %s -> %s", request.method, url)
-    response = await http_client.get(url, headers=headers)
+    # Прокидываем query-параметры (pattern, limit, fields и т.д.) —
+    # data-service стратегии (grep/filter) требуют их.
+    response = await http_client.get(url, headers=headers, params=dict(request.query_params))
     return Response(
         content=response.content,
         status_code=response.status_code,

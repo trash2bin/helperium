@@ -128,17 +128,21 @@ services:
     volumes:
       - app_data:/data/app
     environment:
-      - USE_SCRIPTED_LLM=1
+      - USE_SCRIPTED_LLM=${USE_SCRIPTED_LLM:-0}
       - HEALTH_CHECK_SKIP_LLM=true
-      - OLLAMA_URL=
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - MCP_SERVICE_URL=http://mcp-gateway:8083/mcp
       - DB_PATH=/data/app/university.db
       - DEMO_SESSION_DB_PATH=/data/app/demo_sessions.sqlite
+      - PROVIDER_STORE_PATH=/data/app/providers.json
       - BACKLOG_DIR=/data/app/backlog
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:0.5b}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - MISTRAL_MODEL=${MISTRAL_MODEL:-mistral/mistral-small}
-      - ENABLE_THINK=${ENABLE_THINK:-true}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-}
+      - ENABLE_THINK=${ENABLE_THINK:-false}
       - DEMO_REQUEST_TIMEOUT=${DEMO_REQUEST_TIMEOUT:-600}
       - DEMO_HISTORY_TURNS=${DEMO_HISTORY_TURNS:-8}
       - DEMO_HISTORY_CONTENT_CHARS=${DEMO_HISTORY_CONTENT_CHARS:-6000}

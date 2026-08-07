@@ -32,7 +32,7 @@ except ImportError:
     instrument_fastapi = None
     otel_shutdown = None
 
-from .deps import get_agent, get_agent_instance, _sync_pool_from_store
+from .deps import get_agent, get_agent_instance, get_agent_store, _sync_pool_from_store
 from .middleware.correlation import add_correlation_id as correlation_middleware
 from .middleware.embed import add_embed_security_headers as embed_security_middleware
 from .routes import chat, agents, admin, backlog, health, voice
@@ -52,6 +52,25 @@ async def lifespan(app: FastAPI):
         logger.info("LLM agent ready")
     except Exception as exc:
         logger.warning("Agent warmup failed (will retry on first request): %s", exc)
+
+    # Seed default agent (used by embed widget data-agent="default")
+    # so the widget works out-of-the-box on a fresh deployment.
+    try:
+        store = get_agent_store()
+        if store.get_agent("default") is None:
+            store.create_agent(
+                name="default",
+                description="Default assistant for embed widget",
+                tenant_ids=["default"],
+                widget_config={
+                    "title": "Assistant",
+                    "greeting": "How can I help?",
+                    "position": "right",
+                },
+            )
+            logger.info("Seeded default agent")
+    except Exception as exc:
+        logger.warning("Default agent seed failed: %s", exc)
 
     # Sync ProviderPool from ProviderStore
     try:
