@@ -10,16 +10,16 @@ chroma_db/
 generated_materials/
 
 # Go-built binaries
-data-service/bin/
-data-service/server
-data-service/seed-cli
-mcp-gateway/mcp-gateway
-mcp-gateway/main
-mcp-gateway/bin/
+services/data-service/bin/
+services/data-service/server
+services/data-service/seed-cli
+services/mcp-gateway/mcp-gateway
+services/mcp-gateway/main
+services/mcp-gateway/bin/
 /server
 /seed-cli
 *.exe
-admin-dashboard/bin/*
+services/admin-dashboard/bin/*
 
 # Local config / dev artifacts
 .claude/
@@ -46,8 +46,8 @@ context.md
 graphify-out/
 
 # Go mutation reports
-data-service/report.json
-mcp-gateway/report.json
+services/data-service/report.json
+services/mcp-gateway/report.json
 
 # Regened seed
 specs/fixtures/seed.json
@@ -98,7 +98,7 @@ playwright-report/
 admin-dashboard/internal/audit/
 
 # Symlinks to specs/
-api-service/specs
+services/api-service/specs
 /cmd
 
 # tp and js

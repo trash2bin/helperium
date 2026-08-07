@@ -41,8 +41,8 @@ services:
   data-service:
     image: helperium-data:latest
     build:
-      context: .
-      dockerfile: ../services/data-service/Dockerfile
+      context: ..
+      dockerfile: services/data-service/Dockerfile
     ports:
       - "127.0.0.1:8084:8084"
     volumes:
@@ -69,8 +69,8 @@ services:
   rag:
     image: helperium-rag:latest
     build:
-      context: .
-      dockerfile: ../services/rag/Dockerfile
+      context: ..
+      dockerfile: services/rag/Dockerfile
     profiles:
       - rag
     ports:
@@ -100,8 +100,8 @@ services:
   mcp-gateway:
     image: helperium-mcp-gateway:latest
     build:
-      context: .
-      dockerfile: ../services/mcp-gateway/Dockerfile
+      context: ..
+      dockerfile: services/mcp-gateway/Dockerfile
     ports:
       - "127.0.0.1:8083:8083"
     environment:
@@ -121,8 +121,8 @@ services:
   api:
     image: helperium-api:latest
     build:
-      context: .
-      dockerfile: ../services/api-service/Dockerfile
+      context: ..
+      dockerfile: services/api-service/Dockerfile
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
@@ -166,8 +166,8 @@ services:
   admin-dashboard:
     image: helperium-admin:latest
     build:
-      context: .
-      dockerfile: ../services/admin-dashboard/Dockerfile
+      context: ..
+      dockerfile: services/admin-dashboard/Dockerfile
     ports:
       - "127.0.0.1:8085:8085"
     volumes:
@@ -191,8 +191,8 @@ services:
   web:
     image: helperium-web:latest
     build:
-      context: .
-      dockerfile: ../demo/web/Dockerfile
+      context: ..
+      dockerfile: demo/web/Dockerfile
     ports:
       - "127.0.0.1:8080:8080"
     environment:

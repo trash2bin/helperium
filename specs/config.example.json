@@ -7,7 +7,7 @@
   },
   "data_source": {
     "driver": "sqlite",
-    "dsn": "../data-service/testdata/scenarios/shop/data.db",
+    "dsn": "../services/data-service/testdata/scenarios/shop/data.db",
     "read_only": false
   },
   "entities": [
