@@ -129,7 +129,7 @@ Composite mode allows a single SSE session to route across N tenants with prefix
 
 - **Read-only enforcement.** Write operations are blocked at the data-service level (config flag `read_only: true`). The MCP gateway simply doesn't register write tools when read_only is active. Write-endpoints are never auto-generated; data access is read-only by construction.
 - **Test-Driven Development.** CI pipeline enforces a failing-test-first workflow. Test counts are not hardcoded in documentation; the pipeline reports current coverage dynamically.
-- **Pentest coverage.** A comprehensive security checklist is maintained in `doc/PENTEST-CHEK.md`. Each attack vector is tracked from initial failing test through remediation to passing state.
+- **Pentest coverage.** A security checklist is maintained in [`doc/agents/security-isolation.md`](doc/agents/security-isolation.md) (see also `doc/agents/anti-abuse.md`, `doc/agents/tool-call-safety-layers.md`).
 - **Tenant isolation.** Verified at three layers under concurrent load in end-to-end tests.
 - **Widget hardening.** The embed endpoint sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and long-lived immutable cache headers for static assets. Content Security Policy requirements are documented for host sites.
 
@@ -214,11 +214,6 @@ See [`services/api-service/embed/README.md`](services/api-service/embed/README.m
 
 | Document | Description |
 | -------- | ----------- |
-| [`AGENTS.md`](AGENTS.md) | Technical project passport: architecture, service map, testing, CI |
-| [`doc/FINAL_TASK.md`](doc/FINAL_TASK.md) | Migration plan and readiness criteria for pre-final version |
-| [`doc/RUNBOOK.md`](doc/RUNBOOK.md) | Internal deployment cheat sheet: server setup, widget embedding, monitoring |
-| [`doc/PENTEST-CHEK.md`](doc/PENTEST-CHEK.md) | Security checklist and coverage status per attack vector |
-|  [`doc/monitoring.md`](doc/monitoring.md) | Prometheus metrics, Grafana dashboard, troubleshooting |
 | [`.env.example`](.env.example) | All environment variables documented |
 
 Service-level READMEs are located in each service directory (`services/data-service/`, `services/mcp-gateway/`, `services/admin-dashboard/`, `services/rag/`, `services/api-service/`, `demo/web/`).

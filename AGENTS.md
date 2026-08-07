@@ -1,181 +1,200 @@
-# AGENTS.md — Технический паспорт проекта
+# Технический паспорт Helperium
 
-> Правила работы с документацией, граф знаний, скиллы, Cookbook — в [.pi/APPEND_SYSTEM.md](.pi/APPEND_SYSTEM.md)
+## 🎯 1. Что это
 
-## 🎯 1. О проекте
+**Self-hosted AI-платформа для бизнеса с SQL-базой.** Любая компания (интернет-магазин, университет, логистика, больница) подключает свою БД, платформа автоматически интроспектирует схему, генерирует инструменты доступа к данным, и на сайте бизнеса появляется **AI-чат-виджет**, который отвечает клиентам на вопросы по живым данным («сколько стоит тормозной диск», «какие товары в наличии»).
 
-B2B self-hosting SaaS: клиент подключает свою БД → интроспекция схемы → генерация REST API + MCP-инструменты → AI-агент отвечает на вопросы над данными.
+Ключевое отличие от RAG: агент **не индексирует документы**, а **запрашивает живую БД в read-only** через сгенерированные инструменты. Бизнес через админку контролирует, какие таблицы/колонки/операции видит агент. При этом есть тул для RAG и он работает но это не приоритет проекта, а просто дополнение под клиента.
 
-### Data flows
+### Два контура
 
-**Запрос данных (админка):** `Admin Dashboard (:8085) → data-service (:8084) → Query Engine (Expression AST → SQL) → Adapter.Conn → Client DB`
+| Контур | Для кого | Вход | Что делает |
+|---|---|---|---|
+| **Admin Dashboard** (:8085) | администратор платформы | браузер | управление тенантами (подключение БД), конфигами, агентами, RAG-документами, anti-abuse, возможность отключать тулы удобно и быстро |
+| **Embed Widget** (на сайте клиента) | конечные пользователи | JS на сайте | чат с AI-агентом, ответы по данным через api-service |
 
-**LLM Chat (SSE stream):** `Embed Widget → api-service (:8081) → orchestrator → LLM (LiteLLM) → tool_call → MCPClient → mcp-gateway (:8083) → data-service → DB → SSE → Widget`
+### Ключевые понятия
 
-**Альтернатива (админка):** `Admin Dashboard → proxyToApiService() → api-service` (тот же `chat_agent_handler`). `demo/web` (:8080) — dev-only.
+- **Tenant** — один подключённый клиент: его БД + JSON-конфиг (какие таблицы/тулы видны агенту). Хранится в `.data/tenants/{id}.json`. Затем их уже использует агент (их тоже пожет быть несколько) связь many-to-many логика сложная подробнее в data-service и его документации. Идея что можно подключить несколько баз данных и оно будет работать и настраиваться.
+- **Config** — декларативное описание тенанта: `entities[]`, `endpoints[]`, `mcp_tools[]`, в идеале генерируеться но его можно подправить (не рекумендуется без точных указаний и понимания зачем во время разработки этого делать точно не стоит).
+- **MCP-тул** — сгенерированный инструмент, которым агент запрашивает данные.
 
-**Типы SSE-событий:** `token`, `tool_call`, `tool_result`, `final`, `error`, `done`, `audio`.
+## 🔀 2. Data flows
 
-### ⚠️ data-service — не semantic search
-
-Search strategies (`services/data-service/internal/search/`): **grep** (multi-token AND, regex, ignore_case, invert) · **filter** (field-based: `field__gt`, `__like`, `__in`) · **schema** (discovery: distinct, min/max/avg, total). Детали: [search-strategies.md](doc/agents/search-strategies.md), [adapter-pattern.md](doc/agents/adapter-pattern.md).
-
-### Agent pipeline (Protocol-based DI)
+**LLM Chat (SSE stream)** — как виджет отвечает на вопрос:
 
 ```
-LLMAgent (orchestrator)
-  └── Pipeline: GuardInput → ToolDiscovery → LLMStage → ToolExecution (цикл)
-                → Fallback → GuardOutput → SaveHistory
-      каждое событие → SpendingMiddleware → TokenBudgetMiddleware
+Embed Widget → api-service (:8081) → orchestrator → LLM (LiteLLM)
+  → tool_call → MCPClient → mcp-gateway (:8083) → data-service (:8084) → Client DB
+  → SSE → Widget
 ```
 
-**Аудит api-service (2026-07-30):** Исправлены 12 проблем pipeline.
-- ✅ Exception-safe history — `SaveHistoryStage.force_save()` вызывается в finally при ошибках
-- ✅ Token budget pre-check — проверка ДО LLM call (LLMStage), а не после
-- ✅ classify_error — type-based (isinstance) вместо substring matching, устранены false positives
-- ✅ ErrorContext — все 5 stage'ов используют `with_stage()`, исправлен баг с immutable builder в ToolExecutionStage
-- ✅ LiteLLM cost — извлекается из `response.usage.cost` / `_hidden_params`, SpendingMiddleware теперь работает
-- ✅ Safety net — структурная проверка JSON вместо тупого `name+arguments in string`, устранены false positives
-- ✅ Spending persistence — JSON-файл с atomic write, перезапуск не теряет данные
-- ✅ Composite tenant spending — bad tenant не блокирует good tenant в multi-tenant запросе
-- ✅ Unicode homoglyph guard — таблица кириллических/украинских омоглифов, guard не bypass-ится
+**Запрос данных (админка):** `Admin Dashboard (:8085)` проксирует к api-service (тот же chat-хендлер) и к data-service (tenant CRUD/config). Прямой путь к данным — `data-service (:8084) → Query Engine (Expression AST → SQL) → Adapter.Conn → Client DB`.
 
-**MCPClient audit (2026-07-30):**
-- ✅ Circuit breaker — 3+ consecutive failures → skip reconnect, half-open после 30s cooldown
-- ✅ TTL garbage collection — фоновый task закрывает SSE сессии idle > 10 мин
-- ✅ ProviderPool TOCTOU — `remove_worker()` async с `_lock`, корректировка `_rr_index`
+`demo/web` (:8080) — dev-only набор стрниц (пока что две) где уже встроен виджет, одно рудемент второе полноценный django сайт со своей контейнерами вместе с дб, оно живет независимо от проекта и на реальном VPS не должно находиться.
 
-Protocol'ы: LLMProvider, ConversationStore, SpendingTracker, BacklogWriter, GuardChecker, MCPToolProvider (`agent/protocols.py`).
+**SSE-события (EventType):** `status`, `token`, `tool_call`, `tool_result`, `final`, `error`, `audio` + серверный маркер конца потока `done` — Язык общение с чатом на итоговой странице с виджетом.
 
-> Мёртвый `AntiAbuseChecker` protocol удалён. `BacklogWriter` — sync (не async) — осознанно (local file writes).
+## 🏗️ 3. Архитектура
 
-## 🏗️ 2. Архитектура
+### 3a. Agent pipeline
 
-### 2a. MCP
-1. SSE-сессия (GET /mcp) → `event: endpoint`
-2. POST /mcp/message?sessionId= → JSON-RPC → `HandleMessage()`
-3. `FetchConfigWithTenant()` → GET data-service `/mcp/manifest` (кэшируется **30s TTL**, `InvalidateManifestCache()` для сброса) → `tools.NewRegistry(cfg)`
-4. Генерация инструментов: `configgen.GenerateMCPTools()`. filter-тулы — параметры от `FilterStrategy.ToolParams()` (поля в схеме тула)
-5. Тулы (Фаза 2/2.5): **N пер-энтити `filter_{entity}` + 5 консолидированных `db_*`** (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related` через `/q/*`). `get_*`/`count_*`/`distinct_*` — opt-in через `LLMToolPolicy` (default false, анти-перебор)
-6. **Composite Mode:** `X-Tenant-ID: a,b` → префикс `{tenantID}__filter_product`
+Каждый chat-запрос проходит конвейер этапов: входной guard (анти-injection) → открыть MCP-сессию и получить тулы + схему → **цикл «LLM отвечает → выполняет тулы»** до финального ответа → выходной guard (проверка утечки system prompt/кредов) → fallback при отсутствии финала → сохранение turn'а. Между этапами — контроль трат (spending) и лимит контекста.
 
-### 2b. Tenant Lifecycle
-POST /admin/tenants → bootstrap; POST /admin/config/rewrite → интроспекция; `.data/tenants/{id}.json`.
+Зависимости оркестратора — Protocol'ы (DI): легко подменить, например, реальный LLM на `ScriptedLLMProvider` (мок, см. [§8 E2E](#8-e2e-тесты-структура)).
 
-### 2c. Config
-**Авто:** entities[], endpoints[], mcp_tools[], read_only: `true`. **Вручную:** custom_queries{}, auth{}, mcp_tools[].description, introspection{}.
-**Strategy-эндпоинты:** `endpoints[].strategy = grep | filter | schema`.
-**Схема:** `services/helperium-go/config/types.go:Config`. [specs/config.schema.md](specs/config.schema.md), [config-migration.md](doc/agents/config-migration.md).
+Детали: `services/api-service/src/api_service/agent/` (оркестратор `LLMAgent` в `orchestrator.py`, конвейер в `pipeline.py`, протоколы в `protocols.py`); guard'ы — [doc/agents/anti-abuse.md](doc/agents/anti-abuse.md), [doc/agents/tool-call-safety-layers.md](doc/agents/tool-call-safety-layers.md) и самая важный документ: [service/api-service/README](services/api-service/README)
 
-### 2d. Adapter Pattern
-`datasource.Adapter` (Driver, Connect, Introspect, TranslatePlaceholder, QuoteIdentifier). [adapter-pattern.md](doc/agents/adapter-pattern.md).
+### 3b. MCP — как агент получает данные
 
-### 2e. HTTP Client Layer
-- **mcp-gateway → data-service:** `FetchConfigWithTenant()`, `GetData()` — stateless http.Client
-- **api-service → mcp-gateway:** MCPClient — SSE-сеанс на tenant, `asyncio.Lock`, 30s timeout
-- **demo-web → все:** `httpx.AsyncClient`, SSE streaming
+**MCP** (Model Context Protocol) — способ, которым агент вызывает данные: api-service ↔ mcp-gateway через SSE + JSON-RPC. Агент открывает MCP-сессию, получает **манифест тулов** (генерируется из конфига тенанта, кэшируется, можно сбросить), и вызывает тулы для получения данных.
 
-HTTP-матрица (11 каналов): [doc/api-flow.md](doc/api-flow.md). Детали: [http-clients.md](doc/agents/http-clients.md).
+Детали: [doc/agents/mcp-session-lifecycle.md](doc/agents/mcp-session-lifecycle.md) (рвущиеся сессии, GC), [doc/agents/search-strategies.md](doc/agents/search-strategies.md) (как устроены тулы/поиск) и самая важный документ: [service/mcp-getway/README](services/mcp-gateway/README)
 
-### 2f. Tenant Isolation — database-level · tool-level (`tenant-a__grep_products`) · session-level
-Tenant_id недоступен LLM как field__op; field whitelist по `findColumn()`; `exclude_from_search` для PII. [security-isolation.md](doc/agents/security-isolation.md).
+### 3c. data-service — не semantic search
 
-### 2j/2k. Anti-Abuse
-3 уровня: JSON Schema (MCP gateway) → Server-side guard (limits, ReDoS, 30s timeout) → Empty Hints. [anti-abuse.md](doc/agents/anti-abuse.md), [tool-call-safety-layers.md](doc/agents/tool-call-safety-layers.md).
+Поиск по данным — это **не семантический поиск**, а набор стратегий в `services/data-service/internal/search/`: текстовый поиск `grep`, фильтрация по полям `filter`, разведка схемы `schema` (distinct/min/max/общее число).
 
-## 🛠️ Карта сервисов
+Для LLM-агента они экспонируются как MCP-тулы: N пер-энтити `filter_{entity}` + 5 консолидированных `db_*` (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related`). Крупное изменение тулов — коммит `2cad540` (LLM-first tool surface: `filter_*` + `db_*`, убит id-enumeration). Это очень кратко на деле логика сложна и запутано и также является **core** всего проект в каком то смысле от того как это работает зависит смысл этого проекта.
+
+Детали: [search-strategies.md](doc/agents/search-strategies.md), [adapter-pattern.md](doc/agents/adapter-pattern.md) и самое важное в [services/data-service/README](services/data-service/README)
+
+### 3d. Tenant Lifecycle
+При подключении клиента создаётся tenant (POST /admin/tenants), конфиг генерируется интроспекцией схемы (POST /admin/config/rewrite), хранится в `.data/tenants/{id}.json`. [tenant-lifecycle.md](doc/agents/tenant-lifecycle.md).
+
+### 3e. Config
+Декларативный JSON-конфиг тенанта: описание сущностей, эндпоинтов, MCP-тулов. Часть генерится автоматически (entities, endpoints, mcp_tools, read_only), часть правится вручную (custom_queries, auth, описания тулов, introspection). Стратегии эндпоинтов — grep/filter/schema. Для разработки править в ручную — наплодить хардкода, в идеале генерация уже должна справляться с 90% задач и максимум добавлять способы правки в админку - ручное вмешательнство **только** ради временных тестов или реальной бд клиента.
+
+Схема: `services/helperium-go/config/types.go:Config`. [specs/config.schema.md](specs/config.schema.md), [config-migration.md](doc/agents/config-migration.md).
+
+### 3f. Adapter Pattern
+Каждый тип БД (SQLite, PostgreSQL) реализует `datasource.Adapter` — как подключаться, интроспектировать схему, транслировать SQL. Добавление нового типа БД — новая реализация адаптера. [adapter-pattern.md](doc/agents/adapter-pattern.md).
+
+### 3g. HTTP Client Layer
+Сервисы общаются по HTTP: mcp-gateway → data-service (конфиг, данные), api-service → mcp-gateway (MCP-сессия на tenant, SSE), demo-web → все (SSE streaming).
+
+HTTP-матрица (11 каналов): [doc/api-flow.md](doc/api-flow.md). Детали: [http-clients.md](doc/agents/http-clients.md). А также сам openapi в specs/ .
+
+### 3h. Tenant Isolation — database-level · tool-level · session-level
+Тенанты изолированы на уровне БД и на уровне тулов (префикс `tenant-a__grep_products`); tenant_id не виден LLM как поле; PII-колонки исключаются из поиска. [security-isolation.md](doc/agents/security-isolation.md).
+
+### 3i. Anti-Abuse
+Защита от пустых/жадных LLM-вызовов: 3 уровня (JSON Schema на входе тулов, server-side guard с лимитами/таймаутами, подсказки LLM при пустых результатах). [anti-abuse.md](doc/agents/anti-abuse.md), [tool-call-safety-layers.md](doc/agents/tool-call-safety-layers.md). Работает от недобросовестных пользователей.
+
+## 🛠️ 4. Карта сервисов
+
+**Ключевая идея:** основная дотошная документация лежит в директории сервиса или модуля. Если правки в этой части обязательны — чтение полной документации **обязательно**.
 
 | Сервис | Порт | Роль | README |
 |---|---|---|---|
-| **api-service** (Python) | :8081 | Embed-виджет, оркестратор, LiteLLM | [README](services/api-service/README.md) |
+| **api-service** (Python) | :8081 | оркестратор, LiteLLM | [README](services/api-service/README.md) |
+| **api-service/embed** (TypeScript) | :8081 | Embed-виджет | [README](services/api-service/embed/README.md) |
 | **data-service** (Go) | :8084 | Expression AST → SQL, search strategies | [README](services/data-service/README.md) |
 | **mcp-gateway** (Go) | :8083 | MCP SSE/JSON-RPC, composite, кэш манифеста | [README](services/mcp-gateway/README.md) |
 | **admin-dashboard** (Go) | :8085 | Admin Web UI (Alpine.js) | [README](services/admin-dashboard/README.md) |
 | **rag-service** (Python) | :8082 | ChromaDB, опционально | [README](services/rag/README.md) |
-| **demo/web** (Python) | :8080 | Dev-only reverse proxy | [README](demo/web/README.md) |
+| **demo/web** (Python) | :8080 | Dev-only | [README](demo/web/README.md) |
 | **agent-db** (Python) | — | Seedgen, materialize, e2e, core benchmark | [README](services/agent-db/README.md) |
 | **helperium-go** (Go) | — | Config types, validation | [configgen/README.md](services/data-service/internal/configgen/README.md) |
 
 **Web Service Multi-Tenancy:** [web-service.md](doc/agents/web-service.md)
 
-## 🚀 Эксплуатация · 🧪 Тесты · 📊 Monitoring · ✅ CI/CD
+## 📚 5. Карта документации
 
-`./scripts/dev.sh restart` — пересборка всех сервисов. [operations.md](doc/agents/operations.md) · [testing-guide.md](doc/agents/testing-guide.md) · [monitoring.md](doc/agents/monitoring.md) · [ci-cd.md](doc/agents/ci-cd.md)
+**Принцип (flow решения проблемы):**
+```
+есть проблема
+  → понять, в какие сервисы задевает
+  → начать читать: doc/agents/*.md (поверхностные deep-dives) или сервисный README (вглубь)
+  → понять, какие кодовые файлы нужны
+  → копать в графе знаний (если доступен) (как связано на уровне кода) или читать файлы напрямую
+  → собрать картину: идея + общее описание + код
+```
 
-### 🧪 E2E-тесты (структура)
+### doc/agents/ — deep dives по аспектам (читать при работе по теме)
+
+| Файл | Когда читать | Размер |
+|---|---|---|
+| `search-strategies.md` | Поиск, MCP-тулы, интроспекция | 14.5 KB |
+| `config-migration.md` | После изменения config типов | 16.9 KB |
+| `testing-guide.md` | Написание/запуск тестов | 15.0 KB |
+| `data-service-refactor-audit.md` | История аудита data-service | 24.2 KB |
+| `tool-call-safety-layers.md` | Утечка сырого JSON пользователю | 8.9 KB |
+| `mcp-session-lifecycle.md` | MCP-сессии рвутся, тулы не работают | 7.1 KB |
+| `adapter-pattern.md` | Добавление нового типа БД | 6.3 KB |
+| `web-service.md` | Web-роутинг, multi-tenancy | 5.1 KB |
+| `ci-cd.md` | CI/CD | 5.1 KB |
+| `http-clients.md` | Кросс-сервисные проблемы | 3.4 KB |
+| `anti-abuse.md` | Пустые/жадные LLM вызовы | 3.0 KB |
+| `tenant-lifecycle.md` | Настройка/отладка tenant | 2.2 KB |
+| `operations.md` | Логи, дебаг, dev-скрипты | 1.8 KB |
+| `security-isolation.md` | Безопасность, tenant leaks | 1.7 KB |
+| `api-contracts.md` | Новые эндпоинты (сирота — см. ниже) | 1.1 KB |
+
+### Service READMEs
+
+| README | Когда читать | Размер |
+|---|---|---|
+| `services/api-service/README.md` | api-service (env, endpoints, troubleshooting) | 498 строк |
+| `services/data-service/README.md` | data-service (search, skip rules, пакеты) | 364 |
+| `services/mcp-gateway/README.md` | MCP (tools, composite, кэш манифеста, RAG) | 222 |
+| `services/admin-dashboard/README.md` | Admin UI | 158 |
+| `services/rag/README.md` | RAG/ChromaDB | 118 |
+| `services/agent-db/README.md` | Seedgen, e2e orchestration | 160 |
+| `demo/web/README.md` | Dev-only reverse proxy | 258 |
+| `specs/README.md` | Config schema | 247 |
+| `services/api-service/embed/README.md` | Widget API, Shadow DOM, CSP | 275 |
+| `services/data-service/internal/configgen/README.md` | Config generation, mcp tools | 167 |
+| `services/agent-db/agent_db/bench/README.md` | Core benchmark | 150 |
+
+### Остальные доки
+
+| Файл | Когда читать | Размер |
+|---|---|---|
+| `doc/api-flow.md` | HTTP-матрица (11 каналов между сервисами) | 11.6 KB |
+| `doc/monitoring.md` | Мониторинг: метрики, PromQL, панели Grafana, алерты | 11.9 KB |
+| `doc/benchmark/core-benchmark.md` | Core benchmark design | 8.9 KB |
+| `doc/benchmark/data-service-audit.md` | Рой-аудит data-service (фиксы) | 9.4 KB |
+| `doc/benchmark/plan-for-review.md` | План бенча для review | 7.6 KB |
+| `doc/benchmark/incident-camry.md` | Расследование инцидента Camry | 3.8 KB |
+| `doc/benchmark/README.md` | Benchmark design overview | 9.0 KB |
+| `specs/config.schema.md` | Config schema (детально) | 8.1 KB |
+| `specs/fixtures/README.md` | Fixtures/seed | 2.8 KB |
+
+> **Сироты:** `doc/agents/api-contracts.md` — нет входящих ссылок, кандидат на встраивание в `specs/README.md`.
+
+## 📦 6. Артефакты (известные решения/костыли)
+
+Здесь фиксируются **решения, которые были приняты скриптом/настройкой и могут снова понадобиться**, а также известные костыли. Артефакты копятся и вычесываются. Полный журнал изменений — `CHANGELOG.md`.
+
+- **`doc/monitoring.md`** — мониторинг: метрики, PromQL, панели Grafana, алерты (единый док).
+- **`doc/benchmark/data-service-audit.md`** — рои-аудиты и их фиксы (TDD, 28 тестов).
+- **`doc/benchmark/incident-camry.md`** — пример расследования (галлюцинация модели, реальная проблема).
+
+## 🧬 7. Правила разработки (flow)
+
+**Сначала изучи — потом правь.** Перед правками: доки по теме (Карта документации выше) → понять, какие сервисы/кодовые файлы задевает → граф знаний (как связано на уровне кода) → чтение кода/grep → только затем редактирование (TDD где уместно).
+
+Проектные правила:
+- **Запрещено: SQL в коде приложения** — только HTTP к data-service. SQL допустим в тестах / bash / context-mode (на тестовых БД даже требуется).
+
+## 🧪 8. E2E-тесты (структура)
 
 | Каталог | Что это | CI |
 |---|---|---|
 | `services/agent-db/tests/e2e/` | **124 теста**, без LLM, локальные SQLite | ✅ job `test-e2e` |
-| `services/agent-db/services/agent-db/tests/e2e-llm/` | реальный LLM (opt-in, скипается без ключа) | ❌ вне CI |
+| `services/agent-db/tests/e2e-llm/` | реальный LLM (opt-in, скипается без ключа) | ❌ вне CI |
 | `tests/external/` | внешние БД (PostgreSQL и т.п.) — только документация | ❌ |
 
-**Запуск:** нативно `./scripts/dev.sh e2e` (нужны поднятые сервисы) · Docker `docker-compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e`.
+**Запуск:** нативно `./scripts/dev.sh e2e` (нужны поднятые сервисы) · Docker `docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e`.
 
-**ScriptedLLMProvider** (`services/api-service/src/api_service/agent/scripted_provider.py`): мок LLM через env `USE_SCRIPTED_LLM=1 SCRIPTED_LLM_PATH=script.jsonl` — детерминированный прогон pipeline (chat → tool_call → tool_result → SSE) **без реальной модели и без денег**. 11 тестов в `services/agent-db/tests/e2e/test_scripted_llm.py` (v5: `db_*`/`filter_*`), включая record mode, guard'ы, recovery.
+**ScriptedLLMProvider** (`services/api-service/src/api_service/agent/scripted_provider.py`): мок LLM через env `USE_SCRIPTED_LLM=1 SCRIPTED_LLM_PATH=script.jsonl` — детерминированный прогон pipeline (chat → tool_call → tool_result → SSE) **без реальной модели и траты денег**. 11 тестов в `services/agent-db/tests/e2e/test_scripted_llm.py` (v5: `db_*`/`filter_*`), включая record mode, guard'ы, recovery.
 
 ## 🧬 Verification
 
 ```
-Last verified: 2026-08-06 (реструктуризация репозитория: `services/` + `infra/`; HEAD `ca6c95a`):
-  - **services/**: 8 сервисов перенесены из корня (git mv, история сохранена): api-service, data-service, mcp-gateway, admin-dashboard, rag, agent-db, helperium-go, helperium-sdk
-  - **infra/**: docker/, scripts/ (dev.sh, stack.sh, mutmut), docker-compose*.yml, Caddyfile
-  - **demo/** (foreign Django-магазин) и **tests/**, **specs/**, **doc/** — остались в корне (жёстко связаны с контуром тестирования/сборки)
-  - Пути обновлены: pyproject (uv workspace members), go.work, Makefile, .pre-commit, biome.json, pyrightconfig, CI (dockerfile → services/*, compose -f infra/), 6 Dockerfile (context = корень репо), infra/scripts (PROJECT_ROOT = ../..), docker-compose (context → ../services/*, workspace mount → ..), symlink api-service/specs → ../../specs, uv.lock (editable → services/*), services/agent-db/tests/e2e/helpers.py (services/data-service/testdata)
-  - 0 битых markdown-ссылок (сканер замкнутого контура доков)
-  - Тесты зелёные: data-service ok (11 пакетов), mcp-gateway ok, admin-dashboard ok, helperium-go ok, api-service 511 passed, rag 91 passed, helperium-sdk 71 passed, demo/web 73 passed, agent-db 34 passed
-  - Граф знаний переиндексирован (9264 узла, пути актуальные)
-Last verified: 2026-08-06 (фиксы по рой-аудиту data-service — см. doc/benchmark/data-service-audit.md; бенч **46/49 = 93.9%** (было 81.6%), e2e **124 passed**):
-  - **entity display-name resolution**: db_map показывает canonical первым ("catalog_brand (Brand)"), ToolPrefix раскрыт (json:"tool_prefix"), FK-связи canonical, описания db_* с примером catalog_product; /q/* резолвит display-имена ("Brand"→"catalog_brand") через configgen.CanonicalEntityName + entityProvider — убрал 177× unknown_entity → entity_name accuracy 100% (было 71.4%)
-  - **preview name-preference**: FirstStringFieldColumn предпочитает name/title/full_name (не article), selectClause compact использует единый helper + skip строкового PK (фикс [id,id])
-  - **__in CSV**: mcp-gateway validateArgs принимает CSV-строку/массив для ArrayOf-параметров, JSON Schema __in → string; убрал 400 "expected numeric type" → tool error rate 0% (было 28.6%)
-  - **db_map компактный**: GenerateSchemaForLLMCompact (без column-дублей/FK-прозы, 1 hint) для /q/map — 8.5KB→5.5KB; полная схема остаётся в /mcp/schema (system prompt)
-  - **seed_fixture.py**: пост-патч origin по стране бренда (36), supplier (brand Distribution), oem_number (seeded уникальные) — ground truth не изменился (price>3000=144 и т.д.)
-  - **evaluator**: bool semantic (в наличии↔True), морфология стран (Германии↔Германия), производные числа (677×3=2031, суммы line-items), db_map/db_describe не считаются данными в absence-кейсах, табличные № строк не факты; 34 pytest
-  - **кейс brand-count-001**: db_describe добавлен в must_call_any (COUNT(*) честный, аудит scout-3)
-  - Оставшиеся 2 FAIL (product-filter-price-002, product-filter-discount-001) — реальные галлюцинации модели на ценах (compact preview не содержит цен; модель выдумывает вместо db_get) — известное ограничение (scout-1)
-Last verified: 2026-08-05 (core benchmark: детерминированный бенч без LLM-судьи в agent-db/agent_db/bench/ — runner (SSE→/api/chat/{agent}), backlog_parser (turn_end→BacklogData), evaluator (tool/retrieval/answer/hallucination/refusal/entity/recovery, empty_hint, синонимы статусов, пробелы в числах, проценты), report+cli (python -m agent_db.bench run <cases>), 49 кейсов autoparts, 26 pytest; проверен end-to-end: scripted-смоук + polza/deepseek-v4-flash (3 кейса PASS, $0.18/кейс); отдельный bench-лог (bench-backlog/, final_text в turn_end); order_number фильтруется (DefaultFilterableFieldRules); детерминированная база seed=42 (seed_fixture.py, helperium-owned); независимое ревью кейсов (oem/supplier пустые — переписаны, quantity дрейф, дубли убраны); rate-limit 30/мин — delay 2.5s)
-Last verified: 2026-08-05 (HEAD `a54e816`; e2e: расширяемая архитектура TestTenant + factory-fixtures (tenant()/tenants()), автогенерация scenario БД (ensure_scenario_db — create_db.py/create_shop_db.py fallback), дедупликация SSE-парсера/темп-хелперов, фикс сломанного e2e-llm collect и совместного прогона; docker e2e **124 passed 0 skip**; скип-тест .bak заменён на test_config_write_is_atomic (temp+rename); доки синхронизированы (testing-guide, ci-cd, agent-db/README, services/agent-db/tests/e2e/README, AGENTS.md))
-Last verified: 2026-08-04 (HEAD `618b192`; e2e ревизия: Docker-стек починен — 5 Dockerfile-фиксов (mcp-gateway go build ./cmd/, admin-dashboard go 1.26 + context корень, api-service python 3.13 + UV_PYTHON_PREFERENCE=only-system, data-service alpine вместо distroless, demo/web helperium-sdk COPY), compose e2e profile test, нативный + Docker прогон **105 passed + 1 skip**; ScriptedLLMProvider расширен 3→11 тестов (v5 db_*/filter_*, guard, record mode); структура e2e: services/agent-db/tests/e2e (CI) + services/agent-db/services/agent-db/tests/e2e-llm (opt-in) + tests/external (docs); CI job test-e2e с docker layer cache (build-push-action type=gha); dev.sh e2e команда; доки синхронизированы (testing-guide, ci-cd, agent-db/README, services/agent-db/services/agent-db/tests/e2e-llm/README, tests/external/README))
-Last verified: 2026-08-03 (HEAD `c763ff0`; вычистка мёртвого кода в data-service: удалены BuildFind/BuildList, ReadOnlyDB, FormatFields, expression-конструкторы Eq..And, EntityResolver.ColumnFor/PublicFor/AllEntities, coerceValue, pagination readPagination/appendPagination/countQuery, SetAuditRecorder, SwaggerHandlerWithTenant + привязанные тесты/бенчмарки; deadcode 0, все тесты и -race зелёные)
-Обновлено 2026-08-03 (LLM-first tool surface, Фаза 2/2.5, НЕ закоммичено): 5 консолидированных `db_*` (map/describe/search/get/related через `/q/*`) + N пер-энтити `filter_{entity}`; get_*/count_*/distinct_* — opt-in `LLMToolPolicy`; db_map fallback при nil-схеме; EmptyHint → `db_describe(entity=...)` (был мёртвый `schema_{entity}`); синхронизированы все KB-доки (data-service/README, configgen/README, search-strategies, mcp-session-lifecycle, anti-abuse, config-migration, specs/README, specs/config.schema.md 2→4, корневые README, AGENTS.md 2a); смоук живой моделью Ollama: `filter_products(price__gt=100)` без перебора id; тесты: data-service -race 11 пакетов ok, E2E 25/25)
-Следущая плановая: 2026-09-01 или после изменения config типов.
-После любой правки документа — обновить дату и хеш коммита здесь.
-
-OpenAPI-контракты admin-dashboard (2026-08-03, после HEAD `3aa1cdbc`): Gap A/B тесты + фикс DELETE — [admin-dashboard/README.md](services/admin-dashboard/README.md#openapi-контракты-и-прокси-2026-08-03).
-
-Аудит-проход 2026-08-03 (после OpenAPI-контрактов): убран dead `replace data-service` из `admin-dashboard/go.mod`; доки синхронизированы: `openapigen` → `helperium-go/openapigen` (specs/README, data-service/README), config version 3→4 (data-service/README), ApprovedTool-упоминания вычищены (config-migration.md), configgen версия 2→4 в таблице, RAG admin-токен: `ADMIN_API_TOKEN` должен совпадать с `ADMIN_TOKEN` (docker-compose + .env.example + rag/README + api-flow), dead `RAG_ADMIN_TOKEN` убран из monitoring.md.
-
-Аудит (doc/agents/data-service-refactor-audit.md): рой из 4 reviewer'ов + ручная верификация.
-Исправлено (TDD, 28 новых тестов, 734 passed под -race):
-- C1 CRITICAL deadlock: вложенный RLock в ServeHTTP → inst в контексте (tenantInstanceKey),
-  /mcp/schema и /openapi.json читают из контекста, fallback на resolveTenant для прямых вызовов.
-- C2 HIGH PG placeholder offset: tenantFilter с корректным existingArgCount во всех ветках strategy_handler.
-- C3 HIGH format=count + tenant: AND к внутреннему WHERE вместо обёртки агрегата в подзапрос.
-- C4 HIGH tenant после ORDER BY: insertTenantBeforeLimit вставляет перед первой из ORDER/LIMIT/OFFSET
-  + перенумерация $N для PG.
-- C5 HIGH legacy find/list удалены: CurrentConfigVersion 3→4, конфиги с find/list падают в Validate.
-- C6 HIGH /stats fail-soft: битый counter логируется и пропускается, остальные считаются;
-  Validate проверяет RowFilter.Where (isValidFilterExpression) и entity.
-- M1 grep invert: Де Морган (AND↔OR) для multi-token/multi-field.
-- M2 BuildFilter: ESCAPE '\\' добавлена.
-- M3 searchable/filterable FieldRules enforced в runtime (grep stringFields, filter ParseRequest).
-- M4 BuildCustomQuery: JSONB ?| ?& ? 'key', комментарии -- /* */, dollar-строки не трогаются.
-- M5 sqlite: Exec-fallback прагм пропускается при явном _pragma= в DSN.
-- M6 normalizeDateTime: миллисекунды и таймзона парсятся.
-- M7 FieldRule.ID (стабильный) вместо Reason-prefix; миграция Reason→ID в normalizeV3ToV4;
-  resolveFieldRules идемпотентен (custom-дефолты не дублируются).
-LOW-фиксы (воркеры с toolBudget-block на read): L1 offset cap 100k, L2 tenant_id не течёт в ответ,
-L3 SaveTenantSchema атомарный (temp+rename), L5 QuoteIdentifier контракт, L6 ReadOnlyDB Deprecated,
-L7 DSN с ? документирован. Ручные фиксы: L8 PersistTenantConfig →
-RegenerateAndPersistTenantConfig (честное имя, только тесты), L9 OpenAPI query-params (grep/filter/distinct),
-L10 filter __like \ + ESCAPE задокументирован (filter.go + search-strategies.md).
-Остался: L4 (HealthCheck closed conn — приемлемо).
-Итого: 754 (data-service) + 114 (helperium-go) тестов, -race чистый.
-Финальный review-рой (2026-08-01) нашёл 2 CRITICAL (sqlite regexp не зарегистрирован,
-mode=ro + WAL ломает readonly_dsn), HIGH (OpenAPI sort_dir ghost), MEDIUM (admin-хендлеры
-без ts.mu — race с ReloadTenant; ReloadTenant игнорирует DSN; M7 custom-дедупликация)
-+ LOW doc-фиксы. Все исправлены TDD (R1-R9 в data-service-refactor-audit.md).
+Last verified: 2026-08-06 (реструктуризация репозитория: services/ + infra/; HEAD ca6c95a).
+См. полный журнал: CHANGELOG.md
 ```
 
-> **Knowledge graph workflow, Cookbook, skills, agent rules, decision tree** — смотри [.pi/APPEND_SYSTEM.md](.pi/APPEND_SYSTEM.md)
+**Правило:** после любой правки документов — обновить дату + хеш здесь (одна строка). Полный лог — в `CHANGELOG.md`.

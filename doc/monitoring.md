@@ -1,5 +1,7 @@
 # 📊 Monitoring & Observability
 
+> Единый док по мониторингу (метрики, PromQL, панели Grafana, алерты). Карта доков — в [AGENTS.md](../AGENTS.md) §Карта документации.
+
 ## Быстрый старт
 
 ```bash

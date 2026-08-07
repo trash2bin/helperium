@@ -165,10 +165,6 @@ docker compose --profile monitoring up -d         # + Prometheus + Grafana
 
 | Документ | Описание |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | Технический паспорт проекта для ии агентов и разработчиков |
-| [`doc/FINAL_TASK.md`](doc/FINAL_TASK.md) | План развития до релизной версии |
-| [`doc/RUNBOOK.md`](doc/RUNBOOK.md) | Шпаргалка по деплою |
-| [`doc/PENTEST-CHEK.md`](doc/PENTEST-CHEK.md) | Чек-лист безопасности |
 | [`.env.example`](.env.example) | Все переменные окружения |
 
 ---
