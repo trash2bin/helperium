@@ -43,47 +43,47 @@ Embed Widget → api-service (:8081) → orchestrator → LLM (LiteLLM)
 
 Зависимости оркестратора — Protocol'ы (DI): легко подменить, например, реальный LLM на `ScriptedLLMProvider` (мок, см. [§8 E2E](#8-e2e-тесты-структура)).
 
-Детали: `services/api-service/src/api_service/agent/` (оркестратор `LLMAgent` в `orchestrator.py`, конвейер в `pipeline.py`, протоколы в `protocols.py`); guard'ы — [doc/agents/anti-abuse.md](doc/agents/anti-abuse.md), [doc/agents/tool-call-safety-layers.md](doc/agents/tool-call-safety-layers.md) и самая важный документ: [service/api-service/README](services/api-service/README)
+Детали: `services/api-service/src/api_service/agent/` (оркестратор `LLMAgent` в `orchestrator.py`, конвейер в `pipeline.py`, протоколы в `protocols.py`). → доки: §5b (api-service)
 
 ### 3b. MCP — как агент получает данные
 
 **MCP** (Model Context Protocol) — способ, которым агент вызывает данные: api-service ↔ mcp-gateway через SSE + JSON-RPC. Агент открывает MCP-сессию, получает **манифест тулов** (генерируется из конфига тенанта, кэшируется, можно сбросить), и вызывает тулы для получения данных.
 
-Детали: [doc/agents/mcp-session-lifecycle.md](doc/agents/mcp-session-lifecycle.md) (рвущиеся сессии, GC), [doc/agents/search-strategies.md](doc/agents/search-strategies.md) (как устроены тулы/поиск) и самая важный документ: [service/mcp-getway/README](services/mcp-gateway/README)
+→ доки: §5b (api-service, mcp-gateway)
 
 ### 3c. data-service — не semantic search
 
 Поиск по данным — это **не семантический поиск**, а набор стратегий в `services/data-service/internal/search/`: текстовый поиск `grep`, фильтрация по полям `filter`, разведка схемы `schema` (distinct/min/max/общее число).
 
-Для LLM-агента они экспонируются как MCP-тулы: N пер-энтити `filter_{entity}` + 5 консолидированных `db_*` (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related`). Крупное изменение тулов — коммит `2cad540` (LLM-first tool surface: `filter_*` + `db_*`, убит id-enumeration). Это очень кратко на деле логика сложна и запутано и также является **core** всего проект в каком то смысле от того как это работает зависит смысл этого проекта.
-
-Детали: [search-strategies.md](doc/agents/search-strategies.md), [adapter-pattern.md](doc/agents/adapter-pattern.md) и самое важное в [services/data-service/README](services/data-service/README)
+Для LLM-агента они экспонируются как MCP-тулы: N пер-энтити `filter_{entity}` + 5 консолидированных `db_*` (`db_map`, `db_describe`, `db_search`, `db_get`, `db_related`). Крупное изменение тулов — коммит `2cad540` (LLM-first tool surface: `filter_*` + `db_*`, убит id-enumeration). Это очень кратко на деле логика сложна и запутано и также является **core** всего проект в каком то смысле от того как это работает зависит смысл этого проекта. → доки: §5b (data-service)
 
 ### 3d. Tenant Lifecycle
-При подключении клиента создаётся tenant (POST /admin/tenants), конфиг генерируется интроспекцией схемы (POST /admin/config/rewrite), хранится в `.data/tenants/{id}.json`. [tenant-lifecycle.md](doc/agents/tenant-lifecycle.md).
+При подключении клиента создаётся tenant (POST /admin/tenants), конфиг генерируется интроспекцией схемы (POST /admin/config/rewrite), хранится в `.data/tenants/{id}.json`. → доки: §5b (admin-dashboard)
 
 ### 3e. Config
 Декларативный JSON-конфиг тенанта: описание сущностей, эндпоинтов, MCP-тулов. Часть генерится автоматически (entities, endpoints, mcp_tools, read_only), часть правится вручную (custom_queries, auth, описания тулов, introspection). Стратегии эндпоинтов — grep/filter/schema. Для разработки править в ручную — наплодить хардкода, в идеале генерация уже должна справляться с 90% задач и максимум добавлять способы правки в админку - ручное вмешательнство **только** ради временных тестов или реальной бд клиента.
 
-Схема: `services/helperium-go/config/types.go:Config`. [specs/config.schema.md](specs/config.schema.md), [config-migration.md](doc/agents/config-migration.md).
+Схема: `services/helperium-go/config/types.go:Config`. → доки: §5b (helperium-go)
 
 ### 3f. Adapter Pattern
-Каждый тип БД (SQLite, PostgreSQL) реализует `datasource.Adapter` — как подключаться, интроспектировать схему, транслировать SQL. Добавление нового типа БД — новая реализация адаптера. [adapter-pattern.md](doc/agents/adapter-pattern.md).
+Каждый тип БД (SQLite, PostgreSQL) реализует `datasource.Adapter` — как подключаться, интроспектировать схему, транслировать SQL. Добавление нового типа БД — новая реализация адаптера. → доки: §5b (data-service)
 
 ### 3g. HTTP Client Layer
 Сервисы общаются по HTTP: mcp-gateway → data-service (конфиг, данные), api-service → mcp-gateway (MCP-сессия на tenant, SSE), demo-web → все (SSE streaming).
 
-HTTP-матрица (11 каналов): [doc/api-flow.md](doc/api-flow.md). Детали: [http-clients.md](doc/agents/http-clients.md). А также сам openapi в specs/ .
+HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api.openapi.yaml`.
 
 ### 3h. Tenant Isolation — database-level · tool-level · session-level
-Тенанты изолированы на уровне БД и на уровне тулов (префикс `tenant-a__grep_products`); tenant_id не виден LLM как поле; PII-колонки исключаются из поиска. [security-isolation.md](doc/agents/security-isolation.md).
+Тенанты изолированы на уровне БД и на уровне тулов (префикс `tenant-a__grep_products`); tenant_id не виден LLM как поле; PII-колонки исключаются из поиска. → доки: §5b (specs/общее)
 
 ### 3i. Anti-Abuse
-Защита от пустых/жадных LLM-вызовов: 3 уровня (JSON Schema на входе тулов, server-side guard с лимитами/таймаутами, подсказки LLM при пустых результатах). [anti-abuse.md](doc/agents/anti-abuse.md), [tool-call-safety-layers.md](doc/agents/tool-call-safety-layers.md). Работает от недобросовестных пользователей.
+Защита от пустых/жадных LLM-вызовов: 3 уровня (JSON Schema на входе тулов, server-side guard с лимитами/таймаутами, подсказки LLM при пустых результатах). Работает от недобросовестных пользователей. → доки: §5b (api-service)
 
 ## 🛠️ 4. Карта сервисов
 
 **Ключевая идея:** основная дотошная документация лежит в директории сервиса или модуля. Если правки в этой части обязательны — чтение полной документации **обязательно**.
+
+> **Полный список документов по сервису (включая doc/agents/ и specs/) — см. §5b.** Здесь только обзор: сервис → порт → роль → README.
 
 | Сервис | Порт | Роль | README |
 |---|---|---|---|
@@ -95,85 +95,206 @@ HTTP-матрица (11 каналов): [doc/api-flow.md](doc/api-flow.md). Д�
 | **rag-service** (Python) | :8082 | ChromaDB, опционально | [README](services/rag/README.md) |
 | **demo/web** (Python) | :8080 | Dev-only | [README](demo/web/README.md) |
 | **agent-db** (Python) | — | Seedgen, materialize, e2e, core benchmark | [README](services/agent-db/README.md) |
-| **helperium-go** (Go) | — | Config types, validation | [configgen/README.md](services/data-service/internal/configgen/README.md) |
+| **helperium-go** (Go) | — | Config types, validation | [config.schema.md](specs/config.schema.md) · [config-migration.md](doc/agents/config-migration.md) |
 
 **Web Service Multi-Tenancy:** [web-service.md](doc/agents/web-service.md)
 
 ## 📚 5. Карта документации
 
-**Принцип (flow решения проблемы):**
-```
-есть проблема
-  → понять, в какие сервисы задевает
-  → начать читать: doc/agents/*.md (поверхностные deep-dives) или сервисный README (вглубь)
-  → понять, какие кодовые файлы нужны
-  → копать в графе знаний (если доступен) (как связано на уровне кода) или читать файлы напрямую
-  → собрать картину: идея + общее описание + код
-```
+**Как пользоваться:** задача → маршрут ниже → читай по порядку. 🕐 = обзор (быстрый ответ), 📖 = deep-dive, 🔧 = операционка/чекист.
 
-### doc/agents/ — deep dives по аспектам (читать при работе по теме)
+### 5a. Маршруты по задачам (главное — начинай отсюда)
 
-| Файл | Когда читать | Размер |
+| Задача | Читать (по порядку) | Глубина |
 |---|---|---|
-| `search-strategies.md` | Поиск, MCP-тулы, интроспекция | 14.5 KB |
-| `config-migration.md` | После изменения config типов | 16.9 KB |
-| `testing-guide.md` | Написание/запуск тестов | 15.0 KB |
-| `data-service-refactor-audit.md` | История аудита data-service | 24.2 KB |
-| `tool-call-safety-layers.md` | Утечка сырого JSON пользователю | 8.9 KB |
-| `mcp-session-lifecycle.md` | MCP-сессии рвутся, тулы не работают | 7.1 KB |
-| `adapter-pattern.md` | Добавление нового типа БД | 6.3 KB |
-| `web-service.md` | Web-роутинг, multi-tenancy | 5.1 KB |
-| `ci-cd.md` | CI/CD | 5.1 KB |
-| `http-clients.md` | Кросс-сервисные проблемы | 3.4 KB |
-| `anti-abuse.md` | Пустые/жадные LLM вызовы | 3.0 KB |
-| `tenant-lifecycle.md` | Настройка/отладка tenant | 2.2 KB |
-| `operations.md` | Логи, дебаг, dev-скрипты | 1.8 KB |
-| `security-isolation.md` | Безопасность, tenant leaks | 1.7 KB |
-| `api-contracts.md` | Новые эндпоинты (сирота — см. ниже) | 1.1 KB |
+| MCP-тулы не работают / рвутся сессии | 🕐 `doc/agents/mcp-session-lifecycle` → 📖 `doc/agents/search-strategies` → 🔧 `services/mcp-gateway/README` | поверхность→вглубь |
+| Добавить новый тип БД (MySQL...) | 📖 `doc/agents/adapter-pattern` → 🔧 `services/data-service/README` | 📖→🔧 |
+| Изменить config / миграция версий | 📖 `doc/agents/config-migration` → `specs/config.schema.md` → 🔧 `specs/README` | 📖→spec |
+| Онбординг нового клиента | 🔧 `doc/RUNBOOK` → 📖 `doc/agents/tenant-lifecycle` → 🔧 `services/admin-dashboard/README` | 🔧→📖 |
+| Утечка данных / безопасность | 📖 `doc/agents/security-isolation` → 📖 `doc/agents/tool-call-safety-layers` → 🔧 `doc/PENTEST-CHEK` | 📖→🔧 |
+| Anti-abuse / жадные LLM-вызовы | 📖 `doc/agents/anti-abuse` → 📖 `doc/agents/tool-call-safety-layers` | 📖 |
+| CI падает | 🔧 `doc/agents/ci-cd` → `.github/workflows/ci.yml` → 🔧 `Makefile` | 🔧 |
+| Как протестировать | 📖 `doc/agents/testing-guide` → `services/agent-db/tests/e2e/` | 📖 |
+| Настроить мониторинг | 🔧 `doc/monitoring` → `infra/docker/grafana/` + `infra/docker/prometheus/` | 🔧 |
+| Кросс-сервисная проблема / HTTP | 🔧 `doc/api-flow` → 📖 `doc/agents/http-clients` → 🔧 `demo/web/README` | 🔧→📖 |
+| Разобраться в data-service (вглубь) | 🔧 `services/data-service/README` → 📖 `doc/agents/data-service-refactor-audit` → 📖 `doc/agents/search-strategies` | 🔧→📖 |
+| Разобраться в api-service (вглубь) | 🔧 `services/api-service/README` → 📖 `doc/agents/mcp-session-lifecycle` → 📖 `doc/agents/anti-abuse` | 🔧→📖 |
+| Бенчмарк / качество ответов | 🔧 `doc/benchmark/README` → 📖 `doc/benchmark/core-benchmark` → 📖 `doc/benchmark/incident-camry` → `doc/benchmark/runs/README` | 🔧→📖 |
+| Аудит data-service / регрессии | 📖 `doc/agents/data-service-refactor-audit` → 📖 `doc/benchmark/data-service-audit` → 📖 `doc/benchmark/plan-for-review` | 📖 |
+| Исторический контекст / миграция | 🔧 `doc/FINAL_TASK` (план к pre-final, исторический) → 📖 `doc/agents/config-migration` | 🔧→📖 |
+| Операции / дебаг / dev-скрипты | 🔧 `doc/agents/operations` → 🔧 `infra/scripts/dev.sh` → 🔧 `doc/agents/web-service` | 🔧 |
+| Новый HTTP-эндпоинт / контракт | 🔧 `doc/agents/api-contracts` → `specs/api.openapi.yaml` → 🔧 `doc/api-flow` | 🔧 |
 
-### Service READMEs
+### 5b. Каталог документов (файл → сервис → повод читать → глубина)
 
-| README | Когда читать | Размер |
+Единый справочник: если задача не легла в маршрут §5a — ищи здесь по сервису или файлу. Сгруппирован по сервисам; артефакты — отдельным блоком в конце.
+
+**api-service**
+
+| Файл | Когда читать | Глубина |
 |---|---|---|
-| `services/api-service/README.md` | api-service (env, endpoints, troubleshooting) | 498 строк |
-| `services/data-service/README.md` | data-service (search, skip rules, пакеты) | 364 |
-| `services/mcp-gateway/README.md` | MCP (tools, composite, кэш манифеста, RAG) | 222 |
-| `services/admin-dashboard/README.md` | Admin UI | 158 |
-| `services/rag/README.md` | RAG/ChromaDB | 118 |
-| `services/agent-db/README.md` | Seedgen, e2e orchestration | 160 |
-| `demo/web/README.md` | Dev-only reverse proxy | 258 |
-| `specs/README.md` | Config schema | 247 |
-| `services/api-service/embed/README.md` | Widget API, Shadow DOM, CSP | 275 |
-| `services/data-service/internal/configgen/README.md` | Config generation, mcp tools | 167 |
-| `services/agent-db/agent_db/bench/README.md` | Core benchmark | 150 |
+| `services/api-service/README.md` | env, endpoints, troubleshooting | 🔧 |
+| `services/api-service/embed/README.md` | Widget API, Shadow DOM, CSP | 🔧 |
+| `doc/agents/mcp-session-lifecycle.md` | MCP-сессии рвутся, тулы не работают | 🕐 |
+| `doc/agents/anti-abuse.md` | Пустые/жадные LLM-вызовы | 📖 |
+| `doc/agents/tool-call-safety-layers.md` | Утечка сырого JSON пользователю | 📖 |
 
-### Остальные доки
+**data-service**
 
-| Файл | Когда читать | Размер |
+| Файл | Когда читать | Глубина |
 |---|---|---|
-| `doc/api-flow.md` | HTTP-матрица (11 каналов между сервисами) | 11.6 KB |
-| `doc/monitoring.md` | Мониторинг: метрики, PromQL, панели Grafana, алерты | 11.9 KB |
-| `doc/benchmark/core-benchmark.md` | Core benchmark design | 8.9 KB |
-| `doc/benchmark/data-service-audit.md` | Рой-аудит data-service (фиксы) | 9.4 KB |
-| `doc/benchmark/plan-for-review.md` | План бенча для review | 7.6 KB |
-| `doc/benchmark/incident-camry.md` | Расследование инцидента Camry | 3.8 KB |
-| `doc/benchmark/README.md` | Benchmark design overview | 9.0 KB |
-| `specs/config.schema.md` | Config schema (детально) | 8.1 KB |
-| `specs/fixtures/README.md` | Fixtures/seed | 2.8 KB |
+| `services/data-service/README.md` | search, skip rules, пакеты | 🔧 |
+| `services/data-service/internal/configgen/README.md` | Config generation, mcp tools (пакет data-service) | 🔧 |
+| `doc/agents/search-strategies.md` | Поиск, MCP-тулы, интроспекция | 📖 |
+| `doc/agents/adapter-pattern.md` | Добавление нового типа БД | 📖 |
 
-> **Сироты:** `doc/agents/api-contracts.md` — нет входящих ссылок, кандидат на встраивание в `specs/README.md`.
+**helperium-go** (библиотека типов/валидации, без порта)
 
-## 📦 6. Артефакты (известные решения/костыли)
+| Файл | Когда читать | Глубина |
+|---|---|---|
+| `doc/agents/config-migration.md` | Изменение config типов / миграция версий | 📖 |
+| `specs/config.schema.md` | Config schema (детально) | 📖 |
 
-Здесь фиксируются **решения, которые были приняты скриптом/настройкой и могут снова понадобиться**, а также известные костыли. Артефакты копятся и вычесываются. Полный журнал изменений — `CHANGELOG.md`.
+**mcp-gateway**
 
-- **`doc/monitoring.md`** — мониторинг: метрики, PromQL, панели Grafana, алерты (единый док).
-- **`doc/benchmark/data-service-audit.md`** — рои-аудиты и их фиксы (TDD, 28 тестов).
-- **`doc/benchmark/incident-camry.md`** — пример расследования (галлюцинация модели, реальная проблема).
+| Файл | Когда читать | Глубина |
+|---|---|---|
+| `services/mcp-gateway/README.md` | MCP (tools, composite, кэш манифеста, RAG) | 🔧 |
+| `doc/agents/mcp-session-lifecycle.md` | MCP-сессии рвутся, тулы не работают | 🕐 |
+
+**admin-dashboard**
+
+| Файл | Когда читать | Глубина |
+|---|---|---|
+| `services/admin-dashboard/README.md` | Admin UI | 🔧 |
+| `doc/agents/ci-cd.md` | CI/CD | 🔧 |
+| `doc/agents/tenant-lifecycle.md` | Настройка/отладка tenant | 📖 |
+| `doc/agents/operations.md` | Логи, дебаг, dev-скрипты | 🔧 |
+| `doc/agents/web-service.md` | Web-роутинг, multi-tenancy | 📖 |
+| `doc/agents/http-clients.md` | Кросс-сервисные проблемы | 📖 |
+
+**rag-service**
+
+| Файл | Когда читать | Глубина |
+|---|---|---|
+| `services/rag/README.md` | RAG/ChromaDB | 🔧 |
+
+**agent-db**
+
+| Файл | Когда читать | Глубина |
+|---|---|---|
+| `services/agent-db/README.md` | Seedgen, e2e orchestration | 🔧 |
+| `services/agent-db/agent_db/bench/README.md` | Core benchmark | 📖 |
+| `doc/agents/testing-guide.md` | Написание/запуск тестов | 📖 |
+
+**demo** (demo/web + demo/autoparts-store)
+
+| Файл | Когда читать | Глубина |
+|---|---|---|
+| `demo/web/README.md` | Dev-only reverse proxy | 🔧 |
+| `demo/README.md` | Демо-сценарии и внешние интеграции | 🔧 |
+| `demo/autoparts-store/README.md` | Демо-магазин автозапчастей | 🔧 |
+
+**specs / общее**
+
+| Файл | Когда читать | Глубина |
+|---|---|---|
+| `specs/README.md` | Config schema | 🔧 |
+| `specs/fixtures/README.md` | Fixtures/seed | 🔧 |
+| `doc/api-flow.md` | HTTP-матрица (11 каналов) | 🔧 |
+| `doc/monitoring.md` | Мониторинг: метрики, PromQL, Grafana, алерты | 🔧 |
+| `doc/RUNBOOK.md` | Онбординг нового клиента (cheat-sheet) | 🔧 |
+| `doc/PENTEST-CHEK.md` | Pentest/security чеклист | 🔧 |
+| `doc/agents/security-isolation.md` | Безопасность, tenant leaks | 📖 |
+| `doc/agents/api-contracts.md` | Новые эндпоинты | 🔧 |
+
+**Артефакты (архив событий — не навигационные доки)**
+
+| Файл | Что это · когда создано | Статус |
+|---|---|---|
+| `doc/benchmark/data-service-audit.md` | Рой-аудит data-service по итогам бенча (2026-08-05) | ✅ все фиксы применены |
+| `doc/benchmark/incident-camry.md` | Расследование инцидента «ответ про Camry» (2026-08-03) | ✅ закрыт |
+| `doc/benchmark/core-benchmark.md` | Дизайн core-бенча (2026-08-04) | ✅ реализован (см. `agent_db/bench/`) |
+| `doc/benchmark/plan-for-review.md` | План бенча для ревью старшим коллегой (2026-08-04) | ✅ исполнен |
+| `doc/benchmark/README.md` | Исходная постановка дизайна бенча (2026-08-04) | ✅ реализован (2026-08-05) |
+| `doc/benchmark/runs/README.md` | Артефакты прогонов бенча (JSON-отчёты) | — |
+| `doc/agents/data-service-refactor-audit.md` | Аудит data-service после 4-дневного рефакторинга (2026-08-01) | ✅ все фиксы применены |
+| `doc/FINAL_TASK.md` | План миграции к pre-final версии (исторический) | ✅ исполнен |
+
+> **Артефакты — это архив, а не маршруты.** Каждый — запись о **завершённом событии**: создан в контексте (аудит/инцидент/план), помечен статусом «реализовано/закрыто». Их **нельзя удалять молча** — это след расследований и решений (пример: `incident-camry.md` — урок про галлюцинацию модели). Если артефакт похож на твою задачу — прочитай со скепсисом: текст может быть устаревшим, но может оказаться **алмазом** (почему принято решение, где хардкод). Часто артефакты хранят огромные сессии прошлого агента, особенно по сложной/непроверенной логике.
+
+> **Правило артефактов:** новый (аудит/инцидент/план) — в `doc/benchmark/` (или `doc/agents/*-audit.md`) с шапкой (дата, контекст, статус), вписать в карту выше. Чистить раз в N дней — устаревшее без ценности свести к сноске или удалить. Не артефактить живое (тема стала постоянной — это живой док).
+
+> 🕐 = обзор (быстрый ответ) · 📖 = deep-dive · 🔧 = операционка/чекист.
+
+## 📦 6. Известные костыли и решения (что и почему так сделано)
+
+Здесь фиксируются **решения, которые были приняты скриптом/настройкой и могут снова понадобиться**, а также известные костыли. Копятся и вычесываются. Полный журнал изменений — `CHANGELOG.md`. (Отчётные доки-артефакты — аудиты/инциденты/планы — см. блок «Артефакты» в §5b.)
+
+> **Контракт CHANGELOG:** пиши сюда **только при коммите** (одна запись = один коммит, отражает коммит-месседж). Не дополняй каждой рабочей правкой — иначе журнал превращается в мусор. Во время работы над задачей CHANGELOG не трогается; запись добавляется в момент фиксации изменений.
 
 ## 🧬 7. Правила разработки (flow)
 
 **Сначала изучи — потом правь.** Перед правками: доки по теме (Карта документации выше) → понять, какие сервисы/кодовые файлы задевает → граф знаний (как связано на уровне кода) → чтение кода/grep → только затем редактирование (TDD где уместно).
+
+### 🛑 Когда остановиться и спросить
+
+**Все доки в карте — источник правды.** Доверяй им (никаких меток «проверено/не проверено» — проверяй по коду при сомнении). Маршруты в §5 работают, **пока реальность совпадает с документацией**.
+
+**Свежесть дока** — по метке `**Last verified:** <дата> (HEAD <hash>)` внизу дока: если дата старая или «после верификации были изменения» — сверь с кодом перед доверием. Это не повод избегать дока, а повод проверить его актуальность.
+
+**Контракт метки:** в скобках указывается коммит, **на котором док проверялся** (прошлый, например `HEAD 07f7515`), а НЕ текущий. Не гоняй `git rev-parse` — это контракт, а не живой статус. Если метка устарела и док правится — обнови дату и хеш до актуального коммита.
+
+**Док не совпал с реальностью?** Не паникуй и не игнорируй:
+- **Уточни по коду** (граф знаний, git log, чтение файлов) — возможно, док устарел или ты читаешь не тот файл.
+- **Если расхождение реальное — ИСПРАВЬ док** (сделай его соответствующим коду). Это твоя работа, не «порча доков».
+- **Если не можешь определить, что правильно (док или код) — спроси пользователя** (см. ниже).
+- Не «чини» код под док и не подгоняй док под код без понимания.
+
+**Остановись и задай вопрос пользователю, если:**
+
+1. **Прочитал маршрут, но реальность не совпадает** — и ты не можешь понять, что первично (док устарел или код сломан). Не выдумывай «правильную» версию.
+2. **Тесты падают по непонятной причине** — если за 2-3 попытки не видно корня (не «почему-то не работает», а именно «не знаю почему»). Не начинай рефакторинг «на всякий случай».
+3. **Требуется изменить контракт API/БД** — новый эндпоинт, смена JSON-поля, миграция схемы, новый тип БД. Это меняет межсервисные границы (см. `doc/api-flow`).
+4. **Нужно ввести новую сущность/концепцию** — новая таблица, новый сервис, новый тул. Вайбкодинг-ловушка: «добавлю кажется полезное» → потом 3 часа переделки.
+5. **Док и код противоречат друг другу** — сначала проверь, что ты не устарел (переиндексируй граф, git log). Если противоречие реальное — спроси, что первично: док или код.
+
+**Правило: лучше 1 вопрос, чем 3 часа переделки.** Вопрос должен быть конкретным:
+- «Док X ссылается на Y, но в коде только Z — обновить док или добавить Y?»
+- «Тест T падает с E, корень не найден за 2 попытки. Дальше копать или пересобрать?»
+- «Нужен новый эндпоинт P. Это меняет контракт api-service ↔ data-service. Подтвердишь?»
+
+**Что НЕ делать:**
+- ❌ «Чинить» то, что не сломано (док уже актуален, а ты его переписываешь)
+- ❌ Выдумывать новые сущности «под задачу»
+- ❌ Молча менять контракт и «ломать» другие сервисы
+- ❌ Гадать, что имел в виду автор дока — спроси
+
+**Исключения (когда можно действовать без вопроса):**
+- Очевидные опечатки/битые ссылки в доках (проверено: путь не существует, аналог есть рядом)
+- Скучные механические правки (форматирование, устаревшие пути после реструктуризации)
+- Всё, что уже явно санкционировано пользователем в этой сессии
+
+### 📝 Как задокументировать новую фичу (чтобы другие агенты её нашли)
+
+Сделал фичу / изменил контракт / добавил тул — **документируй сразу, в том же коммите**, иначе через неделю это уже никто не вспомнит.
+
+**Минимум (обязательно):**
+1. **Обнови существующий док** по теме — если фича меняет поведение, описанное в маршруте §5a, обнови этот док (README сервиса, `search-strategies`, `api-flow`, `config-migration` и т.п.).
+2. **Обнови метку верификации** — в каждом доке внизу есть строка `**Last verified:** <дата> (HEAD <hash>)` (в AGENTS.md — секция «🧬 Verification»). Любая правка дока = обновление этой метки: дата + комментарий, что именно сверено/изменено. **Контракт:** в скобках указывай коммит, на котором док проверялся (обычно прошлый/текущий рабочей ветки), а НЕ будущий — агенту не нужно гонять `git rev-parse`; метка просто говорит «этот док сверялся на коммите X». Если метка старая (например 2026-08-02) и «после верификации были изменения» — это сигнал, что док мог устареть, сверь с кодом при работе.
+3. **Обнови каталог §5b** — добавь строку с новым доком в соответствующий сервис-блок (или артефакты, если это аудит/инцидент/план).
+4. **Впиши док в маршрут §5a** — добавь или расширь строку задачи, из которой агент придёт к этому доку. Если фича — новый тип задачи (например «RAG»), добавь новый маршрут.
+5. **CHANGELOG.md обновляй ТОЛЬКО при коммите** — не каждой правкой. Запись = то, что уходит в коммит-месседж (что сделано, какие сервисы/доки затронуты). Во время работы не трогай — напишешь при коммите.
+6. **Прогони `make ci-docs`** (CI-джоба `docs-links` в `.github/workflows/ci.yml`) — проверяет, что все пути в доках существуют (нет мёртвых ссылок). Если он падает — поправь пути до коммита, не отключай чек.
+
+**Структура дока (чтобы быстро читался):**
+- Заголовок `# Тема` + 1-2 строки «когда читать это»
+- Что делает фича (2-4 предложения)
+- Как это связано с остальным (ссылки на другие доки/README, если есть)
+- Код-примеры (если уместно)
+- Известные костыли/ограничения (если есть)
+
+**Проверка «агент найдёт»:** после написания дока пройдись по §5a/§5b — сможет ли новый агент, не знающий твоей фичи, прийти к этому доку по задаче? Если нет — добавь маршрут или ссылку. Правило «один вход»: каждый док достижим из маршрутов (§5a) или каталога (§5b). CI-чек `make ci-docs` подтвердит: док упомянут в AGENTS.md (не сирота), пути существуют.
 
 Проектные правила:
 - **Запрещено: SQL в коде приложения** — только HTTP к data-service. SQL допустим в тестах / bash / context-mode (на тестовых БД даже требуется).
@@ -184,17 +305,17 @@ HTTP-матрица (11 каналов): [doc/api-flow.md](doc/api-flow.md). Д�
 |---|---|---|
 | `services/agent-db/tests/e2e/` | **124 теста**, без LLM, локальные SQLite | ✅ job `test-e2e` |
 | `services/agent-db/tests/e2e-llm/` | реальный LLM (opt-in, скипается без ключа) | ❌ вне CI |
-| `tests/external/` | внешние БД (PostgreSQL и т.п.) — только документация | ❌ |
+| `tests/external/` в `services/agent-db/tests/external/` | внешние БД (PostgreSQL и т.п.) — только документация | ❌ |
 
-**Запуск:** нативно `./scripts/dev.sh e2e` (нужны поднятые сервисы) · Docker `docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e`.
+**Запуск:** нативно `./infra/scripts/dev.sh e2e` (нужны поднятые сервисы) · Docker `docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e`.
 
 **ScriptedLLMProvider** (`services/api-service/src/api_service/agent/scripted_provider.py`): мок LLM через env `USE_SCRIPTED_LLM=1 SCRIPTED_LLM_PATH=script.jsonl` — детерминированный прогон pipeline (chat → tool_call → tool_result → SSE) **без реальной модели и траты денег**. 11 тестов в `services/agent-db/tests/e2e/test_scripted_llm.py` (v5: `db_*`/`filter_*`), включая record mode, guard'ы, recovery.
 
 ## 🧬 Verification
 
 ```
-Last verified: 2026-08-06 (реструктуризация репозитория: services/ + infra/; HEAD ca6c95a).
+Last verified: 2026-08-07 (HEAD 07f7515)
 См. полный журнал: CHANGELOG.md
 ```
 
-**Правило:** после любой правки документов — обновить дату + хеш здесь (одна строка). Полный лог — в `CHANGELOG.md`.
+**Правило:** после любой правки документов — обновить дату + хеш здесь (одна строка). Полный лог — в `CHANGELOG.md` (записывается только при коммите).

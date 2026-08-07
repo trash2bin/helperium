@@ -32,7 +32,7 @@ Authorization: Bearer $ADMIN_TOKEN
 → `adminRewriteHandler()`:
 1. `adapter.Connect(ctx, cfg.DSN)` → коннект к БД
 2. `adapter.Introspect(ctx, conn)` → читает схему
-3. `configgen.Generate(schema, dsConfig, nil)` → Config с entities, endpoints, MCP tools
+3. `configgen.Hydrate(configgen.ExtractIntent(inst.Config), schema)` → Config с entities, endpoints, MCP tools (старый путь `configgen.Generate(schema, dsConfig, nil)` больше не вызывается из rewrite — `tenant_admin.go:526`)
 4. `SaveTenantConfig()` → пишет `.data/tenants/{id}.json`
 5. `ReloadTenant(ctx, id, path)` — без даунтайма
 

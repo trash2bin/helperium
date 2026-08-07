@@ -1,4 +1,4 @@
-.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed
+.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs
 
 ci-lint-py:
 	uv run ruff check services/api-service/src/
@@ -48,10 +48,15 @@ ci-test-embed:
 	cd services/api-service/embed && bash build.sh
 	@echo "✅ Embed widget OK"
 
+ci-docs:
+	@echo "=== Docs: мёртвые пути ==="
+	python3 infra/scripts/check_docs_paths.py
+	@echo "✅ Docs paths OK"
+
 build-embed:
 	cd services/api-service/embed && bash build.sh
 	./infra/scripts/dev.sh restart api
 	@echo "✅ Embed widget rebuilt + api-service restarted"
 
-ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-lint-js ci-admin ci-test-embed
+ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-lint-js ci-admin ci-test-embed ci-docs
 	@echo "✅ CI passed locally"

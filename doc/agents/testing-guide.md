@@ -110,7 +110,7 @@ def test_isolation(tenants):
 | `TestAutoShopStrategies` | 16 | grep/filter/schema/count на авто-магазине (v5: `db_search`/`filter_*`) |
 | `TestClinicStrategies` | 15 | grep/filter/schema/count на клинике (v5) |
 
-> `TestLLMImplicitIntent` переехал в `services/agent-db/services/agent-db/tests/e2e-llm/test_implicit_intent.py` (opt-in, требует LLM-ключ).
+> `TestLLMImplicitIntent` переехал в `services/agent-db/tests/e2e-llm/test_implicit_intent.py` (opt-in, требует LLM-ключ).
 
 Проверяет: `/entity/grep`, `/entity/filter`, `/entity/schema`, `/entity/count`,
 `/entity/distinct` эндпоинты, MCP manifest (v5: `db_map`/`db_describe`/`db_search`/`db_get`/
@@ -168,13 +168,13 @@ Pipeline с `ScriptedLLMProvider` — **без живой модели** (мок
 | `test_mcp_composite.py` | composite mode (`X-Tenant-ID: a,b` → префикс `{tenantID}__`) |
 | `test_sse_session.py` | SSE-сессия mcp-gateway (endpoint, JSON-RPC initialize/tools_list) |
 
-## 4. E2E с LLM (opt-in, `services/agent-db/services/agent-db/tests/e2e-llm/`)
+## 4. E2E с LLM (opt-in, `services/agent-db/tests/e2e-llm/`)
 
 **Не в CI.** Требуют реальный LLM API-ключ (OPENAI/LLM_API_KEY) и денег.
 Без ключа — все тесты скипаются (skipif), не падают.
 
 ```bash
-uv run pytest services/agent-db/services/agent-db/tests/e2e-llm/ -v
+uv run pytest services/agent-db/tests/e2e-llm/ -v
 ```
 
 | Файл | Что проверяет |
@@ -184,7 +184,7 @@ uv run pytest services/agent-db/services/agent-db/tests/e2e-llm/ -v
 | `test_search_e2e.py` | discovery → search → filter → multiturn диалог |
 | `test_search_strategy.py` | grep/filter/schema через MCP (diagnostic) |
 
-Подробнее: `services/agent-db/services/agent-db/tests/e2e-llm/README.md`.
+Подробнее: `services/agent-db/tests/e2e-llm/README.md`.
 
 ### 4b. Логирование LLM E2E
 
@@ -271,7 +271,7 @@ def test_my_scenario(self):
 
 ```bash
 # Замерить время ToolDiscoveryStage + MCP handshake
-uv run pytest services/agent-db/services/agent-db/tests/e2e-llm/ -v -s --benchmark-only
+uv run pytest services/agent-db/tests/e2e-llm/ -v -s --benchmark-only
 ```
 
 Планируемые метрики:
@@ -282,14 +282,14 @@ uv run pytest services/agent-db/services/agent-db/tests/e2e-llm/ -v -s --benchma
 
 ## 6. Mutation testing
 ```bash
-./scripts/run_mutmut.sh --build    # сборка Docker (1 раз)
-./scripts/run_mutmut.sh --docker   # запуск
+./infra/scripts/run_mutmut.sh --build    # сборка Docker (1 раз)
+./infra/scripts/run_mutmut.sh --docker   # запуск
 ```
 Score: ~65% (8100+ KILLED / 2681 SURVIVED).
 
 **Go (go-mutesting, ~5 мин):**
 ```bash
-./scripts/run_mutmut.sh --go
+./infra/scripts/run_mutmut.sh --go
 ```
 ---
 **Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

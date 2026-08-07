@@ -70,14 +70,14 @@ demo-web может эволюционировать в полноценный p
 После изменений в виджете:
 ```bash
 cd api-service/embed && npm run build
-./scripts/dev.sh restart api   # без restart api-service отдаёт старый JS
+./infra/scripts/dev.sh restart api   # без restart api-service отдаёт старый JS
 ```
 
 ## Запуск
 
 ```bash
 # Через dev.sh (рекомендуется)
-./scripts/dev.sh start
+./infra/scripts/dev.sh start
 
 # Напрямую
 uv run --package demo-web python -m demo.web.server

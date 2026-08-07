@@ -36,6 +36,14 @@ jobs:
         # have been upgraded. Check `make ci-audit` locally for details.
         run: uv audit --preview-features audit-command || true
 
+  docs-links:
+    name: Docs — мёртвые пути
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docs paths (AGENTS.md, doc/, services/*/README, specs/, demo/)
+        run: python3 infra/scripts/check_docs_paths.py
+
   lint-js:
     name: JS lint (Biome)
     runs-on: ubuntu-latest

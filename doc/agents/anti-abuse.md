@@ -1,15 +1,16 @@
 # Rate Limiting & Anti-Abuse
 
 ## mcp-gateway
-- `mcpRateLimitMiddleware()` — per-IP лимит на POST
+- `mcpRateLimitMiddleware()` — per-IP лимит на POST (дефолты rps=10, burst=20 — `cmd/ratelimit.go:33-40`)
 - MaxSessions = 1000, Idle timeout = 5m, Max lifetime = 30m
+- Caps аргументов/результатов тулов: `MaxStringParamLength=1000`, `MaxNumericParamValue=10000`, `MaxResultSize=50000` (`internal/tools/tools.go:531-541,630-643`)
 
 ## api-service
 - TokenBucket: per-сессия (`ABUSE_RPS`, `ABUSE_BURST`)
 - UA-block: curl, wget, python-requests, Go-http-client
 - Message limits: max 2000 chars, min 1s interval, 50 msg/session
 - Repeated text: >3 повторов → блокировка
-- Emergency presets: Normal / Cautious / Lockdown
+- ~~Emergency presets: Normal / Cautious / Lockdown~~ (в коде только stub-поле `emergency_preset: str = "normal"`, реализации пресетов нет — `anti_abuse.py:67-68`)
 - Prompt injection guard: `GuardChecker.check_input()`
 
 ## Search Strategy Abuse Prevention
@@ -17,14 +18,14 @@
 LLM склонна вызывать инструменты с пустыми аргументами (`grep_products({})`), что приводит к дампу всей таблицы и перерасходу. Внедрены 3 уровня защиты:
 
 ### Уровень 1 — JSON Schema Validation (MCP Gateway)
-- `grep_*` и `filter_*` тулы имеют `pattern` с `required: true` + `minLength: 1`
+- `grep_*` и `filter_*` тулы имеют `pattern` с `required: true` (`Required: &t`) — `minLength: 1` в JSON Schema **отсутствует**, пустота отклоняется на сервере (`validateArgs` в mcp-gateway `tools.go:640`, `ParseRequest` в data-service `grep.go:114-117`)
 - MCP гейтвей отклоняет pre-request если `pattern` отсутствует или пустой → `isError: true`
 - Реализуется через `Strategy.ToolParams()`, которая задаёт `Required: &t`
 
 ### Уровень 2 — Server-side guard (data-service)
 - `grep.go`: `ParseRequest()` проверяет `pattern != ""` и `len(pattern) >= 1`, возвращает 400 при нарушении
 - `grep.go`: `maxPatternLen=500`, `maxRegexLen=200`, `maxTokens=10` — защита от ReDoS
-- `filter.go`: `maxFilterValueLen=200`, `maxInValues=50`, `parseFilterLimit=10`
+- `filter.go`: `maxFilterValueLen=200`, `maxInValues=50` (символа `parseFilterLimit` нет в коде)
 - `Config.MCPTool` carries `Required: &t` — приходит через manifest в mcp-gateway и проверяется там
 
 ### Уровень 3 — Empty Hints (db_describe)

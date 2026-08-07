@@ -209,6 +209,7 @@ WHERE "category" = ? ORDER BY "created_at" DESC AND "tenant_id" = ? LIMIT ? OFFS
 | M7 FieldRule.ID + миграция | MEDIUM | ✅ | 2 (configgen_test.go) |
 
 Итого: +28 тестов, `go test ./...` 734 passed (data-service) + 114 (helperium-go), `-race` чистый.
+> **Актуально на 2026-08-07:** счётчики выросли — data-service ~536 `func Test` + helperium-go ~66 ≈ 602; все пакеты проходят (`go test ./...` ok).
 Ключевые решения: C1 — inst в контексте (tenantInstanceKey) + fallback; C2-C4 — tenant-плейсхолдер
 нумеруется по позиции, PG-хвост перенумеровывается; C5 — версия конфига v4, legacy удалён;
 M7 — стабильный ID + миграция Reason→ID в normalizeV3ToV4.
@@ -228,6 +229,7 @@ M7 — стабильный ID + миграция Reason→ID в normalizeV3ToV4
 | L9 OpenAPI query-params (grep/filter/distinct) | ✅ |
 
 Итого: 748 (data-service) + 114 (helperium-go) = 862 теста, `-race` чистый.
+> **Актуально на 2026-08-07:** ~602 теста (см. примечание выше).
 Осталось на потом: L4 (HealthCheck closed conn — приемлемо). L10 (filter __like \ + ESCAPE) — задокументирован в filter.go + search-strategies.md.
 
 
@@ -259,3 +261,4 @@ M7 — стабильный ID + миграция Reason→ID в normalizeV3ToV4
 - L8 (переименование) — ноль старых вызовов
 
 ### Итог: 754 (data-service) + 114 (helperium-go) = 868 тестов, -race чистый.
+> **Актуально на 2026-08-07:** ~602 теста (см. примечание выше).

@@ -88,7 +88,7 @@ Each service exposes `/metrics` by default.
 ## Tenant + data
 
 ```bash
-uv run agent-db tenant register client-name
+uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
 
 # Introspect client DB schema
 curl http://localhost:8084/admin/introspect?tenant=client-name
@@ -111,7 +111,7 @@ Admin dashboard: `http://localhost:8085`
 4. **Agents** — create agent, set system prompt
 5. **RAG** — upload documents, test search
 6. **Anti-Abuse** — tune RPS, burst, session budget
-7. **Emergency Presets** — Normal → Cautious → Lockdown
+7. **Anti-Abuse presets** — в коде только stub-поле `emergency_preset: str = "normal"`, реализаций Normal/Cautious/Lockdown нет (настраивается через RPS/burst/бюджет напрямую)
 
 ---
 
@@ -134,9 +134,8 @@ Insert into `<body>` on the client's page. Shadow DOM — no CSS conflicts.
 ## Verification
 
 ```bash
-uv run agent-db e2e-data      # tenant isolation
-uv run agent-db e2e-mcp       # MCP tool isolation
-uv run agent-db e2e-full      # all three levels
+uv run agent-db e2e          # full E2E: materialize → register → web proxy + SSE chat
+uv run agent-db test          # tenant isolation tests
 
 # Chat via web (http://localhost:8080) — check streaming, tool calling
 
@@ -159,7 +158,7 @@ rm -rf .data/rag/chroma_db
 docker compose up -d rag
 
 # Delete and re-create tenant:
-uv run agent-db tenant delete client-name
+uv run agent-db drop autoparts  # реальная команда: drop <scenario>
 # then repeat from section "Tenant + data"
 ```
 
@@ -181,10 +180,10 @@ docker compose --profile prod up -d
 2. Edit .env: DATABASE_URL, LLM key, DEFAULT_TENANT_ID, DOMAIN
 3. docker compose up -d
 4. docker compose --profile monitoring up -d   (Grafana :3000)
-5. uv run agent-db tenant register client-name
+5. uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
 6. Admin dashboard: upload RAG, create agent, check tools
 7. Widget: <script src="/embed/embed.js" data-agent="assistant">
-8. uv run agent-db e2e-full
+8. uv run agent-db e2e
 ```
 
 ---
@@ -194,13 +193,13 @@ docker compose --profile prod up -d
 | Data | Responsible | Notes |
 |------|-------------|-------|
 | Client's DB | **Client** | pg_dump / PITR at their hosting provider |
-| Tenant configs | Platform | ~44KB, `scripts/backup.sh` |
+| Tenant configs | Platform | ~44KB, `infra/scripts/backup.sh` |
 | LLM keys | Platform | Store separately from server (vault / sealed secrets) |
 | ChromaDB / RAG index | Platform | Re-indexable from source docs |
 | Session / Backlog | Platform | Ephemeral, not critical |
 
 ```bash
-bash scripts/backup.sh  # → backups/<date>/tenants/ + .env
+bash infra/scripts/backup.sh  # → backups/<date>/tenants/ + .env
 ```
 
 ---
@@ -292,7 +291,7 @@ docker compose --profile monitoring up -d
 ## Тенант + данные
 
 ```bash
-uv run agent-db tenant register client-name
+uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
 
 # Проинтроспектировать схему БД клиента
 curl http://localhost:8084/admin/introspect?tenant=client-name
@@ -313,7 +312,7 @@ uv run agent-rag-ingest import /path/to/doc.pdf -d client-name
 4. **Agents** — создать агента, system prompt
 5. **RAG** — загрузить документы, проверить поиск
 6. **Anti-Abuse** — RPS, burst, session budget
-7. **Emergency Presets** — Normal → Cautious → Lockdown
+7. **Anti-Abuse presets** — в коде только stub-поле `emergency_preset: str = "normal"`, реализаций Normal/Cautious/Lockdown нет (настраивается через RPS/burst/бюджет напрямую)
 
 ---
 
@@ -336,9 +335,8 @@ uv run agent-rag-ingest import /path/to/doc.pdf -d client-name
 ## Проверка
 
 ```bash
-uv run agent-db e2e-data      # изоляция тенантов
-uv run agent-db e2e-mcp       # изоляция MCP-тулов
-uv run agent-db e2e-full      # все три уровня
+uv run agent-db e2e          # полный E2E: materialize → register → web proxy + SSE chat
+uv run agent-db test          # тесты изоляции тенантов
 
 # Чат через web (http://localhost:8080) — стриминг, tool calling
 
@@ -361,7 +359,7 @@ rm -rf .data/rag/chroma_db
 docker compose up -d rag
 
 # Удалить и пересоздать тенанта:
-uv run agent-db tenant delete client-name
+uv run agent-db drop autoparts  # реальная команда: drop <scenario>
 # затем повторно с раздела "Тенант + данные"
 ```
 
@@ -383,10 +381,10 @@ docker compose --profile prod up -d
 2. Правим .env: DATABASE_URL, LLM ключ, DEFAULT_TENANT_ID, DOMAIN
 3. docker compose up -d
 4. docker compose --profile monitoring up -d   (Grafana :3000)
-5. uv run agent-db tenant register client-name
+5. uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
 6. Админка: загрузить RAG, создать агента, утвердить тулы
 7. Виджет: <script src="/embed/embed.js" data-agent="assistant">
-8. uv run agent-db e2e-full
+8. uv run agent-db e2e
 ```
 
 ---
@@ -396,11 +394,11 @@ docker compose --profile prod up -d
 | Данные | Ответственный | Заметки |
 |--------|---------------|---------|
 | БД клиента | **Клиент** | pg_dump / PITR у хостинг-провайдера |
-| Конфиги тенантов | Платформа | ~44KB, `scripts/backup.sh` |
+| Конфиги тенантов | Платформа | ~44KB, `infra/scripts/backup.sh` |
 | LLM ключи | Платформа | Хранить отдельно от сервера (vault / sealed secrets) |
 | ChromaDB / RAG индекс | Платформа | Переиндексируется из исходных доков |
 | Сессии / Backlog | Платформа | Эфемерные, не критичны |
 
 ```bash
-bash scripts/backup.sh  # → backups/<date>/tenants/ + .env
+bash infra/scripts/backup.sh  # → backups/<date>/tenants/ + .env
 ```

@@ -56,7 +56,7 @@ Grafana визуализирует данные с Prometheus-датасорса
 | API Service | UP/DOWN | ✅ UP | ❌ DOWN |
 | Admin Dashboard | UP/DOWN | ✅ UP | ❌ DOWN |
 | RAG Service | UP/DOWN | ✅ UP | ❌ DOWN |
-| Web Proxy | Prometheus alive | ✅ UP | ❌ DOWN |
+| Web Proxy | ⚠️ панель не привязана к реальной метрике (`vector(0)`; web не скрейпится в prometheus.yml) | — | — |
 
 **При DOWN:** проверить `./scripts/dev.sh status` / `docker ps`. Смотреть `.data/logs/*.log`.
 
@@ -72,7 +72,7 @@ Grafana визуализирует данные с Prometheus-датасорса
 **Где копать при аномалиях:**
 - **Рост длительности** → `services/data-service/internal/server/tenant.go` (рутер), `services/data-service/internal/datasource/postgres_adapter.go` (PG-запросы)
 - **Ошибки 404** → неверный путь/entity в конфиге tenant'а `services/helperium-go/config/types.go`
-- **Ошибки 500** → баг в generic-хендлере `services/data-service/internal/server/handlers/default.go`
+- **Ошибки 500** → баг в generic-хендлере `services/data-service/internal/runtime/handlers/default.go`
 
 ### 🔌 MCP Gateway
 
@@ -96,16 +96,16 @@ Grafana визуализирует данные с Prometheus-датасорса
 | LLM Duration (avg) | `rate(llm_duration_ms_sum[1m]) / rate(llm_duration_ms_count[1m]) / 1000` | s | <5s | >15s → >30s |
 | Token Usage Rate | `rate(llm_token_usage_total[1m])` | tok/s | — | — |
 | LLM Cost | `rate(llm_cost_total[1m])` | USD/min | <$0.01 | >$0.10 |
-| Active Chat Sessions | `sum(rate(chat_sessions_total[5m])) * 300` | шт | — | — |
+| Active Chat Sessions | `max(chat_sessions_total)` | шт | — | — |
 | Abuse Blocks | `rate(abuse_blocked_total[1m])` | req/s | 0 | >0 |
 | Chat Message Rate | `rate(chat_messages_total[1m])` | msg/s | — | — |
-| Backlog Queue | `backlog_records_total - backlog_records_created` | шт | 0 | >10 |
+| Backlog Queue | `rate(backlog_records_total[15m])` | шт | 0 | >10 |
 
 **Где копать при аномалиях:**
 - **LLM долгий** → `services/api-service/src/api_service/agent/orchestrator.py` (цикл _run_turn), провайдер LiteLLM
-- **Cost растёт** → сменить модель/провайдера в `services/api-service/src/api_service/agent/llm_provider.py`
-- **Abuse blocks** → `services/api-service/src/api_service/agent/guard_checker.py` (prompt injection, repeated text)
-- **Backlog растёт** → worker'ы не успевают, `services/api-service/src/api_service/agent/backlog.py`
+- **Cost растёт** → сменить модель/провайдера в `services/api-service/src/api_service/agent/litellm_provider.py`
+- **Abuse blocks** → `services/api-service/src/api_service/guardrails.py` (класс `GuardChecker`, prompt injection, repeated text)
+- **Backlog растёт** → worker'ы не успевают, `services/api-service/src/api_service/backlog.py`
 
 ### 📄 RAG Service
 
@@ -113,9 +113,9 @@ Grafana визуализирует данные с Prometheus-датасорса
 |---|---|---|---|---|
 | Documents & Chunks | `rag_documents_total`, `rag_chunks_total` | шт | — | — |
 | ChromaDB Size | `rag_chroma_size_bytes / 1048576` | MB | <500 | >1000 |
-| Search Rate | `rate(rag_searches_total[1m])` | req/s | <10 | >50 |
+| Search Rate | `rate(rag_search_duration_ms_count[1m])` (панель использует duration-count как прокси; метрика `rag_searches_total` есть в коде, но не за этой панелью) | req/s | <10 | >50 |
 | Search p95 Duration | `histogram_quantile(0.95, ...)` | ms | <100 | >500 |
-| Cache Hit Ratio | `rate(rag_cache_hits[5m]) / rate(rag_cache_hits + rag_cache_misses)[5m]` | % | >50% | <30% |
+| Cache Hit Ratio | `rate(rag_cache_hits_total[5m]) / rate(rag_cache_hits_total + rag_cache_misses_total)[5m]` | % | >50% | <30% |
 | Import Duration (avg) | `rate(rag_import_duration_ms_sum[1m]) / rate(rag_import_duration_ms_count[1m]) / 1000` | s | <2s | >10s |
 | Search Error Rate | `rate(rag_searches_total{status="error"}[5m])` | err/s | 0 | >0 |
 
@@ -156,15 +156,14 @@ Grafana визуализирует данные с Prometheus-датасорса
 
 | Метрика | Тип | Лейблы | Описание |
 |---|---|---|---|
-| `chat_sessions_total` | Counter | `tenant` | Созданные сессии |
+| `chat_sessions_total` | Counter | — | Созданные сессии |
 | `chat_messages_total` | Counter | `status` | Сообщения (ok/blocked/error) |
 | `llm_calls_total` | Counter | `model, provider` | Вызовы LLM |
-| `llm_duration_ms` | Histogram | — | Длительность LLM-вызова |
+| `llm_duration_ms` | Histogram | `model` | Длительность LLM-вызова |
 | `llm_token_usage_total` | Counter | `type` | Токены (prompt/completion/total) |
-| `llm_cost_total` | Counter | — | Стоимость LLM в USD |
+| `llm_cost_total` | Counter | `model, provider, tenant_id` | Стоимость LLM в USD |
 | `abuse_blocked_total` | Counter | `reason` | Блокировки анти-абуза |
 | `backlog_records_total` | Counter | `type` | Всего бэклог-задач (turn_start, llm_call, tool_call, tool_result) |
-| `backlog_records_created` | Gauge | `type` | ⚠️ auto-generated timestamp от Prometheus. **Не использовать как счётчик!** |
 
 ### rag-service (`:8082/metrics`)
 
@@ -230,10 +229,10 @@ flowchart TD
 
 | Файл | Назначение |
 |---|---|
-| `docker/prometheus/prometheus.yml` | Конфигурация Prometheus (таргеты) |
-| `docker/grafana/datasources/datasource.yml` | Provisioned datasource |
-| `docker/grafana/dashboards/helperium-overview.json` | **Дашборд** (этот файл) |
-| `docker/grafana/dashboards/dashboard.yml` | Provider для автозагрузки |
+| `docker/prometheus/prometheus.yml` → `infra/docker/prometheus/prometheus.yml` | Конфигурация Prometheus (таргеты) |
+| `docker/grafana/datasources/datasource.yml` → `infra/docker/grafana/datasources/datasource.yml` | Provisioned datasource |
+| `docker/grafana/dashboards/helperium-overview.json` → `infra/docker/grafana/dashboards/helperium-overview.json` | **Дашборд** (этот файл) |
+| `docker/grafana/dashboards/dashboard.yml` → `infra/docker/grafana/dashboards/dashboard.yml` | Provider для автозагрузки |
 | `.data/logs/{svc}.log` | JSON-логи сервисов |
 | `.env` | ADMIN_API_TOKEN (для RAG /admin/*), ADMIN_TOKEN |
 | `doc/monitoring.md` | **Эта документация** |

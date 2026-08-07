@@ -242,8 +242,10 @@ LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 100
 | `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | demo-web, api-service, admin-dashboard | rag |
 | `API_HOST` + `API_PORT` | `0.0.0.0:8081` | demo-web | api-service |
 | `MCP_SERVICE_URL` | `http://127.0.0.1:8083` | api-service | mcp-gateway |
-| `ADMIN_DASHBOARD_DS_URL` | - | admin-dashboard | data-service |
-| `ADMIN_DASHBOARD_AS_URL` | - | admin-dashboard | api-service |
-| `ADMIN_DASHBOARD_RS_URL` | - | admin-dashboard | rag |
+| `DATA_SERVICE_URL` (для admin) | `http://127.0.0.1:8084` | admin-dashboard | data-service |
+| `API_SERVICE_URL` | `http://127.0.0.1:8081` | admin-dashboard | api-service |
+| `RAG_SERVICE_URL` (для admin) | `http://127.0.0.1:8082` | admin-dashboard | rag |
+
+> **Прим.:** admin-dashboard использует общие `DATA_SERVICE_URL` / `API_SERVICE_URL` / `RAG_SERVICE_URL` (`cmd/server/main.go:36-38`), а не отдельные `ADMIN_DASHBOARD_*`.
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-07 (HEAD `07f7515`) — все маршруты/порты/SSE сверены с кодом

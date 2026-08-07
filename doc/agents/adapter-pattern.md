@@ -29,7 +29,7 @@ type DataSource interface {
 ### Как добавить CRM/Nosql/API
 
 1. Реализовать `DataSource` interface в любом пакете
-2. Зарегистрировать в `TenantStore` через `SetDataSource()`
+2. Зарегистрировать в реестре драйверов (`datasource.Registry.Register()`, `registry.go:79-88`) и построить `SQLDataSource` через `query.NewEngine` — фактическая регистрация идёт в `endpoint_builder.go:141-144` (`NewSQLDataSource`), а не через `TenantStore.SetDataSource()` (такого метода в коде нет; `TenantStore` хранит только `datasource.Registry`)
 3. Всё остальное — не трогать
 
 ```go
@@ -104,9 +104,12 @@ type AdapterSubset interface {
 }
 ```
 
-`QuoteString` экранирует wildcard-символы LIKE: `% → \%`, `_ → \_`.
+`QuoteString` экранирует wildcard-символы LIKE: `% → \%`, `_ → \_` (и сам `\` в runtime/adapter.go:26-35).
 Для SQLite/Postgres реализация одинакова. Если твоя СУБД использует другой escape
 (например MySQL — `%%`), переопредели.
+
+> **Важно (SQLite):** `REGEXP` реализован как зарегистрированная UDF через `sqlite.RegisterScalarFunction` (`sqlite_adapter.go:33-63`) — без неё любой `REGEXP`-запрос упадёт. При добавлении нового адаптера учитывай это.
+> Драйверы: SQLite — `modernc.org/sqlite`, Postgres — `jackc/pgx/v5` stdlib.
 
 ### Шаги для MySQL
 
@@ -135,8 +138,8 @@ func (MySQLAdapter) Introspect(ctx, conn) (*Schema, error)  // SHOW TABLES/COLUM
 
 ```bash
 go test ./data-service/internal/datasource/ -run TestMySQLAdapter_*
-go test ./data-service/internal/query/...     # ~37 тестов engine (должны проходить без правок)
-go test ./data-service/internal/search/...    # ~60 тестов стратегий (должны проходить без правок)
+go test ./data-service/internal/query/...     # ~47 тестов engine (должны проходить без правок)
+go test ./data-service/internal/search/...    # ~87 тестов стратегий (должны проходить без правок)
 ```
 
 **Весь существующий код** (runtime handlers, search strategies, query engine, MCP tools, admin API)
@@ -167,4 +170,4 @@ DataSource interface          ← высокий уровень, для LLM
 
 Детали поискового движка: [search-strategies.md](search-strategies.md)
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-07 (HEAD `07f7515`) — интерфейсы/диалекты сверены с кодом

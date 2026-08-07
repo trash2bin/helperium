@@ -4,12 +4,14 @@
 
 | Job | Что проверяет | Команда |
 |---|---|---|
-| `lint-python` | Ruff lint, format, Pyright | `ruff check`, `ruff format --check`, `pyright` |
+| `lint-python` | Ruff lint, format, Pyright, uv audit | `ruff check`, `ruff format --check`, `pyright`, `uv audit` |
+| `lint-js` | Biome (embed/admin-dashboard JS) | `biome check` |
 | `test-python` | Все Python тесты | `pytest` по всем пакетам |
-| `lint-go` | golangci-lint v2 | `golangci-lint run ./...` |
+| `lint-go` | golangci-lint v2 + govulncheck | `golangci-lint run ./...`, `govulncheck` |
 | `test-go` | Go тесты | `go test ./... -count=1 -timeout 180s` |
+| `test-e2e` | e2e без LLM (agent-db) | `docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e` |
 
-Pipeline зелёный = все 4 джобы проходят.
+Pipeline зелёный = все **6 джоб** проходят (lint-python, lint-js, test-python, lint-go, test-go, test-e2e).
 
 ## Pre-commit hooks (`.pre-commit-config.yaml`)
 
@@ -22,8 +24,7 @@ pre-commit run --all-files  # прогнать
 - `Pyright` — type correctness
 - `go vet` — Go (data-service, mcp-gateway)
 - `gitleaks` — секреты
-- `admin-dashboard-stale` — бинарник свежий?
-- `admin-dashboard-tests` — vitest + contract scan
+- `admin-dashboard-tests` — vitest + contract scan (хука `admin-dashboard-stale` в `.pre-commit-config.yaml` нет)
 - `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`
 
 ## Линтеры
@@ -93,7 +94,7 @@ admin-dashboard/internal/server/static/
 └── styles.css
 ```
 
-**Auth bypass:** Go-сервер пропускает `/static/` и `/js/`.
+**Auth bypass:** Go-сервер пропускает `/static/` и `/js/` — прим.: `/js/` в коде нет; статика отдаётся через `r.Handle("/*", staticHandler)` (`server.go:140`), в `internal/server/static/` лежит собранный `dist/app.js` (SPA заBundleлена), каталога `js/` и доменных модулей (`js/domains/...`) не существует.
 
 ### Три уровня защиты
 
@@ -114,13 +115,13 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 
 ## Версионирование
 
-Все пакеты синхронизированы: текущая **`1.1.0`**. Go: data-service/mcp-gateway `1.26.5`, admin-dashboard/helperium-go `1.24.0`.
+Все пакеты синхронизированы: текущая **`1.1.0`**. Go: data-service/mcp-gateway `1.26.5`, admin-dashboard/helperium-go `1.26.5` (все четыре go.mod на go 1.26.5; версии `1.24.0` в репозитории нет).
 
 ## Критерий готовности перед коммитом
 
 1. [ ] `make ci` — зелёный
 2. [ ] Pre-commit hooks — все Passed
-3. [ ] e2e без LLM зелёные — `./scripts/dev.sh e2e` (124 passed) или Docker: `docker-compose --profile test up e2e`
+3. [ ] e2e без LLM зелёные — `./infra/scripts/dev.sh e2e` (124 passed) или Docker: `docker-compose --profile test up e2e`
 4. [ ] Mutation score не упал (опционально)
 ---
 **Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)

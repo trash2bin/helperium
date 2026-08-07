@@ -72,7 +72,7 @@ Schema versions are chained: `v0 → v1 → v2 → … → CurrentConfigVersion`
 Each step handles only its own delta and bumps the version once.
 
 ```go
-const CurrentConfigVersion = 2   // always the latest
+const CurrentConfigVersion = 4   // always the latest
 
 func (c *Config) Normalize() {
     if c.Version == 0 {
@@ -82,6 +82,10 @@ func (c *Config) Normalize() {
         switch c.Version {
         case 1:
             c.normalizeV1ToV2()
+        case 2:
+            c.normalizeV2ToV3()
+        case 3:
+            c.normalizeV3ToV4()
         default:
             c.Version = CurrentConfigVersion
         }
@@ -318,7 +322,7 @@ No migration step was required because:
 | # | Change | Rationale |
 |---|--------|-----------|
 | 1 | Added `Strategy string \`json:\"strategy,omitempty\"\`` to `Endpoint` | `omitempty` — old configs without it parse fine |
-| 2 | `Validate()` adjusted: `ep.Op == OpFind && ep.SearchField == ""` → `&& ep.Strategy == ""` | Strategy-based endpoints don't need `search_field` |
+| 2 | `Validate()` adjusted: `ep.Op == OpFind && ep.SearchField == ""` → `&& ep.Strategy == ""` (исторически; сейчас `OpFind` удалён из v4 — `types.go` whitelist) | Strategy-based endpoints don't need `search_field` |
 
 ### How it works
 
@@ -419,7 +423,8 @@ All migration tests live in `services/helperium-go/config/migration_test.go`.
 cd helperium && go test ./helperium-go/config/... -v -count=1
 
 # Just migration tests:
-go test ./helperium-go/config/... -run 'TestNormalize|TestApproved|TestValidate_V2' -v
+go test ./helperium-go/config/... -run 'TestNormalize|TestValidate_V2' -v
+# прим.: теста TestApproved больше нет — write-tool approval удалён (коммит b17b910)
 ```
 
 ---

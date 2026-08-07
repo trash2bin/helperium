@@ -1,12 +1,12 @@
 # Эксплуатация и разработка
 
-## Нативный запуск: `scripts/dev.sh`
+## Нативный запуск: `infra/scripts/dev.sh`
 
 ```bash
-./scripts/dev.sh start              # поднять весь стек
-./scripts/dev.sh stop / restart     # управление
-./scripts/dev.sh logs {service|all} # логи из .data/logs/
-./scripts/dev.sh status             # статус
+./infra/scripts/dev.sh start              # поднять весь стек
+./infra/scripts/dev.sh stop / restart     # управление
+./infra/scripts/dev.sh logs {service|all} # логи из .data/logs/
+./infra/scripts/dev.sh status             # статус
 ```
 
 Порядок старта: data → rag → mcp → admin → api → web
