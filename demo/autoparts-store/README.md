@@ -100,7 +100,7 @@ http://localhost:8000/admin/
 
 ```bash
 # Зайти в папку проекта
-cd /Users/ivan/code/auto-parts-store
+cd /path/to/auto-parts-store
 
 # Запустить (если не запущено)
 docker-compose up -d

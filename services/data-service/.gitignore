@@ -22,3 +22,7 @@
 testdata/scenarios/**/data.db
 testdata/scenarios/**/data.db-wal
 testdata/scenarios/**/data.db-shm
+# These three databases are immutable fixtures consumed by Go tests.
+!testdata/scenarios/sqlite-testseed/data.db
+!testdata/scenarios/shop/data.db
+!testdata/scenarios/big-testseed/data.db

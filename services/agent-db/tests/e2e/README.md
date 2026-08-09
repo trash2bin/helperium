@@ -118,14 +118,14 @@ assert result.success
 ```bash
 # Собрать образы сервисов
 ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
-  docker compose --profile test build data-service mcp-gateway api admin-dashboard web
+  ./infra/scripts/compose.sh --profile test build data-service mcp-gateway api admin-dashboard web
 
 # Поднять стек и прогнать e2e в контейнере
 ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
-  docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e
+  ./infra/scripts/compose.sh --profile test up e2e --abort-on-container-exit --exit-code-from e2e
 
 # Остановить и удалить volumes
-ADMIN_TOKEN=ci-secret-token docker compose --profile test down -v
+ADMIN_TOKEN=ci-secret-token ./infra/scripts/compose.sh --profile test down -v
 ```
 
 Как это устроено:

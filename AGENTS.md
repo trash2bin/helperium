@@ -114,7 +114,7 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 | Утечка данных / безопасность | 📖 `doc/agents/security-isolation` → 📖 `doc/agents/tool-call-safety-layers` → 🔧 `doc/PENTEST-CHEK` | 📖→🔧 |
 | Anti-abuse / жадные LLM-вызовы | 📖 `doc/agents/anti-abuse` → 📖 `doc/agents/tool-call-safety-layers` | 📖 |
 | CI падает | 🔧 `doc/agents/ci-cd` → `.github/workflows/ci.yml` → 🔧 `Makefile` | 🔧 |
-| Как протестировать | 📖 `doc/agents/testing-guide` → `services/agent-db/tests/e2e/` | 📖 |
+| Как протестировать | 🔧 `AGENTS.md §8` (полное руководство) → `services/agent-db/tests/e2e/` | 🔧 |
 | Настроить мониторинг | 🔧 `doc/monitoring` → `infra/docker/grafana/` + `infra/docker/prometheus/` | 🔧 |
 | Кросс-сервисная проблема / HTTP | 🔧 `doc/api-flow` → 📖 `doc/agents/http-clients` → 🔧 `demo/web/README` | 🔧→📖 |
 | Разобраться в data-service (вглубь) | 🔧 `services/data-service/README` → 📖 `doc/agents/data-service-refactor-audit` → 📖 `doc/agents/search-strategies` | 🔧→📖 |
@@ -185,7 +185,8 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 |---|---|---|
 | `services/agent-db/README.md` | Seedgen, e2e orchestration | 🔧 |
 | `services/agent-db/agent_db/bench/README.md` | Core benchmark | 📖 |
-| `doc/agents/testing-guide.md` | Написание/запуск тестов | 📖 |
+| `AGENTS.md §8` | **Полное руководство по тестированию** (запуск, дебаг, написание) | 🔧 |
+| `doc/agents/testing-guide.md` | Unit/Integration, Mutation testing, LLM E2E best practices | 📖 |
 
 **demo** (demo/web + demo/autoparts-store)
 
@@ -300,17 +301,27 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 Проектные правила:
 - **Запрещено: SQL в коде приложения** — только HTTP к data-service. SQL допустим в тестах / bash / context-mode (на тестовых БД даже требуется).
 
-## 🧪 8. E2E-тесты (структура)
+## 🧪 8. Тестирование
 
-| Каталог | Что это | CI |
-|---|---|---|
-| `services/agent-db/tests/e2e/` | **124 теста**, без LLM, локальные SQLite | ✅ job `test-e2e` |
-| `services/agent-db/tests/e2e-llm/` | реальный LLM (opt-in, скипается без ключа) | ❌ вне CI |
-| `tests/external/` в `services/agent-db/tests/external/` | внешние БД (PostgreSQL и т.п.) — только документация | ❌ |
+```bash
+make ci-test-py    # Python unit/integration (API, RAG, web, SDK)
+make ci-test-go    # Go unit (data-service, mcp-gateway, helperium-go)
+make ci-test-embed # TS widget tests + build
+make ci-admin      # Admin dashboard tests
+```
 
-**Запуск:** нативно `./infra/scripts/dev.sh e2e` (нужны поднятые сервисы) · Docker `docker compose --profile test up e2e --abort-on-container-exit --exit-code-from e2e`.
+**E2E (нужны сервисы):**
+```bash
+./scripts/dev.sh start
+uv run pytest services/agent-db/tests/e2e/ -v
+./scripts/dev.sh stop
+```
 
-**ScriptedLLMProvider** (`services/api-service/src/api_service/agent/scripted_provider.py`): мок LLM через env `USE_SCRIPTED_LLM=1 SCRIPTED_LLM_PATH=script.jsonl` — детерминированный прогон pipeline (chat → tool_call → tool_result → SSE) **без реальной модели и траты денег**. 11 тестов в `services/agent-db/tests/e2e/test_scripted_llm.py` (v5: `db_*`/`filter_*`), включая record mode, guard'ы, recovery.
+**Docker (`--profile test`) — только для CI:** см. `doc/agents/testing-guide.md`
+
+**Полное руководство:** `doc/agents/testing-guide.md` — unit/integration, e2e, ScriptedLLMProvider, mutation testing, troubleshooting.
+
+> Последний раз проверено: 2026-08-07
 
 ## 🧬 Verification
 
@@ -318,7 +329,3 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 Last verified: 2026-08-07 (HEAD 07f7515)
 См. полный журнал: CHANGELOG.md
 ```
-
-**Примечание:** 2026-08-07 — добавлен артефакт `doc/benchmark/demo-integration-audit.md` (интеграция demo-web + виджет: бэкенд-фиксы) в карту §5b.
-
-**Правило:** после любой правки документов — обновить дату + хеш здесь (одна строка). Полный лог — в `CHANGELOG.md` (записывается только при коммите).

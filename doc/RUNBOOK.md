@@ -59,12 +59,12 @@ The other ~170 vars have safe defaults. Only change per client.
 ## Start + health check
 
 ```bash
-docker compose up -d                              # dev
-docker compose --profile prod up -d               # prod + Caddy HTTPS
+./infra/scripts/compose.sh up -d                  # dev
+./infra/scripts/compose.sh --profile prod up -d   # prod + Caddy HTTPS
 
 # Wait 120s — RAG downloads embedding model on first start
-docker compose logs rag --tail 20
-docker compose ps
+./infra/scripts/compose.sh logs rag --tail 20
+./infra/scripts/compose.sh ps
 
 curl http://localhost:8084/health    # → {"status":"ok"}
 curl http://localhost:8082/health    # → {"status":"ok"}
@@ -76,7 +76,7 @@ curl http://localhost:8081/health    # → {"status":"ok"}
 ## Monitoring stack
 
 ```bash
-docker compose --profile monitoring up -d
+./infra/scripts/compose.sh --profile monitoring up -d
 # Grafana: http://localhost:3000 (admin / admin) — 18-panel dashboard
 # Prometheus: http://localhost:9090
 ```
@@ -140,7 +140,7 @@ uv run agent-db test          # tenant isolation tests
 # Chat via web (http://localhost:8080) — check streaming, tool calling
 
 # Check logs for errors
-docker compose logs --tail 100 2>&1 | grep -i error
+./infra/scripts/compose.sh logs --tail 100 2>&1 | grep -i error
 ```
 
 ---
@@ -148,14 +148,14 @@ docker compose logs --tail 100 2>&1 | grep -i error
 ## Troubleshooting
 
 ```bash
-docker compose logs api --tail 50
-docker compose logs rag --tail 50
-docker compose restart api
+./infra/scripts/compose.sh logs api --tail 50
+./infra/scripts/compose.sh logs rag --tail 50
+./infra/scripts/compose.sh restart api
 
 # Reset RAG index:
-docker compose stop rag
+./infra/scripts/compose.sh stop rag
 rm -rf .data/rag/chroma_db
-docker compose up -d rag
+./infra/scripts/compose.sh up -d rag
 
 # Delete and re-create tenant:
 uv run agent-db drop autoparts  # реальная команда: drop <scenario>
@@ -167,7 +167,7 @@ uv run agent-db drop autoparts  # реальная команда: drop <scenari
 ## Production (HTTPS)
 
 ```bash
-docker compose --profile prod up -d
+./infra/scripts/compose.sh --profile prod up -d
 # Caddy auto-provisions Let's Encrypt certs, proxies :443 → web:8080, redirects :80 → :443
 ```
 
@@ -262,12 +262,12 @@ DOMAIN=chat.client.com
 ## Старт + проверка здоровья
 
 ```bash
-docker compose up -d                              # dev
-docker compose --profile prod up -d               # prod + Caddy HTTPS
+./infra/scripts/compose.sh up -d                  # dev
+./infra/scripts/compose.sh --profile prod up -d   # prod + Caddy HTTPS
 
 # Ждём 120s — RAG качает embedding-модель при первом старте
-docker compose logs rag --tail 20
-docker compose ps
+./infra/scripts/compose.sh logs rag --tail 20
+./infra/scripts/compose.sh ps
 
 curl http://localhost:8084/health    # → {"status":"ok"}
 curl http://localhost:8082/health    # → {"status":"ok"}
@@ -279,7 +279,7 @@ curl http://localhost:8081/health    # → {"status":"ok"}
 ## Мониторинг
 
 ```bash
-docker compose --profile monitoring up -d
+./infra/scripts/compose.sh --profile monitoring up -d
 # Grafana: http://localhost:3000 (admin / admin) — 18 панелей
 # Prometheus: http://localhost:9090
 ```
@@ -341,7 +341,7 @@ uv run agent-db test          # тесты изоляции тенантов
 # Чат через web (http://localhost:8080) — стриминг, tool calling
 
 # Логи без ошибок
-docker compose logs --tail 100 2>&1 | grep -i error
+./infra/scripts/compose.sh logs --tail 100 2>&1 | grep -i error
 ```
 
 ---
@@ -349,14 +349,14 @@ docker compose logs --tail 100 2>&1 | grep -i error
 ## Если что-то пошло не так
 
 ```bash
-docker compose logs api --tail 50
-docker compose logs rag --tail 50
-docker compose restart api
+./infra/scripts/compose.sh logs api --tail 50
+./infra/scripts/compose.sh logs rag --tail 50
+./infra/scripts/compose.sh restart api
 
 # Сбросить RAG-индекс:
-docker compose stop rag
+./infra/scripts/compose.sh stop rag
 rm -rf .data/rag/chroma_db
-docker compose up -d rag
+./infra/scripts/compose.sh up -d rag
 
 # Удалить и пересоздать тенанта:
 uv run agent-db drop autoparts  # реальная команда: drop <scenario>
@@ -368,7 +368,7 @@ uv run agent-db drop autoparts  # реальная команда: drop <scenari
 ## Production (HTTPS)
 
 ```bash
-docker compose --profile prod up -d
+./infra/scripts/compose.sh --profile prod up -d
 # Caddy сам получает Let's Encrypt, проксирует :443 → web:8080, редиректит :80 → :443
 ```
 

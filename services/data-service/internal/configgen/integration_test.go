@@ -20,7 +20,7 @@ func autopartsDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("AUTOPARTS_DSN")
 	if dsn == "" {
-		dsn = "postgres://autoparts:autoparts_secret_2024@127.0.0.1:5434/autoparts?sslmode=disable"
+		t.Skip("AUTOPARTS_DSN is not configured")
 	}
 	return dsn
 }

@@ -67,7 +67,7 @@ cd /project/root
 uv run python -m rag.service
 
 # Или через Docker
-docker compose up -d rag
+./infra/scripts/compose.sh up -d rag
 ```
 
 ## Тестирование

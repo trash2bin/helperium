@@ -1,6 +1,6 @@
 """TDD test: LiteLLMProvider.cost всегда 0.0 — spending tracking сломан.
 
-Проблема: /Users/ivan/code/helperium/api-service/src/api_service/agent/litellm_provider.py
+Проблема: `services/api-service/src/api_service/agent/litellm_provider.py`
 метод complete() возвращает ``cost=0.0`` хардкодом. При этом
 litellm.ModelResponse.usage.cost содержит реальную стоимость от API.
 

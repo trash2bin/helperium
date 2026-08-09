@@ -2,9 +2,11 @@
 # RAG service: embeddings, ChromaDB, document parsing
 # Only image that pulls sentence-transformers → torch
 # ============================================================
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV UV_PYTHON_PREFERENCE=only-system
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
@@ -14,7 +16,7 @@ RUN uv sync --frozen --no-install-project --package rag --no-dev
 COPY . .
 RUN uv sync --frozen --package rag --no-dev
 
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 RUN groupadd --gid 1000 app && \
     useradd --uid 1000 --gid app --shell /bin/bash --create-home app
@@ -29,6 +31,7 @@ COPY --from=builder --chown=app:app /app/services/helperium-sdk /app/services/he
 
 
 ENV PATH=/app/.venv/bin:$PATH \
+    PYTHONPATH=/app/services:$PYTHONPATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/home/app \

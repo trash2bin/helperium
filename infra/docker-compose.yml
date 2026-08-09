@@ -434,10 +434,6 @@ volumes:
       device: ./.data/uploads
   pg_data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./.data/pg
   caddy_data:
   caddy_config:
   prometheus_data:

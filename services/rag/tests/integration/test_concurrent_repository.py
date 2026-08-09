@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import sqlite3
 import threading
@@ -31,8 +32,8 @@ from rag.repository import DocumentRepository
 
 logger = logging.getLogger(__name__)
 
-# Путь к реальному PDF на машине разработчика
-REAL_PDF = Path("/Users/ivan/Documents/Labs/ALgoritms/lab3/DOPtask.pdf")
+# Optional external PDF fixture. The test skips when no fixture is configured.
+REAL_PDF = Path(os.environ["RAG_TEST_PDF"]) if os.environ.get("RAG_TEST_PDF") else None
 
 
 # ── Fixtures (from rag/tests/conftest.py — inline, без зависимостей) ──
@@ -124,6 +125,8 @@ def pdf_chunks(parser: DocumentParser, chunker: TextChunker) -> list[ChunkDict]:
     Это одноразовое действие: парсим PDF один раз, переиспользуем
     чанки во всех тестах.
     """
+    if REAL_PDF is None:
+        pytest.skip("RAG_TEST_PDF is not configured")
     if not REAL_PDF.exists():
         pytest.skip(f"PDF не найден: {REAL_PDF}")
     pages = parser.extract_pages(REAL_PDF)

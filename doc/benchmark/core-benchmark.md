@@ -23,7 +23,7 @@ retrieval, answer delivery, галлюцинации, отказ, стоимос
 # 2. Tenant autoparts (PG на :5434, demo/autoparts-store) + rewrite
 curl -X POST http://127.0.0.1:8084/admin/tenants \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"id":"autoparts","config":{"data_source":{"driver":"postgres","dsn":"postgres://autoparts:autoparts_secret_2024@127.0.0.1:5434/autoparts","read_only":true}}}'
+  -d '{"id":"autoparts","config":{"data_source":{"driver":"postgres","dsn":"postgres://USER:PASSWORD@127.0.0.1:5434/autoparts","read_only":true}}}'
 curl -X POST http://127.0.0.1:8084/admin/config/rewrite -H 'X-Tenant-ID: autoparts' \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 

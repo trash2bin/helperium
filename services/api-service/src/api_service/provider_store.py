@@ -24,7 +24,9 @@ from api_service.agent.models import ProviderConfig
 
 logger = logging.getLogger("api_service.provider_store")
 
-DEFAULT_PROVIDERS_PATH = Path(os.environ.get("PROVIDER_STORE_PATH", ".data/providers.json"))
+DEFAULT_PROVIDERS_PATH = Path(
+    os.environ.get("PROVIDER_STORE_PATH", ".data/providers.json")
+)
 
 
 def get_litellm_provider_list() -> list[str]:

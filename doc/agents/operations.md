@@ -14,11 +14,14 @@
 ## Docker-запуск
 
 ```bash
-docker compose up -d                        # dev режим
-docker compose --profile prod up -d         # Caddy + HTTPS
-docker compose build                        # пересборка
-docker compose --profile monitoring up -d   # Prometheus + Grafana
+./infra/scripts/compose.sh up -d                        # dev режим
+./infra/scripts/compose.sh --profile prod up -d         # Caddy + HTTPS
+./infra/scripts/compose.sh build                        # пересборка
+./infra/scripts/compose.sh --profile monitoring up -d   # Prometheus + Grafana
 ```
+
+Launcher всегда использует `infra/docker-compose.yml`, корневой `.env` и
+`infra/` как project directory, поэтому его можно запускать из любой директории.
 
 Тома в `./.data/` (БД, индексы ChromaDB, кэш моделей).
 
@@ -47,4 +50,4 @@ curl -X POST http://127.0.0.1:8084/admin/tenants -H "Authorization: Bearer secre
 
 **agent-db CLI (legacy):** `uv run agent-db register <tenant_id> <scenario>`, `uv run agent-db tenants`, `uv run agent-db drop <scenario>`
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — Docker launcher проверен из корня и из произвольной директории

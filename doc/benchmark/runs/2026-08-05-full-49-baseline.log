@@ -1,6 +1,6 @@
 Loaded 49 cases from agent_db/bench/cases/autoparts.json
 Agent: autoparts-assistant | Tenant: autoparts | API: http://127.0.0.1:8081
-Backlog dir: /Users/ivan/code/helperium/backlog
+Backlog dir: <project-root>/backlog
 [1/49] lookup: Сколько стоит артикул EXT-01392?
 [2/49] lookup: Сколько стоит Датчик ABS Bosch для Toyota Land Cruiser 200?
 [3/49] lookup: Какой бренд у товара с артикулом EXT-01392?
@@ -91,5 +91,5 @@ Failed cases:
   - product-filter-discount-001: Покажи товары со скидкой
       tool=True retrieval=True answer=True halluc=True | unsupported numbers in answer: ['7200', '5870', '6000', '4850', '6800']
 
-Report written to /Users/ivan/code/helperium/bench-full-report.json
+Report written to <project-root>/bench-full-report.json
 ⚠️  Success rate 81.6% < 100% — exit 1

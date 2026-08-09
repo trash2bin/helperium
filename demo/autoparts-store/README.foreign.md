@@ -11,7 +11,7 @@
 
 ## 🔗 Источник
 
-- **Оригинал:** `/Users/ivan/code/auto-parts-store` (git-репозиторий)
+- **Оригинал:** отдельный git-репозиторий клиента
 - **Копия здесь:** `demo/autoparts-store/` (только git-tracked файлы, без `.git`, БД, `__pycache__`)
 
 ## 🚫 Правила (важно)
@@ -91,8 +91,8 @@ DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell < seed_fixture.py
 # из корня helperium
 rm -rf demo/autoparts-store
 mkdir -p demo/autoparts-store
-cd /Users/ivan/code/auto-parts-store && git archive --format=tar HEAD \
-  | tar -x -C /Users/ivan/code/helperium/demo/autoparts-store
+cd /path/to/auto-parts-store && git archive --format=tar HEAD \
+  | tar -x -C /path/to/helperium/demo/autoparts-store
 # затем восстановить helperium-owned файлы (schema.sql, README.foreign.md, .foreign)
 ```
 

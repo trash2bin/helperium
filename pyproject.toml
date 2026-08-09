@@ -18,6 +18,8 @@ helperium-sdk = { workspace = true }
 rag = { workspace = true }
 api-service = { workspace = true }
 demo-web = { workspace = true }
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [tool.uv.workspace]
 members = [
@@ -94,3 +96,7 @@ debug = false
 
 [tool.uv]
 index-strategy = "unsafe-first-match"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"

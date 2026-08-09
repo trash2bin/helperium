@@ -2,7 +2,7 @@
   "version": 1,
   "data_source": {
     "driver": "postgres",
-    "dsn": "postgres://autoparts:autoparts_secret_2024@127.0.0.1:5434/autoparts?sslmode=disable",
+    "dsn": "postgres://USER:PASSWORD@127.0.0.1:5434/autoparts?sslmode=disable",
     "read_only": true
   },
   "entities": [

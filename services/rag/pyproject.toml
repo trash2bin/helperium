@@ -10,6 +10,7 @@ dependencies = [
     "starlette>=0.50.0",
     "pydantic>=2.0.0",
     "httpx>=0.28.0",
+    "python-multipart>=0.0.20",
     "prometheus-client>=0.21.0",
     "sentence-transformers>=5.5.1",
     "chromadb>=1.5.9",
@@ -40,6 +41,10 @@ index-strategy = "unsafe-first-match"
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [build-system]
 requires = ["hatchling"]

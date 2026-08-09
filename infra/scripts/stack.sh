@@ -14,10 +14,7 @@
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
-DOCKER_COMPOSE="docker compose"
-if ! docker compose version &>/dev/null; then
-  DOCKER_COMPOSE="docker-compose"
-fi
+DOCKER_COMPOSE=("$PROJECT_ROOT/infra/scripts/compose.sh")
 
 check_docker() {
   if ! docker ps &>/dev/null; then
@@ -37,7 +34,7 @@ up() {
   echo -e "${YELLOW}[2/2] Поднимаю Docker инфраструктуру (monitoring + tracing + logging)...${NC}"
   check_docker || exit 1
   cd "$PROJECT_ROOT"
-  $DOCKER_COMPOSE up -d prometheus grafana tempo otel-collector loki promtail
+  "${DOCKER_COMPOSE[@]}" up -d prometheus grafana tempo otel-collector loki promtail
 
   echo -e "${GREEN}✓ Стек поднят. Проверка: ./scripts/stack.sh status${NC}"
 }
@@ -50,7 +47,7 @@ down() {
   echo -e "${YELLOW}Останавливаю Docker стек...${NC}"
   check_docker || true
   cd "$PROJECT_ROOT"
-  $DOCKER_COMPOSE down --volumes 2>/dev/null || $DOCKER_COMPOSE down 2>/dev/null || true
+  "${DOCKER_COMPOSE[@]}" down --volumes 2>/dev/null || "${DOCKER_COMPOSE[@]}" down 2>/dev/null || true
 
   echo -e "${GREEN}✓ Всё остановлено${NC}"
 }
@@ -93,7 +90,7 @@ logs() {
   echo -e "${YELLOW}══════ Docker логи (последние 20 строк) ══════${NC}"
   for svc in prometheus grafana tempo otel-collector loki promtail; do
     echo -e "\n${YELLOW}--- $svc ---${NC}"
-    $DOCKER_COMPOSE logs --tail=5 "$svc" 2>/dev/null | grep -v "^$" | tail -5 || echo "(нет логов)"
+    "${DOCKER_COMPOSE[@]}" logs --tail=5 "$svc" 2>/dev/null | grep -v "^$" | tail -5 || echo "(нет логов)"
   done
 }
 

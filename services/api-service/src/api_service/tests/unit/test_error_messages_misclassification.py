@@ -1,6 +1,6 @@
 """TDD tests: classify_error() substring matching misclassifies errors.
 
-Проблема: /Users/ivan/code/helperium/api-service/src/api_service/error_messages.py
+Проблема: `services/api-service/src/api_service/error_messages.py`
 использует `if 'auth' in exc_str` — это ловит 'database_auth_error' как
 AUTH, хотя это CONNECTION/MCP ошибка. Аналогично с другими ключевыми
 словами.
