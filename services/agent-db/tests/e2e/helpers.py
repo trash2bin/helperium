@@ -376,7 +376,7 @@ def make_tenant(
     """Create a ready-to-register TestTenant.
 
     If ``scenario`` is given, seeds a fresh DB from it:
-      - scenarios with config.json+seed.json (sqlite-testseed) → seed_database
+      - scenarios with config.json (including sqlite-testseed) → seed_database
       - scenarios with only create_db.py (auto-shop, clinic) → create_scenario_db
     Scenarios without config.json register via rewrite (introspection
     generates the config from the DB — entities/endpoints/tools appear).
@@ -390,7 +390,11 @@ def make_tenant(
 
     if db_path is None:
         if scenario:
-            if has_config and not has_script:
+            # Config-backed scenarios must get a private materialized DB for
+            # every tenant.  A create_db.py may exist as a checked-in fixture
+            # generator, but its data.db is shared and must not be registered
+            # directly: two tenants would then read and mutate the same DB.
+            if has_config:
                 db_path = temp_db_path(prefix)
                 seed_database(db_path, scenario=scenario)
             else:
