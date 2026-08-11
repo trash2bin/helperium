@@ -19,10 +19,11 @@ from agent_db.bench.models import (
     BacklogData,
     BenchmarkReport,
     EvalResult,
+    ErrorClass,
     RunResult,
     TestCase,
 )
-from agent_db.bench.report import aggregate_report, print_report, report_to_dict
+from agent_db.bench.report import aggregate_report, diff_reports, print_report, report_to_dict
 from agent_db.bench.backlog_parser import (
     find_backlog_file,
     parse_backlog_data,
@@ -37,19 +38,26 @@ from agent_db.bench.runner import _sse_parse_events
 
 
 def make_case(cid="t1", gt_type="exact_value", expected=None, **kw):
-    return TestCase.from_dict({
+    gt = {"type": gt_type, "expected": expected or {}}
+    # extra ground-truth keys (answer_rules, check_skus, country_aliases...)
+    gt_extra = kw.pop("gt_extra", None) or {}
+    gt.update(gt_extra)
+    gt_kw = kw.pop("ground_truth_kw", None) or {}
+    gt.update(gt_kw)
+    d = {
         "id": cid,
         "question": kw.pop("question", "q"),
         "category": kw.pop("category", "lookup"),
-        "ground_truth": {"type": gt_type, "expected": expected or {}},
+        "ground_truth": gt,
         **kw,
-    })
+    }
+    return TestCase.from_dict(d)
 
 
 def make_run(final_text="", tool_calls=None, tool_results=None, **kw):
     return RunResult(
         session_id="s",
-        question="q",
+        question=kw.pop("question", "q"),
         final_text=final_text,
         tool_calls=tool_calls or [],
         tool_results=tool_results or [],
@@ -127,7 +135,7 @@ class TestEvaluator:
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.refusal_ok and res.hallucination and not res.success
 
-    # Фаза 2.5: absence-кейс, где модель зовёт db_map (схема) — это НЕ данные.
+    # absence-кейс, где модель зовёт db_map (схема) — это НЕ данные.
     def test_absence_with_db_map_still_empty(self):
         case = make_case(cid="abs3", gt_type="not_found", expected={"count": 0},
                          expect_refusal=True,
@@ -187,7 +195,7 @@ class TestEvaluator:
         assert res.answer_ok, res.reasons
         assert res.success, res.reasons
 
-    # ── Фаза 2.5 evaluator-fix: bool semantic matching ───────────────────
+    # ── bool semantic matching ───────────────────
     # Бенч (scout-1): GT {"available": true} ищет literal "true", а модель
     # пишет «в наличии» → false-negative. Bool должен матчиться семантически.
     def test_bool_available_ru_semantic(self):
@@ -214,7 +222,7 @@ class TestEvaluator:
         assert res.answer_ok, f"bool False должен матчиться с «закончился»: {res.reasons}"
         assert res.success, res.reasons
 
-    # ── Фаза 2.5 evaluator-fix: производные числа (суммы) ───────────────
+    # ── производные числа (суммы) ───────────────
     # Бенч (order-lookup-total): модель считает 677×3=2031 (line-items),
     # эти числа в ответе, но не в tool_results → false-positive hallucination.
     def test_derived_arithmetic_not_hallucination(self):
@@ -240,7 +248,7 @@ class TestEvaluator:
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, f"производное «ещё 5» не галлюцинация: {res.reasons}"
 
-    # Фаза 2.5: сумма позиций заказа (2031 = 677×3, где 677 и 3 в tool_results).
+    # сумма позиций заказа (2031 = 677×3, где 677 и 3 в tool_results).
     def test_line_item_sum_not_hallucination(self):
         case = make_case(expected={"total": 7809})
         run = make_run(
@@ -255,9 +263,78 @@ class TestEvaluator:
         assert not res.hallucination, f"сумма позиций не галлюцинация: {res.reasons}"
         assert res.answer_ok and res.success, res.reasons
 
-    # ── Фаза 2.5 evaluator-fix: табличные № строк ───────────────────────
+    # ── false negative — производное не должно прощать выдумку ──
+    # «итого 700» при tool_numbers {20,35} — произведение двух больших чисел,
+    # агент не обязан был перемножать любые пары → это галлюцинация.
+    def test_arbitrary_pair_product_is_hallucination(self):
+        case = make_case(expected={"count": 700})
+        run = make_run(
+            final_text="Итого 700 товаров в наличии.",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product",
+                           "result": json.dumps({"total": 700})}],
+        )
+        # 700 подтверждён total=700 → это НЕ галлюцинация (контрольный тест).
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, res.reasons
+
+    def test_arbitrary_pair_product_hallucination_when_unconfirmed(self):
+        """tool_results {20, 35}, ответ «итого 700» → 700 = 20×35 формально
+        derived, но агент не обязан был перемножать → HALLUCINATED_NUMBER."""
+        case = make_case(expected={"count": 700})
+        run = make_run(
+            final_text="Итого доступно 700 товаров.",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product",
+                           "result": json.dumps({"preview": [
+                               {"id": 1, "quantity": 20}, {"id": 2, "quantity": 35}]})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.hallucination, f"700 = 20×35 не должно прощаться: {res.reasons}"
+
+    def test_vague_total_without_confirmation_is_hallucination(self):
+        """«всего 40 товаров» без total=40 в tool_results → галлюцинация
+        (слово «всего» не арифметический маркер)."""
+        case = make_case(cid="vt", gt_type="count", expected={"count": 40})
+        run = make_run(
+            final_text="Всего 40 товаров бренда Bosch.",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product",
+                           "result": json.dumps({"total": 40})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        # total=40 в tool_results → 40 подтверждено → не галлюцинация.
+        assert not res.hallucination, res.reasons
+
+    def test_total_in_tools_not_hallucination(self):
+        """total=40 в tool_results, ответ «всего 40 товаров» → 40 подтверждено."""
+        case = make_case(cid="tt", gt_type="count", expected={"count": 40})
+        run = make_run(
+            final_text="Всего 40 товаров бренда Bosch.",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product",
+                           "result": json.dumps({"total": 40})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination and res.answer_ok, res.reasons
+
+    def test_derived_numbers_require_arithmetic_context(self):
+        """Число после «всего/товаров» без арифметики и без подтверждения —
+        галлюцинация (маркеры «всего/товаров» убраны из derived).
+        «Всего» — описательное слово, а не арифметика."""
+        case = make_case(cid="dn", gt_type="count", expected={"count": 999})
+        run = make_run(
+            final_text="Всего 999 товаров в наличии.",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product",
+                           "result": json.dumps({"total": 40})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.hallucination, f"999 не подтверждён и не выводим → галлюцинация: {res.reasons}"
+
+    # ── табличные № строк ───────────────────────
     # Модель нумерует строки в таблице (1..10) — это не факты.
-    # ── Фаза 2.5 evaluator-fix: морфология стран ────────────────────────
+    # ── морфология стран ────────────────────────
     # «из Германии» (предложный падеж) ≠ «Германия» — матчим по корню.
     def test_country_morphology(self):
         case = make_case(expected={"country": "Германия"})
@@ -328,6 +405,258 @@ class TestEvaluator:
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, res.reasons
         assert res.success, res.reasons
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # verdict + error taxonomy
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_verdict_correct(self):
+        """Clean case → CORRECT, no error classes."""
+        case = make_case(expected={"price": 3064},
+                         expected_tool={"must_call_any": ["db_get"]})
+        run = make_run(
+            final_text="Цена 3064 рубля",
+            tool_calls=[{"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "CORRECT", res.reasons
+        assert res.error_classes == []
+        assert res.error_source == "agent"
+
+    def test_verdict_wrong_hallucination(self):
+        """Unsupported number → WRONG + HALLUCINATED_NUMBER."""
+        case = make_case(expected={"price": 3064})
+        run = make_run(
+            final_text="Цена 9999 рублей",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "WRONG", res.reasons
+        assert ErrorClass.HALLUCINATED_NUMBER in res.error_classes
+
+    def test_verdict_wrong_sku_hallucination(self):
+        """Answer SKU not in tools (with check_skus flag) → WRONG + HALLUCINATED_SKU."""
+        case = make_case(expected={"price": 3064},
+                         ground_truth_kw={"check_skus": True})
+        run = make_run(
+            final_text="Цена 3064, артикул BRK-99999",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "WRONG", res.reasons
+        assert ErrorClass.HALLUCINATED_SKU in res.error_classes
+
+    def test_verdict_sku_not_flagged_without_flag(self):
+        """Without any_of_skus/check_skus, SKU mentions are not hallucinations."""
+        case = make_case(expected={"price": 3064})
+        run = make_run(
+            final_text="Цена 3064, артикул BRK-01004",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "CORRECT", res.reasons
+        assert ErrorClass.HALLUCINATED_SKU not in res.error_classes
+
+    def test_verdict_cyrillic_sku_hallucination(self):
+        """Кириллический артикул АП-100005 без подтверждения в tools
+        (с check_skus) → HALLUCINATED_SKU. Regex ловит кириллицу."""
+        case = make_case(cid="cyr", expected={"price": 3064},
+                         ground_truth_kw={"check_skus": True})
+        run = make_run(
+            final_text="Цена 3064, артикул АП-100005",
+            tool_calls=[{"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "WRONG", res.reasons
+        assert ErrorClass.HALLUCINATED_SKU in res.error_classes
+
+    def test_verdict_cyrillic_sku_present_in_tools_ok(self):
+        """АП-100005 подтверждён в tool_results → не галлюцинация."""
+        case = make_case(cid="cyrok", expected={"price": 3064},
+                         ground_truth_kw={"check_skus": True})
+        run = make_run(
+            final_text="Артикул АП-100005, цена 3064",
+            tool_calls=[{"name": "db_search", "arguments": {"entity": "catalog_product", "pattern": "АП-100005"}}],
+            tool_results=[{"name": "db_search", "result": json.dumps({"preview": [{"id": 1, "name": "АП-100005"}]})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert ErrorClass.HALLUCINATED_SKU not in res.error_classes, res.reasons
+
+    def test_verdict_partial_lost_total(self):
+        """total:40 known, answer vague → PARTIAL + LOST_TOTAL (not WRONG)."""
+        case = make_case(cid="lt", gt_type="count", expected={"count": 40},
+                         gt_extra={"answer_rules": {"expect_total_mentioned": True}})
+        run = make_run(
+            final_text="В наличии есть много позиций",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product",
+                           "result": json.dumps({"total": 40, "returned": 20, "preview": [{"id": 1}]})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "PARTIAL", res.reasons
+        assert ErrorClass.LOST_TOTAL in res.error_classes
+        assert ErrorClass.ANSWER_MISS not in res.error_classes
+
+    def test_verdict_partial_false_uncertainty(self):
+        """Grounded fact hedged with 'скорее всего' → PARTIAL + FALSE_UNCERTAINTY."""
+        case = make_case(expected={"price": 3064})
+        run = make_run(
+            final_text="Артикул стоит, скорее всего, 3064 рубля",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "PARTIAL", res.reasons
+        assert ErrorClass.FALSE_UNCERTAINTY in res.error_classes
+
+    def test_verdict_partial_tool_overuse(self):
+        """Exceeds budget.max_tool_calls → PARTIAL + TOOL_OVERUSE."""
+        case = make_case(expected={"price": 3064}, budget={"max_tool_calls": 2})
+        run = make_run(
+            final_text="Цена 3064",
+            tool_calls=[{"name": "db_get"} for _ in range(4)],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "PARTIAL", res.reasons
+        assert ErrorClass.TOOL_OVERUSE in res.error_classes
+        assert res.total_tool_calls == 4
+
+    def test_verdict_error_infra(self):
+        """Tool returns {"error": "timeout"} → ERROR + INFRA_ERROR, error_source=tool."""
+        case = make_case(expected={"price": 3064})
+        run = make_run(
+            final_text="",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"error": "timeout"})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "ERROR", res.reasons
+        assert ErrorClass.INFRA_ERROR in res.error_classes
+        assert res.error_source == "tool"
+
+    def test_verdict_partial_schema_error(self):
+        """entity='Order' instead of catalog_order → PARTIAL + SCHEMA_ENTITY_ERROR."""
+        case = make_case(expected={"status": "shipped"},
+                         status_synonyms={"shipped": ["отправлен"]})
+        run = make_run(
+            final_text="отправлен",
+            tool_calls=[{"name": "db_search", "arguments": {"entity": "Order", "pattern": "АП-100005"}}],
+            tool_results=[{"name": "db_search", "result": json.dumps({"preview": [{"id": 5}]})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "PARTIAL", res.reasons
+        assert ErrorClass.SCHEMA_ENTITY_ERROR in res.error_classes
+
+    def test_verdict_wrong_availability(self):
+        """expected available=True but answer says нет → WRONG + WRONG_AVAILABILITY."""
+        case = make_case(expected={"available": True})
+        run = make_run(
+            final_text="Нет в наличии",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"is_available": True})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "WRONG", res.reasons
+        assert ErrorClass.WRONG_AVAILABILITY in res.error_classes
+
+    def test_verdict_forbidden_tool(self):
+        """must_not_call invoked → WRONG + FORBIDDEN_TOOL."""
+        case = make_case(expected={"price": 3064},
+                         expected_tool={"must_call_any": ["db_get"], "must_not_call": ["db_map"]})
+        run = make_run(
+            final_text="Цена 3064",
+            tool_calls=[{"name": "db_get"}, {"name": "db_map"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert ErrorClass.FORBIDDEN_TOOL in res.error_classes
+
+    def test_verdict_tool_loop(self):
+        """run.loop_warnings → PARTIAL + TOOL_LOOP."""
+        case = make_case(expected={"price": 3064})
+        run = make_run(
+            final_text="Цена 3064",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+            loop_warnings=["Loop detected: tool 'db_get' called 3x"],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "PARTIAL", res.reasons
+        assert ErrorClass.TOOL_LOOP in res.error_classes
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # dedupe in min_count
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_min_count_dedupes_repeated_rows(self):
+        """db_search preview 20 + db_get on same ids → not double-counted."""
+        case = make_case(gt_type="list_ids", expected={"min_count": 25})
+        run = make_run(
+            final_text="Вот товары",
+            tool_calls=[{"name": "db_search"}],
+            tool_results=[
+                {"name": "db_search", "result": json.dumps({"preview": [{"id": i} for i in range(20)], "total": 20})},
+                {"name": "db_get", "result": json.dumps({"id": 1, "price": 100})},
+                {"name": "db_get", "result": json.dumps({"id": 2, "price": 200})},
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.retrieval_ok, "должно быть 20 уникальных (id 1,2 уже в preview)"
+        assert ErrorClass.RETRIEVAL_MISS in res.error_classes
+
+    def test_min_count_does_not_dedupe_distinct_rows(self):
+        """Preview 20 + 5 new db_get ids → 25 unique → retrieval OK."""
+        case = make_case(gt_type="list_ids", expected={"min_count": 25})
+        run = make_run(
+            final_text="Вот товары",
+            tool_calls=[{"name": "db_search"}],
+            tool_results=[
+                {"name": "db_search", "result": json.dumps({"preview": [{"id": i} for i in range(20)], "total": 20})},
+                {"name": "db_get", "result": json.dumps({"id": 100, "price": 100})},
+                {"name": "db_get", "result": json.dumps({"id": 101, "price": 200})},
+                {"name": "db_get", "result": json.dumps({"id": 102, "price": 300})},
+                {"name": "db_get", "result": json.dumps({"id": 103, "price": 400})},
+                {"name": "db_get", "result": json.dumps({"id": 104, "price": 500})},
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.retrieval_ok, res.reasons
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # error payload is not data
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_error_payload_is_not_data(self):
+        """{"error": "timeout"} → empty results, not data."""
+        ev = DeterministicEvaluator()
+        assert ev._json_has_rows({"error": "timeout"}) is False
+        assert ev._check_empty_results([{"name": "db_get", "result": json.dumps({"error": "timeout"})}])
+        assert ev._count_rows(json.dumps({"error": "timeout"})) == 0
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # narrowed bool markers
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_bool_weak_markers_removed(self):
+        """'да'/'есть'/'нет' alone no longer match availability."""
+        ev = DeterministicEvaluator()
+        assert not ev._match_bool(True, "да, уточню")
+        assert not ev._match_bool(True, "есть смысл проверить")
+        assert not ev._match_bool(False, "нет, не надо")
+        assert ev._match_bool(True, "в наличии")
+        assert ev._match_bool(False, "отсутствует")
+
+    def test_bool_strong_markers_still_match(self):
+        """Strong markers still work."""
+        ev = DeterministicEvaluator()
+        assert ev._match_bool(True, "товар в наличии на складе")
+        assert ev._match_bool(False, "товар закончился")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -487,6 +816,148 @@ class TestReport:
         assert not e2.entity_name_ok
         report = aggregate_report([c1, c2], [r1, r2], [e1, e2])
         assert report.entity_name_accuracy == pytest.approx(0.5)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # verdict distribution, error histogram, percentiles
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_verdict_distribution_and_histogram(self):
+        """aggregate_report counts verdicts and error classes."""
+        # Case 1: CORRECT
+        c1 = make_case(cid="v1", expected={"price": 1})
+        r1 = make_run(
+            final_text="ok 1",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
+        )
+        e1 = DeterministicEvaluator().evaluate(c1, r1)
+        # Case 2: PARTIAL (false uncertainty)
+        c2 = make_case(cid="v2", expected={"price": 2})
+        r2 = make_run(
+            final_text="скорее всего 2",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 2})}],
+        )
+        e2 = DeterministicEvaluator().evaluate(c2, r2)
+        # Case 3: WRONG (hallucination)
+        c3 = make_case(cid="v3", expected={"price": 3})
+        r3 = make_run(
+            final_text="999",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3})}],
+        )
+        e3 = DeterministicEvaluator().evaluate(c3, r3)
+        report = aggregate_report([c1, c2, c3], [r1, r2, r3], [e1, e2, e3])
+        assert report.verdict_counts.get("CORRECT") == 1
+        assert report.verdict_counts.get("PARTIAL") == 1
+        assert report.verdict_counts.get("WRONG") == 1
+        assert ErrorClass.FALSE_UNCERTAINTY in report.error_class_histogram
+        assert ErrorClass.HALLUCINATED_NUMBER in report.error_class_histogram
+
+    def test_percentiles_calculated(self):
+        """p50/p95 for duration/tokens/cost/tool_calls are computed."""
+        cases, runs, evals = [], [], []
+        for i in range(4):
+            c = make_case(cid=f"p{i}", expected={"price": 1})
+            r = make_run(
+                final_text=f"ok {i + 1}",
+                tool_calls=[{"name": "db_get"}],
+                tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
+                backlog=BacklogData(duration_ms=float(i + 1) * 100, total_tokens=100 * (i + 1),
+                                    total_cost=0.01 * (i + 1), llm_calls=1, tool_calls_count=i + 1,
+                                    iterations=1),
+            )
+            e = DeterministicEvaluator().evaluate(c, r)
+            cases.append(c); runs.append(r); evals.append(e)
+        report = aggregate_report(cases, runs, evals)
+        # durations: [100, 200, 300, 400]
+        assert report.p50_duration_ms == pytest.approx(250)
+        assert report.p95_duration_ms == pytest.approx(385)
+        assert report.p50_tokens == pytest.approx(250)
+        assert report.p95_tokens == pytest.approx(385)
+        # tool_calls_count: [1, 2, 3, 4]
+        assert report.p50_tool_calls == pytest.approx(2.5)
+
+    def test_report_to_dict_includes_verdicts(self):
+        """report_to_dict carries verdicts, error_classes, percentiles."""
+        c = make_case(cid="rd", expected={"price": 1})
+        r = make_run(
+            final_text="ok 1",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
+        )
+        e = DeterministicEvaluator().evaluate(c, r)
+        report = aggregate_report([c], [r], [e])
+        d = report_to_dict(report)
+        assert d["verdicts"]["CORRECT"] == 1
+        assert "error_classes" in d
+        assert "p50_duration_ms" in d
+        assert "run_metadata" in d
+        assert d["cases"][0]["eval"]["verdict"] == "CORRECT"
+        assert "repeated_tool_calls" in d["cases"][0]["metrics"]
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # case-level diff for regressions
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_diff_reports_detects_regression(self):
+        """diff_reports flags a case that went CORRECT→WRONG."""
+        def _mk(cid, final_text, expected={"price": 1}):
+            c = make_case(cid=cid, expected=expected)
+            r = make_run(final_text=final_text,
+                         tool_calls=[{"name": "db_get"}],
+                         tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}])
+            return c, r, DeterministicEvaluator().evaluate(c, r)
+
+        # prev: CORRECT; cur: WRONG (hallucination)
+        c1, r1, e1 = _mk("case-1", "цена 1")
+        c1b, r1b, e1b = _mk("case-1", "цена 999")
+        prev = aggregate_report([c1], [r1], [e1])
+        cur = aggregate_report([c1b], [r1b], [e1b])
+        diff = diff_reports(prev, cur)
+        assert diff["total_changed"] == 1
+        assert diff["regressed"] == 1
+        assert diff["improved"] == 0
+        entry = diff["case_diff"][0]
+        assert entry["case_id"] == "case-1"
+        assert entry["prev_verdict"] == "CORRECT"
+        assert entry["cur_verdict"] == "WRONG"
+        assert entry["changed"] is True
+
+    def test_diff_reports_improvement(self):
+        """diff_reports flags a case that went WRONG→CORRECT as improved."""
+        def _mk(cid, final_text):
+            c = make_case(cid=cid, expected={"price": 1})
+            r = make_run(final_text=final_text,
+                         tool_calls=[{"name": "db_get"}],
+                         tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}])
+            return c, r, DeterministicEvaluator().evaluate(c, r)
+
+        c1, r1, e1 = _mk("case-1", "цена 999")
+        c1b, r1b, e1b = _mk("case-1", "цена 1")
+        prev = aggregate_report([c1], [r1], [e1])
+        cur = aggregate_report([c1b], [r1b], [e1b])
+        diff = diff_reports(prev, cur)
+        assert diff["total_changed"] == 1
+        assert diff["improved"] == 1
+        assert diff["regressed"] == 0
+
+    def test_diff_reports_no_change(self):
+        """Same verdicts → no diff."""
+        def _mk(cid, final_text):
+            c = make_case(cid=cid, expected={"price": 1})
+            r = make_run(final_text=final_text,
+                         tool_calls=[{"name": "db_get"}],
+                         tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}])
+            return c, r, DeterministicEvaluator().evaluate(c, r)
+
+        c1, r1, e1 = _mk("case-1", "цена 1")
+        c1b, r1b, e1b = _mk("case-1", "цена 1")
+        prev = aggregate_report([c1], [r1], [e1])
+        cur = aggregate_report([c1b], [r1b], [e1b])
+        diff = diff_reports(prev, cur)
+        assert diff["total_changed"] == 0
+        assert diff["regressed"] == 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════

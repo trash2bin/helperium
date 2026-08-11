@@ -122,6 +122,39 @@ Ground truth сверен с data-service (источник правды): це�
   общего backlog (не путает).
 - **Логи сервисов** — `.data/logs/{api,mcp,data}.log`.
 
+## Verdict и таксономия ошибок
+
+Бенч теперь выдаёт по каждому кейсу не только boolean-флаги, а явный
+**verdict** (`CORRECT / PARTIAL / WRONG / ERROR`) и стабильные коды ошибок
+(`ErrorClass`). Цель README — «процент корректных ответов и среднее число ошибок
+по классам» — теперь достижима агрегацией `verdicts` и `error_classes`.
+
+- `CORRECT` — всё чисто.
+- `PARTIAL` — major/minor дефекты без critical: `LOST_TOTAL` (знал 40, сказал
+  «много»), `FALSE_UNCERTAINTY` («скорее всего» при точных данных),
+  `TOOL_OVERUSE` (бюджет), `TOOL_LOOP`, `SCHEMA_ENTITY_ERROR`, `FORBIDDEN_TOOL`.
+- `WRONG` — critical: `HALLUCINATED_SKU` (выдуманный артикул), `HALLUCINATED_NUMBER`,
+  `WRONG_FACT`, `WRONG_AVAILABILITY`, `WRONG_STATUS`, `ANSWER_MISS`, `RETRIEVAL_MISS`,
+  `REFUSAL_MISSING`.
+- `ERROR` — `INFRA_ERROR` (error payload/timeout/HTTP), `BENCH_ERROR`.
+
+`error_source` отделяет вину агента (`agent`) от сбоя сервиса (`tool`/`infra`).
+Интересный факт: раньше `{"error": "timeout"}` считался данными (баг) — теперь
+это INFRA_ERROR, т.е. дефекты бенча не наказывают агента.
+
+**Camry-кейс** (из `incident-camry.md`) теперь разложился бы так:
+
+```text
+TOOL_OVERUSE       # 11 tool_calls, 9 db_get
+LOST_TOTAL         # total=40, сказал «много»
+FALSE_UNCERTAINTY  # «скорее всего тормозные колодки»
+verdict = PARTIAL
+```
+
+Новые метрики в отчёте: `verdicts` (доли), `error_classes` (histogram),
+`p50/p95` по tokens/duration/cost/tool_calls, `avg_repeated_tool_calls`/
+`avg_unique_tool_calls`/`avg_db_get` (fanout).
+
 ## Стоимость
 
 - polza/deepseek-v4-flash: **≈ $0.18-0.19/кейс** (25-38k токенов, 8-26s).
@@ -134,3 +167,6 @@ Ground truth сверен с data-service (источник правды): це�
 - [plan-for-review.md](plan-for-review.md) — план и известные gaps логгирования
 - [incident-camry.md](incident-camry.md) — кейс, мотивировавший детерминизм
 - [agent_db/bench/README.md](../../services/agent-db/agent_db/bench/README.md) — код, метрики, тесты
+
+---
+**Last verified:** 2026-08-11 (рабочая ветка) — добавлен раздел «Verdict и таксономия ошибок»; бенч выдаёт verdict + error_classes, отчёт — verdicts/percentiles. Сверено с кодом evaluator/models/report.

@@ -90,6 +90,23 @@ def run_cmd(
     report = aggregate_report(cases, runs, evals)
     report.total_duration_wall_ms = wall * 1000
 
+    # run metadata (for regressions)
+    try:
+        import subprocess
+
+        git_commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=3
+        ).stdout.strip()
+    except Exception:
+        git_commit = ""
+    report.run_metadata = {
+        "git_commit": git_commit,
+        "model": agent_name,
+        "dataset": str(cases_file),
+        "cases_count": len(cases),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
     # Console report
     text = print_report(report)
     typer.echo(text)
@@ -105,10 +122,14 @@ def run_cmd(
         )
         typer.echo(f"\nReport written to {out_path}")
 
-    # Exit code: fail if success rate < 100% (useful for CI)
-    if report.success_rate < 1.0:
-        typer.echo(f"⚠️  Success rate {report.success_rate:.1%} < 100% — exit 1")
+    # Exit code: fail if any WRONG/ERROR . PARTIAL → warning, not failure.
+    wrong_or_error = report.verdict_counts.get("WRONG", 0) + report.verdict_counts.get("ERROR", 0)
+    if wrong_or_error > 0:
+        typer.echo(f"⚠️  {wrong_or_error} WRONG/ERROR cases — exit 1")
         raise typer.Exit(1)
+    if report.verdict_counts.get("PARTIAL", 0) > 0:
+        partial = report.verdict_counts.get("PARTIAL", 0)
+        typer.echo(f"ℹ️  {partial} PARTIAL cases (no critical errors, but defects) — exit 0")
 
 
 if __name__ == "__main__":

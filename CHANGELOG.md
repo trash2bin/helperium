@@ -2,6 +2,16 @@
 
 > Единый журнал значимых изменений проекта. Хронология, от новых к старым. Подробности по каждому пункту — в соответствующих README/doc/agents/*.
 
+## 2026-08-11
+
+- **feat(bench):** переработка evaluator — явный `verdict` (CORRECT/PARTIAL/WRONG/ERROR) и таксономия ошибок `ErrorClass` (17 кодов: HALLUCINATED_SKU, LOST_TOTAL, FALSE_UNCERTAINTY, TOOL_OVERUSE, TOOL_LOOP, SCHEMA_ENTITY_ERROR, INFRA_ERROR и др.). Новые детерминированные проверки: SKU-галлюцинация (через `check_skus`/`any_of_skus`), LOST_TOTAL (знал total:N, сказал «много» — Camry-класс), FALSE_UNCERTAINTY («скорее всего» при точных данных), budget (`budget.max_tool_calls/db_get/llm/tokens/cost`), tool-loop (проброс `loop_warnings` из backlog). Фикс бага: error payload `{"error": "timeout"}` больше не считается данными → INFRA_ERROR, `error_source` (agent/tool/infra). Dedupe в `min_count` по уникальным сущностям. Сужены bool-маркеры и `_derive_from_tool_numbers`.
+- **feat(bench/report):** отчёт расширен — verdict-доли, histogram ошибок по классам, p50/p95 по tokens/duration/cost/tool_calls/llm_calls, `avg_repeated/unique_tool_calls`/`avg_db_get`, run_metadata (git_commit/model/dataset/timestamp). Новое: `diff_reports()` — case-level diff двух прогонов (регрессии). CLI: exit code по verdict (WRONG/ERROR → 1).
+- **feat(bench/cases):** кейсы autoparts.json обогащены — `budget.max_tool_calls` на count/aggregation, `answer_rules.expect_total_mentioned` на count, `any_of_skus`+`check_skus` на lookup (46 полей).
+- **fix(bench/smoke):** smoke_scripted — исправлены устаревшие пути (`api-service/src` → `services/api-service/src`, `agent-db` → `services/agent-db`), скрипт-мок синхронизирован с актуальными кейсами (EXT-01392 → 2751). Прогнан end-to-end на живом стеке (lookup/absence CORRECT, count WRONG — ожидаемо).
+- **tests(bench):** 34 → 64 тестов (`test_bench_core.py`): verdict, error classes, SKU (вкл. кириллические АП-100005), LOST_TOTAL, FALSE_UNCERTAINTY, budget, dedupe, error payload, bool, percentiles, diff_reports, derived numbers. Все зелёные, без LLM/сети.
+- **fix(bench/review):** ужесточены производные числа — «всего/товаров/позиций» больше НЕ прощают неподтверждённые числа (только явная арифметика с = или маркеры итого/плюс/ещё); произвольные пары больших чисел (700=20×35) больше не прощаются — только line-item цена×кол-во (677×3=2031); SKU-regex расширен до `\d{3,6}` (ловит АП-100005) + декодирование unicode-escape в tool_results (кириллические SKU в JSON).
+- **docs(bench):** README бенча + core-benchmark.md — секции «Verdict и таксономия ошибок», обновлены метрики/формат кейсов/нюансы; метки верификации обновлены.
+
 ## 2026-08-07
 
 - **fix(demo-web):** `_proxy_to_data_service` терял query-params — добавлен `params=dict(request.query_params)` (кириллический `pattern` через `/api/data/{entity}` доходил пустым).

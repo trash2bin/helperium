@@ -426,7 +426,14 @@ class BenchmarkRunner:
             errors=parsed.get("errors", []),
             status_messages=parsed.get("status_messages", []),
             backlog=backlog_data,
+            # tool-call sequence for loop/fanout detection
+            tool_call_sequence=parsed.get("tool_calls", []),
+            loop_warnings=backlog_data.loop_warnings if backlog_data else [],
         )
+        # extract error payloads from tool results (tool-level failures)
+        from .evaluator import DeterministicEvaluator
+
+        run.tool_error_payloads = DeterministicEvaluator._detect_tool_errors(run)
         # Отдельное логгирование бенча (изолированный каталог)
         self._write_bench_log(run)
         return run

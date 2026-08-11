@@ -334,5 +334,6 @@ uv run pytest services/agent-db/tests/e2e/ -v
 
 ```
 Last verified: 2026-08-10 (HEAD be9a991) — разделены живая документация benchmark и архивные отчёты
+2026-08-11 (рабочая ветка) — переработка бенча: verdict (CORRECT/PARTIAL/WRONG/ERROR) + таксономия ErrorClass, новые проверки (SKU, LOST_TOTAL, FALSE_UNCERTAINTY, budget, loop, dedupe, error payload, derived), отчёт (verdicts/percentiles/run_metadata), diff_reports, кейсы обогащены, smoke починен и прогнан. 64 теста. Обновлены README бенча + core-benchmark.md + CHANGELOG.
 См. полный журнал: CHANGELOG.md
 ```

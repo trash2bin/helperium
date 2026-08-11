@@ -28,6 +28,8 @@ from tests.e2e.helpers import (  # noqa: E402
 
 # ── Scripted LLM: chain that mimics a real agent on autoparts ─────────────
 # Round 1: find the product by article (filter) -> round 2: db_get(id) -> final
+# значения синхронизированы с cases/autoparts.json (seed=42):
+# EXT-01392 → price 2751 (не 3064, обновилось в ревизии кейсов).
 SCRIPT = [
     {"content": "Найду товар по артикулу.",
      "tool_calls": [{"name": "filter_catalog_product", "arguments": {"article": "EXT-01392"}}],
@@ -35,7 +37,7 @@ SCRIPT = [
     {"content": "Возьму детали.",
      "tool_calls": [{"name": "db_get", "arguments": {"entity": "catalog_product", "id": 392}}],
      "delay_ms": 50},
-    {"content": "Артикул EXT-01392 (Датчик ABS Bosch для Toyota Land Cruiser 200) стоит 3064 рубля. В наличии 14 штук.",
+    {"content": "Артикул EXT-01392 стоит 2751 рубль. В наличии.",
      "delay_ms": 50},
 ]
 
@@ -80,7 +82,7 @@ def main() -> int:
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "api_service.server:app",
          "--host", "127.0.0.1", "--port", str(port), "--log-level", "info"],
-        cwd=str(ROOT / "api-service" / "src"),
+        cwd=str(ROOT / "services" / "api-service" / "src"),
         env=env,
         stdout=open(log_path, "w", buffering=1),
         stderr=subprocess.STDOUT,
@@ -119,7 +121,7 @@ def main() -> int:
         from agent_db.bench.evaluator import DeterministicEvaluator
         from agent_db.bench.report import aggregate_report, print_report
 
-        cases = [c for c in _load_cases(ROOT / "agent-db" / "agent_db" / "bench" / "cases" / "autoparts.json")
+        cases = [c for c in _load_cases(ROOT / "services" / "agent-db" / "agent_db" / "bench" / "cases" / "autoparts.json")
                  if c.id in ("product-lookup-article-001", "product-count-bosch-available-001", "product-absence-001")]
         print(f"Running {len(cases)} cases against {api_url} agent={agent_name}")
 
@@ -141,7 +143,7 @@ def main() -> int:
                 proc = subprocess.Popen(
                     [sys.executable, "-m", "uvicorn", "api_service.server:app",
                      "--host", "127.0.0.1", "--port", str(port), "--log-level", "info"],
-                    cwd=str(ROOT / "api-service" / "src"),
+                    cwd=str(ROOT / "services" / "api-service" / "src"),
                     env=env,
                     stdout=open(log_path, "w", buffering=1),
                     stderr=subprocess.STDOUT,
