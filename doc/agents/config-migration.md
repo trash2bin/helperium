@@ -501,4 +501,4 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 | `doc/agents/tenant-lifecycle.md` | How configs are created and persisted |
 | `doc/agents/search-strategies.md` | Detailed description of each strategy (grep, filter, schema) |
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — миграция конфигов и стратегии сверены с кодом

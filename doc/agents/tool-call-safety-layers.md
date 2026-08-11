@@ -157,4 +157,4 @@ ctx.had_tool_calls_this_iteration = False
 - Safety net pipeline: `test_safety_net_blocks_unparseable_json`
 - Full orchestrator LAYER 1/LAYER 2: `TestLLMAgentWithProtocolProvider` (`test_orchestrator_e2e.py`)
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — слои защиты tool-вызовов сверены с кодом

@@ -47,4 +47,4 @@ LLM склонна вызывать инструменты с пустыми а�
 
 **Детали:** `services/data-service/internal/search/`, `services/data-service/internal/configgen/mcp.go`, [search-strategies.md](search-strategies.md)
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — структура middlewares и limits сверена с кодом

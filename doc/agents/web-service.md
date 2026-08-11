@@ -105,4 +105,4 @@ uv run pytest demo/web/tests/unit/ -v    # ~50 тестов
 | `DEMO_TENANTS` | — | Список tenant IDs для UI селектора |
 | `WEB_PROXY_TIMEOUT` | `30.0` | Таймаут HTTP-клиента (секунды) |
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — web-сервис и embedded виджет сверены с кодом

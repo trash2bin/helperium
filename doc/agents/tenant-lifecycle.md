@@ -56,4 +56,4 @@ Authorization: Bearer $ADMIN_TOKEN
 ```
 → graceful drain: закрыть пул, удалить из мапы, стереть config.
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — жизненный цикл тенантов сверен с кодом

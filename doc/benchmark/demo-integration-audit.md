@@ -56,4 +56,4 @@ curl -s -H "Authorization: Bearer secret" http://127.0.0.1:8081/admin/llm-provid
 - `infra/docker-compose.yml` — `USE_SCRIPTED_LLM=0`, `OLLAMA_URL` (host.docker.internal), `OPENAI_*`, `PROVIDER_STORE_PATH`, `ENABLE_THINK=false`
 - `.env` (gitignored) — кавычки вокруг `OPENAI_MODEL`
 
-**Last verified:** 2026-08-07 (HEAD 07f7515)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — интеграция demo-web + embed widget сверена с текущим кодом

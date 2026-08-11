@@ -17,4 +17,4 @@ uv run pytest services/api-service/src/api_service/tests/unit/test_openapi_api.p
 uv run pytest services/rag/tests/unit/test_openapi_spec.py
 ```
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — спецификации сверены с кодом генерации

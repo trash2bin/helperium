@@ -124,4 +124,4 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 3. [ ] e2e без LLM зелёные — `./infra/scripts/dev.sh e2e` (124 passed) или Docker: `./infra/scripts/compose.sh --profile test up e2e`
 4. [ ] Mutation score не упал (опционально)
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-09 (HEAD `be9a991`) — структура CI/CD и make-команды сверены с кодом
