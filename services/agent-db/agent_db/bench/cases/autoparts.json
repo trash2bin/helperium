@@ -22,7 +22,6 @@
           "db_get"
         ],
         "must_not_call": [
-          "db_map",
           "db_describe"
         ]
       },

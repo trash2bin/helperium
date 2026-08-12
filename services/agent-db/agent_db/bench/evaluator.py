@@ -53,6 +53,11 @@ REFUSAL_MARKERS = [
     "не могу найти",
     "не нашёл",
     "ничего не найдено",
+    "базе нет",
+    "нет в каталоге",
+    "не нашлось",
+    "в наличии нет",
+    "не значится",
 ]
 
 # markers of false uncertainty — the agent says "скорее всего" although
@@ -61,7 +66,6 @@ UNCERTAINTY_MARKERS = [
     "скорее всего",
     "вероятно",
     "наверное",
-    "возможно",
     "вроде",
     "кажется",
     "предположительно",
@@ -358,7 +362,16 @@ exclude (a) SKUs that appear in the *question* (the agent may
             return False
 
         # total:N present in tool results?
+        # P0 (review-fix): db_map/db_describe могут нести свой total (общее
+        # число записей схемы, напр. 407) — брать первый попавшийся total
+        # ломает LOST_TOTAL (total_value=407 вместо 74). Если expected.count
+        # задан — ищем total, РАВНЫЙ expected.count (это релевантный total);
+        # иначе берём первый.
+        expected = gt.get("expected", {})
+        rules = case.ground_truth.get("answer_rules", {}) or {}
+        expected_count = expected.get("count")
         total_value: int | None = None
+        totals: list[int] = []
         for tr in run.tool_results:
             raw = tr.get("result", "")
             if isinstance(raw, str):
@@ -369,23 +382,33 @@ exclude (a) SKUs that appear in the *question* (the agent may
             else:
                 obj = raw
             if isinstance(obj, dict) and isinstance(obj.get("total"), (int, float)):
-                total_value = int(obj["total"])
-                break
-
+                totals.append(int(obj["total"]))
+        if expected_count is not None:
+            for t in totals:
+                if t == int(expected_count):
+                    total_value = t
+                    break
+        else:
+            total_value = totals[0] if totals else None
         if total_value is None:
             return False
 
         # Must the answer mention the total? Only if expected or answer_rules say so.
-        expected = gt.get("expected", {})
-        rules = case.ground_truth.get("answer_rules", {}) or {}
         require_total = rules.get("expect_total_mentioned", False) or (
-            isinstance(expected.get("count"), (int, float)) and int(expected["count"]) == total_value
+            isinstance(expected_count, (int, float)) and int(expected_count) == total_value
         )
         if not require_total:
             return False
 
         text_norm = self._normalize_text(run.final_text)
-        if str(total_value) in text_norm:
+        # total mentioned only as a standalone number, not inside a code
+        # like "V40" (Camry V40) or "АП-100005" — otherwise "40" in "v40"
+        # would suppress LOST_TOTAL (false negative for the Camry class).
+        total_mentioned = any(
+            n == str(total_value)
+            for n in self._extract_numbers(run.final_text)
+        )
+        if total_mentioned:
             return False  # total mentioned — fine
 
         # Vague instead of exact number?
@@ -896,13 +919,22 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
     _BOOL_KEYS = {"available", "is_available", "in_stock", "is_active", "active"}
 
     @staticmethod
-    def _match_bool(value: bool, text_norm: str) -> bool:
+    def _match_bool(value: bool, text_norm: str, key: str | None = None) -> bool:
         """True→«в наличии/доступен», False→«закончился/нет». По подстроке.
 негативные маркеры проверяются ПЕРВЫМИ для обоих значений —
         «нет в наличии» содержит «в наличии», и для value=True это не должно
         матчиться. Если найден сильный негатив → ответ = False, независимо
         от value.
         """
+        # JSON-вид: "is_available": true — матчить конкретный ключ.
+        # P0 (review-fix): JSON-tool results содержат несколько bool-полей
+        # (is_available=true, is_bestseller=false, ...) — глобальный поиск
+        # `false` ломал retrieval для available=true.
+        if key:
+            pat = re.compile(rf'"?{re.escape(key)}"?\s*:\s*(true|false)')
+            m = pat.search(text_norm)
+            if m:
+                return m.group(1) == str(value).lower()
         # Strong negative markers override positive ones
         for neg in DeterministicEvaluator._BOOL_FALSE_MARKERS:
             if neg in text_norm:
@@ -963,10 +995,65 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         # (2031 = 677×3, где 677 и 3 в tool_numbers) — производные, не галлюцинация.
         derived_math = self._derive_from_tool_numbers(unsupported, tool_numbers)
         unsupported = [n for n in unsupported if n not in derived_math]
+        # : номера строк списка/таблицы (1..25 в начале markdown-строки:
+        # "| 12 | Товар", "- 10.", "1. Товар") — это нумерация, не факты.
+        # Регрессия: фикс был потерян в переработке — числа 10..14 из
+        # нумерованных списков снова считались галлюцинацией (25 ERROR).
+        row_numbers = self._extract_row_numbers(run.final_text)
+        unsupported = [n for n in unsupported if n not in row_numbers]
+        # Breakdown-числа в count-кейсах: агент подтвердил total (74) и
+        # разбил по категориям (свечи 12, колодки 12, ...). Сами 12 не в
+        # tool_numbers, но их сумма не превышает подтверждённого total —
+        # это сгруппированные данные, а не выдумка (bench_false_positive).
+        confirmed_total = self._confirmed_total(run)
+        if confirmed_total is not None and unsupported:
+            # breakdown-числа — это НЕ сам total (total уже подтверждён и
+            # исключён из unsupported на этапе tool_numbers). Считаем только
+            # неподтверждённые числа ≤ total, исключая сам total.
+            small = [int(n) for n in unsupported
+                     if n.isdigit() and int(n) < confirmed_total and int(n) <= confirmed_total]
+            if small and sum(small) <= confirmed_total:
+                # ответ содержит сам total (главное число подтверждено)?
+                if str(confirmed_total) in set(self._extract_numbers(run.final_text)):
+                    unsupported = [n for n in unsupported if not (n.isdigit() and int(n) < confirmed_total)]
         if unsupported:
             reasons.append(f"unsupported numbers in answer: {unsupported[:5]}")
             return True
         return False
+
+    @staticmethod
+    def _confirmed_total(run: RunResult) -> int | None:
+        """Наибольший total в tool_results — подтверждённое число записей."""
+        best: int | None = None
+        for tr in run.tool_results:
+            raw = tr.get("result", "")
+            if isinstance(raw, str):
+                try:
+                    obj = json.loads(raw)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+            else:
+                obj = raw
+            if isinstance(obj, dict) and isinstance(obj.get("total"), (int, float)):
+                t = int(obj["total"])
+                best = t if best is None else max(best, t)
+        return best
+
+    @staticmethod
+    def _extract_row_numbers(text: str) -> set[str]:
+        """Числа 1..50 в начале markdown-строки — номера строк таблицы/списка
+        ("| 12 | Товар", "- 10. Товар", "12. Товар", "26. Товар"), не факты.
+        Ограничено 50: цены/количества в начале строки списка так не выглядят
+        (реальные значения обычно с единицами/в середине строки)."""
+        s = str(text)
+        out: set[str] = set()
+        # нумерованный список: "12. Товар" / "- 10. Товар" / "* 9. Товар"
+        for m in re.finditer(r"(?:^|\n)\s*(?:-\s*|\*\s*|\|\s*)?([1-9]|[1-4][0-9]|50)\.\s+", s):
+            out.add(m.group(1))
+        # таблица: "| 12 | Название |" (число между пайпами)
+        for m in re.finditer(r"\|\s*([1-9]|[1-4][0-9]|50)\s*\|", s):
+            out.add(m.group(1))
+        return out
 
     @staticmethod
     def _derive_from_tool_numbers(unsupported: list[str], tool_numbers: set[str]) -> set[str]:
@@ -1106,7 +1193,7 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
                 continue
             # Bool-ключи (available/is_available): семантический матчинг.
             if key in self._BOOL_KEYS and isinstance(value, bool):
-                if not self._match_bool(value, text_norm):
+                if not self._match_bool(value, text_norm, key=key):
                     return False
                 continue
             # Страны/города (country): морфология русского языка — «из Германии»

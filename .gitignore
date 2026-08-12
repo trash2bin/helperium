@@ -107,3 +107,6 @@ coverage.out
 
 # Go vendor dir (local build artifact)
 vendor/
+
+# Benchmark run artifacts (raw backlogs, not tracked)
+reports/*/backlog/

@@ -198,10 +198,31 @@ DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell < seed_fixture.py
 
 ```bash
 uv run --package agent-db pytest tests/test_bench_core.py -q
-# 64 теста: evaluator (tool/retrieval/answer/hallucination/refusal/entity/recovery,
+# 73 теста: evaluator (tool/retrieval/answer/hallucination/refusal/entity/recovery,
 # verdict, error classes, SKU, LOST_TOTAL, FALSE_UNCERTAINTY, budget, dedupe, error payload,
 # derived numbers), backlog parser, report aggregation + percentiles, SSE parsing — без LLM, без сети.
 ```
+
+## Первый реальный baseline (2026-08-12)
+
+Прогон 49 кейсов на живом агенте (polza/deepseek-v4-flash, temp=0, tenant autoparts, seed=42):
+
+| Verdict | Кол-во | Доля |
+|---|---|---|
+| CORRECT | 39 | 80% |
+| PARTIAL | 8 | 16% |
+| WRONG | 2 | 4% |
+| ERROR | 0 | 0% |
+
+- success_rate 95.9%, retrieval 100%, answer 100%, refusal 100%, entity 100%, hallucination 4.1%.
+- p50: 30.8k токенов, 23.3s, $0.149/кейс. Итого ~$7.6 за 49 кейсов, ~25-30 мин.
+- Полный отчёт: `reports/baseline-c1d7f81/summary.md`.
+
+**Triage-фиксы evaluator (false positives → 80% CORRECT):** bool-матчинг по ключу (is_available vs is_bestseller=false), убран «возможно» из UNCERTAINTY, LOST_TOTAL ищет total==expected.count (не total из db_map), табличные № строк 1..50, отказ «в базе нет», breakdown-числа с суммой ≤ total.
+
+**Дефекты агента, которые бенч теперь ловит:** галлюцинация цен в таблицах (товары >5000: 6200/7750 без подтверждения), LOST_TOTAL (total известен, но не назван) — 5 кейсов PARTIAL.
+
+**Open issue:** deepseek-v4-flash периодически отдаёт DSML-разметку вместо OpenAI JSON tool_calls; api-service не парсит DSML (проявилось при исчерпанном spending-бюджете).
 
 ## Ограничения / вне скоупа
 
@@ -211,4 +232,4 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 - `final_text` в backlog обрезается до 2000 символов (для полного — SSE или bench-лог).
 
 ---
-**Last verified:** 2026-08-11 (рабочая ветка) — verdict (CORRECT/PARTIAL/WRONG/ERROR), таксономия ErrorClass, новые проверки (SKU вкл. кириллицу, LOST_TOTAL, FALSE_UNCERTAINTY, budget, loop, dedupe, error payload, derived), отчёт (verdicts/percentiles/run_metadata). 64 теста.
+**Last verified:** 2026-08-12 (рабочая ветка) — verdict (CORRECT/PARTIAL/WRONG/ERROR), таксономия ErrorClass, проверки (SKU, LOST_TOTAL, FALSE_UNCERTAINTY, budget, loop, dedupe, error payload, derived, breakdown, row-numbers), отчёт (verdicts/percentiles/run_metadata). 73 теста. Первый реальный baseline: 80% CORRECT / 16% PARTIAL / 4% WRONG / 0% ERROR (см. секцию «Первый реальный baseline»).

@@ -1,0 +1,53 @@
+{
+  "case": {
+    "id": "camry-incident-golden",
+    "question": "Какие запчасти подходят для Toyota Camry V40?",
+    "category": "count",
+    "ground_truth": {
+      "type": "count",
+      "expected": {"count": 40},
+      "answer_rules": {"expect_total_mentioned": true},
+      "any_of_skus": ["EXT-01382", "BRK-01004", "DISK-01064", "FLT-01112"]
+    },
+    "budget": {
+      "max_tool_calls": 3,
+      "max_db_get": 2,
+      "max_tokens": 30000
+    },
+    "expected_tool": {
+      "must_call_any": ["db_map", "db_search"]
+    }
+  },
+  "events": [
+    {"type": "tool_call", "name": "db_map", "arguments": {}},
+    {"type": "tool_result", "name": "db_map",
+     "result": {"entities": ["catalog_product", "catalog_brand", "catalog_category"]}},
+    {"type": "tool_call", "name": "db_search",
+     "arguments": {"entity": "catalog_product", "pattern": "Camry", "limit": 20}},
+    {"type": "tool_result", "name": "db_search",
+     "result": {"total": 40, "returned": 20,
+                "preview": [
+                    {"id": 789, "name": "EXT-01382"},
+                    {"id": 411, "name": "BRK-01004"},
+                    {"id": 423, "name": "DISK-01064"},
+                    {"id": 435, "name": "FLT-01112"}]}},
+    {"type": "tool_call", "name": "db_get", "arguments": {"entity": "catalog_product", "id": 789}},
+    {"type": "tool_result", "name": "db_get",
+     "result": {"id": 789, "article": "EXT-01382", "name": "Лямбда-зонд NGK для Camry V40",
+                "price": 3839, "quantity": 3, "is_available": true}},
+    {"type": "tool_call", "name": "db_get", "arguments": {"entity": "catalog_product", "id": 411}},
+    {"type": "tool_result", "name": "db_get",
+     "result": {"id": 411, "article": "BRK-01004",
+                "name": "Колодки тормозные передние для Toyota Camry V40",
+                "price": 2200, "quantity": 5, "is_available": true}},
+    {"type": "tool_call", "name": "db_get", "arguments": {"entity": "catalog_product", "id": 423}},
+    {"type": "tool_result", "name": "db_get",
+     "result": {"id": 423, "article": "DISK-01064", "name": "Диск тормозной для Camry V40",
+                "price": 3100, "quantity": 4, "is_available": true}},
+    {"type": "tool_call", "name": "db_get", "arguments": {"entity": "catalog_product", "id": 435}},
+    {"type": "tool_result", "name": "db_get",
+     "result": {"id": 435, "article": "FLT-01112", "name": "Фильтр воздушный для Camry V40",
+                "price": 890, "quantity": 10, "is_available": true}}
+  ],
+  "final_text": "Для Toyota Camry V40 подходят: EXT-01382 (Лямбда-зонд NGK, 3839 руб, 3 шт), BRK-01004 (2200 руб), DISK-01064 (3100 руб), FLT-01112 (890 руб). И ещё много других позиций. BRK-01004 (скорее всего тормозные колодки) - точно подходит."
+}

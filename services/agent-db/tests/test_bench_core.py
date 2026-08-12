@@ -31,6 +31,8 @@ from agent_db.bench.backlog_parser import (
 )
 from agent_db.bench.runner import _sse_parse_events
 
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Evaluator
@@ -333,7 +335,112 @@ class TestEvaluator:
         assert res.hallucination, f"999 не подтверждён и не выводим → галлюцинация: {res.reasons}"
 
     # ── табличные № строк ───────────────────────
-    # Модель нумерует строки в таблице (1..10) — это не факты.
+    # Модель нумерует строки в таблице/списке (1..25) — это не факты.
+    def test_table_row_numbers_not_hallucination(self):
+        """Числа 10..14 в начале строк списка (номера) не галлюцинация."""
+        case = make_case(cid="rows", gt_type="list_ids", expected={"min_count": 3})
+        run = make_run(
+            final_text="Вот товары:\n- 10. Амортизатор KYB\n- 11. Амортизатор Sachs\n- 12. Амортизатор Monroe\n- 13. Амортизатор Boge\n- 14. Амортизатор Bilstein",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
+                "preview": [{"id": 10}, {"id": 11}, {"id": 12}, {"id": 13}, {"id": 14}],
+                "total": 5})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, f"номера строк не галлюцинация: {res.reasons}"
+
+    def test_table_row_numbers_in_markdown_table(self):
+        """| 12 | Товар | — номер строки таблицы, не факт."""
+        case = make_case(cid="rows2", gt_type="list_ids", expected={"min_count": 2})
+        run = make_run(
+            final_text="| № | Название |\n|---|----------|\n| 12 | Датчик ABS |\n| 13 | Колодки |",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
+                "preview": [{"id": 12}, {"id": 13}], "total": 2})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, f"номера строк таблицы не галлюцинация: {res.reasons}"
+
+    def test_row_number_26_not_hallucination(self):
+        """Нумерация списка до 26+ (32 товара) — номера, не факты."""
+        case = make_case(cid="rows26", gt_type="list_ids", expected={"min_count": 3})
+        run = make_run(
+            final_text="Список:\n1. Товар A\n2. Товар B\n...\n25. Товар Y\n26. Товар Z\n27. Товар W",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
+                "preview": [{"id": i} for i in range(1, 28)], "total": 27})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, f"номера 26/27 не галлюцинация: {res.reasons}"
+
+    def test_breakdown_numbers_with_confirmed_total_not_hallucination(self):
+        """Агент подтвердил total=74 и разбил по категориям (12, 12, 6...) —
+        breakdown-числа с суммой ≤ total не галлюцинация."""
+        case = make_case(cid="bd", gt_type="count", expected={"count": 74})
+        run = make_run(
+            final_text="Всего 74 товара: свечи 12, колодки 12, диски 6, фильтры 24, помпы 5",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
+                "total": 74, "returned": 74, "preview": [{"id": i} for i in range(5)]})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, f"breakdown не галлюцинация: {res.reasons}"
+
+    def test_breakdown_with_total_in_sum_not_hallucination(self):
+        """Total (74) в ответе + breakdown: сумма breakdown НЕ включает сам total
+        (регрессия: 74+12+5 > 74 ломал фикс)."""
+        case = make_case(cid="bd2", gt_type="count", expected={"count": 74})
+        run = make_run(
+            final_text="Всего 74 товара в наличии: свечи 12, колодки 12, диски 6",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
+                "total": 74, "returned": 74, "preview": [{"id": i} for i in range(5)]})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, f"breakdown c total в сумме не галлюцинация: {res.reasons}"
+
+    def test_lost_total_ignores_db_map_total(self):
+        """total=407 из db_map (схема) не должен ломать LOST_TOTAL для count=74."""
+        case = make_case(cid="lt2", gt_type="count", expected={"count": 74},
+                         gt_extra={"answer_rules": {"expect_total_mentioned": True}})
+        run = make_run(
+            final_text="Всего 74 товара в наличии",
+            tool_calls=[{"name": "db_map"}, {"name": "filter_catalog_product"}],
+            tool_results=[
+                {"name": "db_map", "result": json.dumps({"total": 407})},
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 74})},
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert ErrorClass.LOST_TOTAL not in res.error_classes, res.error_classes
+
+    def test_refusal_v_base_net(self):
+        """Отказ «Нет, товара в базе нет» — корректный refusal."""
+        case = make_case(cid="rf1", gt_type="not_found", expected={"count": 0},
+                         expect_refusal=True)
+        run = make_run(
+            final_text="Нет, товара с артикулом FAKE-999 в нашей базе нет.",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({"empty_hint": {}})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.refusal_ok, res.reasons
+        assert ErrorClass.REFUSAL_MISSING not in res.error_classes, res.error_classes
+
+    def test_bool_match_respects_key_in_json(self):
+        """JSON с is_available=true и is_bestseller=false: available должен
+        матчиться по своему ключу, а не по чужому false."""
+        case = make_case(expected={"available": True})
+        run = make_run(
+            final_text="Товар в наличии",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({
+                "is_available": True, "is_bestseller": False, "is_new": False})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.retrieval_ok, res.reasons
+        assert res.verdict.value == "CORRECT", res.reasons
+
     # ── морфология стран ────────────────────────
     # «из Германии» (предложный падеж) ≠ «Германия» — матчим по корню.
     def test_country_morphology(self):
@@ -564,6 +671,40 @@ class TestEvaluator:
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.verdict.value == "WRONG", res.reasons
         assert ErrorClass.WRONG_AVAILABILITY in res.error_classes
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # golden regression: Camry incident (doc/benchmark/incident-camry.md)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_camry_incident_golden(self):
+        """Golden Camry fixture: agent knew total=40 but said "много",
+        hedged "скорее всего" with exact data, and overused db_get.
+        Expect PARTIAL + TOOL_OVERUSE + LOST_TOTAL + FALSE_UNCERTAINTY,
+        and NOT a hallucination / answer miss."""
+        data = json.loads(
+            (FIXTURES_DIR / "camry_incident.json").read_text(encoding="utf-8")
+        )
+        case = TestCase.from_dict(data["case"])
+        tool_calls = [
+            {"name": e["name"], "arguments": e.get("arguments", {})}
+            for e in data["events"] if e["type"] == "tool_call"
+        ]
+        tool_results = [
+            {"name": e["name"], "result": json.dumps(e["result"], ensure_ascii=False)}
+            for e in data["events"] if e["type"] == "tool_result"
+        ]
+        run = RunResult(session_id="camry-golden", question=case.question,
+                        final_text=data["final_text"],
+                        tool_calls=tool_calls, tool_results=tool_results)
+
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "PARTIAL", res.reasons
+        assert ErrorClass.TOOL_OVERUSE in res.error_classes, res.error_classes
+        assert ErrorClass.LOST_TOTAL in res.error_classes, res.error_classes
+        assert ErrorClass.FALSE_UNCERTAINTY in res.error_classes, res.error_classes
+        assert ErrorClass.HALLUCINATED_SKU not in res.error_classes, res.error_classes
+        assert ErrorClass.ANSWER_MISS not in res.error_classes, res.error_classes
+        assert res.total_tool_calls >= 5  # the real incident did 11 tool calls
 
     def test_verdict_forbidden_tool(self):
         """must_not_call invoked → WRONG + FORBIDDEN_TOOL."""
