@@ -238,6 +238,10 @@ class EvalResult:
     refusal_ok: bool = True
     entity_name_ok: bool = True
     reasons: list[str] = field(default_factory=list)
+    # Fraction of expected facts mentioned in answer (0.0-1.0)
+    answer_completeness: float = 1.0
+    # Tool call statistics
+    tool_call_stats: dict[str, Any] = field(default_factory=dict)
 
     # verdict + error taxonomy (product contract)
     verdict: Verdict = Verdict.ERROR

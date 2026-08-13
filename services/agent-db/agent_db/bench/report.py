@@ -146,6 +146,16 @@ def aggregate_report(
     report.avg_repeated_tool_calls /= n
     report.avg_unique_tool_calls /= n
     report.avg_db_get /= n
+    # Average answer completeness across cases (from EvalResult)
+    completeness_values = [
+        ev.eval_result.answer_completeness
+        for ev in report.case_results
+        if ev.eval_result and ev.eval_result.answer_completeness is not None
+    ]
+    report.avg_answer_completeness = (
+        sum(completeness_values) / len(completeness_values)
+        if completeness_values else 1.0
+    )
 
     def _pct(sorted_list: list[float], p: float) -> float:
         if not sorted_list:
@@ -205,6 +215,7 @@ def print_report(report: BenchmarkReport) -> str:
             lines.append(f"  {cls_name:<22} {cnt}")
     lines.append("")
     lines.append(f"Avg tokens: {report.avg_total_tokens:.0f}")
+    lines.append(f"Avg answer completeness: {report.avg_answer_completeness:.2f}")
     lines.append(f"P50 tokens: {report.p50_tokens:.0f}  P95: {report.p95_tokens:.0f}")
     lines.append(f"Avg duration: {report.avg_duration_ms:.0f}ms")
     lines.append(f"P50 duration: {report.p50_duration_ms:.0f}ms  P95: {report.p95_duration_ms:.0f}ms")
@@ -273,6 +284,7 @@ def report_to_dict(report: BenchmarkReport) -> dict[str, Any]:
         "p95_llm_calls": report.p95_llm_calls,
         "avg_repeated_tool_calls": report.avg_repeated_tool_calls,
         "avg_unique_tool_calls": report.avg_unique_tool_calls,
+        "avg_answer_completeness": report.avg_answer_completeness,
         "avg_db_get": report.avg_db_get,
         "avg_cost_usd": report.avg_cost_usd,
         "total_cost_usd": report.total_cost_usd,

@@ -376,7 +376,8 @@ class TestEvaluator:
     def test_breakdown_numbers_with_confirmed_total_not_hallucination(self):
         """Агент подтвердил total=74 и разбил по категориям (12, 12, 6...) —
         breakdown-числа с суммой ≤ total не галлюцинация."""
-        case = make_case(cid="bd", gt_type="count", expected={"count": 74})
+        case = make_case(cid="bd", gt_type="count", expected={"count": 74},
+                         gt_extra={"breakdown_allowed": True})
         run = make_run(
             final_text="Всего 74 товара: свечи 12, колодки 12, диски 6, фильтры 24, помпы 5",
             tool_calls=[{"name": "filter_catalog_product"}],
@@ -389,7 +390,8 @@ class TestEvaluator:
     def test_breakdown_with_total_in_sum_not_hallucination(self):
         """Total (74) в ответе + breakdown: сумма breakdown НЕ включает сам total
         (регрессия: 74+12+5 > 74 ломал фикс)."""
-        case = make_case(cid="bd2", gt_type="count", expected={"count": 74})
+        case = make_case(cid="bd2", gt_type="count", expected={"count": 74},
+                         gt_extra={"breakdown_allowed": True})
         run = make_run(
             final_text="Всего 74 товара в наличии: свечи 12, колодки 12, диски 6",
             tool_calls=[{"name": "filter_catalog_product"}],

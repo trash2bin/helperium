@@ -30,6 +30,12 @@ import re
 from typing import Any
 
 from .models import EvalResult, ErrorClass, RunResult, TestCase, Verdict
+from .derived_numbers import (
+    DerivedNumberDetector,
+    extract_percents,
+    extract_row_numbers,
+    max_row_from_tool_results,
+)
 
 # Default status synonyms (order statuses) — can be overridden per-case.
 DEFAULT_STATUS_SYNONYMS: dict[str, list[str]] = {
@@ -120,8 +126,13 @@ VALID_ENTITIES = {
 class DeterministicEvaluator:
     """Deterministic checks for one case + run result."""
 
-    def __init__(self, status_synonyms: dict[str, list[str]] | None = None) -> None:
+    def __init__(
+        self,
+        status_synonyms: dict[str, list[str]] | None = None,
+        derived_detector: DerivedNumberDetector | None = None,
+    ) -> None:
         self.status_synonyms = status_synonyms or DEFAULT_STATUS_SYNONYMS
+        self.derived_detector = derived_detector or DerivedNumberDetector()
 
     # ── public API ─────────────────────────────────────────────────────────
 
@@ -156,6 +167,9 @@ class DeterministicEvaluator:
         if not answer_ok:
             error_classes.append(ErrorClass.ANSWER_MISS)
 
+        # Answer completeness: what fraction of expected facts are mentioned?
+        answer_completeness = self._check_answer_completeness(case, run.final_text)
+
         # number hallucination + SKU hallucination (independent checks).
         # SKU may be hallucinated even when numbers are all grounded.
         hallucination = self._check_hallucination(case, run, reasons)
@@ -174,7 +188,7 @@ class DeterministicEvaluator:
         # WRONG_AVAILABILITY / WRONG_STATUS — inferred from expected keys
         self._check_wrong_fact_type(case, run, answer_ok, error_classes, reasons)
 
-        refusal_ok = self._check_refusal(case, run.final_text, reasons)
+        refusal_ok = self._check_refusal(case, run.final_text, reasons, run.tool_results)
         if not refusal_ok:
             error_classes.append(ErrorClass.REFUSAL_MISSING)
 
@@ -192,6 +206,9 @@ class DeterministicEvaluator:
         if false_unc:
             error_classes.append(ErrorClass.FALSE_UNCERTAINTY)
 
+        # Total mentioned check: for count cases, did agent mention the total?
+        total_mentioned = self._check_total_mentioned(case, run, reasons)
+
         # TOOL_OVERUSE — budget from case
         overuse = self._check_budget(case, run, reasons)
         if overuse:
@@ -200,6 +217,12 @@ class DeterministicEvaluator:
         # TOOL_LOOP
         if run.loop_warnings:
             error_classes.append(ErrorClass.TOOL_LOOP)
+
+        # Consistency check: detect contradictions in answer
+        # e.g., "Этого товара нет в наличии" but showing price 2200₽
+        consistency_ok, consistency_reasons = self._check_consistency(run, reasons)
+        if not consistency_ok:
+            reasons.extend(consistency_reasons)
 
         # verdict + error_source
         error_source = self._resolve_error_source(has_tool_error, run)
@@ -230,6 +253,7 @@ class DeterministicEvaluator:
             cost_usd=run.backlog.total_cost if run.backlog else 0.0,
             duration_ms=run.backlog.duration_ms if run.backlog else 0.0,
             loop_warnings=run.loop_warnings,
+            answer_completeness=answer_completeness,
         )
 
     # ── verdict / error_source / helpers ────────────────────────────────
@@ -321,6 +345,7 @@ exclude (a) SKUs that appear in the *question* (the agent may
         # артикула из вопроса/данных от выдумки → false positives.
         if not gt.get("any_of_skus") and not gt.get("check_skus"):
             return False
+        allow_fuzzy = gt.get("allow_fuzzy_sku", False)
         answer_skus = set(_SKU_RE.findall(run.final_text))
         if not answer_skus:
             return False
@@ -347,8 +372,62 @@ exclude (a) SKUs that appear in the *question* (the agent may
             tail = run.final_text[m.end():m.end() + 60]
             if any(mk in tail for mk in ("×", "*", "+", "-", "=", "₽", "руб", "итого", "позиц")):
                 context_skus.add(m.group(0))
-        unsupported = answer_skus - tool_skus - allowed - context_skus
+        # Fuzzy SKU matching: if allow_fuzzy_sku is True,
+        # consider SKUs that share the same prefix as "supported"
+        if allow_fuzzy and answer_skus and tool_skus:
+            # Build set of fuzzy-supported SKUs (same prefix match)
+            fuzzy_supported = set()
+            for ans_sku in answer_skus:
+                for tool_sku in tool_skus:
+                    ans_parts = ans_sku.rsplit('-', 1)
+                    tool_parts = tool_sku.rsplit('-', 1)
+                    if len(ans_parts) == 2 and len(tool_parts) == 2:
+                        # Same letter prefix + same first digit = supported
+                        if ans_parts[0] == tool_parts[0] and ans_parts[1][0] == tool_parts[1][0]:
+                            fuzzy_supported.add(ans_sku)
+                            break
+                    elif ans_sku == tool_sku:
+                        fuzzy_supported.add(ans_sku)
+            # Consider fuzzy-supported SKUs as "allowed" (they're effectively in tools)
+            unsupported = (answer_skus - fuzzy_supported) - tool_skus - allowed - context_skus
+        else:
+            unsupported = answer_skus - tool_skus - allowed - context_skus
         return bool(unsupported)
+
+    # ── consistency check ──────────────────────────────────────────────
+    def _check_consistency(self, run: RunResult, reasons: list[str]) -> tuple[bool, list[str]]:
+        """Detect contradictions in the answer.
+
+        Examples of contradictions:
+        - Agent says "нет в наличии" but shows a price
+        - Agent says "артикул не найден" but lists a price
+        - Mixed availability/status information
+
+        Returns (ok, reasons) where ok=True means no contradictions found.
+        """
+        reasons_ext = list(reasons)  # copy original reasons
+        text_lower = run.final_text.lower()
+
+        # Check for: claimed unavailable but price shown
+        has_unavailable = any(m in text_lower for m in [
+            "нет в наличии", "отсутствует", "недоступен", "недоступно"
+        ])
+        has_price = bool(re.search(r"\d{2,}\s*(?:₽|руб)", run.final_text))
+
+        if has_unavailable and has_price:
+            reasons_ext.append("contradiction: claimed unavailable but showed price")
+            return False, reasons_ext
+
+        # Check for: claimed not found but price shown
+        has_not_found = any(m in text_lower for m in [
+            "не найден", "не найдено", "не существует", "нет такого"
+        ])
+        if has_not_found and has_price:
+            reasons_ext.append("contradiction: claimed not found but showed price")
+            return False, reasons_ext
+
+        return True, reasons_ext
+
 
     # ── LOST_TOTAL ─────────────────────────────────────────────────────
 
@@ -494,6 +573,60 @@ exclude (a) SKUs that appear in the *question* (the agent may
             reasons.append(f"TOOL_OVERUSE: cost ${cost:.4f} > ${budget['max_cost_usd']}")
             violated = True
         return violated
+
+
+    def _check_total_mentioned(
+        self,
+        case: TestCase,
+        run: RunResult,
+        reasons: list[str],
+    ) -> bool:
+        """For count cases: did agent mention the total number?
+
+        This complements LOST_TOTAL: LOST_TOTAL checks if total is known but
+        not mentioned as a specific number. This checks if total is mentioned
+        at all (even vaguely).
+        """
+        gt = case.ground_truth or {}
+        if gt.get("type") != "count":
+            return True
+
+        # Extract total from tool results
+        total = None
+        for tr in run.tool_results:
+            raw = tr.get("result", "")
+            if isinstance(raw, str):
+                try:
+                    obj = json.loads(raw)
+                    if "total" in obj:
+                        total = obj["total"]
+                        break
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            else:
+                if isinstance(obj := raw, dict) and "total" in obj:
+                    total = obj["total"]
+                    break
+
+        if total is None:
+            return True  # No total in tools → nothing to check
+
+        total_str = str(total)
+        # Check if total is mentioned in answer
+        if total_str in self._extract_numbers(run.final_text):
+            return True  # Total mentioned explicitly
+
+        # Also check for vague mentions ("всего N", "N штук" etc.)
+        text_norm = self._normalize_text(run.final_text)
+        vague_markers = ["всего", "на", "штук", "позиций"]
+        has_vague_total = any(m in text_norm for m in vague_markers)
+
+        if has_vague_total and total_str in self._extract_numbers(run.final_text.replace(" ", "")):
+            return True
+
+        reasons.append(f"total {total} not mentioned in answer")
+        return False
+
 
     # ── wrong fact type (availability/status) ──────────────────────────
 
@@ -903,6 +1036,36 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
                 return True
         return False
 
+    def _check_answer_completeness(
+        self,
+        case: TestCase,
+        final_text: str,
+    ) -> float:
+        """Returns 0.0-1.0: what fraction of expected facts are mentioned.
+
+        Helps differentiate "показал 2 из 4 товаров" vs "показал 0 из 4".
+        """
+        expected = (case.ground_truth or {}).get("expected", {})
+        if not expected:
+            return 1.0
+        if "min_count" in expected:
+            # list_ids: empty answer = 0.0, non-empty = 1.0
+            return 1.0 if (final_text and final_text.strip()) else 0.0
+
+        mentioned = 0
+        total = 0
+        for key, value in expected.items():
+            if key == "status":
+                # Handled via synonyms by _check_answer; skip here
+                total += 1
+                mentioned += 1
+                continue
+            total += 1
+            if self._value_in_text({key: value}, final_text):
+                mentioned += 1
+
+        return mentioned / total if total > 0 else 1.0
+
     # ── bool semantic matching ───────────────────
     # Бенч: GT {"available": true} ищет literal "true", а модель пишет
     # «в наличии» → false-negative. Bool-ключи матчатся семантически.
@@ -959,7 +1122,7 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
             # Absence case: hallucination = answered with data although
             # retrieval was empty.  (If we already marked refusal_ok=False
             # — the agent invented availability — that is a hallucination.)
-            if not self._check_refusal(case, run.final_text, []):
+            if not self._check_refusal(case, run.final_text, [], run.tool_results):
                 reasons.append("hallucination: absence case invented data (no refusal)")
                 return True
             forbidden = gt.get("forbidden", {})
@@ -985,33 +1148,38 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         ]
         # Проценты ("скидка ~20%", "-30% к цене") — производные расчёты модели
         # от подтверждённых цен (old_price→price). Не галлюцинация.
-        percent_numbers = self._extract_percents(run.final_text)
+        percent_numbers = extract_percents(run.final_text)
         unsupported = [n for n in unsupported if n not in percent_numbers]
-        # : производные числа (суммы "677×3=2031", "плюс ещё 5",
-        # "итого 7809") — модель считает их из подтверждённых данных.
-        derived = self._extract_derived_numbers(run.final_text)
-        unsupported = [n for n in unsupported if n not in derived]
+        # : производные числа из арифметического контекста ответа
+        # ("677×3=2031", "плюс ещё 5", "итого 7809")
+        derived_text = self.derived_detector.find_derived_from_text(run.final_text)
+        unsupported = [n for n in unsupported if n not in derived_text]
         # : числа, выразимые как произведение/сумма подтверждённых
         # (2031 = 677×3, где 677 и 3 в tool_numbers) — производные, не галлюцинация.
-        derived_math = self._derive_from_tool_numbers(unsupported, tool_numbers)
+        derived_math = self.derived_detector.find_derived_from_tool_numbers(unsupported, tool_numbers)
         unsupported = [n for n in unsupported if n not in derived_math]
         # : номера строк списка/таблицы (1..25 в начале markdown-строки:
         # "| 12 | Товар", "- 10.", "1. Товар") — это нумерация, не факты.
-        # Регрессия: фикс был потерян в переработке — числа 10..14 из
-        # нумерованных списков снова считались галлюцинацией (25 ERROR).
-        row_numbers = self._extract_row_numbers(run.final_text)
+        # Row numbers bound derived from actual tool_results (preview/total),
+        # not hardcoded 50 — avoids false positives on long lists.
+        max_row = max_row_from_tool_results(run.tool_results)
+        row_numbers = extract_row_numbers(run.final_text, max_row)
         unsupported = [n for n in unsupported if n not in row_numbers]
-        # Breakdown-числа в count-кейсах: агент подтвердил total (74) и
-        # разбил по категориям (свечи 12, колодки 12, ...). Сами 12 не в
-        # tool_numbers, но их сумма не превышает подтверждённого total —
-        # это сгруппированные данные, а не выдумка (bench_false_positive).
+        # Breakdown-числа: агент подтвердил total (74) и разбил по категориям
+        # (свечи 12, колодки 12, ...). Разрешаем ТОЛЬКО если кейс явно
+        # разрешает breakdown через ground_truth.breakdown_allowed=true.
+        # Без флага — числа в breakdown считаются галлюцинацией, так как
+        # глобальная эвристика sum<=total позволяет выдумать плейзибл breakdown
+        # с нулевой связью к tool_results.
         confirmed_total = self._confirmed_total(run)
-        if confirmed_total is not None and unsupported:
+        gt = case.ground_truth or {}
+        breakdown_allowed = gt.get("breakdown_allowed", False)
+        if breakdown_allowed and confirmed_total is not None and unsupported:
             # breakdown-числа — это НЕ сам total (total уже подтверждён и
             # исключён из unsupported на этапе tool_numbers). Считаем только
-            # неподтверждённые числа ≤ total, исключая сам total.
+            # неподтверждённые числа < total, исключая сам total.
             small = [int(n) for n in unsupported
-                     if n.isdigit() and int(n) < confirmed_total and int(n) <= confirmed_total]
+                     if n.isdigit() and int(n) < confirmed_total]
             if small and sum(small) <= confirmed_total:
                 # ответ содержит сам total (главное число подтверждено)?
                 if str(confirmed_total) in set(self._extract_numbers(run.final_text)):
@@ -1039,133 +1207,6 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
                 best = t if best is None else max(best, t)
         return best
 
-    @staticmethod
-    def _extract_row_numbers(text: str) -> set[str]:
-        """Числа 1..50 в начале markdown-строки — номера строк таблицы/списка
-        ("| 12 | Товар", "- 10. Товар", "12. Товар", "26. Товар"), не факты.
-        Ограничено 50: цены/количества в начале строки списка так не выглядят
-        (реальные значения обычно с единицами/в середине строки)."""
-        s = str(text)
-        out: set[str] = set()
-        # нумерованный список: "12. Товар" / "- 10. Товар" / "* 9. Товар"
-        for m in re.finditer(r"(?:^|\n)\s*(?:-\s*|\*\s*|\|\s*)?([1-9]|[1-4][0-9]|50)\.\s+", s):
-            out.add(m.group(1))
-        # таблица: "| 12 | Название |" (число между пайпами)
-        for m in re.finditer(r"\|\s*([1-9]|[1-4][0-9]|50)\s*\|", s):
-            out.add(m.group(1))
-        return out
-
-    @staticmethod
-    def _derive_from_tool_numbers(unsupported: list[str], tool_numbers: set[str]) -> set[str]:
-        """Числа, выразимые как произведение/сумма подтверждённых — ТОЛЬКО при
-        явном арифметическом контексте.
-
-        произвольные пары больших чисел НЕ прощаются —
-        700 = 20×35 формально derived, но по смыслу выдумка (агент не обязан
-        был перемножать любые числа). Прощаются только:
-        - произведение, где один множитель малый (1..9), а второй подтверждён
-          в tool_results — line-item цена×кол-во (2031 = 677×3, 677 в тулах);
-        - сумма ≤ 3 слагаемых, где хотя бы одно малое (1..9) —
-          кол-во позиций/строк (итого 7809 = 677×3 + 4585×1).
-        Малые 1..9 вводятся независимо от tool_numbers (однозначные отсекаются
-        _extract_numbers), но работают только в паре с подтверждённым большим.
-        """
-        nums = sorted(int(n) for n in tool_numbers if n.isdigit() and len(n) <= 9)
-        if not nums:
-            return set()
-        small = {i for i in range(1, 10)}
-
-        # Произведения: ровно один малый множитель (1..9), второй —
-        # подтверждённый большой. Убирает 700 = 20×35 (оба больших),
-        # оставляет 2031 = 677×3 (677 подтверждён, 3 — малый).
-        products: set[int] = set()
-        for big in nums:
-            for s in small:
-                if big in small:
-                    continue  # оба малых — не line-item
-                p = big * s
-                if p <= 1_000_000:
-                    products.add(p)
-
-        # Суммы пар/троек: хотя бы одно слагаемое малое (1..9), остальные
-        # подтверждённые — кол-во строк/позиций, не произвольные большие.
-        sums: set[int] = set()
-        for i in range(len(nums)):
-            for j in range(i + 1, len(nums)):
-                if nums[i] in small or nums[j] in small:
-                    sums.add(nums[i] + nums[j])
-        for i in range(len(nums)):
-            for j in range(i + 1, len(nums)):
-                for k in range(j + 1, len(nums)):
-                    if nums[i] in small or nums[j] in small or nums[k] in small:
-                        sums.add(nums[i] + nums[j] + nums[k])
-
-        # Суммы пар/троек: хотя бы одно слагаемое малое (1..9) —
-        # кол-во строк/позиций, а не произвольные большие числа.
-        sums: set[int] = set()
-        for i in range(len(nums)):
-            for j in range(i + 1, len(nums)):
-                if nums[i] in small or nums[j] in small:
-                    sums.add(nums[i] + nums[j])
-        for i in range(len(nums)):
-            for j in range(i + 1, len(nums)):
-                for k in range(j + 1, len(nums)):
-                    if nums[i] in small or nums[j] in small or nums[k] in small:
-                        sums.add(nums[i] + nums[j] + nums[k])
-
-        derived: set[str] = set()
-        for u in unsupported:
-            if not u.isdigit():
-                continue
-            n = int(u)
-            if n in products or n in sums:
-                derived.add(u)
-        return derived
-
-    @staticmethod
-    def _extract_derived_numbers(text: str) -> set[str]:
-        """Числа, стоящие рядом с арифметическими маркерами — производные
-        расчёты модели (не галлюцинация): "677×3=2031", "плюс ещё 5",
-        "итого 7809", "скидка 20%" (уже покрыто _extract_percents).
-        Маркеры: × * ✕ + − − = «ещё N» «плюс N» «итого N».
-
-        "всего/товаров/позиций/строк" НЕ прощают число сами по
-        себе — это слова-описания ("всего 40 товаров"), а не арифметика.
-        Число после них прощается только в арифметическом выражении с "="
-        или оператором. Иначе "Итого 999 товаров" без 999 в tool_results
-        останется HALLUCINATED_NUMBER (false negative-фикс)."""
-        derived: set[str] = set()
-        s = str(text)
-        # Вокруг арифметических операторов/равенства ("677×3=2031",
-        # "677×3 позиции = 2031"). Разрешаем слова между операндами и '='.
-        arith = re.compile(
-            r"\d[\d\s\u00a0]*(?:\s*(?:[×*+−-]|\u00d7|\u2212)\s*[\w\s\u00a0]*\d[\d\s\u00a0]*)+"
-            r"\s*[\w\s\u00a0]*=\s*\d+"
-        )
-        for m in arith.finditer(s):
-            for n in re.findall(r"\d+", m.group(0)):
-                if len(n) >= 2:
-                    derived.add(n)
-        # "ещё N", "плюс N", "итого N", "суммарно N" — явный расчёт
-        # (сложение/итог). Только эти маркеры прощают число без "=";
-        # "всего/товаров/строк/позиций" — нет (см. комментарий выше).
-        for m in re.finditer(r"(?:ещё|еще|плюс|итого|суммарно)\s*(?:—|-|:)?\s*(\d+(?:[\s\u00a0]\d{3})*)", s, re.IGNORECASE):
-            n = m.group(1).replace("\u00a0", "").replace(" ", "")
-            if len(n) >= 2:
-                derived.add(n)
-        return derived
-
-    @staticmethod
-    def _extract_percents(text: str) -> set[str]:
-        """Извлечь числа, стоящие рядом с '%' (проценты, вычисленные моделью)."""
-        percents: set[str] = set()
-        for m in re.finditer(r"(\d{1,3}(?:[\s\u00a0]\d{3})*)\s*%", str(text)):
-            percents.add(m.group(1).replace("\u00a0", "").replace(" ", ""))
-        # Также числа перед словом "процент"
-        for m in re.finditer(r"(\d{1,3})\s*процент", str(text), re.IGNORECASE):
-            percents.add(m.group(1))
-        return percents
-
     # ── refusal ────────────────────────────────────────────────────────────
 
     def _check_refusal(
@@ -1173,14 +1214,49 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         case: TestCase,
         final_text: str,
         reasons: list[str],
+        tool_results: list[dict[str, Any]] | None = None,
     ) -> bool:
         if not case.expect_refusal:
             return True
+        # Primary signal: structural evidence — tool_results are empty/empty_hint
+        # AND answer doesn't contain data-like content (numbers, availability).
+        # This is more reliable than text markers (whack-a-mole).
+        if tool_results is not None:
+            empty_results = self._check_empty_results(tool_results)
+            if empty_results:
+                # Also check no expected facts are hallucinated in answer
+                gt = case.ground_truth or {}
+                forbidden = gt.get("forbidden", {})
+                # If forbidden is empty, no facts to check
+                # But also check answer doesn't contain data-like content
+                has_data = self._answer_looks_like_data(final_text)
+                if (not forbidden or not self._value_in_text(forbidden, final_text)) and not has_data:
+                    return True  # Structural refusal confirmed
+        # Fallback: text markers (kept for backwards compat)
         final_lower = final_text.lower()
         ok = any(marker in final_lower for marker in REFUSAL_MARKERS)
         if not ok:
             reasons.append("expected refusal markers, answer has none")
         return ok
+
+    @staticmethod
+    def _answer_looks_like_data(text: str) -> bool:
+        """Heuristic: does the answer look like it's providing data (not a refusal)?
+        Checks for numbers (prices, counts) or strong availability assertions."""
+        t = text.lower()
+        # Numbers that look like prices/quantities (2+ digits)
+        import re
+        if re.search(r'\b\d{2,}\b', text):
+            return True
+        # Strong availability/presence assertions
+        data_markers = [
+            'в наличии', 'есть в наличии', 'имеется', 'доступен',
+            'цена', 'стоит', 'руб', '₽',
+            'да, есть', 'да, в наличии',
+        ]
+        if any(m in t for m in data_markers):
+            return True
+        return False
 
     # ── value helpers ──────────────────────────────────────────────────────
 
@@ -1188,39 +1264,64 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         """Check every key/value from ``expected`` appears in ``text``."""
         text_norm = self._normalize_text(text)
         for key, value in expected.items():
-            value_str = str(value).strip()
-            if not value_str:
-                continue
-            # Bool-ключи (available/is_available): семантический матчинг.
-            if key in self._BOOL_KEYS and isinstance(value, bool):
-                if not self._match_bool(value, text_norm, key=key):
-                    return False
-                continue
-            # Страны/города (country): морфология русского языка — «из Германии»
-            # ≠ «Германия». Вместо корня из 5 букв (может заматчить «герметик»)
-            # используем явные aliases из ground truth (country_aliases), если они
-            # заданы; иначе fallback на корень (только для известных длинных слов).
-            if key in ("country", "country_of_origin", "city"):
-                aliases = country_aliases or []
-                if aliases:
-                    if not any(a.lower() in text_norm for a in aliases):
-                        return False
-                    continue
-                root = value_str.lower()[:5]
-                if len(root) >= 4 and root not in text_norm:
-                    return False
-                continue
-            if key == "count":
-                # Word-boundary number match
-                if not re.search(rf"(?<!\d){re.escape(value_str)}(?!\d)", text_norm):
-                    return False
-            elif key == "status":
-                # Handled by _check_answer with synonyms — skip here
-                continue
-            else:
-                if value_str.lower() not in text_norm:
-                    return False
+            if not self._match_key_value(key, value, text_norm, country_aliases):
+                return False
         return True
+
+    def _match_key_value(
+        self,
+        key: str,
+        value: Any,
+        text_norm: str,
+        country_aliases: list[str] | None = None,
+    ) -> bool:
+        """Match a single key/value pair against normalized text."""
+        value_str = str(value).strip()
+        if not value_str:
+            return True
+
+        # Bool-ключи (available/is_available): семантический матчинг.
+        if key in self._BOOL_KEYS and isinstance(value, bool):
+            return self._match_bool_value(value, text_norm, key)
+
+        # Страны/города (country): морфология русского языка.
+        if key in ("country", "country_of_origin", "city"):
+            return self._match_location(value_str, text_norm, country_aliases)
+
+        if key == "count":
+            return self._match_count(value_str, text_norm)
+
+        if key == "status":
+            # Handled by _check_answer with synonyms — skip here
+            return True
+
+        # Plain text substring match
+        return self._match_plain_text(value_str, text_norm)
+
+    def _match_bool_value(self, value: bool, text_norm: str, key: str | None = None) -> bool:
+        """Match boolean value semantically: true→'в наличии', false→'нет в наличии'."""
+        return self._match_bool(value, text_norm, key=key)
+
+    def _match_location(
+        self,
+        value_str: str,
+        text_norm: str,
+        country_aliases: list[str] | None = None,
+    ) -> bool:
+        """Match country/city with aliases or morphological root fallback."""
+        aliases = country_aliases or []
+        if aliases:
+            return any(a.lower() in text_norm for a in aliases)
+        root = value_str.lower()[:5]
+        return not (len(root) >= 4 and root not in text_norm)
+
+    def _match_count(self, value_str: str, text_norm: str) -> bool:
+        """Word-boundary number match for count."""
+        return bool(re.search(rf"(?<!\d){re.escape(value_str)}(?!\d)", text_norm))
+
+    def _match_plain_text(self, value_str: str, text_norm: str) -> bool:
+        """Simple case-insensitive substring match."""
+        return value_str.lower() in text_norm
 
     @staticmethod
     def _normalize_text(text: str) -> str:
