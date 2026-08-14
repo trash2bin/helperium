@@ -261,6 +261,7 @@ class TestProviderPriority:
 
         assert isinstance(result, LiteLLMProvider)
         assert "ollama_chat/minimax-m3:cloud" in result.model
+
     @pytest.mark.asyncio
     async def test_provider_priority_forwards_store_api_key(self):
         """Store API key must reach LiteLLMProvider for custom providers."""
@@ -279,6 +280,7 @@ class TestProviderPriority:
             _patch_pool(None),
         ):
             from api_service.agent.factory import resolve_llm
+
             result = await resolve_llm(provider_priority=["nvidia-nim"])
         assert isinstance(result, LiteLLMProvider)
         assert result.api_key == "nvapi-test-only"
