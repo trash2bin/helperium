@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"database/sql"
+	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -514,6 +516,53 @@ func TestNormalizeDateTime_MillisAndTimezone(t *testing.T) {
 			}
 			if ok && got != tt.want {
 				t.Errorf("normalizeDateTime(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCoerceNative_ConversionMatrix covers conversion branches not exercised by
+// the date/time and float-to-int regression tests above.
+func TestCoerceNative_ConversionMatrix(t *testing.T) {
+	tests := []struct {
+		name    string
+		val     any
+		typ     string
+		want    any
+		wantNaN bool
+	}{
+		{name: "nil stays nil", val: nil, typ: "int", want: nil},
+		{name: "int string parses", val: "17", typ: "int", want: int64(17)},
+		{name: "invalid int string stays string", val: "17x", typ: "int", want: "17x"},
+		{name: "integer converts to float", val: int64(7), typ: "float", want: float64(7)},
+		{name: "float string parses", val: "2.5", typ: "float", want: float64(2.5)},
+		{name: "invalid float string stays string", val: "two", typ: "float", want: "two"},
+		{name: "zero integer converts to false", val: int64(0), typ: "bool", want: false},
+		{name: "nonzero float converts to true", val: float64(-0.25), typ: "bool", want: true},
+		{name: "boolean string parses", val: "true", typ: "bool", want: true},
+		{name: "invalid boolean string stays string", val: "yes", typ: "bool", want: "yes"},
+		{name: "json string decodes", val: `{"enabled":true}`, typ: "json", want: map[string]any{"enabled": true}},
+		{name: "invalid json string stays string", val: "{", typ: "json", want: "{"},
+		{name: "json bytes decode", val: []byte(`[1,2]`), typ: "json", want: []any{float64(1), float64(2)}},
+		{name: "invalid json bytes become string", val: []byte("["), typ: "json", want: "["},
+		{name: "date bytes normalize", val: []byte("2024-01-15"), typ: "date", want: "2024-01-15T00:00:00Z"},
+		{name: "invalid date bytes stay bytes", val: []byte("not-a-date"), typ: "datetime", want: []byte("not-a-date")},
+		{name: "unknown type formats value", val: int64(7), typ: "unknown", want: "7"},
+		{name: "NaN integer conversion preserves NaN", val: math.NaN(), typ: "int", wantNaN: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := coerceNative(tc.val, tc.typ)
+			if tc.wantNaN {
+				value, ok := got.(float64)
+				if !ok || !math.IsNaN(value) {
+					t.Fatalf("coerceNative(%v, %q) = %v (%T), want NaN float64", tc.val, tc.typ, got, got)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("coerceNative(%v, %q) = %#v (%T), want %#v (%T)", tc.val, tc.typ, got, got, tc.want, tc.want)
 			}
 		})
 	}

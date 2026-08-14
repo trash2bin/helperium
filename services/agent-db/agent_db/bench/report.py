@@ -28,6 +28,12 @@ def aggregate_report(
     Returns:
         Aggregated BenchmarkReport.
     """
+    if not (len(cases) == len(runs) == len(eval_results)):
+        raise ValueError(
+            "cases, runs, and eval_results must have the same length "
+            f"(got {len(cases)}, {len(runs)}, {len(eval_results)})"
+        )
+
     report = BenchmarkReport()
     report.total_cases = len(cases)
 

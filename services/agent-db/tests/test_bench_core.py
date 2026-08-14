@@ -10,9 +10,12 @@ Covers:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
+import httpx
 import pytest
+import requests
 
 from agent_db.bench.evaluator import DeterministicEvaluator
 from agent_db.bench.models import (
@@ -29,7 +32,7 @@ from agent_db.bench.backlog_parser import (
     parse_backlog_data,
     read_all_records,
 )
-from agent_db.bench.runner import _sse_parse_events
+from agent_db.bench.runner import BenchmarkRunner, _sse_parse_events
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -1140,3 +1143,61 @@ class TestSseParse:
         r = _sse_parse_events(resp)
         assert len(r["events"]) == 1
         assert r["events"][0]["type"] == "done"
+
+class TestBenchmarkRunner:
+    def test_request_failure_writes_isolated_bench_log(self, tmp_path, monkeypatch):
+        class RaisingClient:
+            def __init__(self, *args, **kwargs):
+                raise httpx.RequestError("offline")
+
+        monkeypatch.setattr(httpx, "Client", RaisingClient)
+        runner = BenchmarkRunner(
+            api_url="http://unused",
+            agent_name="agent",
+            tenant_id="tenant",
+            backlog_dir=tmp_path,
+            bench_log_dir=tmp_path,
+        )
+
+        run = runner.run_case("question", session_id="session-error")
+
+        assert run.errors == ["Request failed: offline"]
+        records = (tmp_path / "session-error.bench.jsonl").read_text(encoding="utf-8").splitlines()
+        assert len(records) == 1
+        record = json.loads(records[0])
+        assert record["session_id"] == "session-error"
+        assert record["question"] == "question"
+        assert record["errors"] == ["Request failed: offline"]
+
+    def test_requests_fallback_failure_writes_isolated_bench_log(self, tmp_path, monkeypatch):
+        def fail_request(*args, **kwargs):
+            raise requests.RequestException("offline")
+
+        monkeypatch.setitem(sys.modules, "httpx", None)
+        monkeypatch.setattr(requests, "post", fail_request)
+        runner = BenchmarkRunner(
+            api_url="http://unused",
+            agent_name="agent",
+            tenant_id="tenant",
+            backlog_dir=tmp_path,
+            bench_log_dir=tmp_path,
+        )
+
+        run = runner.run_case("question", session_id="session-requests-error")
+
+        assert run.errors == ["Request failed: offline"]
+        records = (tmp_path / "session-requests-error.bench.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        assert len(records) == 1
+        assert json.loads(records[0])["errors"] == ["Request failed: offline"]
+
+
+class TestAggregateContract:
+    def test_rejects_mismatched_case_run_and_eval_lengths(self):
+        cases = [make_case("case-1"), make_case("case-2")]
+        runs = [make_run()]
+        evals = [EvalResult(case_id="case-1")]
+
+        with pytest.raises(ValueError, match="must have the same length"):
+            aggregate_report(cases, runs, evals)

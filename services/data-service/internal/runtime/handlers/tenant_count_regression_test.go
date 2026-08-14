@@ -299,3 +299,82 @@ func TestCountHandler_TenantID_NotFilterable(t *testing.T) {
 		t.Errorf("expected Count=2 (tenant_id ignored as filter), got %d", body.Count)
 	}
 }
+
+func TestCountHandler_FilterAndReservedParams(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	_, err = db.ExecContext(context.Background(), `
+		CREATE TABLE products (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL,
+			tenant_id TEXT NOT NULL
+		);
+		INSERT INTO products VALUES (1, 'alpha', 'tenant-a');
+		INSERT INTO products VALUES (2, 'alpha', 'tenant-b');
+		INSERT INTO products VALUES (3, 'beta', 'tenant-a');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &testStrategyAdapter{db: db}
+	entity := runtime.Entity{
+		Name:     "product",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []runtime.EntityField{
+			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
+			{Name: "name", Column: "name", Type: "string"},
+			{Name: "tenant_id", Column: "tenant_id", Type: "string"},
+		},
+	}
+	resolver, err := runtime.NewEntityResolver([]runtime.Entity{entity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := &Context{
+		DB:       adapter,
+		Adapter:  adapter,
+		Builder:  runtime.NewBuilder(adapter),
+		Resolver: resolver,
+		URLParam: func(*http.Request, string) string { return "" },
+	}
+	handler := CountHandler(ctx, "product")
+
+	tests := []struct {
+		name   string
+		target string
+		want   int
+	}{
+		{name: "no filters counts every row", target: "/products/count", want: 3},
+		{name: "field filter narrows count", target: "/products/count?name=alpha", want: 2},
+		{name: "filter operator narrows count", target: "/products/count?name__neq=alpha", want: 1},
+		{name: "unknown query parameter is ignored", target: "/products/count?unknown=value", want: 3},
+		{name: "reserved pagination and format parameters are ignored", target: "/products/count?limit=1&offset=1&sort_by=name&format=json", want: 3},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.target, nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d: %s", w.Code, http.StatusOK, w.Body.String())
+			}
+
+			var body struct {
+				Entity string `json:"entity"`
+				Count  int    `json:"count"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if body.Entity != "product" || body.Count != tc.want {
+				t.Errorf("response = %#v, want entity product with count %d", body, tc.want)
+			}
+		})
+	}
+}

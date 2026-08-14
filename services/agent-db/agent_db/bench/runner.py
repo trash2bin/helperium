@@ -324,6 +324,21 @@ class BenchmarkRunner:
         except OSError:
             pass
 
+    def _finish_run(self, run: RunResult) -> RunResult:
+        """Persist one benchmark result, including infrastructure failures."""
+        self._write_bench_log(run)
+        return run
+
+    def _error_run(self, session_id: str, question: str, error: str) -> RunResult:
+        """Build and persist a failed benchmark result before returning it."""
+        return self._finish_run(
+            RunResult(
+                session_id=session_id,
+                question=question,
+                errors=[error],
+            )
+        )
+
     def _headers(self) -> dict[str, str]:
         h = {
             "X-Tenant-ID": self.tenant_id,
@@ -369,10 +384,10 @@ class BenchmarkRunner:
                             time.sleep(2 * (attempt + 1))
                             continue
                         if resp.status_code != 200:
-                            return RunResult(
-                                session_id=sid,
-                                question=question,
-                                errors=[f"HTTP {resp.status_code}: {resp.text[:200]}"],
+                            return self._error_run(
+                                sid,
+                                question,
+                                f"HTTP {resp.status_code}: {resp.text[:200]}",
                             )
                         last_parsed = _sse_parse_events(resp)
                         break
@@ -380,37 +395,32 @@ class BenchmarkRunner:
                 # Fallback to requests (streaming)
                 import requests as requests_module
 
-                resp = requests_module.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=self.timeout,
-                    stream=True,
-                )
+                try:
+                    resp = requests_module.post(
+                        url,
+                        json=payload,
+                        headers=headers,
+                        timeout=self.timeout,
+                        stream=True,
+                    )
+                except Exception as e:  # requests.RequestException, OSError, ...
+                    return self._error_run(sid, question, f"Request failed: {e}")
                 if resp.status_code == 429:
                     time.sleep(2 * (attempt + 1))
                     continue
                 if resp.status_code != 200:
-                    return RunResult(
-                        session_id=sid,
-                        question=question,
-                        errors=[f"HTTP {resp.status_code}: {resp.text[:200]}"],
+                    return self._error_run(
+                        sid,
+                        question,
+                        f"HTTP {resp.status_code}: {resp.text[:200]}",
                     )
                 last_parsed = _sse_parse_events(resp)
                 break
             except Exception as e:  # httpx.RequestError, OSError, ...
-                return RunResult(
-                    session_id=sid,
-                    question=question,
-                    errors=[f"Request failed: {e}"],
-                )
+                return self._error_run(sid, question, f"Request failed: {e}")
 
         if last_parsed is None:
-            return RunResult(
-                session_id=sid,
-                question=question,
-                errors=["Rate-limited (429) after retries"],
-            )
+            return self._error_run(sid, question, "Rate-limited (429) after retries")
         parsed = last_parsed
 
         # Read backlog metrics for this session
@@ -434,9 +444,7 @@ class BenchmarkRunner:
         from .evaluator import DeterministicEvaluator
 
         run.tool_error_payloads = DeterministicEvaluator._detect_tool_errors(run)
-        # Отдельное логгирование бенча (изолированный каталог)
-        self._write_bench_log(run)
-        return run
+        return self._finish_run(run)
 
     def run_cases(self, questions: list[str]) -> list[RunResult]:
         """Run multiple questions (one-shot each)."""
