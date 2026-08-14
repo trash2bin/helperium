@@ -31,7 +31,7 @@ ci-test-go:
 
 ci-lint-js:
 	@echo "=== JS lint (biome) ==="
-	npx @biomejs/biome check --max-diagnostics=500
+	npx --yes @biomejs/biome@2.5.4 check --max-diagnostics=500
 	@echo "✅ JS lint OK"
 
 ci-admin:

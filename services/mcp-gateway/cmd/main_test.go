@@ -649,7 +649,7 @@ func TestRateLimit_ReplenishesTokensOverTime(t *testing.T) {
 
 func TestRateLimitMiddleware_EnforcesOnPOST(t *testing.T) {
 	// Override rate limit to very low for test
-	t.Setenv("MCP_RATE_LIMIT_RPS", "100")
+	t.Setenv("MCP_RATE_LIMIT_RPS", "1")
 	t.Setenv("MCP_RATE_LIMIT_BURST", "3")
 
 	prevClient := globalClient

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"strconv"
 	"sync"
 
 	"github.com/go-chi/chi/v5"
@@ -28,8 +29,8 @@ import (
 // Defaults match the api-service's env-var defaults.
 type AbuseConfig struct {
 	// Rate limiting
-	RPS   float64 `json:"rps"`   // sustained requests per second (env: CHAT_RATE_LIMIT)
-	Burst int     `json:"burst"` // burst size (env: CHAT_RATE_LIMIT_BURST)
+	RPS   float64 `json:"rps"`   // sustained requests per second (env: ABUSE_RPS)
+	Burst int     `json:"burst"` // burst size (env: ABUSE_BURST)
 
 	// Message restrictions
 	MaxMessageLength      int `json:"max_message_length"`       // max chars per message
@@ -55,36 +56,37 @@ type AbuseConfig struct {
 }
 
 // DefaultAbuseConfig returns sensible defaults (matching api-service env defaults).
+// DefaultAbuseConfig returns sensible defaults loaded from environment variables when set.
 func DefaultAbuseConfig() AbuseConfig {
-	return AbuseConfig{
-		RPS:   1.0,
-		Burst: 5,
+return AbuseConfig{
+RPS:   getEnvFloat64("ABUSE_RPS", 1.0),
+Burst: getEnvInt("ABUSE_BURST", 5),
 
-		MaxMessageLength:      2000,
-		MinIntervalMs:         1000,
-		MaxMessagesPerSession: 50,
+MaxMessageLength:      getEnvInt("ABUSE_MAX_MSG_LENGTH", 2000),
+MinIntervalMs:         getEnvInt("ABUSE_MIN_INTERVAL_MS", 1000),
+MaxMessagesPerSession: getEnvInt("ABUSE_MAX_MESSAGES", 50),
 
-		BlockEmptyUserAgent: true,
-		BlockedUserAgents: []string{
-			"curl/*",
-			"python-requests/*",
-			"Go-http-client/*",
-			"Wget/*",
-		},
+BlockEmptyUserAgent: true,
+BlockedUserAgents: []string{
+"curl/*",
+"python-requests/*",
+"Go-http-client/*",
+"Wget/*",
+},
 
-		// Emergency defaults
-		EmergencyMode:   false,
-		TokenBudget:     0,  // 0 = unlimited
-		EmergencyPreset: "normal",
+// Emergency defaults
+EmergencyMode:   getEnvBool("ABUSE_EMERGENCY_MODE", false),
+TokenBudget:     getEnvInt("ABUSE_TOKEN_BUDGET", 0), // 0 = unlimited
+EmergencyPreset: getEnvString("ABUSE_EMERGENCY_PRESET", "normal"),
 
-		// Runtime defaults (matching DemoSettings env defaults)
-		HistoryTurns:        8,
-		HistoryContentChars: 6000,
-		MaxIterations:       5,
-		MaxEmptyRounds:      3,
-		MaxTurnTokens:       8000,
-		SessionTTLHours:     0,
-	}
+// Runtime defaults (matching DemoSettings env defaults)
+HistoryTurns:        getEnvInt("DEMO_HISTORY_TURNS", 8),
+HistoryContentChars: getEnvInt("DEMO_HISTORY_CONTENT_CHARS", 6000),
+MaxIterations:       getEnvInt("AGENT_MAX_ITERATIONS", 5),
+MaxEmptyRounds:      getEnvInt("AGENT_MAX_EMPTY_ROUNDS", 3),
+MaxTurnTokens:       getEnvInt("AGENT_MAX_TURN_TOKENS", 8000),
+SessionTTLHours:     getEnvInt("SESSION_TTL_HOURS", 0),
+}
 }
 
 // ── Per-Agent Abuse Override ──
@@ -497,4 +499,36 @@ func (s *Server) emergencyStatusHandler(w http.ResponseWriter, r *http.Request) 
 		"min_interval_ms":  cfg.MinIntervalMs,
 		"active":           cfg.EmergencyMode && cfg.EmergencyPreset == "lockdown",
 	})
+}
+
+// getEnvFloat64 reads an environment variable as float64, falling back to defaultVal.
+func getEnvFloat64(key string, defaultVal float64) float64 {
+if value, err := strconv.ParseFloat(os.Getenv(key), 64); err == nil {
+return value
+}
+return defaultVal
+}
+
+// getEnvInt reads an environment variable as int, falling back to defaultVal.
+func getEnvInt(key string, defaultVal int) int {
+if value, err := strconv.Atoi(os.Getenv(key)); err == nil {
+return value
+}
+return defaultVal
+}
+
+// getEnvString reads an environment variable, falling back to defaultVal when empty.
+func getEnvString(key, defaultVal string) string {
+if value := os.Getenv(key); value != "" {
+return value
+}
+return defaultVal
+}
+
+// getEnvBool reads an environment variable as bool, falling back to defaultVal.
+func getEnvBool(key string, defaultVal bool) bool {
+if value, err := strconv.ParseBool(os.Getenv(key)); err == nil {
+return value
+}
+return defaultVal
 }
