@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 
 import httpx
@@ -21,9 +22,9 @@ from .models import CompletionRequest, CompletionResponse
 
 logger = logging.getLogger("api_service.agent.provider_pool")
 
-_HEALTH_INTERVAL_S: float = 30.0
-_HEALTH_TIMEOUT_S: float = 5.0
-_HEALTH_PATH: str = "/health"
+_HEALTH_INTERVAL_S: float = float(os.environ.get("HEALTH_INTERVAL_S", "30.0"))
+_HEALTH_TIMEOUT_S: float = float(os.environ.get("HEALTH_TIMEOUT_S", "5.0"))
+_HEALTH_PATH: str = os.environ.get("HEALTH_PATH", "/health")
 
 
 @dataclass(slots=True)

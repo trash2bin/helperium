@@ -26,6 +26,7 @@ Middleware (актуальный список):
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol, Any
@@ -62,10 +63,10 @@ class PipelineContext:
     backlog: BacklogWriter
 
     # Limits — set by orchestrator from settings; plain defaults for direct construction (tests)
-    max_iterations: int = 5
-    max_empty_rounds: int = 3
-    max_turn_tokens: int = 8000
-    max_tool_calls_per_turn: int = 10
+    max_iterations: int = int(os.environ.get("PIPELINE_MAX_ITERATIONS", "5"))
+    max_empty_rounds: int = int(os.environ.get("PIPELINE_MAX_EMPTY_ROUNDS", "3"))
+    max_turn_tokens: int = int(os.environ.get("PIPELINE_MAX_TURN_TOKENS", "8000"))
+    max_tool_calls_per_turn: int = int(os.environ.get("PIPELINE_MAX_TOOL_CALLS_PER_TURN", "10"))
 
     # Structured error context (optional — pipeline works without it)
     error_context: Any | None = None

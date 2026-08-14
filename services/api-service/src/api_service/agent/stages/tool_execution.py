@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -97,6 +98,7 @@ class ToolExecutionStage:
             )
 
             # Execute
+            start_time = time.time()
             try:
                 tool_result = await ctx.mcp_session.call_tool(name, arguments)
                 logger.info(
@@ -163,7 +165,7 @@ class ToolExecutionStage:
                 ctx.turn.iteration,
                 name,
                 tool_content_short,
-                duration_ms=0,
+                duration_ms=int((time.time() - start_time) * 1000),
             )
 
             result_payload: dict[str, Any] = {

@@ -7,14 +7,6 @@ register = template.Library()
 def get_categories():
     return Category.objects.filter(is_active=True, parent__isnull=True).prefetch_related('children')
 
-@register.simple_tag
-def get_brands():
-    return Brand.objects.all()[:20]
-
-@register.filter
-def mul(value, arg):
-    return value * arg
-
 @register.filter
 def ru_plural(value, arg):
     """1 товар, 2 товара, 5 товаров"""

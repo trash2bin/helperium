@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 import litellm
@@ -44,8 +45,8 @@ class LiteLLMProvider:
         model: str,
         api_base: str | None = None,
         api_key: str | None = None,
-        timeout: float = 120.0,
-        temperature: float = 0.5,
+        timeout: float = float(os.environ.get("LITELLM_TIMEOUT", "120.0")),
+        temperature: float = float(os.environ.get("LITELLM_TEMPERATURE", "0.5")),
         max_tokens_thinking: int = 4096,
         enable_thinking: bool = False,
     ) -> None:
