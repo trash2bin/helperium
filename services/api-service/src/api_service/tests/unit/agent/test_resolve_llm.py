@@ -261,6 +261,28 @@ class TestProviderPriority:
 
         assert isinstance(result, LiteLLMProvider)
         assert "ollama_chat/minimax-m3:cloud" in result.model
+    @pytest.mark.asyncio
+    async def test_provider_priority_forwards_store_api_key(self):
+        """Store API key must reach LiteLLMProvider for custom providers."""
+        providers = {
+            "nvidia-nim": {
+                "model": "nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+                "api_key": "nvapi-test-only",
+                "api_base": "https://integrate.api.nvidia.com/v1/",
+                "enabled": True,
+                "provider": "nvidia_nim",
+            },
+        }
+        with (
+            _patch_scripted(return_value=None),
+            _patch_store(providers),
+            _patch_pool(None),
+        ):
+            from api_service.agent.factory import resolve_llm
+            result = await resolve_llm(provider_priority=["nvidia-nim"])
+        assert isinstance(result, LiteLLMProvider)
+        assert result.api_key == "nvapi-test-only"
+        assert result.api_base == "https://integrate.api.nvidia.com/v1/"
 
     @pytest.mark.asyncio
     async def test_provider_priority_skips_disabled(self):

@@ -210,6 +210,7 @@ async def resolve_llm(
             return LiteLLMProvider(
                 model=model,
                 api_base=api_base or None,
+                api_key=data.get("api_key") or None,
                 timeout=120.0,
             )
         else:
