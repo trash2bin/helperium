@@ -1,0 +1,1691 @@
+{
+  "total_cases": 49,
+  "success_rate": 0.9387755102040817,
+  "retrieval_success_rate": 0.9591836734693877,
+  "answer_delivery_rate": 0.9795918367346939,
+  "hallucination_rate": 0.04081632653061224,
+  "groundedness_rate": 0.9591836734693877,
+  "refusal_correct_rate": 0.75,
+  "tool_error_rate": 0.0,
+  "entity_name_accuracy": 1.0,
+  "recovery_rate": 1.0,
+  "verdicts": {
+    "CORRECT": 36,
+    "ERROR": 2,
+    "PARTIAL": 8,
+    "WRONG": 3
+  },
+  "error_classes": {
+    "INFRA_ERROR": 2,
+    "LOST_TOTAL": 4,
+    "RETRIEVAL_MISS": 2,
+    "HALLUCINATED_NUMBER": 2,
+    "REFUSAL_MISSING": 1,
+    "ANSWER_MISS": 1
+  },
+  "avg_total_tokens": 0.0,
+  "avg_prompt_tokens": 0.0,
+  "avg_completion_tokens": 0.0,
+  "avg_llm_calls": 0.0,
+  "avg_tool_calls": 0.0,
+  "avg_iterations": 0.0,
+  "avg_duration_ms": 0.0,
+  "p50_duration_ms": 0.0,
+  "p95_duration_ms": 0.0,
+  "p50_tokens": 0.0,
+  "p95_tokens": 0.0,
+  "p50_cost_usd": 0.0,
+  "p95_cost_usd": 0.0,
+  "p50_tool_calls": 0.0,
+  "p95_tool_calls": 0.0,
+  "p50_llm_calls": 0.0,
+  "p95_llm_calls": 0.0,
+  "avg_repeated_tool_calls": 0.02040816326530612,
+  "avg_unique_tool_calls": 2.836734693877551,
+  "avg_answer_completeness": 0.8979591836734694,
+  "avg_db_get": 0.40816326530612246,
+  "avg_cost_usd": 0.0,
+  "total_cost_usd": 0.0,
+  "run_metadata": {
+    "git_commit": "3e2d83d",
+    "model": "nvidia-nim-bench",
+    "dataset": "services/agent-db/agent_db/bench/cases/autoparts.json",
+    "cases_count": 49,
+    "timestamp": "2026-08-15T00:35:17"
+  },
+  "cases": [
+    {
+      "case_id": "product-lookup-article-001",
+      "question": "Сколько стоит артикул EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Артикул EXT-01392 стоит 2751 руб.Артикул EXT-01392 стоит 2751 руб."
+    },
+    {
+      "case_id": "product-lookup-name-001",
+      "question": "Сколько стоит Датчик ABS Bosch для Toyota Land Cruiser 200?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Цена Датчика ABS Bosch для Toyota Land Cruiser 200 — **2751 руб.** (на складе есть, остаток 13 шт.).Цена Датчика ABS Bosch для Toyota Land Cruiser 200 — **2751 руб.** (на складе есть, остаток 13 шт.)."
+    },
+    {
+      "case_id": "product-lookup-brand-001",
+      "question": "Какой бренд у товара с артикулом EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "ERROR",
+        "error_classes": [
+          "INFRA_ERROR"
+        ],
+        "error_source": "tool",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 4,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "У товара с артикулом EXT-01392 бренд **Bosch**.У товара с артикулом EXT-01392 бренд **Bosch**."
+    },
+    {
+      "case_id": "product-lookup-availability-001",
+      "question": "Есть ли в наличии артикул EXT-01367?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Да, артикул **EXT-01367** есть в наличии. В магазине осталось **23 шт.** товара «Термостат Mahle для Toyota Camry V50».Да, артикул **EXT-01367** есть в наличии. В магазине осталось **23 шт.** товара «Термостат Mahle для Toyota Camry V50»."
+    },
+    {
+      "case_id": "product-lookup-hit-001",
+      "question": "Сколько стоит товар с меткой ХИТ артикул EXT-01401?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "ERROR",
+        "error_classes": [
+          "INFRA_ERROR"
+        ],
+        "error_source": "tool",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 4,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Товар с артикулом EXT-01401 стоит **3263** (внутренняя валюта каталога).Товар с артикулом EXT-01401 стоит **3263** (внутренняя валюта каталога)."
+    },
+    {
+      "case_id": "product-lookup-hella-001",
+      "question": "Сколько товаров бренда Hella в каталоге?",
+      "category": "count",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [
+          "LOST_TOTAL"
+        ],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "LOST_TOTAL: tools returned total=5, answer omits it",
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В каталоге **5 товаров** бренда Hella.В каталоге **5 товаров** бренда Hella."
+    },
+    {
+      "case_id": "product-count-bosch-available-001",
+      "question": "Сколько товаров бренда Bosch в наличии?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В наличии находится **74 товара** бренда Bosch.В наличии находится **74 товара** бренда Bosch."
+    },
+    {
+      "case_id": "product-count-price-001",
+      "question": "Сколько товаров дороже 3000 рублей?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Всего 144 товара дороже 3000 рублей.Всего 144 товара дороже 3000 рублей."
+    },
+    {
+      "case_id": "product-count-price-002",
+      "question": "Сколько товаров дешевле 1000 рублей?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В каталоге **83 товара** с ценой ниже 1000 рублей.В каталоге **83 товара** с ценой ниже 1000 рублей."
+    },
+    {
+      "case_id": "product-count-category-001",
+      "question": "Сколько товаров в категории Колодки тормозные?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В категории «Колодки тормозные» всего **60 товаров**.В категории «Колодки тормозные» всего **60 товаров**."
+    },
+    {
+      "case_id": "product-count-category-002",
+      "question": "Сколько товаров в категории Свечи зажигания?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В категории «Свечи зажигания» всего **36 товаров**.В категории «Свечи зажигания» всего **36 товаров**."
+    },
+    {
+      "case_id": "product-filter-price-001",
+      "question": "Покажи товары дешевле 2000 рублей",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Вот товары стоимостью менее 2000 ₽ (первые 20 из 180):\n\n1. Колодки тормозные передние для Ford Focus 2 (id: 6)\n2. Колодки тормозные передние для Hyundai Solaris (id: 7)\n3. Колодки тормозные передние для Kia Rio (id: 8)\n4. Колодки тормозные передние для Renault Duster (id: 10)\n5. Колодки тормозные передние для Mitsubishi Lancer X (id: 12)\n6. Колодки тормозные передние для Ford Focus 2 (id: 54)\n7. Колодки тормозные передние для Hyundai Solaris (id: 55)\n8. Колодки тормозные передние для Kia Rio (id"
+    },
+    {
+      "case_id": "product-filter-category-001",
+      "question": "Покажи товары из категории Масляные фильтры",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 1,
+        "unique_tool_calls": 8,
+        "db_get_count": 2
+      },
+      "outcome": "final",
+      "final_text": "The previous filter call returned 0 results, likely because the category ID 21 might not be the correct one or the products aren't tagged with that category. Let me check the other category ID 107 as well, and also search for products directly with \"масляный фильтр\" in the name.The previous filter call returned 0 results, likely because the category ID 21 might not be the correct one or the products aren't tagged with that category. Let me check the other category ID 107 as well, and also search"
+    },
+    {
+      "case_id": "product-absence-001",
+      "question": "Есть ли у вас артикул FAKE-ARTICLE-999?",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Артикул **FAKE-ARTICLE-999** в каталоге не найден. Dostupnye article: BRK-01001–BRK-01005.Артикул **FAKE-ARTICLE-999** в каталоге не найден. Dostupnye article: BRK-01001–BRK-01005."
+    },
+    {
+      "case_id": "order-lookup-status-001",
+      "question": "Какой статус заказа АП-100005?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 6,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Статус заказа АП-100005: **new**.Статус заказа АП-100005: **new**."
+    },
+    {
+      "case_id": "order-lookup-status-002",
+      "question": "Какой статус заказа АП-100006?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 6,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Заказ АП-100006 имеет статус **confirmed** (подтвержден).Заказ АП-100006 имеет статус **confirmed** (подтвержден)."
+    },
+    {
+      "case_id": "order-lookup-total-001",
+      "question": "Сколько стоит заказ АП-100004?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Заказ АП-100004 стоит **7809 рублей**. (Сумма включает товары на 7809 р. и бесплатную доставку.)Заказ АП-100004 стоит **7809 рублей**. (Сумма включает товары на 7809 р. и бесплатную доставку.)"
+    },
+    {
+      "case_id": "order-count-status-003",
+      "question": "Сколько заказов со статусом new?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [
+          "LOST_TOTAL"
+        ],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "LOST_TOTAL: tools returned total=2, answer omits it",
+          "total 6 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Всего **2** заказа со статусом **new**.Всего **2** заказа со статусом **new**."
+    },
+    {
+      "case_id": "order-count-status-002",
+      "question": "Сколько заказов со статусом delivered?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [
+          "LOST_TOTAL"
+        ],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "LOST_TOTAL: tools returned total=3, answer omits it",
+          "total 6 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Всего заказов со статусом **delivered**: **3** штуки.Всего заказов со статусом **delivered**: **3** штуки."
+    },
+    {
+      "case_id": "order-lookup-delivery-001",
+      "question": "Каким способом доставки отправлен заказ АП-100005?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 4,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Заказ АП-100005 был отправлен способом **самовывоз** (delivery method: pickup).Заказ АП-100005 был отправлен способом **самовывоз** (delivery method: pickup)."
+    },
+    {
+      "case_id": "order-lookup-payment-001",
+      "question": "Как оплачен заказ АП-100003?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 5,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Заказ АП-100003 оплачен **online** (банковской картой).Заказ АП-100003 оплачен **online** (банковской картой)."
+    },
+    {
+      "case_id": "order-absence-001",
+      "question": "Существует ли заказ ORD-2024-001234?",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Заказ с номером **ORD-2024-001234** в базе данных не найден.Заказ с номером **ORD-2024-001234** в базе данных не найден."
+    },
+    {
+      "case_id": "brand-lookup-001",
+      "question": "Из какой страны бренд Bosch?",
+      "category": "lookup",
+      "success": false,
+      "eval": {
+        "verdict": "WRONG",
+        "error_classes": [
+          "RETRIEVAL_MISS",
+          "HALLUCINATED_NUMBER"
+        ],
+        "error_source": "agent",
+        "tool_ok": false,
+        "retrieval_ok": false,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "no tool calls",
+          "expected {'country': 'Германия'} not found in tool results",
+          "unsupported numbers in answer: ['1886', '1886']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 0,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Бренд Bosch (Bosch Group) — немецкий. Компания была основана в 1886 году в Штутгарте, Германия, Робертом Бошем.Бренд Bosch (Bosch Group) — немецкий. Компания была основана в 1886 году в Штутгарте, Германия, Робертом Бошем."
+    },
+    {
+      "case_id": "brand-lookup-002",
+      "question": "Из какой страны бренд Denso?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Бренд **Denso** из **Японии**.Бренд **Denso** из **Японии**."
+    },
+    {
+      "case_id": "brand-count-001",
+      "question": "Сколько всего брендов в каталоге?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Всего в каталоге **30 брендов**.Всего в каталоге **30 брендов**."
+    },
+    {
+      "case_id": "category-count-001",
+      "question": "Сколько всего категорий в каталоге?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_category', 'db_search'], called ['db_describe']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Всего в каталоге **117 категорий**.Всего в каталоге **117 категорий**."
+    },
+    {
+      "case_id": "category-lookup-001",
+      "question": "Какая родительская категория у Колодки тормозные?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 5,
+        "db_get_count": 3
+      },
+      "outcome": "final",
+      "final_text": "Родительская категория у «Колодки тормозные» — **Тормозная система**.Родительская категория у «Колодки тормозные» — **Тормозная система**."
+    },
+    {
+      "case_id": "product-filter-brand-001",
+      "question": "Покажи товары бренда Hella",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Найдено 5 товаров бренда Hella:\n\n1. **Датчик ABS Hella для BMW X5 E53** (ID: 403)\n2. **Датчик ABS Hella для Mercedes-Benz W210** (ID: 404)\n3. **Датчик ABS Hella для Audi A6 C6** (ID: 405)\n4. **Датчик ABS Hella для Volkswagen Golf V** (ID: 406)\n5. **Датчик ABS Hella для Toyota Land Cruiser 100** (ID: 407)Найдено 5 товаров бренда Hella:\n\n1. **Датчик ABS Hella для BMW X5 E53** (ID: 403)\n2. **Датчик ABS Hella для Mercedes-Benz W210** (ID: 404)\n3. **Датчик ABS Hella для Audi A6 C6** (ID: 405)\n4. **Да"
+    },
+    {
+      "case_id": "product-filter-category-002",
+      "question": "Покажи товары из категории Амортизаторы",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Категория «Амортизаторы» (ID 27) содержит 24 товара. Вот первые 20 из них:\n\n1. **Амортизатор передний BMW G20** (ID: 85)\n2. **Амортизатор передний Mercedes-Benz W463** (ID: 86)\n3. **Амортизатор передний Audi A4 B5** (ID: 87)\n4. **Амортизатор передний Volkswagen Touareg** (ID: 88)\n5. **Амортизатор передний Toyota Corolla E120** (ID: 89)\n6. **Амортизатор передний Honda Accord 8** (ID: 90)\n7. **Амортизатор передний BMW E39** (ID: 91)\n8. **Амортизатор передний Mercedes-Benz W211** (ID: 92)\n9. **Амор"
+    },
+    {
+      "case_id": "product-filter-price-002",
+      "question": "Покажи товары дороже 5000 рублей",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Вот товары стоимостью более 5000 рублей (показано 20 штук):\n\n1. Лямбда-зонд NGK для Audi A4 B6\n2. Лямбда-зонд NGK для Toyota Land Cruiser 100\n3. Лямбда-зонд Febi для Audi A3 8V\n4. Амортизатор передний BMW G20\n5. Амортизатор передний Mercedes-Benz W463\n6. Амортизатор передний Audi A4 B5\n7. Амортизатор передний Volkswagen Touareg\n8. Амортизатор передний Toyota Corolla E120\n9. Амортизатор передний Honda Accord 8\n10. Амортизатор передний BMW E39\n11. Амортизатор передний Mercedes-Benz W211\n12. Аморти"
+    },
+    {
+      "case_id": "product-filter-availability-001",
+      "question": "Покажи доступные товары бренда Febi",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Доступные товары бренда Febi (20 из 71 всего):\n\n1. ШРУС внутренний Febi для BMW X3 E83\n2. ШРУС внутренний Febi для Mercedes-Benz W204\n3. ШРУС внутренний Febi для Audi A3 8P\n4. ШРУС внутренний Febi для Volkswagen Touareg\n5. ШРУС внутренний Febi для Toyota Corolla E120\n6. Пыльник ШРУСа Febi для BMW E60\n7. Пыльник ШРУСа Febi для Mercedes-Benz W210\n8. Пыльник ШРУСа Febi для Audi Q5\n9. Пыльник ШРУСа Febi для Volkswagen Golf IV\n10. Пыльник ШРУСа Febi для Toyota Land Cruiser 200\n11. Наконечник рулевой "
+    },
+    {
+      "case_id": "product-filter-label-001",
+      "question": "Покажи товары с меткой sale",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Товары с меткой «sale» (всего 42, показано 10):\n\n1. Колодки тормозные передние для Toyota Camry V40 (id: 4)\n2. Колодки тормозные передние для Kia Rio (id: 8)\n3. Колодки тормозные передние для Toyota Camry V40 (id: 52)\n4. Колодки тормозные передние для Kia Rio (id: 56)\n5. Моторное масло 5W-30 Castrol 4л (id: 245)\n6. Моторное масло 5W-30 Liqui Moly 4л (id: 249)\n7. ШРУС внутренний CTR для Audi A3 8V (id: 265)\n8. Пыльник ШРУСа Febi для Volkswagen Golf IV (id: 271)\n9. Пыльник ШРУСа Meyle для Volkswag"
+    },
+    {
+      "case_id": "product-search-partial-name-001",
+      "question": "Найди датчик ABS на Toyota Land Cruiser",
+      "category": "search",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Найдено 3 датчика ABS для Toyota Land Cruiser:\n\n1. **Датчик ABS Bosch** — для Toyota Land Cruiser 200 (ID: 392)\n2. **Датчик ABS Febi** — для Toyota Land Cruiser 100 (ID: 402)\n3. **Датчик ABS Hella** — для Toyota Land Cruiser 100 (ID: 407)\n\nХотите получить подробную информацию о каком-то конкретном датчике (цена, наличие, характеристики)?Найдено 3 датчика ABS для Toyota Land Cruiser:\n\n1. **Датчик ABS Bosch** — для Toyota Land Cruiser 200 (ID: 392)\n2. **Датчик ABS Febi** — для Toyota Land Cruiser "
+    },
+    {
+      "case_id": "product-count-category-003",
+      "question": "Сколько товаров в категории Диски тормозные?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В категории «Диски тормозных» содержится **24 товара**.В категории «Диски тормозных» содержится **24 товара**."
+    },
+    {
+      "case_id": "product-count-brand-002",
+      "question": "Сколько товаров бренда Gates в каталоге?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [
+          "LOST_TOTAL"
+        ],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "LOST_TOTAL: tools returned total=5, answer omits it",
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В каталоге 5 товаров бренда Gates.В каталоге 5 товаров бренда Gates."
+    },
+    {
+      "case_id": "product-count-total-001",
+      "question": "Сколько всего товаров в каталоге?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_product', 'db_search'], called ['db_describe']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Всего в каталоге **407** товаров.Всего в каталоге **407** товаров."
+    },
+    {
+      "case_id": "order-count-total-001",
+      "question": "Сколько всего заказов в системе?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_order', 'db_search'], called ['stats']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 1,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Всего в системе **6 заказов**.Всего в системе **6 заказов**."
+    },
+    {
+      "case_id": "product-absence-002",
+      "question": "Есть ли в наличии товар артикул ZZ-000-NOPE?",
+      "category": "absence",
+      "success": false,
+      "eval": {
+        "verdict": "WRONG",
+        "error_classes": [
+          "HALLUCINATED_NUMBER",
+          "REFUSAL_MISSING"
+        ],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": true,
+        "grounded": false,
+        "refusal_ok": false,
+        "entity_name_ok": true,
+        "reasons": [
+          "hallucination: absence case invented data (no refusal)",
+          "expected refusal markers, answer has none"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Товара с артикулом **ZZ-000-NOPE** в каталоге нет. В системе доступны только артикулы starting from **BRK-01001** до **BRK-01005**. therefore the item is not available.Товара с артикулом **ZZ-000-NOPE** в каталоге нет. В системе доступны только артикулы starting from **BRK-01001** до **BRK-01005**. therefore the item is not available."
+    },
+    {
+      "case_id": "product-absence-003",
+      "question": "Покажи товары бренда НЕСУЩЕСТВУЮЩИЙ",
+      "category": "absence",
+      "success": true,
+      "eval": {
+        "verdict": "PARTIAL",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": false,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected tool in ['filter_catalog_product', 'db_search'], called ['db_describe', 'filter_catalog_brand']"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Бренда «НЕСУЩЕСТВУЮЩИЙ» нет в каталоге. Доступные бренды: Bosch, Brembo, CTR, Castrol, ContiTech, Dayco, Denso, Elring, Febi, Gates, Hella, Jurid, KYB, Lemförder, Liqui Moly, Mahle, Mann-Filter, Meyle, Mobil, Monroe.\n\nТоваров этого бренда не найдено.Бренда «НЕСУЩЕСТВУЮЩИЙ» нет в каталоге. Доступные бренды: Bosch, Brembo, CTR, Castrol, ContiTech, Dayco, Denso, Elring, Febi, Gates, Hella, Jurid, KYB, Lemförder, Liqui Moly, Mahle, Mann-Filter, Meyle, Mobil, Monroe.\n\nТоваров этого бренда не найдено."
+    },
+    {
+      "case_id": "brand-lookup-003",
+      "question": "Из какой страны бренд Brembo?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Бренд **Brembo** из **Италии**.Бренд **Brembo** из **Италии**."
+    },
+    {
+      "case_id": "product-lookup-origin-001",
+      "question": "Какая страна происхождения у товара EXT-01401?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Страна происхождения товара EXT-01401: **Германия**.Страна происхождения товара EXT-01401: **Германия**."
+    },
+    {
+      "case_id": "product-filter-combined-001",
+      "question": "Покажи тормозные колодки бренда Bosch в наличии",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 11,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "The user wants brake pads (тормозные колодки) from Bosch. The previous search returned ignition coils, water pumps, thermostats - not brake pads. I need to filter for brake pads specifically. Looking at the product names, they are all ignition coils, water pumps, thermostats. I need to search for \"тормозные колодки\" or \"brake pads\". Let me do a search with that term.The user wants brake pads (тормозные колодки) from Bosch. The previous search returned ignition coils, water pumps, thermostats - n"
+    },
+    {
+      "case_id": "product-lookup-warranty-001",
+      "question": "Какой гарантийный срок у товара EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Гарантийный срок — **24 месяца**. (Согласно полю `warranty_months` товара EXT-01392).Гарантийный срок — **24 месяца**. (Согласно полю `warranty_months` товара EXT-01392)."
+    },
+    {
+      "case_id": "product-lookup-country-001",
+      "question": "Какая страна происхождения у товара EXT-01392?",
+      "category": "lookup",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 1
+      },
+      "outcome": "final",
+      "final_text": "Страна происхождения товара EXT-01392: Германия.Страна происхождения товара EXT-01392: Германия."
+    },
+    {
+      "case_id": "product-filter-category-003",
+      "question": "Покажи товары из категории Салонные фильтры",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Товары из категории «Салонные фильтры» (32 товара всего, показано 20):\n\n1. Фильтр салонный угольный Mann-Filter для BMW E46\n2. Фильтр салонный угольный Mann-Filter для Audi A4\n3. Фильтр салонный угольный Mann-Filter для VW Golf\n4. Фильтр салонный угольный Mann-Filter для Toyota Camry\n5. Фильтр салонный угольный Mann-Filter для Mercedes W211\n6. Фильтр салонный угольный Mann-Filter для Ford Focus\n7. Фильтр салонный угольный Mann-Filter для Skoda Octavia\n8. Фильтр салонный угольный Mann-Filter для "
+    },
+    {
+      "case_id": "product-count-category-006",
+      "question": "Сколько товаров в категории Наконечники рулевые?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 3,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В категории «Наконечники рулевые» всего **20 товаров**.В категории «Наконечники рулевые» всего **20 товаров**."
+    },
+    {
+      "case_id": "product-count-category-005",
+      "question": "Сколько товаров в категории Лямбда-зонды?",
+      "category": "aggregation",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "total 1 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 4,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "В категории «Лямбда-зонды» всего **20 товаров**.В категории «Лямбда-зонды» всего **20 товаров**."
+    },
+    {
+      "case_id": "product-count-discount-001",
+      "question": "Сколько товаров сейчас по скидке?",
+      "category": "aggregation",
+      "success": false,
+      "eval": {
+        "verdict": "WRONG",
+        "error_classes": [
+          "RETRIEVAL_MISS",
+          "ANSWER_MISS"
+        ],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": false,
+        "answer_ok": false,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": [
+          "expected {'count': 72} not found in tool results",
+          "expected {'count': 72} not in final answer",
+          "total 407 not mentioned in answer"
+        ]
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Сейчас в каталоге **49 товаров** находятся в акции (сметка label: promo или sale).Сейчас в каталоге **49 товаров** находятся в акции (сметка label: promo или sale)."
+    },
+    {
+      "case_id": "product-filter-discount-001",
+      "question": "Покажи товары со скидкой",
+      "category": "filter",
+      "success": true,
+      "eval": {
+        "verdict": "CORRECT",
+        "error_classes": [],
+        "error_source": "agent",
+        "tool_ok": true,
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "hallucination": false,
+        "grounded": true,
+        "refusal_ok": true,
+        "entity_name_ok": true,
+        "reasons": []
+      },
+      "metrics": {
+        "duration_ms": 0.0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "iterations": 0,
+        "cost_usd": 0.0,
+        "repeated_tool_calls": 0,
+        "unique_tool_calls": 2,
+        "db_get_count": 0
+      },
+      "outcome": "final",
+      "final_text": "Товары со скидкой (метка `sale`):\n\n1. Колодки тормозные передние для Toyota Camry V40 (id: 4)\n2. Колодки тормозные передние для Kia Rio (id: 8)\n3. Колодки тормозные передние для Toyota Camry V40 (id: 52)\n4. Колодки тормозные передние для Kia Rio (id: 56)\n5. Моторное масло 5W-30 Castrol 4л (id: 245)\n6. Моторное масло 5W-30 Liqui Moly 4л (id: 249)\n7. ШРУС внутренний CTR для Audi A3 8V (id: 265)\n8. Пыльник ШРУСа Febi для Volkswagen Golf IV (id: 271)\n9. Пыльник ШРУСа Meyle для Volkswagen Tiguan (id:"
+    }
+  ],
+  "wall_duration_ms": 453396.7997080181
+}

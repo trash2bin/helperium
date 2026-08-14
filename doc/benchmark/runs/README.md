@@ -28,3 +28,37 @@ model fabricates them instead of calling `db_get` — a known limitation
 
 Raw per-session traces (SSE events, tool calls, tool results) live in
 `bench-backlog/` (gitignored, ~1.7MB for the full run) — keyed by question text.
+
+## 2026-08-15 — NVIDIA NIM, полный прогон 49 кейсов
+
+Полный Core Benchmark выполнен через `nvidia-nim-bench` с моделью
+`nvidia/nemotron-3.5-lightning-30b-a3b` после исправления передачи `api_key`
+в ветке `provider_priority` API Service. Перед запуском подтверждён успешный
+SSE smoke (`token: OK` → `final: OK` → `done`). Исходный отчёт текущей рабочей
+ветки: [`benchmark_report.json`](../../../benchmark_report.json).
+
+| Показатель | Результат |
+|---|---:|
+| Кейсов | 49 |
+| CORRECT | 36 (73,5%) |
+| PARTIAL | 8 (16,3%) |
+| WRONG | 3 (6,1%) |
+| ERROR | 2 (4,1%) |
+| Success rate в отчёте | 93,9% |
+| Wall-clock длительность | 453,396 с (7,556 мин) |
+
+`filter` прошёл 10/10, а `search` — 1/1. Основная зона риска — `aggregation`
+(9 CORRECT, 6 PARTIAL, 1 WRONG), а также сценарии отсутствия сущностей. Два
+`ERROR` были вызваны не моделью: `db_search` получил HTTP 500 от data-service
+`/q/search`, хотя финальные ответы на оба вопроса были корректными.
+
+Этот прогон является **интеграционным baseline NVIDIA NIM**, но пока не годится
+для сравнения latency, token usage и cost: в bench-log отсутствуют
+`duration_ms`, токены и стоимость, поэтому соответствующие p50/p95 в отчёте
+нулевые. В 38 из 49 результатов также продублирован текст, поскольку runner
+склеил SSE-события `token` и `final`. До повторного замера нужно исправить
+`/q/search`, дедупликацию финального текста и сбор метрик; отдельно проверить
+строгие `LOST_TOTAL`-правила evaluator.
+
+---
+**Last verified:** 2026-08-15 (HEAD 3e2d83d) — добавлена сводка полного NVIDIA NIM-прогона и известные ограничения измерений.
