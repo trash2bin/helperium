@@ -26,7 +26,13 @@ from agent_db.bench.models import (
     RunResult,
     TestCase,
 )
-from agent_db.bench.report import aggregate_report, diff_reports, print_report, report_to_dict
+from agent_db.bench.report import (
+    aggregate_report,
+    diff_reports,
+    print_report,
+    report_to_dict,
+)
+from agent_db.bench.reader import find_backlog_dir
 from agent_db.bench.backlog_parser import (
     find_backlog_file,
     parse_backlog_data,
@@ -72,12 +78,21 @@ def make_run(final_text="", tool_calls=None, tool_results=None, **kw):
 
 class TestEvaluator:
     def test_correct_lookup_passes(self):
-        case = make_case(expected={"price": 3064},
-                         expected_tool={"must_call_any": ["filter_catalog_product", "db_get"]})
+        case = make_case(
+            expected={"price": 3064},
+            expected_tool={"must_call_any": ["filter_catalog_product", "db_get"]},
+        )
         run = make_run(
             final_text="Цена артикула: 3064 рубля",
-            tool_calls=[{"name": "db_get", "arguments": {"entity": "catalog_product", "id": 392}}],
-            tool_results=[{"name": "db_get", "result": json.dumps({"id": 392, "price": 3064})}],
+            tool_calls=[
+                {
+                    "name": "db_get",
+                    "arguments": {"entity": "catalog_product", "id": 392},
+                }
+            ],
+            tool_results=[
+                {"name": "db_get", "result": json.dumps({"id": 392, "price": 3064})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.tool_ok and res.retrieval_ok and res.answer_ok
@@ -97,41 +112,61 @@ class TestEvaluator:
         assert not res.success
 
     def test_missing_expected_tool_fails(self):
-        case = make_case(expected={"price": 3064},
-                         expected_tool={"must_call_any": ["filter_catalog_product", "db_get"]})
-        run = make_run(final_text="3064", tool_calls=[{"name": "db_map"}],
-                       tool_results=[{"name": "db_map", "result": "{}"}])
+        case = make_case(
+            expected={"price": 3064},
+            expected_tool={"must_call_any": ["filter_catalog_product", "db_get"]},
+        )
+        run = make_run(
+            final_text="3064",
+            tool_calls=[{"name": "db_map"}],
+            tool_results=[{"name": "db_map", "result": "{}"}],
+        )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.tool_ok
         assert not res.success
 
     def test_forbidden_tool_fails(self):
-        case = make_case(expected={"price": 3064},
-                         expected_tool={"must_call_any": ["db_get"],
-                                        "must_not_call": ["db_describe"]})
-        run = make_run(final_text="3064",
-                       tool_calls=[{"name": "db_get"}, {"name": "db_describe"}],
-                       tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}])
+        case = make_case(
+            expected={"price": 3064},
+            expected_tool={
+                "must_call_any": ["db_get"],
+                "must_not_call": ["db_describe"],
+            },
+        )
+        run = make_run(
+            final_text="3064",
+            tool_calls=[{"name": "db_get"}, {"name": "db_describe"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.tool_ok
 
     def test_absence_correct_refusal_passes(self):
-        case = make_case(cid="abs", gt_type="not_found", expected={"count": 0},
-                         expect_refusal=True,
-                         expected_tool={"must_call_any": ["filter_catalog_product"]})
+        case = make_case(
+            cid="abs",
+            gt_type="not_found",
+            expected={"count": 0},
+            expect_refusal=True,
+            expected_tool={"must_call_any": ["filter_catalog_product"]},
+        )
         run = make_run(
             final_text="Такого артикула не найдено в каталоге.",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product",
-                           "result": '{"empty_hint": {"available_values": {"article": ["A1"]}}}'}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": '{"empty_hint": {"available_values": {"article": ["A1"]}}}',
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.retrieval_ok and res.answer_ok and res.refusal_ok
         assert not res.hallucination and res.success
 
     def test_absence_invented_data_is_hallucination(self):
-        case = make_case(cid="abs2", gt_type="not_found", expected={"count": 0},
-                         expect_refusal=True)
+        case = make_case(
+            cid="abs2", gt_type="not_found", expected={"count": 0}, expect_refusal=True
+        )
         run = make_run(
             final_text="Да, артикул есть, цена 1000 рублей.",
             tool_calls=[{"name": "filter_catalog_product"}],
@@ -142,60 +177,103 @@ class TestEvaluator:
 
     # absence-кейс, где модель зовёт db_map (схема) — это НЕ данные.
     def test_absence_with_db_map_still_empty(self):
-        case = make_case(cid="abs3", gt_type="not_found", expected={"count": 0},
-                         expect_refusal=True,
-                         expected_tool={"must_call_any": ["db_search"]})
+        case = make_case(
+            cid="abs3",
+            gt_type="not_found",
+            expected={"count": 0},
+            expect_refusal=True,
+            expected_tool={"must_call_any": ["db_search"]},
+        )
         run = make_run(
             final_text="Артикул ZZ-000-NOPE не найден в каталоге.",
             tool_calls=[{"name": "db_map"}, {"name": "db_search"}],
             tool_results=[
-                {"name": "db_map", "result": json.dumps({"entities": [{"name": "product"}]})},
-                {"name": "db_search",
-                 "result": json.dumps({"empty_hint": {"available_values": {"article": ["A1"]}}})},
+                {
+                    "name": "db_map",
+                    "result": json.dumps({"entities": [{"name": "product"}]}),
+                },
+                {
+                    "name": "db_search",
+                    "result": json.dumps(
+                        {"empty_hint": {"available_values": {"article": ["A1"]}}}
+                    ),
+                },
             ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert res.retrieval_ok, f"db_map не данные, retrieval должен быть пуст: {res.reasons}"
+        assert res.retrieval_ok, (
+            f"db_map не данные, retrieval должен быть пуст: {res.reasons}"
+        )
         assert res.refusal_ok and not res.hallucination and res.success, res.reasons
 
     def test_status_with_synonyms(self):
-        case = make_case(expected={"status": "shipped"},
-                         status_synonyms={"shipped": ["отправлен", "в пути"]})
-        run = make_run(final_text="Статус: отправлен",
-                       tool_calls=[{"name": "filter_catalog_order"}],
-                       tool_results=[{"name": "filter_catalog_order", "result": json.dumps({"status": "shipped"})}])
+        case = make_case(
+            expected={"status": "shipped"},
+            status_synonyms={"shipped": ["отправлен", "в пути"]},
+        )
+        run = make_run(
+            final_text="Статус: отправлен",
+            tool_calls=[{"name": "filter_catalog_order"}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_order",
+                    "result": json.dumps({"status": "shipped"}),
+                }
+            ],
+        )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.answer_ok and res.success
 
     def test_count_wrong_number(self):
         case = make_case(cid="cnt", gt_type="count", expected={"count": 74})
-        run = make_run(final_text="Нашёл 100 товаров",
-                       tool_calls=[{"name": "filter_catalog_product"}],
-                       tool_results=[{"name": "filter_catalog_product", "result": json.dumps({"total": 74})}])
+        run = make_run(
+            final_text="Нашёл 100 товаров",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 74})}
+            ],
+        )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.answer_ok and res.hallucination
 
     def test_list_ids_min_count(self):
         case = make_case(gt_type="list_ids", expected={"min_count": 1})
-        run = make_run(final_text="Вот товары: EXT-01392, EXT-01367",
-                       tool_calls=[{"name": "filter_catalog_product"}],
-                       tool_results=[{"name": "filter_catalog_product",
-                                      "result": json.dumps({"preview": [{"id": 1}, {"id": 2}]})}])
+        run = make_run(
+            final_text="Вот товары: EXT-01392, EXT-01367",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps({"preview": [{"id": 1}, {"id": 2}]}),
+                }
+            ],
+        )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.retrieval_ok and res.answer_ok and res.success
 
     def test_structured_empty_preview_is_empty(self):
         """data-service returns {preview:[],returned:0,total:0} — treat as empty."""
         ev = DeterministicEvaluator()
-        assert ev._check_empty_results([{"name": "f", "result": '{"preview": [], "returned": 0, "total": 0}'}])
-        assert not ev._check_empty_results([{"name": "f", "result": '{"preview": [{"id": 1}], "returned": 1, "total": 1}'}])
+        assert ev._check_empty_results(
+            [{"name": "f", "result": '{"preview": [], "returned": 0, "total": 0}'}]
+        )
+        assert not ev._check_empty_results(
+            [
+                {
+                    "name": "f",
+                    "result": '{"preview": [{"id": 1}], "returned": 1, "total": 1}',
+                }
+            ]
+        )
 
     def test_price_with_thousand_separator_matches(self):
         """Answer "3 064" must match expected 3064."""
         case = make_case(expected={"price": 3064})
-        run = make_run(final_text="Цена: 3 064 рубля",
-                       tool_calls=[{"name": "db_get"}],
-                       tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}])
+        run = make_run(
+            final_text="Цена: 3 064 рубля",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
+        )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.answer_ok, res.reasons
         assert res.success, res.reasons
@@ -208,8 +286,12 @@ class TestEvaluator:
         run = make_run(
             final_text="Артикул EXT-01367 в наличии, 23 шт.",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get",
-                           "result": json.dumps({"is_available": True, "quantity": 23})}],
+            tool_results=[
+                {
+                    "name": "db_get",
+                    "result": json.dumps({"is_available": True, "quantity": 23}),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.answer_ok, f"bool True должен матчиться с «в наличии»: {res.reasons}"
@@ -220,11 +302,17 @@ class TestEvaluator:
         run = make_run(
             final_text="Артикул закончился, на складе 0 шт.",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get",
-                           "result": json.dumps({"is_available": False, "quantity": 0})}],
+            tool_results=[
+                {
+                    "name": "db_get",
+                    "result": json.dumps({"is_available": False, "quantity": 0}),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert res.answer_ok, f"bool False должен матчиться с «закончился»: {res.reasons}"
+        assert res.answer_ok, (
+            f"bool False должен матчиться с «закончился»: {res.reasons}"
+        )
         assert res.success, res.reasons
 
     # ── производные числа (суммы) ───────────────
@@ -235,12 +323,12 @@ class TestEvaluator:
         run = make_run(
             final_text="Заказ АП-100004: итого 7809 руб. (677×3 позиции = 2031 за детали)",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get",
-                           "result": json.dumps({"total": 7809})}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"total": 7809})}],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert res.answer_ok and not res.hallucination, \
+        assert res.answer_ok and not res.hallucination, (
             f"производная арифметика не галлюцинация: {res.reasons}"
+        )
         assert res.success, res.reasons
 
     def test_derived_count_not_hallucination(self):
@@ -248,10 +336,14 @@ class TestEvaluator:
         run = make_run(
             final_text="Найдено 42 товара (плюс ещё 5 в других категориях)",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({"total": 42})}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 42})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert not res.hallucination, f"производное «ещё 5» не галлюцинация: {res.reasons}"
+        assert not res.hallucination, (
+            f"производное «ещё 5» не галлюцинация: {res.reasons}"
+        )
 
     # сумма позиций заказа (2031 = 677×3, где 677 и 3 в tool_results).
     def test_line_item_sum_not_hallucination(self):
@@ -259,10 +351,20 @@ class TestEvaluator:
         run = make_run(
             final_text="Заказ: итого 7809 ₽. Позиция FLT-01188: 2 031 ₽ (677×3).",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get", "result": json.dumps({
-                "total": 7809,
-                "items": [{"price": 677, "quantity": 3}, {"price": 4585, "quantity": 1}],
-            })}],
+            tool_results=[
+                {
+                    "name": "db_get",
+                    "result": json.dumps(
+                        {
+                            "total": 7809,
+                            "items": [
+                                {"price": 677, "quantity": 3},
+                                {"price": 4585, "quantity": 1},
+                            ],
+                        }
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, f"сумма позиций не галлюцинация: {res.reasons}"
@@ -276,8 +378,9 @@ class TestEvaluator:
         run = make_run(
             final_text="Итого 700 товаров в наличии.",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product",
-                           "result": json.dumps({"total": 700})}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 700})}
+            ],
         )
         # 700 подтверждён total=700 → это НЕ галлюцинация (контрольный тест).
         res = DeterministicEvaluator().evaluate(case, run)
@@ -290,9 +393,19 @@ class TestEvaluator:
         run = make_run(
             final_text="Итого доступно 700 товаров.",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product",
-                           "result": json.dumps({"preview": [
-                               {"id": 1, "quantity": 20}, {"id": 2, "quantity": 35}]})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {
+                            "preview": [
+                                {"id": 1, "quantity": 20},
+                                {"id": 2, "quantity": 35},
+                            ]
+                        }
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.hallucination, f"700 = 20×35 не должно прощаться: {res.reasons}"
@@ -304,8 +417,9 @@ class TestEvaluator:
         run = make_run(
             final_text="Всего 40 товаров бренда Bosch.",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product",
-                           "result": json.dumps({"total": 40})}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 40})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         # total=40 в tool_results → 40 подтверждено → не галлюцинация.
@@ -317,8 +431,9 @@ class TestEvaluator:
         run = make_run(
             final_text="Всего 40 товаров бренда Bosch.",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product",
-                           "result": json.dumps({"total": 40})}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 40})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination and res.answer_ok, res.reasons
@@ -331,11 +446,14 @@ class TestEvaluator:
         run = make_run(
             final_text="Всего 999 товаров в наличии.",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product",
-                           "result": json.dumps({"total": 40})}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 40})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert res.hallucination, f"999 не подтверждён и не выводим → галлюцинация: {res.reasons}"
+        assert res.hallucination, (
+            f"999 не подтверждён и не выводим → галлюцинация: {res.reasons}"
+        )
 
     # ── табличные № строк ───────────────────────
     # Модель нумерует строки в таблице/списке (1..25) — это не факты.
@@ -345,9 +463,23 @@ class TestEvaluator:
         run = make_run(
             final_text="Вот товары:\n- 10. Амортизатор KYB\n- 11. Амортизатор Sachs\n- 12. Амортизатор Monroe\n- 13. Амортизатор Boge\n- 14. Амортизатор Bilstein",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
-                "preview": [{"id": 10}, {"id": 11}, {"id": 12}, {"id": 13}, {"id": 14}],
-                "total": 5})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {
+                            "preview": [
+                                {"id": 10},
+                                {"id": 11},
+                                {"id": 12},
+                                {"id": 13},
+                                {"id": 14},
+                            ],
+                            "total": 5,
+                        }
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, f"номера строк не галлюцинация: {res.reasons}"
@@ -358,11 +490,19 @@ class TestEvaluator:
         run = make_run(
             final_text="| № | Название |\n|---|----------|\n| 12 | Датчик ABS |\n| 13 | Колодки |",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
-                "preview": [{"id": 12}, {"id": 13}], "total": 2})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {"preview": [{"id": 12}, {"id": 13}], "total": 2}
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert not res.hallucination, f"номера строк таблицы не галлюцинация: {res.reasons}"
+        assert not res.hallucination, (
+            f"номера строк таблицы не галлюцинация: {res.reasons}"
+        )
 
     def test_row_number_26_not_hallucination(self):
         """Нумерация списка до 26+ (32 товара) — номера, не факты."""
@@ -370,8 +510,14 @@ class TestEvaluator:
         run = make_run(
             final_text="Список:\n1. Товар A\n2. Товар B\n...\n25. Товар Y\n26. Товар Z\n27. Товар W",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
-                "preview": [{"id": i} for i in range(1, 28)], "total": 27})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {"preview": [{"id": i} for i in range(1, 28)], "total": 27}
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, f"номера 26/27 не галлюцинация: {res.reasons}"
@@ -379,13 +525,27 @@ class TestEvaluator:
     def test_breakdown_numbers_with_confirmed_total_not_hallucination(self):
         """Агент подтвердил total=74 и разбил по категориям (12, 12, 6...) —
         breakdown-числа с суммой ≤ total не галлюцинация."""
-        case = make_case(cid="bd", gt_type="count", expected={"count": 74},
-                         gt_extra={"breakdown_allowed": True})
+        case = make_case(
+            cid="bd",
+            gt_type="count",
+            expected={"count": 74},
+            gt_extra={"breakdown_allowed": True},
+        )
         run = make_run(
             final_text="Всего 74 товара: свечи 12, колодки 12, диски 6, фильтры 24, помпы 5",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
-                "total": 74, "returned": 74, "preview": [{"id": i} for i in range(5)]})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {
+                            "total": 74,
+                            "returned": 74,
+                            "preview": [{"id": i} for i in range(5)],
+                        }
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, f"breakdown не галлюцинация: {res.reasons}"
@@ -393,21 +553,41 @@ class TestEvaluator:
     def test_breakdown_with_total_in_sum_not_hallucination(self):
         """Total (74) в ответе + breakdown: сумма breakdown НЕ включает сам total
         (регрессия: 74+12+5 > 74 ломал фикс)."""
-        case = make_case(cid="bd2", gt_type="count", expected={"count": 74},
-                         gt_extra={"breakdown_allowed": True})
+        case = make_case(
+            cid="bd2",
+            gt_type="count",
+            expected={"count": 74},
+            gt_extra={"breakdown_allowed": True},
+        )
         run = make_run(
             final_text="Всего 74 товара в наличии: свечи 12, колодки 12, диски 6",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({
-                "total": 74, "returned": 74, "preview": [{"id": i} for i in range(5)]})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {
+                            "total": 74,
+                            "returned": 74,
+                            "preview": [{"id": i} for i in range(5)],
+                        }
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert not res.hallucination, f"breakdown c total в сумме не галлюцинация: {res.reasons}"
+        assert not res.hallucination, (
+            f"breakdown c total в сумме не галлюцинация: {res.reasons}"
+        )
 
     def test_lost_total_ignores_db_map_total(self):
         """total=407 из db_map (схема) не должен ломать LOST_TOTAL для count=74."""
-        case = make_case(cid="lt2", gt_type="count", expected={"count": 74},
-                         gt_extra={"answer_rules": {"expect_total_mentioned": True}})
+        case = make_case(
+            cid="lt2",
+            gt_type="count",
+            expected={"count": 74},
+            gt_extra={"answer_rules": {"expect_total_mentioned": True}},
+        )
         run = make_run(
             final_text="Всего 74 товара в наличии",
             tool_calls=[{"name": "db_map"}, {"name": "filter_catalog_product"}],
@@ -419,14 +599,71 @@ class TestEvaluator:
         res = DeterministicEvaluator().evaluate(case, run)
         assert ErrorClass.LOST_TOTAL not in res.error_classes, res.error_classes
 
+    def test_lost_total_accepts_one_digit_count(self):
+        """A standalone one-digit total is a valid count, not a code fragment."""
+        case = make_case(
+            cid="lt-one-digit",
+            gt_type="count",
+            expected={"count": 5},
+            ground_truth_kw={"answer_rules": {"expect_total_mentioned": True}},
+        )
+        run = make_run(
+            final_text="В каталоге 5 товаров бренда Hella.",
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 5})}
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert ErrorClass.LOST_TOTAL not in res.error_classes, res.reasons
+        assert res.verdict.value == "CORRECT", res.reasons
+
+    def test_extract_numbers_keeps_standalone_one_digit_and_skips_codes(self):
+        numbers = DeterministicEvaluator._extract_numbers(
+            "5 товаров, модель V5, код A1", include_single_digit=True
+        )
+        assert numbers == ["5"]
+
+    def test_refusal_catalog_missing_allows_explanatory_details(self):
+        """Soft absence policy: a clear catalog refusal is sufficient."""
+        case = make_case(
+            cid="refusal-catalog-missing",
+            gt_type="not_found",
+            expected={"count": 0},
+            expect_refusal=True,
+        )
+        run = make_run(
+            final_text=(
+                "Товара с артикулом ZZ-000-NOPE в каталоге нет. "
+                "Доступны артикулы BRK-01001 и BRK-01005."
+            ),
+            tool_calls=[{"name": "filter_catalog_product"}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps({"returned": 0, "total": 0}),
+                }
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.refusal_ok
+        assert not res.hallucination
+        assert res.verdict.value == "CORRECT", res.reasons
+
     def test_refusal_v_base_net(self):
         """Отказ «Нет, товара в базе нет» — корректный refusal."""
-        case = make_case(cid="rf1", gt_type="not_found", expected={"count": 0},
-                         expect_refusal=True)
+        case = make_case(
+            cid="rf1", gt_type="not_found", expected={"count": 0}, expect_refusal=True
+        )
         run = make_run(
             final_text="Нет, товара с артикулом FAKE-999 в нашей базе нет.",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({"empty_hint": {}})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps({"empty_hint": {}}),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.refusal_ok, res.reasons
@@ -439,8 +676,14 @@ class TestEvaluator:
         run = make_run(
             final_text="Товар в наличии",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get", "result": json.dumps({
-                "is_available": True, "is_bestseller": False, "is_new": False})}],
+            tool_results=[
+                {
+                    "name": "db_get",
+                    "result": json.dumps(
+                        {"is_available": True, "is_bestseller": False, "is_new": False}
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.retrieval_ok, res.reasons
@@ -453,10 +696,20 @@ class TestEvaluator:
         run = make_run(
             final_text="Бренд Bosch — из Германии, основан в 1886.",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get", "result": json.dumps({"country": "Германия", "founded_year": 1886}, ensure_ascii=False)}],
+            tool_results=[
+                {
+                    "name": "db_get",
+                    "result": json.dumps(
+                        {"country": "Германия", "founded_year": 1886},
+                        ensure_ascii=False,
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
-        assert res.answer_ok, f"«из Германии» должен матчиться с «Германия»: {res.reasons}"
+        assert res.answer_ok, (
+            f"«из Германии» должен матчиться с «Германия»: {res.reasons}"
+        )
         assert res.success, res.reasons
 
     def test_country_morphology_japan(self):
@@ -464,7 +717,12 @@ class TestEvaluator:
         run = make_run(
             final_text="Производство Denso расположено в Японии.",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get", "result": json.dumps({"country": "Япония"}, ensure_ascii=False)}],
+            tool_results=[
+                {
+                    "name": "db_get",
+                    "result": json.dumps({"country": "Япония"}, ensure_ascii=False),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.answer_ok, f"«в Японии» должен матчиться с «Япония»: {res.reasons}"
@@ -478,7 +736,9 @@ class TestEvaluator:
             question="Сколько товаров дороже 3000 рублей?",
             final_text="Нашёл 145 товаров дороже 3000 рублей",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product", "result": json.dumps({"total": 145})}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": 145})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, res.reasons
@@ -489,8 +749,18 @@ class TestEvaluator:
         case = make_case(expected={"status": "shipped"})
         run = make_run(
             final_text="shipped",
-            tool_calls=[{"name": "db_search", "arguments": {"entity": "Order", "pattern": "АП-100005"}}],
-            tool_results=[{"name": "db_search", "result": json.dumps({"preview": [{"id": 5, "name": "АП-100005"}]})}],
+            tool_calls=[
+                {
+                    "name": "db_search",
+                    "arguments": {"entity": "Order", "pattern": "АП-100005"},
+                }
+            ],
+            tool_results=[
+                {
+                    "name": "db_search",
+                    "result": json.dumps({"preview": [{"id": 5, "name": "АП-100005"}]}),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.entity_name_ok, res.reasons
@@ -500,8 +770,18 @@ class TestEvaluator:
         case = make_case(expected={"status": "shipped"})
         run = make_run(
             final_text="shipped",
-            tool_calls=[{"name": "db_search", "arguments": {"entity": "catalog_order", "pattern": "АП-100005"}}],
-            tool_results=[{"name": "db_search", "result": json.dumps({"preview": [{"id": 5, "name": "АП-100005"}]})}],
+            tool_calls=[
+                {
+                    "name": "db_search",
+                    "arguments": {"entity": "catalog_order", "pattern": "АП-100005"},
+                }
+            ],
+            tool_results=[
+                {
+                    "name": "db_search",
+                    "result": json.dumps({"preview": [{"id": 5, "name": "АП-100005"}]}),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.entity_name_ok, res.reasons
@@ -512,7 +792,12 @@ class TestEvaluator:
         run = make_run(
             final_text="Цена 3064 руб (старая 3830, скидка ~20%)",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064, "old_price": 3830})}],
+            tool_results=[
+                {
+                    "name": "db_get",
+                    "result": json.dumps({"price": 3064, "old_price": 3830}),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert not res.hallucination, res.reasons
@@ -524,11 +809,14 @@ class TestEvaluator:
 
     def test_verdict_correct(self):
         """Clean case → CORRECT, no error classes."""
-        case = make_case(expected={"price": 3064},
-                         expected_tool={"must_call_any": ["db_get"]})
+        case = make_case(
+            expected={"price": 3064}, expected_tool={"must_call_any": ["db_get"]}
+        )
         run = make_run(
             final_text="Цена 3064 рубля",
-            tool_calls=[{"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}],
+            tool_calls=[
+                {"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}
+            ],
             tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
         )
         res = DeterministicEvaluator().evaluate(case, run)
@@ -550,8 +838,7 @@ class TestEvaluator:
 
     def test_verdict_wrong_sku_hallucination(self):
         """Answer SKU not in tools (with check_skus flag) → WRONG + HALLUCINATED_SKU."""
-        case = make_case(expected={"price": 3064},
-                         ground_truth_kw={"check_skus": True})
+        case = make_case(expected={"price": 3064}, ground_truth_kw={"check_skus": True})
         run = make_run(
             final_text="Цена 3064, артикул BRK-99999",
             tool_calls=[{"name": "db_get"}],
@@ -576,11 +863,14 @@ class TestEvaluator:
     def test_verdict_cyrillic_sku_hallucination(self):
         """Кириллический артикул АП-100005 без подтверждения в tools
         (с check_skus) → HALLUCINATED_SKU. Regex ловит кириллицу."""
-        case = make_case(cid="cyr", expected={"price": 3064},
-                         ground_truth_kw={"check_skus": True})
+        case = make_case(
+            cid="cyr", expected={"price": 3064}, ground_truth_kw={"check_skus": True}
+        )
         run = make_run(
             final_text="Цена 3064, артикул АП-100005",
-            tool_calls=[{"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}],
+            tool_calls=[
+                {"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}
+            ],
             tool_results=[{"name": "db_get", "result": json.dumps({"price": 3064})}],
         )
         res = DeterministicEvaluator().evaluate(case, run)
@@ -589,25 +879,46 @@ class TestEvaluator:
 
     def test_verdict_cyrillic_sku_present_in_tools_ok(self):
         """АП-100005 подтверждён в tool_results → не галлюцинация."""
-        case = make_case(cid="cyrok", expected={"price": 3064},
-                         ground_truth_kw={"check_skus": True})
+        case = make_case(
+            cid="cyrok", expected={"price": 3064}, ground_truth_kw={"check_skus": True}
+        )
         run = make_run(
             final_text="Артикул АП-100005, цена 3064",
-            tool_calls=[{"name": "db_search", "arguments": {"entity": "catalog_product", "pattern": "АП-100005"}}],
-            tool_results=[{"name": "db_search", "result": json.dumps({"preview": [{"id": 1, "name": "АП-100005"}]})}],
+            tool_calls=[
+                {
+                    "name": "db_search",
+                    "arguments": {"entity": "catalog_product", "pattern": "АП-100005"},
+                }
+            ],
+            tool_results=[
+                {
+                    "name": "db_search",
+                    "result": json.dumps({"preview": [{"id": 1, "name": "АП-100005"}]}),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert ErrorClass.HALLUCINATED_SKU not in res.error_classes, res.reasons
 
     def test_verdict_partial_lost_total(self):
         """total:40 known, answer vague → PARTIAL + LOST_TOTAL (not WRONG)."""
-        case = make_case(cid="lt", gt_type="count", expected={"count": 40},
-                         gt_extra={"answer_rules": {"expect_total_mentioned": True}})
+        case = make_case(
+            cid="lt",
+            gt_type="count",
+            expected={"count": 40},
+            gt_extra={"answer_rules": {"expect_total_mentioned": True}},
+        )
         run = make_run(
             final_text="В наличии есть много позиций",
             tool_calls=[{"name": "filter_catalog_product"}],
-            tool_results=[{"name": "filter_catalog_product",
-                           "result": json.dumps({"total": 40, "returned": 20, "preview": [{"id": 1}]})}],
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {"total": 40, "returned": 20, "preview": [{"id": 1}]}
+                    ),
+                }
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.verdict.value == "PARTIAL", res.reasons
@@ -645,21 +956,64 @@ class TestEvaluator:
         run = make_run(
             final_text="",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get", "result": json.dumps({"error": "timeout"})}],
+            tool_results=[
+                {"name": "db_get", "result": json.dumps({"error": "timeout"})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.verdict.value == "ERROR", res.reasons
         assert ErrorClass.INFRA_ERROR in res.error_classes
         assert res.error_source == "tool"
 
+    def test_client_validation_tool_error_is_not_infra(self):
+        """HTTP 400/422 from invalid tool arguments is an agent-side error."""
+        run = make_run(
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {
+                            "ok": False,
+                            "error": "endpoint returned status 400: parse_error",
+                        }
+                    ),
+                }
+            ]
+        )
+        assert DeterministicEvaluator._detect_tool_errors(run) == []
+
+    def test_server_tool_error_is_infra(self):
+        run = make_run(
+            tool_results=[
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {
+                            "ok": False,
+                            "error": "endpoint returned status 500: database unavailable",
+                        }
+                    ),
+                }
+            ]
+        )
+        assert len(DeterministicEvaluator._detect_tool_errors(run)) == 1
+
     def test_verdict_partial_schema_error(self):
         """entity='Order' instead of catalog_order → PARTIAL + SCHEMA_ENTITY_ERROR."""
-        case = make_case(expected={"status": "shipped"},
-                         status_synonyms={"shipped": ["отправлен"]})
+        case = make_case(
+            expected={"status": "shipped"}, status_synonyms={"shipped": ["отправлен"]}
+        )
         run = make_run(
             final_text="отправлен",
-            tool_calls=[{"name": "db_search", "arguments": {"entity": "Order", "pattern": "АП-100005"}}],
-            tool_results=[{"name": "db_search", "result": json.dumps({"preview": [{"id": 5}]})}],
+            tool_calls=[
+                {
+                    "name": "db_search",
+                    "arguments": {"entity": "Order", "pattern": "АП-100005"},
+                }
+            ],
+            tool_results=[
+                {"name": "db_search", "result": json.dumps({"preview": [{"id": 5}]})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.verdict.value == "PARTIAL", res.reasons
@@ -671,7 +1025,9 @@ class TestEvaluator:
         run = make_run(
             final_text="Нет в наличии",
             tool_calls=[{"name": "db_get"}],
-            tool_results=[{"name": "db_get", "result": json.dumps({"is_available": True})}],
+            tool_results=[
+                {"name": "db_get", "result": json.dumps({"is_available": True})}
+            ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.verdict.value == "WRONG", res.reasons
@@ -692,15 +1048,21 @@ class TestEvaluator:
         case = TestCase.from_dict(data["case"])
         tool_calls = [
             {"name": e["name"], "arguments": e.get("arguments", {})}
-            for e in data["events"] if e["type"] == "tool_call"
+            for e in data["events"]
+            if e["type"] == "tool_call"
         ]
         tool_results = [
             {"name": e["name"], "result": json.dumps(e["result"], ensure_ascii=False)}
-            for e in data["events"] if e["type"] == "tool_result"
+            for e in data["events"]
+            if e["type"] == "tool_result"
         ]
-        run = RunResult(session_id="camry-golden", question=case.question,
-                        final_text=data["final_text"],
-                        tool_calls=tool_calls, tool_results=tool_results)
+        run = RunResult(
+            session_id="camry-golden",
+            question=case.question,
+            final_text=data["final_text"],
+            tool_calls=tool_calls,
+            tool_results=tool_results,
+        )
 
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.verdict.value == "PARTIAL", res.reasons
@@ -713,8 +1075,10 @@ class TestEvaluator:
 
     def test_verdict_forbidden_tool(self):
         """must_not_call invoked → WRONG + FORBIDDEN_TOOL."""
-        case = make_case(expected={"price": 3064},
-                         expected_tool={"must_call_any": ["db_get"], "must_not_call": ["db_map"]})
+        case = make_case(
+            expected={"price": 3064},
+            expected_tool={"must_call_any": ["db_get"], "must_not_call": ["db_map"]},
+        )
         run = make_run(
             final_text="Цена 3064",
             tool_calls=[{"name": "db_get"}, {"name": "db_map"}],
@@ -747,7 +1111,12 @@ class TestEvaluator:
             final_text="Вот товары",
             tool_calls=[{"name": "db_search"}],
             tool_results=[
-                {"name": "db_search", "result": json.dumps({"preview": [{"id": i} for i in range(20)], "total": 20})},
+                {
+                    "name": "db_search",
+                    "result": json.dumps(
+                        {"preview": [{"id": i} for i in range(20)], "total": 20}
+                    ),
+                },
                 {"name": "db_get", "result": json.dumps({"id": 1, "price": 100})},
                 {"name": "db_get", "result": json.dumps({"id": 2, "price": 200})},
             ],
@@ -763,7 +1132,12 @@ class TestEvaluator:
             final_text="Вот товары",
             tool_calls=[{"name": "db_search"}],
             tool_results=[
-                {"name": "db_search", "result": json.dumps({"preview": [{"id": i} for i in range(20)], "total": 20})},
+                {
+                    "name": "db_search",
+                    "result": json.dumps(
+                        {"preview": [{"id": i} for i in range(20)], "total": 20}
+                    ),
+                },
                 {"name": "db_get", "result": json.dumps({"id": 100, "price": 100})},
                 {"name": "db_get", "result": json.dumps({"id": 101, "price": 200})},
                 {"name": "db_get", "result": json.dumps({"id": 102, "price": 300})},
@@ -782,7 +1156,9 @@ class TestEvaluator:
         """{"error": "timeout"} → empty results, not data."""
         ev = DeterministicEvaluator()
         assert ev._json_has_rows({"error": "timeout"}) is False
-        assert ev._check_empty_results([{"name": "db_get", "result": json.dumps({"error": "timeout"})}])
+        assert ev._check_empty_results(
+            [{"name": "db_get", "result": json.dumps({"error": "timeout"})}]
+        )
         assert ev._count_rows(json.dumps({"error": "timeout"})) == 0
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -820,19 +1196,52 @@ def _write_backlog(tmp_path: Path, session_id: str, records: list[dict]) -> Path
 
 
 class TestBacklogParser:
+    def test_find_api_service_runtime_backlog_dir(self, tmp_path, monkeypatch):
+        project = tmp_path / "project"
+        (project / ".git").mkdir(parents=True)
+        runtime_backlog = project / "services" / "api-service" / "backlog"
+        runtime_backlog.mkdir(parents=True)
+        (runtime_backlog / "agent_test.jsonl").write_text("{}", encoding="utf-8")
+        legacy_backlog = project / "backlog"
+        legacy_backlog.mkdir()
+        (legacy_backlog / "agent_legacy.jsonl").write_text("{}", encoding="utf-8")
+        workdir = project / "services" / "agent-db"
+        workdir.mkdir(parents=True)
+        monkeypatch.delenv("BACKLOG_DIR", raising=False)
+        monkeypatch.chdir(workdir)
+        assert find_backlog_dir() == runtime_backlog.resolve()
+
     def test_find_backlog_file_by_substring(self, tmp_path):
-        p = _write_backlog(tmp_path, "bench-abc123", [{"type": "turn_end", "outcome": "final"}])
+        p = _write_backlog(
+            tmp_path, "bench-abc123", [{"type": "turn_end", "outcome": "final"}]
+        )
         found = find_backlog_file(tmp_path, "bench-abc123")
         assert found == p
 
     def test_parse_turn_end(self, tmp_path):
-        _write_backlog(tmp_path, "bench-xyz", [
-            {"event": "turn_start", "data": {"user_message": "q"}},
-            {"type": "turn_end", "duration_ms": 123.4, "total_prompt_tokens": 10,
-             "total_completion_tokens": 20, "total_tokens": 30, "total_cost": 0.001,
-             "llm_calls": 2, "tool_calls": 3, "tool_errors": 0, "empty_results": 0,
-             "empty_rounds": 0, "iterations": 2, "outcome": "final", "final_length_chars": 10},
-        ])
+        _write_backlog(
+            tmp_path,
+            "bench-xyz",
+            [
+                {"event": "turn_start", "data": {"user_message": "q"}},
+                {
+                    "type": "turn_end",
+                    "duration_ms": 123.4,
+                    "total_prompt_tokens": 10,
+                    "total_completion_tokens": 20,
+                    "total_tokens": 30,
+                    "total_cost": 0.001,
+                    "llm_calls": 2,
+                    "tool_calls": 3,
+                    "tool_errors": 0,
+                    "empty_results": 0,
+                    "empty_rounds": 0,
+                    "iterations": 2,
+                    "outcome": "final",
+                    "final_length_chars": 10,
+                },
+            ],
+        )
         bd = parse_backlog_data(tmp_path, "bench-xyz")
         assert bd is not None
         assert bd.duration_ms == 123.4
@@ -846,10 +1255,18 @@ class TestBacklogParser:
         assert parse_backlog_data(tmp_path, "nope") is None
 
     def test_read_all_records(self, tmp_path):
-        _write_backlog(tmp_path, "bench-aaa", [
-            {"event": "turn_start", "data": {"user_message": "hi"}},
-            {"event": "tool_call", "iteration": 0, "data": {"name": "db_search", "arguments": {}}},
-        ])
+        _write_backlog(
+            tmp_path,
+            "bench-aaa",
+            [
+                {"event": "turn_start", "data": {"user_message": "hi"}},
+                {
+                    "event": "tool_call",
+                    "iteration": 0,
+                    "data": {"name": "db_search", "arguments": {}},
+                },
+            ],
+        )
         recs = read_all_records(tmp_path, "bench-aaa")
         assert len(recs) == 2
         assert recs[0]["event"] == "turn_start"
@@ -862,24 +1279,43 @@ class TestBacklogParser:
 
 class TestReport:
     def _case_run_eval(self, cid, success, expect_refusal=False):
-        case = make_case(cid=cid, gt_type="exact_value" if not expect_refusal else "not_found",
-                         expected={"price": 1} if not expect_refusal else {"count": 0},
-                         expect_refusal=expect_refusal)
-        run = make_run(final_text="ok" if success else "bad",
-                       tool_calls=[{"name": "db_get"}],
-                       tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
-                       backlog=BacklogData(duration_ms=100, total_tokens=50, llm_calls=1,
-                                           tool_calls_count=1, iterations=1, total_cost=0.01))
-        ev = EvalResult(case_id=cid,
-                        tool_ok=True, retrieval_ok=success, answer_ok=success,
-                        hallucination=not success, grounded=success, refusal_ok=True)
+        case = make_case(
+            cid=cid,
+            gt_type="exact_value" if not expect_refusal else "not_found",
+            expected={"price": 1} if not expect_refusal else {"count": 0},
+            expect_refusal=expect_refusal,
+        )
+        run = make_run(
+            final_text="ok" if success else "bad",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
+            backlog=BacklogData(
+                duration_ms=100,
+                total_tokens=50,
+                llm_calls=1,
+                tool_calls_count=1,
+                iterations=1,
+                total_cost=0.01,
+            ),
+        )
+        ev = EvalResult(
+            case_id=cid,
+            tool_ok=True,
+            retrieval_ok=success,
+            answer_ok=success,
+            hallucination=not success,
+            grounded=success,
+            refusal_ok=True,
+        )
         return case, run, ev
 
     def test_aggregation_math(self):
         cases, runs, evals = [], [], []
         for i in range(3):
             c, r, e = self._case_run_eval(f"c{i}", success=(i % 2 == 0))
-            cases.append(c); runs.append(r); evals.append(e)
+            cases.append(c)
+            runs.append(r)
+            evals.append(e)
 
         report = aggregate_report(cases, runs, evals)
         assert report.total_cases == 3
@@ -896,7 +1332,9 @@ class TestReport:
         cases, runs, evals = [], [], []
         for i in range(2):
             c, r, e = self._case_run_eval(f"c{i}", success=True)
-            cases.append(c); runs.append(r); evals.append(e)
+            cases.append(c)
+            runs.append(r)
+            evals.append(e)
         report = aggregate_report(cases, runs, evals)
         d = report_to_dict(report)
         assert d["total_cases"] == 2
@@ -908,7 +1346,9 @@ class TestReport:
         cases, runs, evals = [], [], []
         for i in range(2):
             c, r, e = self._case_run_eval(f"c{i}", success=True)
-            cases.append(c); runs.append(r); evals.append(e)
+            cases.append(c)
+            runs.append(r)
+            evals.append(e)
         report = aggregate_report(cases, runs, evals)
         text = print_report(report)
         assert "CORE BENCHMARK REPORT" in text
@@ -925,8 +1365,15 @@ class TestReport:
             tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
             backlog=BacklogData(tool_errors=2, outcome="final", total_tokens=10),
         )
-        e1 = EvalResult(case_id="r1", tool_ok=True, retrieval_ok=True, answer_ok=True,
-                        hallucination=False, grounded=True, refusal_ok=True)
+        e1 = EvalResult(
+            case_id="r1",
+            tool_ok=True,
+            retrieval_ok=True,
+            answer_ok=True,
+            hallucination=False,
+            grounded=True,
+            refusal_ok=True,
+        )
         # Кейс 2: ошибка тула, агент не дошёл (limit/error)
         c2 = make_case(cid="r2", expected={"price": 1})
         r2 = make_run(
@@ -935,8 +1382,15 @@ class TestReport:
             tool_results=[],
             backlog=BacklogData(tool_errors=3, outcome="error", total_tokens=5),
         )
-        e2 = EvalResult(case_id="r2", tool_ok=False, retrieval_ok=False, answer_ok=False,
-                        hallucination=False, grounded=False, refusal_ok=True)
+        e2 = EvalResult(
+            case_id="r2",
+            tool_ok=False,
+            retrieval_ok=False,
+            answer_ok=False,
+            hallucination=False,
+            grounded=False,
+            refusal_ok=True,
+        )
         report = aggregate_report([c1, c2], [r1, r2], [e1, e2])
         assert report.errors_total_count == 2
         assert report.errors_but_final_count == 1
@@ -947,7 +1401,9 @@ class TestReport:
         c1 = make_case(cid="e1", expected={"price": 1})
         r1 = make_run(
             final_text="ok",
-            tool_calls=[{"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}],
+            tool_calls=[
+                {"name": "db_get", "arguments": {"entity": "catalog_product", "id": 1}}
+            ],
             tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
         )
         e1 = DeterministicEvaluator().evaluate(c1, r1)
@@ -955,7 +1411,9 @@ class TestReport:
         c2 = make_case(cid="e2", expected={"price": 1})
         r2 = make_run(
             final_text="ok",
-            tool_calls=[{"name": "db_get", "arguments": {"entity": "product", "id": 1}}],
+            tool_calls=[
+                {"name": "db_get", "arguments": {"entity": "product", "id": 1}}
+            ],
             tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
         )
         e2 = DeterministicEvaluator().evaluate(c2, r2)
@@ -1009,12 +1467,19 @@ class TestReport:
                 final_text=f"ok {i + 1}",
                 tool_calls=[{"name": "db_get"}],
                 tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
-                backlog=BacklogData(duration_ms=float(i + 1) * 100, total_tokens=100 * (i + 1),
-                                    total_cost=0.01 * (i + 1), llm_calls=1, tool_calls_count=i + 1,
-                                    iterations=1),
+                backlog=BacklogData(
+                    duration_ms=float(i + 1) * 100,
+                    total_tokens=100 * (i + 1),
+                    total_cost=0.01 * (i + 1),
+                    llm_calls=1,
+                    tool_calls_count=i + 1,
+                    iterations=1,
+                ),
             )
             e = DeterministicEvaluator().evaluate(c, r)
-            cases.append(c); runs.append(r); evals.append(e)
+            cases.append(c)
+            runs.append(r)
+            evals.append(e)
         report = aggregate_report(cases, runs, evals)
         # durations: [100, 200, 300, 400]
         assert report.p50_duration_ms == pytest.approx(250)
@@ -1048,11 +1513,14 @@ class TestReport:
 
     def test_diff_reports_detects_regression(self):
         """diff_reports flags a case that went CORRECT→WRONG."""
+
         def _mk(cid, final_text, expected={"price": 1}):
             c = make_case(cid=cid, expected=expected)
-            r = make_run(final_text=final_text,
-                         tool_calls=[{"name": "db_get"}],
-                         tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}])
+            r = make_run(
+                final_text=final_text,
+                tool_calls=[{"name": "db_get"}],
+                tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
+            )
             return c, r, DeterministicEvaluator().evaluate(c, r)
 
         # prev: CORRECT; cur: WRONG (hallucination)
@@ -1072,11 +1540,14 @@ class TestReport:
 
     def test_diff_reports_improvement(self):
         """diff_reports flags a case that went WRONG→CORRECT as improved."""
+
         def _mk(cid, final_text):
             c = make_case(cid=cid, expected={"price": 1})
-            r = make_run(final_text=final_text,
-                         tool_calls=[{"name": "db_get"}],
-                         tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}])
+            r = make_run(
+                final_text=final_text,
+                tool_calls=[{"name": "db_get"}],
+                tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
+            )
             return c, r, DeterministicEvaluator().evaluate(c, r)
 
         c1, r1, e1 = _mk("case-1", "цена 999")
@@ -1090,11 +1561,14 @@ class TestReport:
 
     def test_diff_reports_no_change(self):
         """Same verdicts → no diff."""
+
         def _mk(cid, final_text):
             c = make_case(cid=cid, expected={"price": 1})
-            r = make_run(final_text=final_text,
-                         tool_calls=[{"name": "db_get"}],
-                         tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}])
+            r = make_run(
+                final_text=final_text,
+                tool_calls=[{"name": "db_get"}],
+                tool_results=[{"name": "db_get", "result": json.dumps({"price": 1})}],
+            )
             return c, r, DeterministicEvaluator().evaluate(c, r)
 
         c1, r1, e1 = _mk("case-1", "цена 1")
@@ -1122,27 +1596,53 @@ class _FakeResp:
 
 class TestSseParse:
     def test_parses_events(self):
-        resp = _FakeResp([
-            "data: {\"type\": \"status\", \"phase\": \"tool_calls\"}",
-            "data: {\"type\": \"tool_call\", \"name\": \"db_search\", \"arguments\": {}}",
-            "data: {\"type\": \"token\", \"text\": \"Цена \"}",
-            "data: {\"type\": \"final\", \"text\": \"3064\"}",
-            "data: {\"type\": \"done\"}",
-        ])
+        resp = _FakeResp(
+            [
+                'data: {"type": "status", "phase": "tool_calls"}',
+                'data: {"type": "tool_call", "name": "db_search", "arguments": {}}',
+                'data: {"type": "token", "text": "Цена "}',
+                'data: {"type": "final", "text": "Цена 3064"}',
+                'data: {"type": "done"}',
+            ]
+        )
         r = _sse_parse_events(resp)
         assert r["final_text"] == "Цена 3064"
         assert len(r["tool_calls"]) == 1
         assert r["tool_calls"][0]["name"] == "db_search"
         assert len(r["events"]) == 5
 
+    def test_final_event_replaces_streamed_tokens(self):
+        resp = _FakeResp(
+            [
+                'data: {"type": "token", "text": "Полный "}',
+                'data: {"type": "token", "text": "ответ"}',
+                'data: {"type": "final", "text": "Полный ответ"}',
+                'data: {"type": "done"}',
+            ]
+        )
+        assert _sse_parse_events(resp)["final_text"] == "Полный ответ"
+
+    def test_tokens_are_used_when_final_event_is_absent(self):
+        resp = _FakeResp(
+            [
+                'data: {"type": "token", "text": "Неполный "}',
+                'data: {"type": "token", "text": "поток"}',
+                'data: {"type": "done"}',
+            ]
+        )
+        assert _sse_parse_events(resp)["final_text"] == "Неполный поток"
+
     def test_skips_bad_json(self):
-        resp = _FakeResp([
-            "data: not-json",
-            "data: {\"type\": \"done\"}",
-        ])
+        resp = _FakeResp(
+            [
+                "data: not-json",
+                'data: {"type": "done"}',
+            ]
+        )
         r = _sse_parse_events(resp)
         assert len(r["events"]) == 1
         assert r["events"][0]["type"] == "done"
+
 
 class TestBenchmarkRunner:
     def test_request_failure_writes_isolated_bench_log(self, tmp_path, monkeypatch):
@@ -1162,14 +1662,20 @@ class TestBenchmarkRunner:
         run = runner.run_case("question", session_id="session-error")
 
         assert run.errors == ["Request failed: offline"]
-        records = (tmp_path / "session-error.bench.jsonl").read_text(encoding="utf-8").splitlines()
+        records = (
+            (tmp_path / "session-error.bench.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
         assert len(records) == 1
         record = json.loads(records[0])
         assert record["session_id"] == "session-error"
         assert record["question"] == "question"
         assert record["errors"] == ["Request failed: offline"]
 
-    def test_requests_fallback_failure_writes_isolated_bench_log(self, tmp_path, monkeypatch):
+    def test_requests_fallback_failure_writes_isolated_bench_log(
+        self, tmp_path, monkeypatch
+    ):
         def fail_request(*args, **kwargs):
             raise requests.RequestException("offline")
 
@@ -1186,9 +1692,11 @@ class TestBenchmarkRunner:
         run = runner.run_case("question", session_id="session-requests-error")
 
         assert run.errors == ["Request failed: offline"]
-        records = (tmp_path / "session-requests-error.bench.jsonl").read_text(
-            encoding="utf-8"
-        ).splitlines()
+        records = (
+            (tmp_path / "session-requests-error.bench.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
         assert len(records) == 1
         assert json.loads(records[0])["errors"] == ["Request failed: offline"]
 

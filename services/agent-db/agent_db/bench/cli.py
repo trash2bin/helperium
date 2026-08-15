@@ -36,16 +36,26 @@ def _load_cases(cases_file: Path) -> list[TestCase]:
 
 @app.command(name="run")
 def run_cmd(
-    cases_file: Path = typer.Argument(..., help="Path to cases JSON (e.g. cases/autoparts.json)"),
+    cases_file: Path = typer.Argument(
+        ..., help="Path to cases JSON (e.g. cases/autoparts.json)"
+    ),
     agent_name: str = typer.Option("autoparts-assistant", help="Agent name"),
     tenant_id: str = typer.Option("autoparts", help="Tenant ID"),
     api_url: str = typer.Option("http://127.0.0.1:8081", help="API service URL"),
-    backlog_dir: Path = typer.Option("", help="Backlog directory (default: auto-detect)"),
-    bench_log_dir: Path = typer.Option("", help="Отдельный каталог для bench-логов (default: ./bench-backlog)"),
-    output: Path = typer.Option("benchmark_report.json", help="Output report JSON file"),
+    backlog_dir: Path | None = typer.Option(
+        None, help="Backlog directory (default: auto-detect)"
+    ),
+    bench_log_dir: Path = typer.Option(
+        "", help="Отдельный каталог для bench-логов (default: ./bench-backlog)"
+    ),
+    output: Path = typer.Option(
+        "benchmark_report.json", help="Output report JSON file"
+    ),
     admin_token: str = typer.Option("", help="Bearer token for admin API"),
     timeout: float = typer.Option(120.0, help="Per-question timeout (seconds)"),
-    delay: float = typer.Option(2.5, help="Delay between cases (seconds) — respects api-service rate limit"),
+    delay: float = typer.Option(
+        2.5, help="Delay between cases (seconds) — respects api-service rate limit"
+    ),
     quiet: bool = typer.Option(False, help="Suppress per-case progress"),
 ) -> None:
     """Run the benchmark on test cases and write a report."""
@@ -95,7 +105,10 @@ def run_cmd(
         import subprocess
 
         git_commit = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=3
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=3,
         ).stdout.strip()
     except Exception:
         git_commit = ""
@@ -123,13 +136,17 @@ def run_cmd(
         typer.echo(f"\nReport written to {out_path}")
 
     # Exit code: fail if any WRONG/ERROR . PARTIAL → warning, not failure.
-    wrong_or_error = report.verdict_counts.get("WRONG", 0) + report.verdict_counts.get("ERROR", 0)
+    wrong_or_error = report.verdict_counts.get("WRONG", 0) + report.verdict_counts.get(
+        "ERROR", 0
+    )
     if wrong_or_error > 0:
         typer.echo(f"⚠️  {wrong_or_error} WRONG/ERROR cases — exit 1")
         raise typer.Exit(1)
     if report.verdict_counts.get("PARTIAL", 0) > 0:
         partial = report.verdict_counts.get("PARTIAL", 0)
-        typer.echo(f"ℹ️  {partial} PARTIAL cases (no critical errors, but defects) — exit 0")
+        typer.echo(
+            f"ℹ️  {partial} PARTIAL cases (no critical errors, but defects) — exit 0"
+        )
 
 
 if __name__ == "__main__":

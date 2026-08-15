@@ -42,9 +42,10 @@ def find_backlog_dir(backlog_dir: str | None = None) -> Path:
 
     1. Explicit ``backlog_dir`` argument
     2. ``BACKLOG_DIR`` environment variable
-    3. Project root ``.data/backlog``
-    4. Project root ``backlog``
-    5. Project root ``api-service/src/backlog``
+    3. Project root ``services/api-service/backlog``
+    4. Project root ``.data/backlog``
+    5. Project root ``backlog``
+    6. Project root ``services/api-service/src/backlog``
 
     The first existing directory containing ``*.jsonl`` files wins.
     If none exist, returns ``.data/backlog`` as default.
@@ -56,18 +57,6 @@ def find_backlog_dir(backlog_dir: str | None = None) -> Path:
     if env_dir:
         return Path(env_dir).resolve()
 
-    # Try SDK settings if available
-    try:
-        from helperium_sdk.settings import settings as sdk_settings  # type: ignore[import-untyped]  # noqa: F811
-
-        sdk_path = getattr(sdk_settings, "backlog_dir", None)
-        if sdk_path:
-            p = Path(sdk_path)
-            if p.exists():
-                return p.resolve()
-    except (ImportError, AttributeError):
-        pass
-
     # Walk up from cwd to find project root
     cwd = Path.cwd()
     root: Path = cwd
@@ -77,9 +66,10 @@ def find_backlog_dir(backlog_dir: str | None = None) -> Path:
             break
 
     candidates = [
+        root / "services" / "api-service" / "backlog",
         root / ".data" / "backlog",
         root / "backlog",
-        root / "services/api-service" / "src" / "backlog",
+        root / "services" / "api-service" / "src" / "backlog",
     ]
     for c in candidates:
         if c.exists() and list(c.glob("*.jsonl")):

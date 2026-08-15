@@ -35,7 +35,11 @@ def _sse_parse_events(response: Any) -> dict[str, Any]:
         for line_bytes in response.iter_lines():
             if not line_bytes:
                 continue
-            line = line_bytes.decode("utf-8", errors="replace") if isinstance(line_bytes, bytes) else line_bytes
+            line = (
+                line_bytes.decode("utf-8", errors="replace")
+                if isinstance(line_bytes, bytes)
+                else line_bytes
+            )
             if not line.startswith("data: "):
                 continue
             try:
@@ -59,7 +63,9 @@ def _sse_parse_events(response: Any) -> dict[str, Any]:
             elif ev_type == "error":
                 result["errors"].append(payload.get("text", str(payload)))
             elif ev_type == "final":
-                result["final_text"] += payload.get("text", "")
+                # API Service emits the complete response in final; use it as the
+                # canonical answer instead of appending streamed token chunks.
+                result["final_text"] = payload.get("text", "")
             elif ev_type == "done":
                 break
     except (OSError, TimeoutError):
@@ -117,7 +123,9 @@ def run_bench(
     except ImportError:
         import requests as _requests_module
 
-        _run_requests(results, _requests_module, api_url, agent_name, questions, headers)
+        _run_requests(
+            results, _requests_module, api_url, agent_name, questions, headers
+        )
 
     return results
 
@@ -151,7 +159,9 @@ def _run_httpx(
                                 "tool_calls": [],
                                 "tool_results": [],
                                 "final_text": "",
-                                "errors": [f"HTTP {resp.status_code}: {resp.text[:200]}"],
+                                "errors": [
+                                    f"HTTP {resp.status_code}: {resp.text[:200]}"
+                                ],
                                 "status_messages": [],
                                 "duration_ms": 0.0,
                                 "question": question,
@@ -379,7 +389,9 @@ class BenchmarkRunner:
                 with httpx_module.Client(
                     timeout=httpx_module.Timeout(self.timeout)
                 ) as client:
-                    with client.stream("POST", url, json=payload, headers=headers) as resp:
+                    with client.stream(
+                        "POST", url, json=payload, headers=headers
+                    ) as resp:
                         if resp.status_code == 429:
                             time.sleep(2 * (attempt + 1))
                             continue

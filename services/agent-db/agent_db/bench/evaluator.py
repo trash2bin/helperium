@@ -61,6 +61,7 @@ REFUSAL_MARKERS = [
     "ничего не найдено",
     "базе нет",
     "нет в каталоге",
+    "в каталоге нет",
     "не нашлось",
     "в наличии нет",
     "не значится",
@@ -101,7 +102,16 @@ _SKU_RE = re.compile(r"\b(?:[A-Za-zА-Яа-яЁё]{2,4}-\d{3,6})\b")
 # keys in a tool_result payload that indicate an error (not data).
 _ERROR_KEYS = ("error", "error_code", "error_message", "exception", "stack")
 # keys in a tool_result payload that indicate data (rows/preview/total).
-_DATA_KEYS = ("preview", "rows", "items", "data", "results", "total", "returned", "count")
+_DATA_KEYS = (
+    "preview",
+    "rows",
+    "items",
+    "data",
+    "results",
+    "total",
+    "returned",
+    "count",
+)
 
 # Numbers that are structural (durations, ids in "id: N" labels, order numbers)
 # and should not be treated as answer facts.  We only compare against *values*
@@ -188,7 +198,9 @@ class DeterministicEvaluator:
         # WRONG_AVAILABILITY / WRONG_STATUS — inferred from expected keys
         self._check_wrong_fact_type(case, run, answer_ok, error_classes, reasons)
 
-        refusal_ok = self._check_refusal(case, run.final_text, reasons, run.tool_results)
+        refusal_ok = self._check_refusal(
+            case, run.final_text, reasons, run.tool_results
+        )
         if not refusal_ok:
             error_classes.append(ErrorClass.REFUSAL_MISSING)
 
@@ -227,8 +239,15 @@ class DeterministicEvaluator:
         # verdict + error_source
         error_source = self._resolve_error_source(has_tool_error, run)
         verdict = self._compute_verdict(
-            case, run, error_classes, has_tool_error,
-            tool_ok, retrieval_ok, answer_ok, hallucination, refusal_ok,
+            case,
+            run,
+            error_classes,
+            has_tool_error,
+            tool_ok,
+            retrieval_ok,
+            answer_ok,
+            hallucination,
+            refusal_ok,
         )
 
         return EvalResult(
@@ -264,7 +283,9 @@ class DeterministicEvaluator:
 
         Tool errors are distinct from agent errors: the agent may have made a
         correct call, but the service returned ``{"error": "timeout"}``. We
-        treat those as INFRA_ERROR, not as a wrong answer.
+        treat server/transport failures as INFRA_ERROR, not as a wrong answer.
+        Client validation responses (HTTP 400/422) describe invalid tool
+        arguments selected by the agent, so they are not infrastructure faults.
         """
         errors: list[dict[str, Any]] = []
         for tr in run.tool_results:
@@ -279,12 +300,20 @@ class DeterministicEvaluator:
                     obj = json.loads(stripped)
                 except (json.JSONDecodeError, ValueError):
                     # Non-JSON non-empty — could be error text
-                    if any(marker in stripped.lower() for marker in ("error", "timeout", "failed", "exception")):
+                    if any(
+                        marker in stripped.lower()
+                        for marker in ("error", "timeout", "failed", "exception")
+                    ):
                         errors.append(tr)
                     continue
             else:
                 obj = raw
             if isinstance(obj, dict) and any(k in obj for k in _ERROR_KEYS):
+                detail = str(obj.get("error", "")).lower()
+                if obj.get("ok") is False and (
+                    "returned status 400" in detail or "returned status 422" in detail
+                ):
+                    continue
                 errors.append(tr)
         return errors
 
@@ -330,12 +359,12 @@ class DeterministicEvaluator:
     def _check_sku_hallucination(self, case: TestCase, run: RunResult) -> bool:
         """True if the final answer contains a SKU not present in tool_results.
 
-        SKU pattern: EXT-01392, BRK-01004, АП-100005. Numbers alone are not
-        SKUs (handled by _extract_numbers). This catches hallucinated article
-        codes — often more severe than a wrong price.
-exclude (a) SKUs that appear in the *question* (the agent may
-        legitimately restate them), and (b) absence/not_found cases (the
-        agent names the non-existent SKU as part of the refusal).
+                SKU pattern: EXT-01392, BRK-01004, АП-100005. Numbers alone are not
+                SKUs (handled by _extract_numbers). This catches hallucinated article
+                codes — often more severe than a wrong price.
+        exclude (a) SKUs that appear in the *question* (the agent may
+                legitimately restate them), and (b) absence/not_found cases (the
+                agent names the non-existent SKU as part of the refusal).
         """
         gt = case.ground_truth or {}
         if gt.get("type") == "not_found":
@@ -353,6 +382,7 @@ exclude (a) SKUs that appear in the *question* (the agent may
         answer_skus -= question_skus
         if not answer_skus:
             return False
+
         # tool_text может содержать JSON с экранированной кириллицей
         # (\u0410\u041f-100005). Декодируем unicode-escape перед SKU-поиском,
         # иначе кириллические артикулы (АП-100005) не матчатся в tool_results.
@@ -361,6 +391,7 @@ exclude (a) SKUs that appear in the *question* (the agent may
                 return s.encode("utf-8").decode("unicode_escape")
             except Exception:
                 return s
+
         tool_text = " ".join(str(r.get("result", "")) for r in run.tool_results)
         tool_text = _decode(tool_text)
         tool_skus = set(_SKU_RE.findall(tool_text))
@@ -369,8 +400,11 @@ exclude (a) SKUs that appear in the *question* (the agent may
         # перенос подтверждённых данных, а не выдумка. Такие SKU не считаем.
         context_skus = set()
         for m in _SKU_RE.finditer(run.final_text):
-            tail = run.final_text[m.end():m.end() + 60]
-            if any(mk in tail for mk in ("×", "*", "+", "-", "=", "₽", "руб", "итого", "позиц")):
+            tail = run.final_text[m.end() : m.end() + 60]
+            if any(
+                mk in tail
+                for mk in ("×", "*", "+", "-", "=", "₽", "руб", "итого", "позиц")
+            ):
                 context_skus.add(m.group(0))
         # Fuzzy SKU matching: if allow_fuzzy_sku is True,
         # consider SKUs that share the same prefix as "supported"
@@ -379,23 +413,30 @@ exclude (a) SKUs that appear in the *question* (the agent may
             fuzzy_supported = set()
             for ans_sku in answer_skus:
                 for tool_sku in tool_skus:
-                    ans_parts = ans_sku.rsplit('-', 1)
-                    tool_parts = tool_sku.rsplit('-', 1)
+                    ans_parts = ans_sku.rsplit("-", 1)
+                    tool_parts = tool_sku.rsplit("-", 1)
                     if len(ans_parts) == 2 and len(tool_parts) == 2:
                         # Same letter prefix + same first digit = supported
-                        if ans_parts[0] == tool_parts[0] and ans_parts[1][0] == tool_parts[1][0]:
+                        if (
+                            ans_parts[0] == tool_parts[0]
+                            and ans_parts[1][0] == tool_parts[1][0]
+                        ):
                             fuzzy_supported.add(ans_sku)
                             break
                     elif ans_sku == tool_sku:
                         fuzzy_supported.add(ans_sku)
             # Consider fuzzy-supported SKUs as "allowed" (they're effectively in tools)
-            unsupported = (answer_skus - fuzzy_supported) - tool_skus - allowed - context_skus
+            unsupported = (
+                (answer_skus - fuzzy_supported) - tool_skus - allowed - context_skus
+            )
         else:
             unsupported = answer_skus - tool_skus - allowed - context_skus
         return bool(unsupported)
 
     # ── consistency check ──────────────────────────────────────────────
-    def _check_consistency(self, run: RunResult, reasons: list[str]) -> tuple[bool, list[str]]:
+    def _check_consistency(
+        self, run: RunResult, reasons: list[str]
+    ) -> tuple[bool, list[str]]:
         """Detect contradictions in the answer.
 
         Examples of contradictions:
@@ -409,9 +450,10 @@ exclude (a) SKUs that appear in the *question* (the agent may
         text_lower = run.final_text.lower()
 
         # Check for: claimed unavailable but price shown
-        has_unavailable = any(m in text_lower for m in [
-            "нет в наличии", "отсутствует", "недоступен", "недоступно"
-        ])
+        has_unavailable = any(
+            m in text_lower
+            for m in ["нет в наличии", "отсутствует", "недоступен", "недоступно"]
+        )
         has_price = bool(re.search(r"\d{2,}\s*(?:₽|руб)", run.final_text))
 
         if has_unavailable and has_price:
@@ -419,19 +461,21 @@ exclude (a) SKUs that appear in the *question* (the agent may
             return False, reasons_ext
 
         # Check for: claimed not found but price shown
-        has_not_found = any(m in text_lower for m in [
-            "не найден", "не найдено", "не существует", "нет такого"
-        ])
+        has_not_found = any(
+            m in text_lower
+            for m in ["не найден", "не найдено", "не существует", "нет такого"]
+        )
         if has_not_found and has_price:
             reasons_ext.append("contradiction: claimed not found but showed price")
             return False, reasons_ext
 
         return True, reasons_ext
 
-
     # ── LOST_TOTAL ─────────────────────────────────────────────────────
 
-    def _check_lost_total(self, case: TestCase, run: RunResult, reasons: list[str]) -> bool:
+    def _check_lost_total(
+        self, case: TestCase, run: RunResult, reasons: list[str]
+    ) -> bool:
         """True if the tools returned total:N, the answer omits it and is vague.
 
         This is the Camry-class defect: agent retrieved 40 but said "много".
@@ -474,7 +518,8 @@ exclude (a) SKUs that appear in the *question* (the agent may
 
         # Must the answer mention the total? Only if expected or answer_rules say so.
         require_total = rules.get("expect_total_mentioned", False) or (
-            isinstance(expected_count, (int, float)) and int(expected_count) == total_value
+            isinstance(expected_count, (int, float))
+            and int(expected_count) == total_value
         )
         if not require_total:
             return False
@@ -485,7 +530,7 @@ exclude (a) SKUs that appear in the *question* (the agent may
         # would suppress LOST_TOTAL (false negative for the Camry class).
         total_mentioned = any(
             n == str(total_value)
-            for n in self._extract_numbers(run.final_text)
+            for n in self._extract_numbers(run.final_text, include_single_digit=True)
         )
         if total_mentioned:
             return False  # total mentioned — fine
@@ -506,7 +551,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
 
     # ── FALSE_UNCERTAINTY ──────────────────────────────────────────────
 
-    def _check_false_uncertainty(self, case: TestCase, run: RunResult, reasons: list[str]) -> bool:
+    def _check_false_uncertainty(
+        self, case: TestCase, run: RunResult, reasons: list[str]
+    ) -> bool:
         """True if an uncertainty marker sits next to a fact that was grounded.
 
         Detector: find uncertainty markers ("скорее всего", "вероятно"...) in
@@ -526,7 +573,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
             return False
 
         # We have a grounded fact + uncertainty marker → false uncertainty
-        reasons.append("FALSE_UNCERTAINTY: grounded fact hedged with uncertainty marker")
+        reasons.append(
+            "FALSE_UNCERTAINTY: grounded fact hedged with uncertainty marker"
+        )
         return True
 
     def _retrieval_has_ground_truth(self, case: TestCase, run: RunResult) -> bool:
@@ -558,7 +607,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
 
         violated = False
         if "max_tool_calls" in budget and tool_calls > budget["max_tool_calls"]:
-            reasons.append(f"TOOL_OVERUSE: {tool_calls} tool calls > {budget['max_tool_calls']}")
+            reasons.append(
+                f"TOOL_OVERUSE: {tool_calls} tool calls > {budget['max_tool_calls']}"
+            )
             violated = True
         if "max_db_get" in budget and db_get > budget["max_db_get"]:
             reasons.append(f"TOOL_OVERUSE: {db_get} db_get > {budget['max_db_get']}")
@@ -570,10 +621,11 @@ exclude (a) SKUs that appear in the *question* (the agent may
             reasons.append(f"TOOL_OVERUSE: {tokens} tokens > {budget['max_tokens']}")
             violated = True
         if "max_cost_usd" in budget and cost > budget["max_cost_usd"]:
-            reasons.append(f"TOOL_OVERUSE: cost ${cost:.4f} > ${budget['max_cost_usd']}")
+            reasons.append(
+                f"TOOL_OVERUSE: cost ${cost:.4f} > ${budget['max_cost_usd']}"
+            )
             violated = True
         return violated
-
 
     def _check_total_mentioned(
         self,
@@ -613,7 +665,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
 
         total_str = str(total)
         # Check if total is mentioned in answer
-        if total_str in self._extract_numbers(run.final_text):
+        if total_str in self._extract_numbers(
+            run.final_text, include_single_digit=True
+        ):
             return True  # Total mentioned explicitly
 
         # Also check for vague mentions ("всего N", "N штук" etc.)
@@ -621,12 +675,13 @@ exclude (a) SKUs that appear in the *question* (the agent may
         vague_markers = ["всего", "на", "штук", "позиций"]
         has_vague_total = any(m in text_norm for m in vague_markers)
 
-        if has_vague_total and total_str in self._extract_numbers(run.final_text.replace(" ", "")):
+        if has_vague_total and total_str in self._extract_numbers(
+            run.final_text.replace(" ", ""), include_single_digit=True
+        ):
             return True
 
         reasons.append(f"total {total} not mentioned in answer")
         return False
-
 
     # ── wrong fact type (availability/status) ──────────────────────────
 
@@ -722,7 +777,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
                 continue
             entity = args.get("entity", "")
             if entity and entity not in VALID_ENTITIES:
-                reasons.append(f"invalid entity name: {entity!r} (valid: {sorted(VALID_ENTITIES)[:3]}...)")
+                reasons.append(
+                    f"invalid entity name: {entity!r} (valid: {sorted(VALID_ENTITIES)[:3]}...)"
+                )
                 return False
         return True
 
@@ -747,7 +804,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
         if must_any:
             hit = called_names & set(must_any)
             if not hit:
-                reasons.append(f"expected tool in {must_any}, called {sorted(called_names)}")
+                reasons.append(
+                    f"expected tool in {must_any}, called {sorted(called_names)}"
+                )
                 return False
         if must_not:
             bad = called_names & set(must_not)
@@ -778,7 +837,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
 
         # list_ids: require at least N unique rows across tool results
         if "min_count" in expected:
-            return self._check_min_rows(tool_results, int(expected["min_count"]), reasons)
+            return self._check_min_rows(
+                tool_results, int(expected["min_count"]), reasons
+            )
 
         # Look for expected values in the concatenated tool result text
         aliases = gt.get("country_aliases", [])
@@ -797,9 +858,9 @@ exclude (a) SKUs that appear in the *question* (the agent may
         reasons: list[str],
     ) -> bool:
         """True if tool results contain at least ``min_count`` **unique** rows.
-dedupe by ``(entity, id)`` / ``article`` — an agent that does
-        ``db_search`` (preview 20) then 9x ``db_get`` on the same items should
-        not double/triple-count the same products.
+        dedupe by ``(entity, id)`` / ``article`` — an agent that does
+                ``db_search`` (preview 20) then 9x ``db_get`` on the same items should
+                not double/triple-count the same products.
         """
         seen: set[tuple[str, Any]] = set()
         total = 0
@@ -820,10 +881,14 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
                     total += 1
         ok = total >= min_count
         if not ok:
-            reasons.append(f"expected >= {min_count} rows in tool results, got {total} (unique)")
+            reasons.append(
+                f"expected >= {min_count} rows in tool results, got {total} (unique)"
+            )
         return ok
 
-    def _extract_row_identities(self, raw: Any, entity: str = "") -> list[tuple[str, Any]] | None:
+    def _extract_row_identities(
+        self, raw: Any, entity: str = ""
+    ) -> list[tuple[str, Any]] | None:
         """Extract unique row identities from a tool result.
 
         Returns a list of ``(entity, id)`` / ``(entity, article)`` tuples, or
@@ -970,7 +1035,11 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
                 return False
             if any(k in obj for k in ("total", "returned", "count")):
                 for key in ("total", "returned", "count"):
-                    if key in obj and isinstance(obj[key], (int, float)) and obj[key] > 0:
+                    if (
+                        key in obj
+                        and isinstance(obj[key], (int, float))
+                        and obj[key] > 0
+                    ):
                         return True
                 return False
             # Plain dict with keys = a single row
@@ -1015,11 +1084,15 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
             status = str(expected["status"])
             ok = self._check_status_with_synonyms(status, syns, final_text)
             if not ok:
-                reasons.append(f"status '{status}' (synonyms {syns.get(status)}) not in answer")
+                reasons.append(
+                    f"status '{status}' (synonyms {syns.get(status)}) not in answer"
+                )
             return ok
 
         # Exact value / count — direct substring match
-        ok = self._value_in_text(expected, final_text, country_aliases=gt.get("country_aliases", []))
+        ok = self._value_in_text(
+            expected, final_text, country_aliases=gt.get("country_aliases", [])
+        )
         if not ok:
             reasons.append(f"expected {expected} not in final answer")
         return ok
@@ -1071,23 +1144,36 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
     # «в наличии» → false-negative. Bool-ключи матчатся семантически.
     # убраны слабые маркеры (да/есть/нет/1/0) — слишком широкие (false positives).
     _BOOL_TRUE_MARKERS = [
-        "в наличии", "есть в наличии", "имеется в наличии", "доступен",
-        "доступно", "на складе", "в наличии на складе", "true",
+        "в наличии",
+        "есть в наличии",
+        "имеется в наличии",
+        "доступен",
+        "доступно",
+        "на складе",
+        "в наличии на складе",
+        "true",
     ]
     _BOOL_FALSE_MARKERS = [
-        "нет в наличии", "отсутствует", "недоступен", "недоступно",
-        "закончился", "закончилась", "нет на складе", "снят с продажи",
-        "не в наличии", "false",
+        "нет в наличии",
+        "отсутствует",
+        "недоступен",
+        "недоступно",
+        "закончился",
+        "закончилась",
+        "нет на складе",
+        "снят с продажи",
+        "не в наличии",
+        "false",
     ]
     _BOOL_KEYS = {"available", "is_available", "in_stock", "is_active", "active"}
 
     @staticmethod
     def _match_bool(value: bool, text_norm: str, key: str | None = None) -> bool:
         """True→«в наличии/доступен», False→«закончился/нет». По подстроке.
-негативные маркеры проверяются ПЕРВЫМИ для обоих значений —
-        «нет в наличии» содержит «в наличии», и для value=True это не должно
-        матчиться. Если найден сильный негатив → ответ = False, независимо
-        от value.
+        негативные маркеры проверяются ПЕРВЫМИ для обоих значений —
+                «нет в наличии» содержит «в наличии», и для value=True это не должно
+                матчиться. Если найден сильный негатив → ответ = False, независимо
+                от value.
         """
         # JSON-вид: "is_available": true — матчить конкретный ключ.
         # P0 (review-fix): JSON-tool results содержат несколько bool-полей
@@ -1127,7 +1213,9 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
                 return True
             forbidden = gt.get("forbidden", {})
             if forbidden and self._value_in_text(forbidden, run.final_text):
-                reasons.append("hallucination: absence case answered with forbidden data")
+                reasons.append(
+                    "hallucination: absence case answered with forbidden data"
+                )
                 return True
             return False
 
@@ -1143,7 +1231,8 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         tool_numbers = set(self._extract_numbers(tool_text))
 
         unsupported = [
-            n for n in answer_numbers
+            n
+            for n in answer_numbers
             if n not in tool_numbers and n not in question_numbers
         ]
         # Проценты ("скидка ~20%", "-30% к цене") — производные расчёты модели
@@ -1156,7 +1245,9 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         unsupported = [n for n in unsupported if n not in derived_text]
         # : числа, выразимые как произведение/сумма подтверждённых
         # (2031 = 677×3, где 677 и 3 в tool_numbers) — производные, не галлюцинация.
-        derived_math = self.derived_detector.find_derived_from_tool_numbers(unsupported, tool_numbers)
+        derived_math = self.derived_detector.find_derived_from_tool_numbers(
+            unsupported, tool_numbers
+        )
         unsupported = [n for n in unsupported if n not in derived_math]
         # : номера строк списка/таблицы (1..25 в начале markdown-строки:
         # "| 12 | Товар", "- 10.", "1. Товар") — это нумерация, не факты.
@@ -1178,12 +1269,17 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
             # breakdown-числа — это НЕ сам total (total уже подтверждён и
             # исключён из unsupported на этапе tool_numbers). Считаем только
             # неподтверждённые числа < total, исключая сам total.
-            small = [int(n) for n in unsupported
-                     if n.isdigit() and int(n) < confirmed_total]
+            small = [
+                int(n) for n in unsupported if n.isdigit() and int(n) < confirmed_total
+            ]
             if small and sum(small) <= confirmed_total:
                 # ответ содержит сам total (главное число подтверждено)?
                 if str(confirmed_total) in set(self._extract_numbers(run.final_text)):
-                    unsupported = [n for n in unsupported if not (n.isdigit() and int(n) < confirmed_total)]
+                    unsupported = [
+                        n
+                        for n in unsupported
+                        if not (n.isdigit() and int(n) < confirmed_total)
+                    ]
         if unsupported:
             reasons.append(f"unsupported numbers in answer: {unsupported[:5]}")
             return True
@@ -1230,7 +1326,9 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
                 # If forbidden is empty, no facts to check
                 # But also check answer doesn't contain data-like content
                 has_data = self._answer_looks_like_data(final_text)
-                if (not forbidden or not self._value_in_text(forbidden, final_text)) and not has_data:
+                if (
+                    not forbidden or not self._value_in_text(forbidden, final_text)
+                ) and not has_data:
                     return True  # Structural refusal confirmed
         # Fallback: text markers (kept for backwards compat)
         final_lower = final_text.lower()
@@ -1246,13 +1344,21 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         t = text.lower()
         # Numbers that look like prices/quantities (2+ digits)
         import re
-        if re.search(r'\b\d{2,}\b', text):
+
+        if re.search(r"\b\d{2,}\b", text):
             return True
         # Strong availability/presence assertions
         data_markers = [
-            'в наличии', 'есть в наличии', 'имеется', 'доступен',
-            'цена', 'стоит', 'руб', '₽',
-            'да, есть', 'да, в наличии',
+            "в наличии",
+            "есть в наличии",
+            "имеется",
+            "доступен",
+            "цена",
+            "стоит",
+            "руб",
+            "₽",
+            "да, есть",
+            "да, в наличии",
         ]
         if any(m in t for m in data_markers):
             return True
@@ -1260,7 +1366,12 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
 
     # ── value helpers ──────────────────────────────────────────────────────
 
-    def _value_in_text(self, expected: dict[str, Any], text: str, country_aliases: list[str] | None = None) -> bool:
+    def _value_in_text(
+        self,
+        expected: dict[str, Any],
+        text: str,
+        country_aliases: list[str] | None = None,
+    ) -> bool:
         """Check every key/value from ``expected`` appears in ``text``."""
         text_norm = self._normalize_text(text)
         for key, value in expected.items():
@@ -1298,7 +1409,9 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         # Plain text substring match
         return self._match_plain_text(value_str, text_norm)
 
-    def _match_bool_value(self, value: bool, text_norm: str, key: str | None = None) -> bool:
+    def _match_bool_value(
+        self, value: bool, text_norm: str, key: str | None = None
+    ) -> bool:
         """Match boolean value semantically: true→'в наличии', false→'нет в наличии'."""
         return self._match_bool(value, text_norm, key=key)
 
@@ -1333,19 +1446,23 @@ dedupe by ``(entity, id)`` / ``article`` — an agent that does
         return s
 
     @staticmethod
-    def _extract_numbers(text: str) -> list[str]:
+    def _extract_numbers(text: str, include_single_digit: bool = False) -> list[str]:
         """Extract standalone numbers (prices/counts), not digits inside codes.
 
         First strips alphanumeric codes (``EXT-01392``, ``АП-100005``) and
-        words containing digits, then extracts numeric tokens (2+ digits),
+        words containing digits, then extracts numeric tokens (two or more digits by default; one digit when requested),
         normalising thousand separators (``14 500`` → ``14500``).
         """
         s = str(text)
         # Remove alphanumeric codes: token with letters+digits, incl. hyphens
-        s = re.sub(r"\b[A-Za-zА-Яа-яЁё]+[A-Za-zА-Яа-яЁё0-9-]*[0-9][A-Za-zА-Яа-яЁё0-9-]*\b", " ", s)
+        s = re.sub(
+            r"\b[A-Za-zА-Яа-яЁё]+[A-Za-zА-Яа-яЁё0-9-]*[0-9][A-Za-zА-Яа-яЁё0-9-]*\b",
+            " ",
+            s,
+        )
         out: list[str] = []
         for token in re.findall(r"[0-9]+(?:[\s\u00a0][0-9]{3})*", s):
             normalized = token.replace("\u00a0", "").replace(" ", "")
-            if len(normalized) >= 2:
+            if len(normalized) >= 2 or include_single_digit:
                 out.append(normalized)
         return out
