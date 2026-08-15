@@ -35,7 +35,13 @@ curl -X POST http://127.0.0.1:8081/api/agents -H "Authorization: Bearer $ADMIN_T
       "api_key":"<polza-key>","api_base":"https://polza.ai/api/v1",
       "system_prompt":"Ты — консультант автозапчастей. Отвечай на русском, используй инструменты. Не выдумывай цены и артикулы — бери из результатов инструментов."}}'
 
-# 4. Прогон
+# 4. Применить versioned `autoparts-benchmark-v1` policy через Agent API,
+#    а не редактировать runtime .data. Меняется только system_prompt.
+uv run --package agent-db python -m agent_db.bench sync-agent-policy \
+    --agent-name autoparts-assistant --api-url http://127.0.0.1:8081 \
+    --admin-token "$ADMIN_TOKEN"
+
+# 5. Прогон
 uv run --package agent-db python -m agent_db.bench run \
     agent_db/bench/cases/autoparts.json \
     --agent-name autoparts-assistant --tenant-id autoparts \
@@ -171,4 +177,4 @@ verdict = PARTIAL
 - [agent_db/bench/README.md](../../services/agent-db/agent_db/bench/README.md) — код, метрики, тесты
 
 ---
-**Last verified:** 2026-08-15 (рабочая ветка) — добавлены explicit price/marketing discount cases, deprecated history и configgen field meanings. Бенч выдаёт verdict + error_classes, отчёт — verdicts/percentiles; сверено с evaluator/models/report.
+**Last verified:** 2026-08-15 (рабочая ветка) — добавлены fixture-scoped payment aliases, versioned `autoparts-benchmark-v1` prompt policy synchronizer и generic FilterStrategy guidance о required filter/`limit`/`total`. Бенч выдаёт verdict + error_classes, отчёт — verdicts/percentiles; сверено с evaluator/models/report.

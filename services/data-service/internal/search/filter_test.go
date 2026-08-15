@@ -859,3 +859,18 @@ func TestFilterStrategy_ToolParamsIncludeFieldDescription(t *testing.T) {
 		t.Errorf("label__in description = %q", descriptions["label__in"])
 	}
 }
+
+func TestFilterStrategy_ToolDescription_ExplainsRequiredFilterAndTotal(t *testing.T) {
+	s := NewFilterStrategy("id", "name")
+	description := s.ToolDescription(sampleEntity)
+	for _, want := range []string{
+		"every call must include at least one field filter",
+		"limit only controls the returned preview; it is not a filter",
+		"total, the authoritative number of records",
+		"For a count question, use total",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("ToolDescription() missing %q: %s", want, description)
+		}
+	}
+}

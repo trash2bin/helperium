@@ -40,6 +40,10 @@ from agent_db.bench.backlog_parser import (
     read_all_records,
 )
 from agent_db.bench.runner import BenchmarkRunner, _sse_parse_events
+from agent_db.bench.agent_policy import (
+    AUTOPARTS_BENCHMARK_SYSTEM_PROMPT,
+    sync_autoparts_benchmark_agent_policy,
+)
 from agent_db.bench.cli import _load_cases
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -358,6 +362,49 @@ class TestEvaluator:
         )
         res = DeterministicEvaluator().evaluate(case, run)
         assert res.answer_ok and res.success
+
+    @pytest.mark.parametrize(
+        ("final_text", "answer_ok"),
+        [
+            ("Заказ оплачен онлайн.", True),
+            ("Выбран способ: онлайн-оплата.", True),
+            ("Заказ не оплачен онлайн, выбран другой способ.", False),
+            ("Заказ оплачен картой.", False),
+        ],
+    )
+    def test_exact_value_uses_fixture_scoped_value_aliases(
+        self, final_text, answer_ok
+    ):
+        case = make_case(
+            expected={"payment": "online"},
+            ground_truth_kw={
+                "value_aliases": {
+                    "payment": {"online": ["онлайн", "онлайн-оплата"]}
+                }
+            },
+        )
+        run = make_run(
+            final_text=final_text,
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[
+                {"name": "db_get", "result": json.dumps({"payment": "online"})}
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.answer_ok is answer_ok, res.reasons
+        assert res.answer_completeness == (1.0 if answer_ok else 0.0)
+
+    def test_value_aliases_do_not_enable_generic_fuzzy_matching(self):
+        case = make_case(expected={"payment": "online"})
+        run = make_run(
+            final_text="Заказ оплачен онлайн.",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[
+                {"name": "db_get", "result": json.dumps({"payment": "online"})}
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.answer_ok
 
     def test_count_wrong_number(self):
         case = make_case(cid="cnt", gt_type="count", expected={"count": 74})
@@ -1850,3 +1897,49 @@ class TestAggregateContract:
 
         with pytest.raises(ValueError, match="must have the same length"):
             aggregate_report(cases, runs, evals)
+
+class TestAutopartsBenchmarkAgentPolicy:
+    def test_policy_requires_catalog_grounding_and_stop_after_sufficient_result(self):
+        assert "сначала получи подтверждение через\nMCP-инструменты" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        assert "поле total для вопроса о количестве" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        assert "общий вопрос, не требующий данных каталога" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+
+    def test_sync_updates_only_system_prompt(self, monkeypatch):
+        calls = []
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "name": "bench-agent",
+                    "system_prompt": AUTOPARTS_BENCHMARK_SYSTEM_PROMPT,
+                }
+
+        def fake_put(url, **kwargs):
+            calls.append((url, kwargs))
+            return Response()
+
+        monkeypatch.setattr("agent_db.bench.agent_policy.requests.put", fake_put)
+        payload = sync_autoparts_benchmark_agent_policy(
+            "http://api.test/", "bench-agent", "token"
+        )
+
+        assert payload["name"] == "bench-agent"
+        assert calls == [
+            (
+                "http://api.test/api/agents/bench-agent",
+                {
+                    "headers": {"Authorization": "Bearer token"},
+                    "json": {"system_prompt": AUTOPARTS_BENCHMARK_SYSTEM_PROMPT},
+                    "timeout": 10.0,
+                },
+            )
+        ]
+
+    def test_sync_rejects_missing_admin_token(self):
+        with pytest.raises(ValueError, match="admin_token"):
+            sync_autoparts_benchmark_agent_policy(
+                "http://api.test", "bench-agent", ""
+            )

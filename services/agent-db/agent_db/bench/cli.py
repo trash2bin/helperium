@@ -13,10 +13,16 @@ from __future__ import annotations
 import json
 import sys
 import time
+
+import requests
 from pathlib import Path
 
 import typer
 
+from .agent_policy import (
+    AUTOPARTS_BENCHMARK_POLICY_NAME,
+    sync_autoparts_benchmark_agent_policy,
+)
 from .evaluator import DeterministicEvaluator
 from .models import TestCase
 from .report import aggregate_report, print_report, report_to_dict
@@ -37,6 +43,28 @@ def _load_cases(
     if include_deprecated:
         return cases
     return [case for case in cases if not case.deprecated]
+
+
+@app.command(name="sync-agent-policy")
+def sync_agent_policy_cmd(
+    agent_name: str = typer.Option("autoparts-assistant", help="Agent name"),
+    api_url: str = typer.Option("http://127.0.0.1:8081", help="API service URL"),
+    admin_token: str = typer.Option("", help="Bearer token for admin API"),
+) -> None:
+    """Synchronize the committed autoparts benchmark policy through Agent API."""
+    try:
+        payload = sync_autoparts_benchmark_agent_policy(
+            api_url=api_url,
+            agent_name=agent_name,
+            admin_token=admin_token,
+        )
+    except (ValueError, RuntimeError, requests.RequestException) as exc:
+        typer.echo(f"Unable to synchronize benchmark policy: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(
+        f"Synchronized {AUTOPARTS_BENCHMARK_POLICY_NAME} for agent "
+        f"{payload.get('name', agent_name)}"
+    )
 
 
 @app.command(name="run")

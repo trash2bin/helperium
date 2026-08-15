@@ -1,6 +1,10 @@
 # CHANGELOG.md
 
 ## 2026-08-15
+- **fix(bench/evaluator):** добавлены fixture-scoped `value_aliases` с проверкой явного отрицания; `payment=online` теперь корректно принимает display labels «онлайн»/«онлайн-оплата» без generic fuzzy matching. Deterministic re-evaluation сохранённого третьего NIM run изменила только payment case: **47 CORRECT / 1 PARTIAL / 1 WRONG / 0 ERROR** (98,0%), без model-вызовов.
+- **feat(bench/policy):** versioned `autoparts-benchmark-v1` policy и CLI `sync-agent-policy` воспроизводимо синхронизируют только `system_prompt` через Agent API, не меняя provider/tenant config. Policy требует MCP-grounding для tenant facts и остановки после достаточного tool result.
+- **feat(data-service):** generic FilterStrategy MCP description теперь явно фиксирует: вызов требует field filter, `limit` — только preview, `total` — авторитетное count значение.
+- **test/docs(bench):** добавлены positive/negative/negation alias tests, policy synchronizer и FilterStrategy contract regressions; зарегистрированы третий raw NIM run, tool traces, case-level analysis и payment-alias re-evaluation. `make ci-test-py`, `make ci-test-go`, `make ci-docs` зелёные.
 - **fix(bench):** скорректированы deterministic evaluator и отчёт: однозначная классификация agent-side tool parse errors, нормализация узких пробелов в числах, word-boundary для маркеров неуверенности, verdict-oriented metrics вместо legacy success/tool-error rate; обновлены fixture expectations и регрессии.
 - **fix(bench/cases):** unfiltered count cases допускают `db_describe`; две неоднозначные скидочные fixtures сохранены как `deprecated` history и заменены явными cases для ценовой скидки (`old_price > price` → 72) и маркетинговых labels (`sale`/`promo` → 49). Active scoring загружает 49 cases, history содержит 51.
 - **feat(data-service):** filter parameter descriptions теперь включают versioned PostgreSQL field comments; deterministic autoparts fixture задаёт domain meaning для `old_price` и `label`, проходящий через introspection и configgen без ручной правки runtime tenant config.

@@ -1094,7 +1094,10 @@ class DeterministicEvaluator:
 
         # Exact value / count — direct substring match
         ok = self._value_in_text(
-            expected, final_text, country_aliases=gt.get("country_aliases", [])
+            expected,
+            final_text,
+            country_aliases=gt.get("country_aliases", []),
+            value_aliases=gt.get("value_aliases", {}),
         )
         if not ok:
             reasons.append(f"expected {expected} not in final answer")
@@ -1137,7 +1140,11 @@ class DeterministicEvaluator:
                 mentioned += 1
                 continue
             total += 1
-            if self._value_in_text({key: value}, final_text):
+            if self._value_in_text(
+                {key: value},
+                final_text,
+                value_aliases=(case.ground_truth or {}).get("value_aliases", {}),
+            ):
                 mentioned += 1
 
         return mentioned / total if total > 0 else 1.0
@@ -1374,11 +1381,20 @@ class DeterministicEvaluator:
         expected: dict[str, Any],
         text: str,
         country_aliases: list[str] | None = None,
+        value_aliases: dict[str, dict[str, list[str]]] | None = None,
     ) -> bool:
-        """Check every key/value from ``expected`` appears in ``text``."""
+        """Check every expected key/value with explicitly fixture-scoped aliases."""
         text_norm = self._normalize_text(text)
+        aliases_by_key = value_aliases or {}
         for key, value in expected.items():
-            if not self._match_key_value(key, value, text_norm, country_aliases):
+            aliases = aliases_by_key.get(key, {}).get(str(value), [])
+            if not self._match_key_value(
+                key,
+                value,
+                text_norm,
+                country_aliases,
+                aliases,
+            ):
                 return False
         return True
 
@@ -1388,6 +1404,7 @@ class DeterministicEvaluator:
         value: Any,
         text_norm: str,
         country_aliases: list[str] | None = None,
+        value_aliases: list[str] | None = None,
     ) -> bool:
         """Match a single key/value pair against normalized text."""
         value_str = str(value).strip()
@@ -1409,8 +1426,42 @@ class DeterministicEvaluator:
             # Handled by _check_answer with synonyms — skip here
             return True
 
+        if value_aliases:
+            return self._match_explicit_value_aliases(
+                value_str, value_aliases, text_norm
+            )
+
         # Plain text substring match
         return self._match_plain_text(value_str, text_norm)
+
+    def _match_explicit_value_aliases(
+        self,
+        value_str: str,
+        aliases: list[str],
+        text_norm: str,
+    ) -> bool:
+        """Match fixture-listed display aliases while rejecting explicit negation.
+
+        Aliases are case-local ground truth, not a generic fuzzy matcher. The
+        expected raw value remains accepted, and a phrase preceded by ``не`` or
+        ``без`` (with up to two intervening words) does not satisfy the fact.
+        """
+        candidates = [value_str, *aliases]
+        for candidate in candidates:
+            candidate_norm = self._normalize_text(candidate)
+            if not candidate_norm:
+                continue
+            pattern = re.compile(
+                rf"(?<!\w){re.escape(candidate_norm)}(?!\w)"
+            )
+            for match in pattern.finditer(text_norm):
+                prefix = text_norm[max(0, match.start() - 48) : match.start()]
+                negated = re.search(
+                    r"(?:^|\s)(?:не|без)(?:\s+\w+){0,2}\s*$", prefix
+                )
+                if not negated:
+                    return True
+        return False
 
     def _match_bool_value(
         self, value: bool, text_norm: str, key: str | None = None

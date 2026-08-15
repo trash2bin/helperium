@@ -216,6 +216,8 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 | `doc/benchmark/README.md` | Дизайн и цели core-бенчмарка | 📖 живая документация |
 | `doc/benchmark/core-benchmark.md` | Запуск, метрики и интерпретация результатов | 🔧 живая документация |
 | `doc/benchmark/runs/README.md` | Реестр машинных прогонов и отчётов | 🔧 живая документация |
+| `doc/benchmark/runs/2026-08-15-nvidia-nim-post-discount-split-analysis.md` | Case-level разбор третьего NIM run | 🗃️ архив: run analysis |
+| `doc/benchmark/runs/2026-08-15-nvidia-nim-post-discount-split-tool-traces.md` | Извлечённые tool traces третьего NIM run | 🗃️ архив: trace evidence |
 | `doc/benchmark/incident-camry.md` | Историческое расследование инцидента Camry | 🗃️ архив: расследование |
 | `doc/benchmark/data-service-audit.md` | Исторический аудит data-service по итогам бенчмарка | 🗃️ архив: аудит |
 | `doc/benchmark/demo-integration-audit.md` | Исторический аудит интеграции demo-web и виджета | 🗃️ архив: аудит |
@@ -335,5 +337,6 @@ uv run pytest services/agent-db/tests/e2e/ -v
 ```
 Last verified: 2026-08-10 (HEAD be9a991) — разделены живая документация benchmark и архивные отчёты
 2026-08-11 (рабочая ветка) — переработка бенча: verdict (CORRECT/PARTIAL/WRONG/ERROR) + таксономия ErrorClass, новые проверки (SKU, LOST_TOTAL, FALSE_UNCERTAINTY, budget, loop, dedupe, error payload, derived), отчёт (verdicts/percentiles/run_metadata), diff_reports, кейсы обогащены, smoke починен и прогнан. 73 теста. Первый реальный baseline: 80% CORRECT / 16% PARTIAL / 4% WRONG (reports/baseline-c1d7f81). Обновлены README бенча + core-benchmark.md + CHANGELOG.
+2026-08-15 (рабочая ветка) — добавлены payment value aliases, versioned autoparts benchmark policy, generic filter contract и третий NIM run с deterministic re-evaluation; run analysis и tool traces внесены в каталог benchmark artifacts.
 См. полный журнал: CHANGELOG.md
 ```

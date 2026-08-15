@@ -631,6 +631,14 @@
         "expected": {
           "payment": "online"
         },
+        "value_aliases": {
+          "payment": {
+            "online": [
+              "онлайн",
+              "онлайн-оплата"
+            ]
+          }
+        },
         "any_of_skus": [
           "АП-100003"
         ],

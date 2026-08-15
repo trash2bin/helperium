@@ -59,6 +59,9 @@ func (s *FilterStrategy) ToolDescription(entity config.Entity) string {
 	return fmt.Sprintf(
 		"Exact-value filtering over %s. Use ONLY when you KNOW the value.\n"+
 			"\n"+
+			"REQUIRED: every call must include at least one field filter. limit only controls the returned preview; it is not a filter.\n"+
+			"RESULT: every successful response includes total, the authoritative number of records matching the filters. For a count question, use total and do not fetch extra rows.\n"+
+			"\n"+
 			"WHEN: you have an exact value (an id from a previous search, a known status, a price range).\n"+
 			"WHEN NOT: do not guess values — call schema on the entity first to see valid values.\n"+
 			"\n"+

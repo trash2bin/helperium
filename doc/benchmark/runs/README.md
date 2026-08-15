@@ -29,9 +29,9 @@ model fabricates them instead of calling `db_get` — a known limitation
 Raw per-session traces (SSE events, tool calls, tool results) live in
 `bench-backlog/` (gitignored, ~1.7MB for the full run) — keyed by question text.
 
-## 2026-08-15 — NVIDIA NIM: два полных прогона и детерминированная переоценка
+## 2026-08-15 — NVIDIA NIM: три полных прогона и детерминированные переоценки
 
-Ниже зафиксированы **три разных артефакта**. Их нельзя смешивать при сравнении
+Ниже зафиксированы **шесть разных артефактов**. Их нельзя смешивать при сравнении
 verdict: первый и второй — самостоятельные live NIM runs с разными ответами
 стохастичной модели; третий — только повторная оценка сохранённых логов второго
 run, без NIM-вызовов.
@@ -40,7 +40,11 @@ run, без NIM-вызовов.
 |---|---|---|---:|---:|---:|---:|---|
 | [`benchmark_report.json`](../../../benchmark_report.json) | Первый полный live NIM run | `3e2d83d`, 2026-08-15 00:35:17 | 36 | 8 | 3 | 2 | Интеграционный baseline NIM до runtime/benchmark fixes |
 | [`2026-08-15-nvidia-nim-post-fix-full-run-raw-report.json`](2026-08-15-nvidia-nim-post-fix-full-run-raw-report.json) | Второй полный live NIM run | `c7c22a7`, 2026-08-15 01:18:46 | 39 | 5 | 4 | 1 | Raw outcome после исправления `/q/search` и runner telemetry |
-| [`2026-08-15-nvidia-nim-post-fixes-report.json`](2026-08-15-nvidia-nim-post-fixes-report.json) | Deterministic re-evaluation второго run | без новых model-вызовов | 44 | 1 | 4 | 0 | Текущая оценка тех же saved logs финальным evaluator и fixtures |
+| [`2026-08-15-nvidia-nim-post-fixes-report.json`](2026-08-15-nvidia-nim-post-fixes-report.json) | Deterministic re-evaluation второго run | без новых model-вызовов | 44 | 1 | 4 | 0 | Историческая оценка saved logs финальным evaluator и fixtures |
+| [`2026-08-15-nvidia-nim-post-discount-split-full-run-raw-report.json`](2026-08-15-nvidia-nim-post-discount-split-full-run-raw-report.json) | Третий полный live NIM run | `ae20ede`, 2026-08-15 15:57:53 | 46 | 1 | 2 | 0 | Clean 49-case run после split discount fixtures |
+| [`2026-08-15-nvidia-nim-post-discount-split-payment-aliases-deterministic-re-evaluation-report.json`](2026-08-15-nvidia-nim-post-discount-split-payment-aliases-deterministic-re-evaluation-report.json) | Deterministic re-evaluation третьего run | без новых model-вызовов | 47 | 1 | 1 | 0 | **Текущий scoring** тех же saved traces после fixture-scoped payment aliases |
+| [`2026-08-15-nvidia-nim-post-discount-split-analysis.md`](2026-08-15-nvidia-nim-post-discount-split-analysis.md) | Case-level analysis | `ae20ede` | — | — | — | — | Сравнение run и объяснение проблемных verdict |
+| [`2026-08-15-nvidia-nim-post-discount-split-tool-traces.md`](2026-08-15-nvidia-nim-post-discount-split-tool-traces.md) | Extracted traces | `ae20ede` | — | — | — | — | Tool sequences для non-CORRECT cases |
 
 ### Первый NIM run — integration baseline
 
@@ -60,7 +64,7 @@ SSE dedupe и чтения live backlog. Его raw distribution: 39 CORRECT, 5 
 изменения verdict между первым и вторым run нельзя объяснять одной лишь
 переоценкой.
 
-### Deterministic re-evaluation второго run — current scoring
+### Deterministic re-evaluation второго run — historical scoring
 
 Текущий отчёт переоценивает **сохранённые логи второго run** без model-вызовов.
 Он применяет исправления классификации tool 400/422, count fixtures,
@@ -74,10 +78,22 @@ SSE dedupe и чтения live backlog. Его raw distribution: 39 CORRECT, 5 
 > отдельный 49-case run **polza/deepseek-v4-flash** (`39/8/2/0`), не NVIDIA NIM;
 > он не участвует в сравнении NIM run 2026-08-15.
 
-Оставшиеся agent-side проблемы текущего scoring: Bosch и Denso без tool calls;
-старый ambiguous discount count; старый ambiguous discount filter. Последние два
-будут deprecated/replaced_by в одном изменении с явными price-discount и
-marketing-label cases.
+### Третий NIM run и payment-alias re-evaluation — current scoring
+
+Третий **отдельный** clean 49-case live NIM run выполнен с commit `ae20ede` после
+разделения ambiguous discount fixtures. Raw outcome: **46 CORRECT, 1 PARTIAL,
+2 WRONG, 0 ERROR**. Его не следует механически сравнивать с предыдущими live
+runs: ответы стохастичны, а два old discount case были заменены двумя explicit
+case.
+
+Отдельная deterministic re-evaluation тех же saved traces добавила только
+fixture-scoped display aliases для `payment=online` (`онлайн`, `онлайн-оплата`) с
+защитой от явного отрицания. Она не сделала model-вызовов и изменила **только**
+`order-lookup-payment-001`: **47 CORRECT, 1 PARTIAL, 1 WRONG, 0 ERROR**,
+`verdict_pass_rate` **98,0%**. Оставшийся WRONG — `brand-lookup-001` (Bosch,
+answer from external knowledge without retrieval); PARTIAL —
+`product-count-price-discount-001` (`TOOL_OVERUSE`, correct total 72 but 7 calls
+при бюджете 5).
 
 ---
-**Last verified:** 2026-08-15 — reconciled raw NIM runs and deterministic re-evaluation provenance.
+**Last verified:** 2026-08-15 (рабочая ветка) — добавлены третий raw NIM run, его payment-alias deterministic re-evaluation и case-level trace analysis; provenance raw versus re-evaluation проверен.
