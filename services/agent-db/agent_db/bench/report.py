@@ -81,8 +81,8 @@ def aggregate_report(
         )
         report.case_results.append(case_res)
 
-        if ev.success:
-            report.success_count += 1
+        if ev.verdict.value in {"CORRECT", "PARTIAL"}:
+            report.verdict_pass_count += 1
         if ev.retrieval_ok:
             report.retrieval_count += 1
         if ev.answer_ok:
@@ -94,17 +94,23 @@ def aggregate_report(
         if case.expect_refusal and ev.refusal_ok:
             report.refusal_count += 1
         if backlog and backlog.tool_errors > 0:
-            report.tool_error_turns += 1
+            report.tool_attempt_failure_count += 1
             report.errors_total_count += 1
-            if ev.success:
+            if backlog.outcome == "final":
                 report.errors_but_final_count += 1
         if ev.entity_name_ok:
             report.entity_name_ok_count += 1
 
         # verdict distribution + error class histogram
-        report.verdict_counts[ev.verdict.value] = report.verdict_counts.get(ev.verdict.value, 0) + 1
+        report.verdict_counts[ev.verdict.value] = (
+            report.verdict_counts.get(ev.verdict.value, 0) + 1
+        )
+        if any(getattr(cls, "value", cls) == "INFRA_ERROR" for cls in ev.error_classes):
+            report.infra_error_count += 1
         for cls in ev.error_classes:
-            report.error_class_histogram[cls] = report.error_class_histogram.get(cls, 0) + 1
+            report.error_class_histogram[cls] = (
+                report.error_class_histogram.get(cls, 0) + 1
+            )
         report.avg_repeated_tool_calls += ev.repeated_tool_calls
         report.avg_unique_tool_calls += ev.unique_tool_calls
         report.avg_db_get += ev.db_get_count
@@ -121,12 +127,13 @@ def aggregate_report(
     report.total_cost_usd = report.avg_cost_usd_sum
 
     # Rates
-    report.success_rate = report.success_count / n
+    report.verdict_pass_rate = report.verdict_pass_count / n
+    report.infra_error_rate = report.infra_error_count / n
+    report.tool_attempt_failure_rate = report.tool_attempt_failure_count / n
     report.retrieval_success_rate = report.retrieval_count / n
     report.answer_delivery_rate = report.answer_count / n
     report.hallucination_rate = report.hallucination_count / n
     report.groundedness_rate = report.grounded_count / n
-    report.tool_error_rate = report.tool_error_turns / n
     report.entity_name_accuracy = report.entity_name_ok_count / n
     # Recovery rate: доля кейсов с tool_errors, где агент всё равно дошёл до final
     report.recovery_rate = (
@@ -160,7 +167,8 @@ def aggregate_report(
     ]
     report.avg_answer_completeness = (
         sum(completeness_values) / len(completeness_values)
-        if completeness_values else 1.0
+        if completeness_values
+        else 1.0
     )
 
     def _pct(sorted_list: list[float], p: float) -> float:
@@ -198,13 +206,14 @@ def print_report(report: BenchmarkReport) -> str:
     lines.append("╚══════════════════════════════════════════════╝")
     lines.append("")
     lines.append(f"Total cases: {report.total_cases}")
-    lines.append(f"Success rate: {report.success_rate:.1%}")
+    lines.append(f"Verdict pass rate: {report.verdict_pass_rate:.1%}")
+    lines.append(f"Infra error rate: {report.infra_error_rate:.1%}")
+    lines.append(f"Tool-attempt failure rate: {report.tool_attempt_failure_rate:.1%}")
     lines.append(f"Retrieval success: {report.retrieval_success_rate:.1%}")
     lines.append(f"Answer delivery: {report.answer_delivery_rate:.1%}")
     lines.append(f"Hallucination rate: {report.hallucination_rate:.1%}")
     lines.append(f"Groundedness: {report.groundedness_rate:.1%}")
     lines.append(f"Refusal correct: {report.refusal_correct_rate:.1%}")
-    lines.append(f"Tool error rate: {report.tool_error_rate:.1%}")
     lines.append(f"Entity name accuracy: {report.entity_name_accuracy:.1%}")
     lines.append(f"Recovery rate (errors→final): {report.recovery_rate:.1%}")
     lines.append("")
@@ -212,11 +221,17 @@ def print_report(report: BenchmarkReport) -> str:
     lines.append("Verdicts:")
     for v in ("CORRECT", "PARTIAL", "WRONG", "ERROR"):
         cnt = report.verdict_counts.get(v, 0)
-        lines.append(f"  {v:<8} {cnt} ({cnt / report.total_cases:.1%})" if report.total_cases else f"  {v:<8} 0")
+        lines.append(
+            f"  {v:<8} {cnt} ({cnt / report.total_cases:.1%})"
+            if report.total_cases
+            else f"  {v:<8} 0"
+        )
     if report.error_class_histogram:
         lines.append("")
         lines.append("Errors by class:")
-        for cls, cnt in sorted(report.error_class_histogram.items(), key=lambda x: -x[1]):
+        for cls, cnt in sorted(
+            report.error_class_histogram.items(), key=lambda x: -x[1]
+        ):
             cls_name = cls.value if hasattr(cls, "value") else cls
             lines.append(f"  {cls_name:<22} {cnt}")
     lines.append("")
@@ -224,48 +239,60 @@ def print_report(report: BenchmarkReport) -> str:
     lines.append(f"Avg answer completeness: {report.avg_answer_completeness:.2f}")
     lines.append(f"P50 tokens: {report.p50_tokens:.0f}  P95: {report.p95_tokens:.0f}")
     lines.append(f"Avg duration: {report.avg_duration_ms:.0f}ms")
-    lines.append(f"P50 duration: {report.p50_duration_ms:.0f}ms  P95: {report.p95_duration_ms:.0f}ms")
+    lines.append(
+        f"P50 duration: {report.p50_duration_ms:.0f}ms  P95: {report.p95_duration_ms:.0f}ms"
+    )
     lines.append(f"Avg tool calls: {report.avg_tool_calls:.1f}")
-    lines.append(f"P50 tool calls: {report.p50_tool_calls:.0f}  P95: {report.p95_tool_calls:.0f}")
+    lines.append(
+        f"P50 tool calls: {report.p50_tool_calls:.0f}  P95: {report.p95_tool_calls:.0f}"
+    )
     lines.append(f"Avg llm calls: {report.avg_llm_calls:.1f}")
-    lines.append(f"P50 llm calls: {report.p50_llm_calls:.0f}  P95: {report.p95_llm_calls:.0f}")
+    lines.append(
+        f"P50 llm calls: {report.p50_llm_calls:.0f}  P95: {report.p95_llm_calls:.0f}"
+    )
     lines.append(f"Avg cost: ${report.avg_cost_usd:.4f}")
-    lines.append(f"P50 cost: ${report.p50_cost_usd:.4f}  P95: ${report.p95_cost_usd:.4f}")
+    lines.append(
+        f"P50 cost: ${report.p50_cost_usd:.4f}  P95: ${report.p95_cost_usd:.4f}"
+    )
     lines.append(f"Total cost: ${report.total_cost_usd:.4f}")
     lines.append("")
     lines.append("Failed cases:")
     if not report.case_results:
         lines.append("  (no cases)")
     for case in report.case_results:
-        if case.success:
-            continue
         ev = case.eval_result
+        if ev and ev.verdict.value == "CORRECT":
+            continue
         reason = "; ".join(ev.reasons[:3]) if ev else "no eval"
         lines.append(f"  - {case.case_id}: {case.question}")
-        lines.append(f"      verdict={ev.verdict.value if ev else '-'} "
-                     f"tool={ev.tool_ok if ev else '-'} "
-                     f"retrieval={ev.retrieval_ok if ev else '-'} "
-                     f"answer={ev.answer_ok if ev else '-'} "
-                     f"halluc={ev.hallucination if ev else '-'} "
-                     f"| {reason}")
+        lines.append(
+            f"      verdict={ev.verdict.value if ev else '-'} "
+            f"tool={ev.tool_ok if ev else '-'} "
+            f"retrieval={ev.retrieval_ok if ev else '-'} "
+            f"answer={ev.answer_ok if ev else '-'} "
+            f"halluc={ev.hallucination if ev else '-'} "
+            f"| {reason}"
+        )
     return "\n".join(lines)
 
 
 def report_to_dict(report: BenchmarkReport) -> dict[str, Any]:
     """Serialize a BenchmarkReport to a plain dict (for JSON output)."""
+
     def _ec(v: Any) -> str:
         """ErrorClass → its string value (HALLUCINATED_SKU, not ErrorClass.HALLUCINATED_SKU)."""
         return v.value if hasattr(v, "value") else str(v)
 
     return {
         "total_cases": report.total_cases,
-        "success_rate": report.success_rate,
+        "verdict_pass_rate": report.verdict_pass_rate,
+        "infra_error_rate": report.infra_error_rate,
+        "tool_attempt_failure_rate": report.tool_attempt_failure_rate,
         "retrieval_success_rate": report.retrieval_success_rate,
         "answer_delivery_rate": report.answer_delivery_rate,
         "hallucination_rate": report.hallucination_rate,
         "groundedness_rate": report.groundedness_rate,
         "refusal_correct_rate": report.refusal_correct_rate,
-        "tool_error_rate": report.tool_error_rate,
         "entity_name_accuracy": report.entity_name_accuracy,
         "recovery_rate": report.recovery_rate,
         # verdict + error taxonomy
@@ -300,18 +327,30 @@ def report_to_dict(report: BenchmarkReport) -> dict[str, Any]:
                 "case_id": c.case_id,
                 "question": c.question,
                 "category": c.category,
-                "success": c.success,
                 "eval": {
                     "verdict": c.eval_result.verdict.value if c.eval_result else None,
-                    "error_classes": [_ec(cls) for cls in (c.eval_result.error_classes if c.eval_result else [])],
-                    "error_source": c.eval_result.error_source if c.eval_result else None,
+                    "error_classes": [
+                        _ec(cls)
+                        for cls in (
+                            c.eval_result.error_classes if c.eval_result else []
+                        )
+                    ],
+                    "error_source": c.eval_result.error_source
+                    if c.eval_result
+                    else None,
                     "tool_ok": c.eval_result.tool_ok if c.eval_result else None,
-                    "retrieval_ok": c.eval_result.retrieval_ok if c.eval_result else None,
+                    "retrieval_ok": c.eval_result.retrieval_ok
+                    if c.eval_result
+                    else None,
                     "answer_ok": c.eval_result.answer_ok if c.eval_result else None,
-                    "hallucination": c.eval_result.hallucination if c.eval_result else None,
+                    "hallucination": c.eval_result.hallucination
+                    if c.eval_result
+                    else None,
                     "grounded": c.eval_result.grounded if c.eval_result else None,
                     "refusal_ok": c.eval_result.refusal_ok if c.eval_result else None,
-                    "entity_name_ok": c.eval_result.entity_name_ok if c.eval_result else None,
+                    "entity_name_ok": c.eval_result.entity_name_ok
+                    if c.eval_result
+                    else None,
                     "reasons": c.eval_result.reasons if c.eval_result else [],
                 },
                 "metrics": {
@@ -321,8 +360,12 @@ def report_to_dict(report: BenchmarkReport) -> dict[str, Any]:
                     "tool_calls": c.tool_calls,
                     "iterations": c.iterations,
                     "cost_usd": c.cost_usd,
-                    "repeated_tool_calls": c.eval_result.repeated_tool_calls if c.eval_result else 0,
-                    "unique_tool_calls": c.eval_result.unique_tool_calls if c.eval_result else 0,
+                    "repeated_tool_calls": c.eval_result.repeated_tool_calls
+                    if c.eval_result
+                    else 0,
+                    "unique_tool_calls": c.eval_result.unique_tool_calls
+                    if c.eval_result
+                    else 0,
                     "db_get_count": c.eval_result.db_get_count if c.eval_result else 0,
                 },
                 "outcome": c.outcome,
@@ -361,7 +404,10 @@ def diff_reports(prev: BenchmarkReport, cur: BenchmarkReport) -> dict[str, Any]:
     def _errors(c: CaseResult | None) -> list[str]:
         if not c or not c.eval_result:
             return []
-        return [ec.value if hasattr(ec, "value") else str(ec) for ec in c.eval_result.error_classes]
+        return [
+            ec.value if hasattr(ec, "value") else str(ec)
+            for ec in c.eval_result.error_classes
+        ]
 
     for case_id in sorted(set(prev_by_id) | set(cur_by_id)):
         p = prev_by_id.get(case_id)
@@ -374,14 +420,16 @@ def diff_reports(prev: BenchmarkReport, cur: BenchmarkReport) -> dict[str, Any]:
         elif pv != cv:
             verdict_delta[cv] = verdict_delta.get(cv, 0) + 1
             verdict_delta[pv] = verdict_delta.get(pv, 0) - 1
-        case_diff.append({
-            "case_id": case_id,
-            "prev_verdict": pv,
-            "cur_verdict": cv,
-            "changed": pv != cv,
-            "prev_errors": _errors(p),
-            "cur_errors": _errors(c),
-        })
+        case_diff.append(
+            {
+                "case_id": case_id,
+                "prev_verdict": pv,
+                "cur_verdict": cv,
+                "changed": pv != cv,
+                "prev_errors": _errors(p),
+                "cur_errors": _errors(c),
+            }
+        )
 
     changed = [d for d in case_diff if d["changed"]]
     improved = sum(1 for d in changed if _improved(d))

@@ -25,13 +25,18 @@ from .runner import BenchmarkRunner
 app = typer.Typer(help="Core Benchmark for Helperium (deterministic, no LLM judge).")
 
 
-def _load_cases(cases_file: Path) -> list[TestCase]:
-    """Load test cases from a JSON file."""
+def _load_cases(
+    cases_file: Path, *, include_deprecated: bool = False
+) -> list[TestCase]:
+    """Load active cases, optionally including deprecated fixture history."""
     if not cases_file.exists():
         raise typer.BadParameter(f"Cases file not found: {cases_file}")
     data = json.loads(cases_file.read_text(encoding="utf-8"))
     raw_cases = data.get("cases", data) if isinstance(data, dict) else data
-    return [TestCase.from_dict(c) for c in raw_cases]
+    cases = [TestCase.from_dict(c) for c in raw_cases]
+    if include_deprecated:
+        return cases
+    return [case for case in cases if not case.deprecated]
 
 
 @app.command(name="run")

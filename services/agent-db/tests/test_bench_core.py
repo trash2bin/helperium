@@ -20,6 +20,7 @@ import requests
 from agent_db.bench.evaluator import DeterministicEvaluator
 from agent_db.bench.models import (
     BacklogData,
+    Verdict,
     BenchmarkReport,
     EvalResult,
     ErrorClass,
@@ -39,6 +40,7 @@ from agent_db.bench.backlog_parser import (
     read_all_records,
 )
 from agent_db.bench.runner import BenchmarkRunner, _sse_parse_events
+from agent_db.bench.cli import _load_cases
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -76,6 +78,33 @@ def make_run(final_text="", tool_calls=None, tool_results=None, **kw):
     )
 
 
+class TestCaseFixture:
+    def test_deprecated_discount_cases_are_excluded_from_active_scoring(self):
+        """Ambiguous legacy discounts remain inspectable but never enter default scoring."""
+        cases_path = (
+            Path(__file__).resolve().parents[1]
+            / "agent_db"
+            / "bench"
+            / "cases"
+            / "autoparts.json"
+        )
+        active_cases = _load_cases(cases_path)
+        all_cases = _load_cases(cases_path, include_deprecated=True)
+        active_ids = {case.id for case in active_cases}
+        all_by_id = {case.id: case for case in all_cases}
+
+        assert len(active_cases) == 49
+        assert len(all_cases) == 51
+        assert {"product-count-price-discount-001", "product-count-promo-label-001"} <= active_ids
+        for case_id in ("product-count-discount-001", "product-filter-discount-001"):
+            assert case_id not in active_ids
+            assert all_by_id[case_id].deprecated
+            assert all_by_id[case_id].replaced_by == [
+                "product-count-price-discount-001",
+                "product-count-promo-label-001",
+            ]
+
+
 class TestEvaluator:
     def test_correct_lookup_passes(self):
         case = make_case(
@@ -98,6 +127,112 @@ class TestEvaluator:
         assert res.tool_ok and res.retrieval_ok and res.answer_ok
         assert not res.hallucination and res.grounded
         assert res.success
+
+    @pytest.mark.parametrize(
+        ("case_id", "entity", "total"),
+        [
+            ("category-count-001", "catalog_category", 117),
+            ("product-count-total-001", "catalog_product", 407),
+            ("order-count-total-001", "catalog_order", 6),
+        ],
+    )
+    def test_count_fixture_accepts_db_describe_total(self, case_id, entity, total):
+        """Entity describe total is authoritative for unfiltered count cases."""
+        cases_path = (
+            Path(__file__).resolve().parents[1]
+            / "agent_db"
+            / "bench"
+            / "cases"
+            / "autoparts.json"
+        )
+        raw_case = next(
+            item
+            for item in json.loads(cases_path.read_text(encoding="utf-8"))["cases"]
+            if item["id"] == case_id
+        )
+        assert "db_describe" in raw_case["expected_tool"]["must_call_any"]
+        case = TestCase.from_dict(raw_case)
+        run = make_run(
+            final_text=f"Всего {total}.",
+            tool_calls=[{"name": "db_describe", "arguments": {"entity": entity}}],
+            tool_results=[
+                {"name": "db_describe", "result": json.dumps({"total": total})}
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.tool_ok, res.reasons
+        assert res.verdict.value == "CORRECT", res.reasons
+
+    @pytest.mark.parametrize(
+        ("case_id", "arguments", "total"),
+        [
+            ("product-count-price-discount-001", {"old_price__gt": 0}, 72),
+            ("product-count-promo-label-001", {"label__in": ["sale", "promo"]}, 49),
+        ],
+    )
+    def test_explicit_discount_count_fixture_accepts_filtered_total(
+        self, case_id, arguments, total
+    ):
+        """Each explicit discount signal is grounded by its own filtered total."""
+        cases_path = (
+            Path(__file__).resolve().parents[1]
+            / "agent_db"
+            / "bench"
+            / "cases"
+            / "autoparts.json"
+        )
+        raw_case = next(
+            item
+            for item in json.loads(cases_path.read_text(encoding="utf-8"))["cases"]
+            if item["id"] == case_id
+        )
+        case = TestCase.from_dict(raw_case)
+        run = make_run(
+            final_text=f"Всего {total}.",
+            tool_calls=[{"name": "filter_catalog_product", "arguments": arguments}],
+            tool_results=[
+                {"name": "filter_catalog_product", "result": json.dumps({"total": total})}
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "CORRECT", res.reasons
+
+    def test_narrow_nbsp_price_is_grounded(self):
+        """2\u202f418 in a user-facing answer equals tool price 2418."""
+        case = make_case(
+            expected={"price": 2418},
+            expected_tool={"must_call_any": ["db_get"]},
+        )
+        run = make_run(
+            final_text="Цена: 2\u202f418 руб.",
+            tool_calls=[
+                {
+                    "name": "db_get",
+                    "arguments": {"entity": "catalog_product", "id": 367},
+                }
+            ],
+            tool_results=[
+                {"name": "db_get", "result": json.dumps({"id": 367, "price": 2418})}
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert not res.hallucination, res.reasons
+        assert res.verdict.value == "CORRECT", res.reasons
+
+    def test_polite_please_is_not_uncertainty(self):
+        """The marker «пожалуй» must not match the polite word «пожалуйста»."""
+        case = make_case(
+            expected={"price": 2418},
+            expected_tool={"must_call_any": ["db_get"]},
+        )
+        run = make_run(
+            final_text="Цена: 2418 руб. Уточните, пожалуйста.",
+            tool_calls=[{"name": "db_get"}],
+            tool_results=[{"name": "db_get", "result": json.dumps({"price": 2418})}],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert ErrorClass.FALSE_UNCERTAINTY not in res.error_classes
+        assert res.verdict.value == "CORRECT", res.reasons
 
     def test_wrong_answer_is_hallucination(self):
         case = make_case(expected={"price": 3064})
@@ -1306,6 +1441,7 @@ class TestReport:
             hallucination=not success,
             grounded=success,
             refusal_ok=True,
+            verdict=Verdict.CORRECT if success else Verdict.WRONG,
         )
         return case, run, ev
 
@@ -1319,7 +1455,7 @@ class TestReport:
 
         report = aggregate_report(cases, runs, evals)
         assert report.total_cases == 3
-        assert report.success_rate == pytest.approx(2 / 3)
+        assert report.verdict_pass_rate == pytest.approx(2 / 3)
         assert report.retrieval_success_rate == pytest.approx(2 / 3)
         assert report.hallucination_rate == pytest.approx(1 / 3)
         assert report.groundedness_rate == pytest.approx(2 / 3)
@@ -1338,6 +1474,11 @@ class TestReport:
         report = aggregate_report(cases, runs, evals)
         d = report_to_dict(report)
         assert d["total_cases"] == 2
+        assert "success_rate" not in d
+        assert "tool_error_rate" not in d
+        assert d["verdict_pass_rate"] == pytest.approx(1.0)
+        assert "infra_error_rate" in d
+        assert "tool_attempt_failure_rate" in d
         assert "cases" in d and len(d["cases"]) == 2
         assert "eval" in d["cases"][0]
         assert "metrics" in d["cases"][0]
@@ -1352,7 +1493,7 @@ class TestReport:
         report = aggregate_report(cases, runs, evals)
         text = print_report(report)
         assert "CORE BENCHMARK REPORT" in text
-        assert "Success rate" in text
+        assert "Verdict pass rate" in text
         assert "Total cases" in text
 
     def test_recovery_rate_metric(self):

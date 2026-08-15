@@ -806,8 +806,8 @@ func TestFilterStrategy_ParseRequest_RespectsFilterableRules(t *testing.T) {
 	// Реалистичный набор: дефолтное allow-правило (name filterable)
 	// + block-only правило (category blocked).
 	allowRule := config.FieldRule{
-		ID:          "filterable.common",
-		AllowNames:  []string{"name", "price", "status"},
+		ID:         "filterable.common",
+		AllowNames: []string{"name", "price", "status"},
 	}
 	s := NewFilterStrategy("id", "name", allowRule, blockRule)
 
@@ -829,5 +829,33 @@ func TestFilterStrategy_ParseRequest_RespectsFilterableRules(t *testing.T) {
 		if p.Name == "category" {
 			t.Errorf("ToolParams should exclude blocked field category")
 		}
+	}
+}
+
+func TestFilterStrategy_ToolParamsIncludeFieldDescription(t *testing.T) {
+	s := NewFilterStrategy("id", "name", config.DefaultFilterableFieldRules()...)
+	entity := config.Entity{
+		Name: "catalog_product",
+		Fields: []config.EntityField{
+			{Name: "old_price", Column: "old_price", Type: config.FieldTypeFloat, Description: "Price discount means old_price is higher than the current price."},
+			{Name: "label", Column: "label", Type: config.FieldTypeString, Description: "sale and promo are marketing labels independent of price discount."},
+		},
+	}
+
+	params := s.ToolParams(entity)
+	descriptions := make(map[string]string, len(params))
+	for _, param := range params {
+		descriptions[param.Name] = param.Description
+	}
+	for _, name := range []string{"old_price__gt", "label__in"} {
+		if !strings.Contains(descriptions[name], "Field meaning:") {
+			t.Errorf("%s description = %q, want field meaning", name, descriptions[name])
+		}
+	}
+	if !strings.Contains(descriptions["old_price__gt"], "higher than the current price") {
+		t.Errorf("old_price__gt description = %q", descriptions["old_price__gt"])
+	}
+	if !strings.Contains(descriptions["label__in"], "marketing labels") {
+		t.Errorf("label__in description = %q", descriptions["label__in"])
 	}
 }

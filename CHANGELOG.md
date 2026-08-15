@@ -1,5 +1,12 @@
 # CHANGELOG.md
 
+## 2026-08-15
+- **fix(bench):** скорректированы deterministic evaluator и отчёт: однозначная классификация agent-side tool parse errors, нормализация узких пробелов в числах, word-boundary для маркеров неуверенности, verdict-oriented metrics вместо legacy success/tool-error rate; обновлены fixture expectations и регрессии.
+- **fix(bench/cases):** unfiltered count cases допускают `db_describe`; две неоднозначные скидочные fixtures сохранены как `deprecated` history и заменены явными cases для ценовой скидки (`old_price > price` → 72) и маркетинговых labels (`sale`/`promo` → 49). Active scoring загружает 49 cases, history содержит 51.
+- **feat(data-service):** filter parameter descriptions теперь включают versioned PostgreSQL field comments; deterministic autoparts fixture задаёт domain meaning для `old_price` и `label`, проходящий через introspection и configgen без ручной правки runtime tenant config.
+- **docs(benchmark):** reconciled provenance трёх NVIDIA NIM artifacts; добавлен raw full-run report, обновлены README, core benchmark contract и documented active/historical discount lifecycle.
+- **test:** добавлены regression tests для count/discount fixture, deprecation loading и configgen field descriptions; полный локальный `make ci` зелёный.
+
 > Единый журнал значимых изменений проекта. Хронология, от новых к старым. Подробности по каждому пункту — в соответствующих README/doc/agents/*.
 
 ## 2026-08-11

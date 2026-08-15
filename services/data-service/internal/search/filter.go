@@ -69,7 +69,7 @@ func (s *FilterStrategy) ToolDescription(entity config.Entity) string {
 			"  {field}__gte=value  — greater than or equal\n"+
 			"  {field}__lte=value  — less than or equal\n"+
 			"  {field}__like=value — LIKE search (name__like='%%head%%')\n"+
-		"  {field}__in=a,b,c   — IN list (status__in=shipped,delivered)\n"+
+			"  {field}__in=a,b,c   — IN list (status__in=shipped,delivered)\n"+
 			"\n"+
 			"Examples:\n"+
 			"  status__in=shipped,delivered, limit=10\n"+
@@ -78,6 +78,13 @@ func (s *FilterStrategy) ToolDescription(entity config.Entity) string {
 			"SQLite: LIKE is case-sensitive for Cyrillic, use %% as wildcard.",
 		entity.Name,
 	)
+}
+
+func filterParamDescription(base string, field config.EntityField) string {
+	if field.Description == "" {
+		return base
+	}
+	return fmt.Sprintf("%s Field meaning: %s", base, field.Description)
 }
 
 func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam {
@@ -105,7 +112,7 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 			In:          config.ParamInQuery,
 			Type:        pt,
 			Required:    &f,
-			Description: fmt.Sprintf("Filter by exact '%s' value.", field.Name),
+			Description: filterParamDescription(fmt.Sprintf("Filter by exact '%s' value.", field.Name), field),
 		})
 
 		// Comparison operators for numeric fields (skip FK — exact match only).
@@ -122,7 +129,7 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 					In:          config.ParamInQuery,
 					Type:        pt,
 					Required:    &f,
-					Description: fmt.Sprintf("Filter: %s '%s' value.", op.desc, field.Name),
+					Description: filterParamDescription(fmt.Sprintf("Filter: %s '%s' value.", op.desc, field.Name), field),
 				})
 			}
 		}
@@ -134,7 +141,7 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 				In:          config.ParamInQuery,
 				Type:        config.ParamTypeString,
 				Required:    &f,
-				Description: fmt.Sprintf("LIKE pattern for '%s'. Use %% as wildcard.", field.Name),
+				Description: filterParamDescription(fmt.Sprintf("LIKE pattern for '%s'. Use %% as wildcard.", field.Name), field),
 			})
 		}
 
@@ -145,7 +152,7 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 			Type:        pt,
 			ArrayOf:     pt,
 			Required:    &f,
-			Description: fmt.Sprintf("Comma-separated values for IN filter on '%s'.", field.Name),
+			Description: filterParamDescription(fmt.Sprintf("Comma-separated values for IN filter on '%s'.", field.Name), field),
 		})
 	}
 

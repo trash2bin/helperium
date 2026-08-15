@@ -764,7 +764,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_category",
-          "db_search"
+          "db_search",
+          "db_describe"
         ]
       },
       "tags": [
@@ -1005,7 +1006,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_product",
-          "db_search"
+          "db_search",
+          "db_describe"
         ]
       },
       "tags": [
@@ -1034,7 +1036,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_order",
-          "db_search"
+          "db_search",
+          "db_describe"
         ]
       },
       "tags": [
@@ -1302,6 +1305,66 @@
       }
     },
     {
+      "id": "product-count-price-discount-001",
+      "question": "Сколько товаров продаётся со сниженной ценой (у которых старая цена выше текущей)?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product WHERE old_price > price",
+        "expected": {
+          "count": 72
+        },
+        "answer_rules": {
+          "expect_total_mentioned": true
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search"
+        ]
+      },
+      "tags": [
+        "product",
+        "discount",
+        "price_discount",
+        "count"
+      ],
+      "budget": {
+        "max_tool_calls": 5
+      }
+    },
+    {
+      "id": "product-count-promo-label-001",
+      "question": "Сколько товаров сейчас участвует в акциях или распродаже?",
+      "category": "aggregation",
+      "ground_truth": {
+        "type": "count",
+        "query": "SELECT COUNT(*) FROM catalog_product WHERE label IN ('sale', 'promo')",
+        "expected": {
+          "count": 49
+        },
+        "answer_rules": {
+          "expect_total_mentioned": true
+        }
+      },
+      "expected_tool": {
+        "must_call_any": [
+          "filter_catalog_product",
+          "db_search"
+        ]
+      },
+      "tags": [
+        "product",
+        "discount",
+        "marketing_label",
+        "count"
+      ],
+      "budget": {
+        "max_tool_calls": 5
+      }
+    },
+    {
       "id": "product-count-discount-001",
       "question": "Сколько товаров сейчас по скидке?",
       "category": "aggregation",
@@ -1327,7 +1390,12 @@
       ],
       "budget": {
         "max_tool_calls": 5
-      }
+      },
+      "deprecated": true,
+      "replaced_by": [
+        "product-count-price-discount-001",
+        "product-count-promo-label-001"
+      ]
     },
     {
       "id": "product-filter-discount-001",
@@ -1349,6 +1417,11 @@
         "product",
         "discount",
         "filter"
+      ],
+      "deprecated": true,
+      "replaced_by": [
+        "product-count-price-discount-001",
+        "product-count-promo-label-001"
       ]
     }
   ]

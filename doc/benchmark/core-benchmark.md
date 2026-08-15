@@ -78,18 +78,18 @@ Ground-truth `{question, expected}` против tool_results + final_text:
 5. **Проценты-скидки** («~20%») — вычисляются моделью, изначально ловились как
    «галлюцинация» → исключены из проверки.
 
-## Кейсы (49) по категориям
+## Кейсы: 49 active / 51 с историей
 
 | Категория | Кол-во | Что проверяет |
 |---|---|---|
 | lookup | 17 | цена/бренд/страна/гарантия/наличие по артикулу, включая статусы заказов |
-| filter | 10 | список товаров по категории/цене/бренду/наличию/метке/скидке, комбинированный фильтр |
-| aggregation | 16 | количество по бренду/категории/цене/статусу/скидке |
+| filter | 9 | список товаров по категории/цене/бренду/наличию/метке, комбинированный фильтр |
+| aggregation | 17 | количество по бренду/категории/цене/статусу, включая два явных сигнала скидки |
 | count | 1 | отдельный count-сценарий |
 | absence | 4 | несуществующий артикул/заказ/бренд → отказ |
 | search | 1 | db_search по частичному имени (→ db_get) |
 
-Статусы заказов проверяются как теги и expected fields lookup-кейсов, а не как отдельная category. Распределение выше соответствует фактическому `cases/autoparts.json` и суммируется до 49.
+Статусы заказов проверяются как теги и expected fields lookup-кейсов, а не как отдельная category. Распределение выше соответствует фактическому `cases/autoparts.json` и суммируется до 49 active cases. В fixture также сохранены два deprecated historical cases (всего 51), которые загрузчик исключает из scoring по умолчанию. Вместо неоднозначного «товар со скидкой» active set различает `old_price > price` (72 товаров) и `label IN ('sale', 'promo')` (49 товаров).
 
 ## Детерминированная база (seed=42)
 
@@ -101,7 +101,7 @@ ground truth. Решение — helperium-owned `demo/autoparts-store/seed_fixt
 cd demo/autoparts-store && DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell < seed_fixture.py
 ```
 
-Даёт 30 брендов / 117 категорий / 407 товаров / 6 заказов — детерминированно.
+Даёт 30 брендов / 117 категорий / 407 товаров / 6 заказов — детерминированно. Fixture также идемпотентно задаёт PostgreSQL comments для `old_price` и `label`; после tenant rewrite configgen переносит их в descriptions параметров filter-инструмента.
 **id меняются между прогонами** (sequence не сбрасывается), но артикулы/цены/статусы/
 счётчики стабильны — кейсы используют их, не id.
 
@@ -112,9 +112,9 @@ cd demo/autoparts-store && DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell
 - **supplier пуст** → `product-filter-supplier-001` → `product-filter-combined-001` (колодки Bosch в наличии)
 - **quantity EXT-01367 дрейф** (4→5) → исправлен
 - **дубль** `order-lookup-number-001` (идентичен status-001) → удалён
-- **добавлены**: скидочные (count/filter old_price>0 → 76), комбинированный фильтр, db_search по частичному имени
+- **добавлены**: комбинированный фильтр, db_search по частичному имени; позднее неоднозначные скидочные cases были сохранены как deprecated и заменены двумя явными signals: price discount (`old_price > price` → 72) и marketing label (`label IN ('sale', 'promo')` → 49)
 
-Ground truth сверен с data-service (источник правды): цены 3064/2122/3351, счётчики 74/145/73/60/36/24/32/20/407/30/117/6/3/76 — все совпадают.
+Ground truth сверен с data-service (источник правды): цены 3064/2122/3351, счётчики 74/145/73/60/36/24/32/20/407/30/117/6/3, а для явных discount cases — 72 (price) и 49 (promo/sale label).
 
 ## Логгирование
 
@@ -171,4 +171,4 @@ verdict = PARTIAL
 - [agent_db/bench/README.md](../../services/agent-db/agent_db/bench/README.md) — код, метрики, тесты
 
 ---
-**Last verified:** 2026-08-11 (рабочая ветка) — добавлен раздел «Verdict и таксономия ошибок»; бенч выдаёт verdict + error_classes, отчёт — verdicts/percentiles. Сверено с кодом evaluator/models/report.
+**Last verified:** 2026-08-15 (рабочая ветка) — добавлены explicit price/marketing discount cases, deprecated history и configgen field meanings. Бенч выдаёт verdict + error_classes, отчёт — verdicts/percentiles; сверено с evaluator/models/report.

@@ -28,11 +28,15 @@ class ErrorClass(str, Enum):
     LOST_KNOWN_FACT = "LOST_KNOWN_FACT"  # fact retrieved but not delivered
     RETRIEVAL_MISS = "RETRIEVAL_MISS"  # expected atom absent from tool_results
     ANSWER_MISS = "ANSWER_MISS"  # expected value absent from final answer
-    SCHEMA_ENTITY_ERROR = "SCHEMA_ENTITY_ERROR"  # entity="Order" instead of catalog_order
+    SCHEMA_ENTITY_ERROR = (
+        "SCHEMA_ENTITY_ERROR"  # entity="Order" instead of catalog_order
+    )
 
     # ── minor / efficiency ──────────────────────────────────────────────────
     FALSE_UNCERTAINTY = "FALSE_UNCERTAINTY"  # "скорее всего" though fact is grounded
-    TOOL_OVERUSE = "TOOL_OVERUSE"  # budget exceeded (max_tool_calls/max_db_get/max_tokens)
+    TOOL_OVERUSE = (
+        "TOOL_OVERUSE"  # budget exceeded (max_tool_calls/max_db_get/max_tokens)
+    )
     TOOL_LOOP = "TOOL_LOOP"  # 3+ identical tool calls in a row
     REFUSAL_MISSING = "REFUSAL_MISSING"  # expected refusal but answered with data
     FORBIDDEN_TOOL = "FORBIDDEN_TOOL"  # must_not_call invoked
@@ -150,6 +154,10 @@ class TestCase:
     budget: dict[str, Any] = field(default_factory=dict)
     # optional explicit facts (severity-aware) — future ground truth v2
     facts: list[dict[str, Any]] = field(default_factory=list)
+    # Historical fixture retained for provenance; excluded from active scoring.
+    deprecated: bool = False
+    # IDs of explicit cases that supersede this historical fixture.
+    replaced_by: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "TestCase":
@@ -164,6 +172,8 @@ class TestCase:
             expect_refusal=d.get("expect_refusal", False),
             budget=d.get("budget", {}),
             facts=d.get("facts", []),
+            deprecated=d.get("deprecated", False),
+            replaced_by=d.get("replaced_by", []),
         )
 
 
@@ -263,7 +273,7 @@ class EvalResult:
     @property
     def success(self) -> bool:
         """Case passes when data was retrieved, answered correctly, and no hallucination.
-keep the legacy boolean for backward-compat; the real signal is ``verdict``.
+        keep the legacy boolean for backward-compat; the real signal is ``verdict``.
         """
         return self.retrieval_ok and self.answer_ok and not self.hallucination
 
@@ -297,13 +307,14 @@ class BenchmarkReport:
     """Aggregated metrics across all cases."""
 
     total_cases: int = 0
-    success_rate: float = 0.0
+    verdict_pass_rate: float = 0.0
+    infra_error_rate: float = 0.0
+    tool_attempt_failure_rate: float = 0.0
     retrieval_success_rate: float = 0.0
     answer_delivery_rate: float = 0.0
     hallucination_rate: float = 0.0
     groundedness_rate: float = 0.0
     refusal_correct_rate: float = 0.0
-    tool_error_rate: float = 0.0
     entity_name_accuracy: float = 0.0
     recovery_rate: float = 0.0
     avg_total_tokens: float = 0.0
@@ -320,13 +331,14 @@ class BenchmarkReport:
     case_results: list[CaseResult] = field(default_factory=list)
 
     # Internal counters (aggregation)
-    success_count: int = 0
+    verdict_pass_count: int = 0
+    infra_error_count: int = 0
+    tool_attempt_failure_count: int = 0
     retrieval_count: int = 0
     answer_count: int = 0
     hallucination_count: int = 0
     grounded_count: int = 0
     refusal_count: int = 0
-    tool_error_turns: int = 0
     entity_name_ok_count: int = 0
     errors_but_final_count: int = 0
     errors_total_count: int = 0

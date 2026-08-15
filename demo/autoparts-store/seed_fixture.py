@@ -14,6 +14,8 @@
 - supplier: заполняем пустые детерминированно (brand + ' Distribution').
 - oem_number: генерируем уникальные OEM-номера детерминированно (seeded random).
 - assert: предупреждаем о дубликатах имён категорий (коллизия dict в seed_data.py).
+- PostgreSQL column comments: фиксируем значения `old_price` и `label` для
+  автогенерируемого MCP filter contract.
 
 Правило: НЕ трогаем price/quantity/category/brand/is_available — ground truth
 бенча (49 кейсов, seed=42) завязан на них.
@@ -34,8 +36,21 @@ Faker.seed(SEED)
 
 # Вызываем команду seed_data с зафиксированным seed
 from django.core.management import call_command
+from django.db import connection
 
 call_command("seed_data", verbosity=1)
+
+# Domain meanings reach MCP tool descriptions through Postgres introspection ->
+# configgen -> EntityField.Description. This is idempotent and survives rewrite.
+with connection.cursor() as cursor:
+    cursor.execute(
+        "COMMENT ON COLUMN catalog_product.old_price IS "
+        "'Previous product price. A price discount means old_price is higher than the current price.'"
+    )
+    cursor.execute(
+        "COMMENT ON COLUMN catalog_product.label IS "
+        "'Marketing label. Values sale and promo mean promotional campaigns; this is independent of price discount.'"
+    )
 
 # ── Пост-патч: реализм данных (helperium-owned, не foreign) ─────────────
 from catalog.models import Product, Brand, Category, Order

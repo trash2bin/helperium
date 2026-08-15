@@ -128,15 +128,16 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
 
 | Метрика | Откуда |
 |---|---|
-| success_rate | retrieval AND answer AND NOT hallucination (legacy) |
-| **verdicts** (CORRECT/PARTIAL/WRONG/ERROR доли) | `_compute_verdict` |
+| **verdicts** (CORRECT/PARTIAL/WRONG/ERROR доли) | `_compute_verdict`; главная метрика качества |
+| **verdict_pass_rate** | `(CORRECT + PARTIAL) / total` |
+| **infra_error_rate** | % кейсов с `INFRA_ERROR` |
+| **tool_attempt_failure_rate** | % кейсов с любым `backlog.tool_errors > 0`, включая client-validation 400 |
 | **error_classes** (histogram по классам) | ErrorClass |
 | retrieval_success_rate | атом найден в tool_results |
 | answer_delivery_rate | атом в final_text (с синонимами статусов) |
 | hallucination_rate | число/SKU в ответе, не подтверждённое тулами |
 | groundedness_rate | 1 - hallucination_rate |
 | refusal_correct_rate | absence-кейсы с корректным отказом |
-| tool_error_rate | % кейсов с tool_errors > 0 (backlog) |
 | **entity_name_accuracy** | % кейсов, где агент использует правильные имена сущностей (catalog_order, не Order) |
 | **recovery_rate** | % кейсов с tool_errors, где агент всё равно дошёл до final (устойчивость к мусорным аргументам) |
 | avg_* / p50 / p95 | из backlog turn_end (tokens, duration, cost, tool_calls, llm_calls) |
@@ -150,6 +151,17 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
 - `agent_{agent}_{session}.jsonl` — копия исходного backlog-файла api-service.
 
 Каталог задаётся `--bench-log-dir` (default: `./bench-backlog`). В `final_text` добавлен в backlog `turn_end` (api-service) — теперь ретро-анализ без SSE возможен (обрезается до 2000 символов).
+
+## Явные сигналы скидки и active scoring
+
+`product-count-discount-001` и `product-filter-discount-001` сохранены как исторические fixtures, но помечены `deprecated: true` и исключаются загрузчиком из active scoring. Они смешивали независимые доменные сигналы: изменение цены и маркетинговую метку. Оба содержат `replaced_by` с двумя актуальными cases.
+
+| Active case | Явный смысл | Ground truth (seed=42) | Допустимый инструмент |
+|---|---|---:|---|
+| `product-count-price-discount-001` | текущая цена ниже старой: `old_price > price` | 72 | `filter_catalog_product` / `db_search` |
+| `product-count-promo-label-001` | маркетинговая метка `label IN ('sale', 'promo')` | 49 | `filter_catalog_product` / `db_search` |
+
+В versioned `seed_fixture.py` PostgreSQL comments для обоих полей попадают через introspection/configgen в описания параметров `filter_catalog_product`; поэтому модель видит, что price discount и marketing label независимы. После reseed нужен обычный tenant rewrite, а не ручная правка `.data/tenants/autoparts.json`.
 
 ## Детерминированная база (seed=42)
 
@@ -214,7 +226,7 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 | WRONG | 2 | 4% |
 | ERROR | 0 | 0% |
 
-- success_rate 95.9%, retrieval 100%, answer 100%, refusal 100%, entity 100%, hallucination 4.1%.
+- verdict_pass_rate, verdict distribution, retrieval, answer, refusal, entity, hallucination, infra_error и tool_attempt_failure.
 - p50: 30.8k токенов, 23.3s, $0.149/кейс. Итого ~$7.6 за 49 кейсов, ~25-30 мин.
 - Полный отчёт: `reports/baseline-c1d7f81/summary.md`.
 
@@ -232,4 +244,4 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 - `final_text` в backlog обрезается до 2000 символов (для полного — SSE или bench-лог).
 
 ---
-**Last verified:** 2026-08-12 (рабочая ветка) — verdict (CORRECT/PARTIAL/WRONG/ERROR), таксономия ErrorClass, проверки (SKU, LOST_TOTAL, FALSE_UNCERTAINTY, budget, loop, dedupe, error payload, derived, breakdown, row-numbers), отчёт (verdicts/percentiles/run_metadata). 73 теста. Первый реальный baseline: 80% CORRECT / 16% PARTIAL / 4% WRONG / 0% ERROR (см. секцию «Первый реальный baseline»).
+**Last verified:** 2026-08-15 (рабочая ветка) — добавлены два явных discount case, historical deprecation и configgen field meanings. Verdict: `CORRECT/PARTIAL/WRONG/ERROR`; таксономия ErrorClass, проверки SKU/LOST_TOTAL/FALSE_UNCERTAINTY/budget/loop/dedupe/error payload/derived/breakdown/row-numbers и отчёт verdicts/percentiles/run_metadata сверены с кодом. Benchmark unit suite: 92 теста. Первый реальный baseline: 80% CORRECT / 16% PARTIAL / 4% WRONG / 0% ERROR (см. секцию «Первый реальный baseline»).

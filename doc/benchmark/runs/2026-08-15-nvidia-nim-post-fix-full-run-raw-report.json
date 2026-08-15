@@ -1,29 +1,30 @@
 {
   "total_cases": 49,
-  "verdict_pass_rate": 0.9183673469387755,
-  "infra_error_rate": 0.0,
-  "tool_attempt_failure_rate": 0.02040816326530612,
+  "success_rate": 0.8979591836734694,
   "retrieval_success_rate": 0.9387755102040817,
   "answer_delivery_rate": 0.9795918367346939,
-  "hallucination_rate": 0.04081632653061224,
-  "groundedness_rate": 0.9591836734693877,
+  "hallucination_rate": 0.061224489795918366,
+  "groundedness_rate": 0.9387755102040817,
   "refusal_correct_rate": 1.0,
+  "tool_error_rate": 0.02040816326530612,
   "entity_name_accuracy": 1.0,
-  "recovery_rate": 1.0,
+  "recovery_rate": 0.0,
   "verdicts": {
-    "CORRECT": 44,
-    "PARTIAL": 1,
-    "WRONG": 4
+    "CORRECT": 39,
+    "WRONG": 4,
+    "PARTIAL": 5,
+    "ERROR": 1
   },
   "error_classes": {
-    "FALSE_UNCERTAINTY": 1,
+    "HALLUCINATED_NUMBER": 3,
+    "FALSE_UNCERTAINTY": 2,
     "RETRIEVAL_MISS": 3,
-    "HALLUCINATED_NUMBER": 2,
-    "ANSWER_MISS": 1
+    "ANSWER_MISS": 1,
+    "INFRA_ERROR": 1
   },
   "avg_total_tokens": 30103.04081632653,
-  "avg_prompt_tokens": 0.0,
-  "avg_completion_tokens": 0.0,
+  "avg_prompt_tokens": 29142.714285714286,
+  "avg_completion_tokens": 960.3265306122449,
   "avg_llm_calls": 3.5918367346938775,
   "avg_tool_calls": 2.6122448979591835,
   "avg_iterations": 0.0,
@@ -45,29 +46,21 @@
   "avg_cost_usd": 0.0,
   "total_cost_usd": 0.0,
   "run_metadata": {
-    "artifact_kind": "deterministic_re_evaluation",
-    "provenance": "Re-evaluation of the saved raw full run using the final evaluator and count fixtures; no new model requests",
-    "model_requests_made_for_this_artifact": false,
-    "source_full_run_artifact": "2026-08-15-nvidia-nim-post-fix-full-run-raw-report.json",
-    "source_full_run_timestamp": "2026-08-15T01:18:46",
-    "source_full_run_git_commit": "c7c22a7",
+    "git_commit": "c7c22a7",
     "model": "nvidia-nim-bench",
     "dataset": "services/agent-db/agent_db/bench/cases/autoparts.json",
     "cases_count": 49,
-    "deterministic_changes": [
-      "tool 400/422 classified as agent-side rather than infrastructure",
-      "count fixtures allow db_describe for unfiltered totals",
-      "single-digit totals recognised",
-      "narrow non-breaking spaces normalised in numbers",
-      "uncertainty markers matched as complete words",
-      "soft absence policy B"
-    ]
+    "timestamp": "2026-08-15T01:18:46",
+    "artifact_kind": "full_llm_run_raw",
+    "provenance": "49 live NVIDIA NIM requests; raw evaluator output before later deterministic evaluator and fixture corrections",
+    "model_requests_made_for_this_artifact": true
   },
   "cases": [
     {
       "case_id": "product-lookup-article-001",
       "question": "Сколько стоит артикул EXT-01392?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -99,6 +92,7 @@
       "case_id": "product-lookup-name-001",
       "question": "Сколько стоит Датчик ABS Bosch для Toyota Land Cruiser 200?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -130,6 +124,7 @@
       "case_id": "product-lookup-brand-001",
       "question": "Какой бренд у товара с артикулом EXT-01392?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -161,18 +156,23 @@
       "case_id": "product-lookup-availability-001",
       "question": "Есть ли в наличии артикул EXT-01367?",
       "category": "lookup",
+      "success": false,
       "eval": {
-        "verdict": "CORRECT",
-        "error_classes": [],
+        "verdict": "WRONG",
+        "error_classes": [
+          "HALLUCINATED_NUMBER"
+        ],
         "error_source": "agent",
         "tool_ok": true,
         "retrieval_ok": true,
         "answer_ok": true,
-        "hallucination": false,
-        "grounded": true,
+        "hallucination": true,
+        "grounded": false,
         "refusal_ok": true,
         "entity_name_ok": true,
-        "reasons": []
+        "reasons": [
+          "unsupported numbers in answer: ['2\\u202f418']"
+        ]
       },
       "metrics": {
         "duration_ms": 3756.0,
@@ -192,6 +192,7 @@
       "case_id": "product-lookup-hit-001",
       "question": "Сколько стоит товар с меткой ХИТ артикул EXT-01401?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "PARTIAL",
         "error_classes": [
@@ -227,6 +228,7 @@
       "case_id": "product-lookup-hella-001",
       "question": "Сколько товаров бренда Hella в каталоге?",
       "category": "count",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -260,6 +262,7 @@
       "case_id": "product-count-bosch-available-001",
       "question": "Сколько товаров бренда Bosch в наличии?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -293,6 +296,7 @@
       "case_id": "product-count-price-001",
       "question": "Сколько товаров дороже 3000 рублей?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -324,6 +328,7 @@
       "case_id": "product-count-price-002",
       "question": "Сколько товаров дешевле 1000 рублей?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -355,6 +360,7 @@
       "case_id": "product-count-category-001",
       "question": "Сколько товаров в категории Колодки тормозные?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -388,6 +394,7 @@
       "case_id": "product-count-category-002",
       "question": "Сколько товаров в категории Свечи зажигания?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -421,6 +428,7 @@
       "case_id": "product-filter-price-001",
       "question": "Покажи товары дешевле 2000 рублей",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -452,6 +460,7 @@
       "case_id": "product-filter-category-001",
       "question": "Покажи товары из категории Масляные фильтры",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -483,6 +492,7 @@
       "case_id": "product-absence-001",
       "question": "Есть ли у вас артикул FAKE-ARTICLE-999?",
       "category": "absence",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -514,6 +524,7 @@
       "case_id": "order-lookup-status-001",
       "question": "Какой статус заказа АП-100005?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -545,6 +556,7 @@
       "case_id": "order-lookup-status-002",
       "question": "Какой статус заказа АП-100006?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -576,6 +588,7 @@
       "case_id": "order-lookup-total-001",
       "question": "Сколько стоит заказ АП-100004?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -607,6 +620,7 @@
       "case_id": "order-count-status-003",
       "question": "Сколько заказов со статусом new?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -640,6 +654,7 @@
       "case_id": "order-count-status-002",
       "question": "Сколько заказов со статусом delivered?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -671,6 +686,7 @@
       "case_id": "order-lookup-delivery-001",
       "question": "Каким способом доставки отправлен заказ АП-100005?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -702,6 +718,7 @@
       "case_id": "order-lookup-payment-001",
       "question": "Как оплачен заказ АП-100003?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -733,6 +750,7 @@
       "case_id": "order-absence-001",
       "question": "Существует ли заказ ORD-2024-001234?",
       "category": "absence",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -764,6 +782,7 @@
       "case_id": "brand-lookup-001",
       "question": "Из какой страны бренд Bosch?",
       "category": "lookup",
+      "success": false,
       "eval": {
         "verdict": "WRONG",
         "error_classes": [
@@ -802,6 +821,7 @@
       "case_id": "brand-lookup-002",
       "question": "Из какой страны бренд Denso?",
       "category": "lookup",
+      "success": false,
       "eval": {
         "verdict": "WRONG",
         "error_classes": [
@@ -838,6 +858,7 @@
       "case_id": "brand-count-001",
       "question": "Сколько всего брендов в каталоге?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -869,18 +890,21 @@
       "case_id": "category-count-001",
       "question": "Сколько всего категорий в каталоге?",
       "category": "aggregation",
+      "success": true,
       "eval": {
-        "verdict": "CORRECT",
+        "verdict": "PARTIAL",
         "error_classes": [],
         "error_source": "agent",
-        "tool_ok": true,
+        "tool_ok": false,
         "retrieval_ok": true,
         "answer_ok": true,
         "hallucination": false,
         "grounded": true,
         "refusal_ok": true,
         "entity_name_ok": true,
-        "reasons": []
+        "reasons": [
+          "expected tool in ['filter_catalog_category', 'db_search'], called ['db_describe']"
+        ]
       },
       "metrics": {
         "duration_ms": 3016.4,
@@ -900,6 +924,7 @@
       "case_id": "category-lookup-001",
       "question": "Какая родительская категория у Колодки тормозные?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -931,6 +956,7 @@
       "case_id": "product-filter-brand-001",
       "question": "Покажи товары бренда Hella",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -962,6 +988,7 @@
       "case_id": "product-filter-category-002",
       "question": "Покажи товары из категории Амортизаторы",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -993,6 +1020,7 @@
       "case_id": "product-filter-price-002",
       "question": "Покажи товары дороже 5000 рублей",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1024,9 +1052,12 @@
       "case_id": "product-filter-availability-001",
       "question": "Покажи доступные товары бренда Febi",
       "category": "filter",
+      "success": true,
       "eval": {
-        "verdict": "CORRECT",
-        "error_classes": [],
+        "verdict": "PARTIAL",
+        "error_classes": [
+          "FALSE_UNCERTAINTY"
+        ],
         "error_source": "agent",
         "tool_ok": true,
         "retrieval_ok": true,
@@ -1035,7 +1066,9 @@
         "grounded": true,
         "refusal_ok": true,
         "entity_name_ok": true,
-        "reasons": []
+        "reasons": [
+          "FALSE_UNCERTAINTY: grounded fact hedged with uncertainty marker"
+        ]
       },
       "metrics": {
         "duration_ms": 7993.1,
@@ -1055,6 +1088,7 @@
       "case_id": "product-filter-label-001",
       "question": "Покажи товары с меткой sale",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1086,6 +1120,7 @@
       "case_id": "product-search-partial-name-001",
       "question": "Найди датчик ABS на Toyota Land Cruiser",
       "category": "search",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1117,6 +1152,7 @@
       "case_id": "product-count-category-003",
       "question": "Сколько товаров в категории Диски тормозные?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1150,6 +1186,7 @@
       "case_id": "product-count-brand-002",
       "question": "Сколько товаров бренда Gates в каталоге?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1183,18 +1220,21 @@
       "case_id": "product-count-total-001",
       "question": "Сколько всего товаров в каталоге?",
       "category": "aggregation",
+      "success": true,
       "eval": {
-        "verdict": "CORRECT",
+        "verdict": "PARTIAL",
         "error_classes": [],
         "error_source": "agent",
-        "tool_ok": true,
+        "tool_ok": false,
         "retrieval_ok": true,
         "answer_ok": true,
         "hallucination": false,
         "grounded": true,
         "refusal_ok": true,
         "entity_name_ok": true,
-        "reasons": []
+        "reasons": [
+          "expected tool in ['filter_catalog_product', 'db_search'], called ['db_describe']"
+        ]
       },
       "metrics": {
         "duration_ms": 1913.9,
@@ -1214,18 +1254,21 @@
       "case_id": "order-count-total-001",
       "question": "Сколько всего заказов в системе?",
       "category": "aggregation",
+      "success": true,
       "eval": {
-        "verdict": "CORRECT",
+        "verdict": "PARTIAL",
         "error_classes": [],
         "error_source": "agent",
-        "tool_ok": true,
+        "tool_ok": false,
         "retrieval_ok": true,
         "answer_ok": true,
         "hallucination": false,
         "grounded": true,
         "refusal_ok": true,
         "entity_name_ok": true,
-        "reasons": []
+        "reasons": [
+          "expected tool in ['filter_catalog_order', 'db_search'], called ['db_describe']"
+        ]
       },
       "metrics": {
         "duration_ms": 2816.9,
@@ -1245,6 +1288,7 @@
       "case_id": "product-absence-002",
       "question": "Есть ли в наличии товар артикул ZZ-000-NOPE?",
       "category": "absence",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1276,6 +1320,7 @@
       "case_id": "product-absence-003",
       "question": "Покажи товары бренда НЕСУЩЕСТВУЮЩИЙ",
       "category": "absence",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1307,6 +1352,7 @@
       "case_id": "brand-lookup-003",
       "question": "Из какой страны бренд Brembo?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1338,6 +1384,7 @@
       "case_id": "product-lookup-origin-001",
       "question": "Какая страна происхождения у товара EXT-01401?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1369,6 +1416,7 @@
       "case_id": "product-filter-combined-001",
       "question": "Покажи тормозные колодки бренда Bosch в наличии",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1400,6 +1448,7 @@
       "case_id": "product-lookup-warranty-001",
       "question": "Какой гарантийный срок у товара EXT-01392?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1431,6 +1480,7 @@
       "case_id": "product-lookup-country-001",
       "question": "Какая страна происхождения у товара EXT-01392?",
       "category": "lookup",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1462,6 +1512,7 @@
       "case_id": "product-filter-category-003",
       "question": "Покажи товары из категории Салонные фильтры",
       "category": "filter",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1493,6 +1544,7 @@
       "case_id": "product-count-category-006",
       "question": "Сколько товаров в категории Наконечники рулевые?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1526,6 +1578,7 @@
       "case_id": "product-count-category-005",
       "question": "Сколько товаров в категории Лямбда-зонды?",
       "category": "aggregation",
+      "success": true,
       "eval": {
         "verdict": "CORRECT",
         "error_classes": [],
@@ -1559,6 +1612,7 @@
       "case_id": "product-count-discount-001",
       "question": "Сколько товаров сейчас по скидке?",
       "category": "aggregation",
+      "success": false,
       "eval": {
         "verdict": "WRONG",
         "error_classes": [
@@ -1597,12 +1651,14 @@
       "case_id": "product-filter-discount-001",
       "question": "Покажи товары со скидкой",
       "category": "filter",
+      "success": false,
       "eval": {
-        "verdict": "WRONG",
+        "verdict": "ERROR",
         "error_classes": [
+          "INFRA_ERROR",
           "HALLUCINATED_NUMBER"
         ],
-        "error_source": "agent",
+        "error_source": "tool",
         "tool_ok": true,
         "retrieval_ok": true,
         "answer_ok": true,

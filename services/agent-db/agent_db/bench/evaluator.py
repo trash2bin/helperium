@@ -561,7 +561,10 @@ class DeterministicEvaluator:
         tool_results. Only flags when a *grounded* fact is hedged.
         """
         text_lower = run.final_text.lower()
-        if not any(m in text_lower for m in UNCERTAINTY_MARKERS):
+        if not any(
+            re.search(rf"(?<!\w){re.escape(m)}(?!\w)", text_lower)
+            for m in UNCERTAINTY_MARKERS
+        ):
             return False
 
         # Skip if the case is inherently uncertain (e.g. open question)
@@ -1451,7 +1454,7 @@ class DeterministicEvaluator:
 
         First strips alphanumeric codes (``EXT-01392``, ``АП-100005``) and
         words containing digits, then extracts numeric tokens (two or more digits by default; one digit when requested),
-        normalising thousand separators (``14 500`` → ``14500``).
+        normalising ordinary, non-breaking and narrow non-breaking thousand separators (``14 500`` → ``14500``).
         """
         s = str(text)
         # Remove alphanumeric codes: token with letters+digits, incl. hyphens
@@ -1462,7 +1465,12 @@ class DeterministicEvaluator:
         )
         out: list[str] = []
         for token in re.findall(r"[0-9]+(?:[\s\u00a0][0-9]{3})*", s):
-            normalized = token.replace("\u00a0", "").replace(" ", "")
+            normalized = (
+                token.replace("\u00a0", "")
+                .replace("\u202f", "")
+                .replace("\u2009", "")
+                .replace(" ", "")
+            )
             if len(normalized) >= 2 or include_single_digit:
                 out.append(normalized)
         return out
