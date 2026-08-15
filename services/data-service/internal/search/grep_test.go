@@ -27,10 +27,10 @@ type sqliteAdapter struct {
 	db *sql.DB
 }
 
-func (a sqliteAdapter) QuoteIdentifier(name string) string       { return `"` + name + `"` }
-func (a sqliteAdapter) QuoteString(s string) string              { return escapeLikeSQL(s) }
-func (a sqliteAdapter) TranslatePlaceholder(index int) string    { return "?" }
-func (a sqliteAdapter) IsPostgres() bool                         { return false }
+func (a sqliteAdapter) QuoteIdentifier(name string) string    { return `"` + name + `"` }
+func (a sqliteAdapter) QuoteString(s string) string           { return escapeLikeSQL(s) }
+func (a sqliteAdapter) TranslatePlaceholder(index int) string { return "?" }
+func (a sqliteAdapter) IsPostgres() bool                      { return false }
 
 func (testAdapter) QuoteIdentifier(name string) string    { return `"` + name + `"` }
 func (testAdapter) QuoteString(s string) string           { return escapeLikeSQL(s) }
@@ -584,6 +584,28 @@ func TestGrepStrategy_CustomFields_BlockedExcluded(t *testing.T) {
 	}
 	if !strings.Contains(sql, `"name"`) {
 		t.Errorf("fallback should search allowed field name: %s", sql)
+	}
+}
+
+func TestGrepStrategy_CustomFields_SkipsNonStringColumns(t *testing.T) {
+	s := NewGrepStrategy("id", "name")
+	r := makeRequest(map[string]string{
+		"pattern": "EXT-01401",
+		"fields":  "name,price",
+	})
+	plan, err := s.ParseRequest(r, sampleEntity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest: %v", err)
+	}
+	sql, _, err := buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: %v", err)
+	}
+	if strings.Contains(sql, `"price" LIKE`) || strings.Contains(sql, `"price" ILIKE`) {
+		t.Errorf("grep must not apply LIKE to non-string price column: %s", sql)
+	}
+	if !strings.Contains(sql, `"name" COLLATE NOCASE LIKE`) {
+		t.Errorf("grep must retain requested string name column: %s", sql)
 	}
 }
 

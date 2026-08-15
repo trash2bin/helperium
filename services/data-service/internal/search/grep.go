@@ -146,6 +146,11 @@ func (s *GrepStrategy) ParseRequest(r *http.Request, entity config.Entity, a Ada
 		}
 		for _, f := range entity.Fields {
 			if fieldSet[f.Name] {
+				// Grep uses LIKE/ILIKE and is therefore valid only for string columns.
+				// Explicit fields must keep the same type restriction as stringFields.
+				if f.Type != config.FieldTypeString {
+					continue
+				}
 				// Tenant isolation: нельзя искать по tenant_id
 				if f.Column == "tenant_id" {
 					continue
