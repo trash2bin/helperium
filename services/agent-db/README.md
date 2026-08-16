@@ -91,14 +91,18 @@ agent-db drop <scenario> # remove scenario database
 New modular pytest tests in `services/agent-db/tests/e2e/` — faster, self-documented, with proper fixtures.
 
 ```bash
-# All e2e without LLM — 124 tests, ~30 sec (нужны поднятые сервисы: ./scripts/dev.sh start)
-./scripts/dev.sh e2e
+# All e2e without LLM — 124 tests, ~30 sec (нужны поднятые сервисы: ./infra/scripts/dev.sh start)
+./infra/scripts/dev.sh e2e
 
-# Или напрямую
+# Compose-режим: тесты выполняются внутри /workspace и видят те же SQLite-пути, что data-service
+./infra/scripts/compose.sh --profile test up e2e --abort-on-container-exit --exit-code-from e2e
+./infra/scripts/compose.sh --profile test down -v
+
+# Или напрямую в native-режиме (только после `./infra/scripts/dev.sh start`):
 uv run pytest services/agent-db/tests/e2e/ -v
 
-# С LLM-тестами (opt-in, services/agent-db/services/agent-db/tests/e2e-llm/, требует API key из .env)
-uv run pytest services/agent-db/services/agent-db/tests/e2e-llm/ -v --llm-key
+# С LLM-тестами (opt-in, services/agent-db/tests/e2e-llm/, требует API key из .env)
+uv run pytest services/agent-db/tests/e2e-llm/ -v --llm-key
 
 # Traceback off (pass/fail only)
 uv run pytest services/agent-db/tests/e2e/ --no-traceback
@@ -108,7 +112,7 @@ uv run pytest services/agent-db/tests/e2e/test_data_isolation.py -v
 uv run pytest services/agent-db/tests/e2e/test_agents.py -v
 uv run pytest services/agent-db/tests/e2e/test_mcp_composite.py -v
 uv run pytest services/agent-db/tests/e2e/test_sse_session.py -v
-uv run pytest services/agent-db/services/agent-db/tests/e2e-llm/test_llm_chat.py -v
+uv run pytest services/agent-db/tests/e2e-llm/test_llm_chat.py -v
 ```
 
 ## Quick start — add your own database
@@ -152,9 +156,9 @@ curl -H "X-Tenant-ID: mydb" http://127.0.0.1:8084/health
 | Seed generation | `data-service/cmd/seed-cli/` (Go, ~130 строк) | `agent-db/agent_db/seedgen/` (Python, ~650 строк) |
 | Materialize | `data-service --materialize` (в production binary) | `materialize()` из Python-пакета |
 | E2E tests | `cli.py` `_run_*` функции (~900 строк) | `services/agent-db/tests/e2e/*.py` — модульные, 124 теста |
-| LLM tests | — | `services/agent-db/services/agent-db/tests/e2e-llm/test_llm_chat.py — 4 теста (opt-in) |
+| LLM tests | — | `services/agent-db/tests/e2e-llm/test_llm_chat.py — 4 теста (opt-in) |
 | DB generation in e2e | `subprocess.run(["go", "run", "./cmd/seed-cli/"])` | `from agent_db.seedgen import materialize` |
 | CLI entry point | `cli.py` (root) | `agent_db/cli.py` |
 | Benchmark | — | `agent_db/bench/` — парсинг, прогон, отчёт |
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-16 (HEAD `0dbc8af`) — E2E команды разделены на native и compose режимы; compose full suite прошёл 124/124.

@@ -2,7 +2,7 @@
 
 ## Порядок запуска
 1. **Unit/Integration** — без сервисов, через `make`
-2. **E2E без LLM** — 124 теста, нужны сервисы (`./scripts/dev.sh start`)
+2. **E2E без LLM** — 124 теста, нужны сервисы (`./infra/scripts/dev.sh start`)
 3. **E2E с LLM** — только по требованию, денег много, в CI не гоняем
 
 ---
@@ -43,10 +43,16 @@ go test ./services/mcp-gateway/...                               # ~80
 ## E2E (services/agent-db/tests/e2e/) — 124 теста
 
 ```bash
-./scripts/dev.sh start
-./scripts/dev.sh status
+./infra/scripts/dev.sh start
+./infra/scripts/dev.sh status
 uv run pytest services/agent-db/tests/e2e/ -v
-./scripts.dev.sh stop
+./infra/scripts/dev.sh stop
+```
+
+**Compose-режим**: запускай тесты внутри compose, если сервисы работают в Docker. Host pytest нельзя направлять на Docker services: пути SQLite хоста и контейнера различаются.
+```bash
+./infra/scripts/compose.sh --profile test up e2e --abort-on-container-exit --exit-code-from e2e
+./infra/scripts/compose.sh --profile test down -v
 ```
 
 **Чек-лист:**
@@ -150,7 +156,7 @@ uv run pytest services/agent-db/tests/e2e-llm/ -v
 ## Дебаг
 
 ```bash
-./scripts/dev.sh logs api           # логи сервиса
+./infra/scripts/dev.sh logs api           # логи сервиса
 uv run pytest ...::test_name -v --tb=long   # один тест
 uv run pytest ... -q --tb=line      # только упавшие
 ```
@@ -161,7 +167,7 @@ uv run pytest ... -q --tb=line      # только упавшие
 
 | Симптом | Решение |
 |---|---|
-| Connection refused :8084 | `./scripts/dev.sh start && ./scripts/dev.sh status` |
+| Connection refused :8084 | `./infra/scripts/dev.sh start && ./infra/scripts/dev.sh status` |
 | 403 на admin | `ADMIN_TOKEN=secret` в `.env` |
 | Висит на SSE | `./scripts.dev.sh logs mcp` |
 | ModuleNotFoundError: agent_db | `uv pip install -e services/agent-db` |
@@ -178,4 +184,4 @@ uv run pytest ... -q --tb=line      # только упавшие
 
 ---
 
-**Verified:** 2026-08-07
+**Last verified:** 2026-08-16 (HEAD `0dbc8af`) — native и compose E2E режимы разделены; compose full suite прошёл 124/124 на пересобранном core.

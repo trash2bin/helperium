@@ -23,6 +23,8 @@ Admin Dashboard (:8085)
 - **admin** (`ADMIN_TOKEN`) — полный CRUD
 - **viewer** (`VIEWER_TOKEN`) — только GET на `/api/*` (read-only). POST/PUT/DELETE → 403.
 
+> **Обязательная конфигурация:** `ADMIN_TOKEN` и `VIEWER_TOKEN` должны быть заданы и различаться. Если значения совпадают, middleware выбирает admin-ветку первым, и bearer token viewer фактически получает полный доступ.
+
 Роль определяется автоматически по токену и возвращается в `/api/dashboard`.
 
 ---
@@ -156,3 +158,6 @@ admin-dashboard:
     - ADMIN_TOKEN=${ADMIN_TOKEN}
   volumes: [tenant_uploads:/data/tenant-dbs]
 ```
+
+---
+**Last verified:** 2026-08-16 (HEAD `0dbc8af`) — viewer policy сверена с auth middleware; явно зафиксировано требование разных `ADMIN_TOKEN` и `VIEWER_TOKEN`.

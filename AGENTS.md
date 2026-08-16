@@ -123,6 +123,7 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 | Аудит data-service / регрессии | 📖 `doc/agents/data-service-refactor-audit` → 📖 `doc/benchmark/data-service-audit` → 📖 `doc/benchmark/plan-for-review` | 📖 |
 | Исторический контекст / миграция | 🔧 `doc/FINAL_TASK` (план к pre-final, исторический) → 📖 `doc/agents/config-migration` | 🔧→📖 |
 | Операции / дебаг / dev-скрипты | 🔧 `doc/agents/operations` → 🔧 `infra/scripts/dev.sh` → 🔧 `doc/agents/web-service` | 🔧 |
+| Независимый PM/технический аудит, готовность к пилоту | 📖 `doc/agents/product-readiness-audit-2026-08-16` → 🔧 `doc/benchmark/core-benchmark` → 🔧 `doc/agents/testing-guide` | 📖→🔧 |
 | Новый HTTP-эндпоинт / контракт | 🔧 `doc/agents/api-contracts` → `specs/api.openapi.yaml` → 🔧 `doc/api-flow` | 🔧 |
 
 ### 5b. Каталог документов (файл → сервис → повод читать → глубина)
@@ -231,6 +232,7 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 | Файл | Что это · когда создано | Статус |
 |---|---|---|
 | `doc/agents/data-service-refactor-audit.md` | Аудит data-service после 4-дневного рефакторинга (2026-08-01) | ✅ все фиксы применены |
+| `doc/agents/product-readiness-audit-2026-08-16.md` | Независимый PM/технический аудит core, benchmark, E2E и интерфейсных контуров (2026-08-16) | 🗃️ архив: выводы и приоритеты для пилота |
 | `doc/FINAL_TASK.md` | План миграции к pre-final версии (исторический) | ✅ исполнен |
 
 > **Архивные артефакты — это записи о завершённых событиях, а не навигационные доки.** Их нельзя удалять молча: это след расследований и решений. Читать их нужно со скепсисом — текст может быть устаревшим, но сохраняет контекст, причины решений и найденные ограничения.
@@ -340,5 +342,6 @@ Last verified: 2026-08-10 (HEAD be9a991) — разделены живая до�
 2026-08-11 (рабочая ветка) — переработка бенча: verdict (CORRECT/PARTIAL/WRONG/ERROR) + таксономия ErrorClass, новые проверки (SKU, LOST_TOTAL, FALSE_UNCERTAINTY, budget, loop, dedupe, error payload, derived), отчёт (verdicts/percentiles/run_metadata), diff_reports, кейсы обогащены, smoke починен и прогнан. 73 теста. Первый реальный baseline: 80% CORRECT / 16% PARTIAL / 4% WRONG (reports/baseline-c1d7f81). Обновлены README бенча + core-benchmark.md + CHANGELOG.
 2026-08-15 (рабочая ветка) — payment value aliases, versioned autoparts benchmark policy и generic filter contract были проверены на NIM runs; старые raw/re-evaluation artifacts теперь сохранены только в локальном reversible archive, а active registry содержит canonical rebuilt run от 2026-08-16.
 2026-08-16 (рабочая ветка) — `run.errors` классифицируется как `ERROR`/`INFRA_ERROR`; benchmark fixtures дополнены допустимыми deterministic tool paths; FilterStrategy поддерживает whitelist-validated field comparison (`old_price__gt_field=price`); policy обновлена до `autoparts-benchmark-v2`, а leaked-thinking preamble не может стать final. `make ci-test-go`, `make ci-test-py` и `make ci-docs` пройдены; Docker live manifest и filter total=72 подтверждены после seed=42 + tenant rewrite. Новый NIM benchmark не запускался.
+2026-08-16 (HEAD 0dbc8af) — добавлен независимый PM/технический аудит `doc/agents/product-readiness-audit-2026-08-16.md`: benchmark, E2E, UI/API, CI и product fit. Повторно пройден compose E2E на пересобранных core images: 124 passed. Зафиксированы gap browser acceptance, необходимость fresh live benchmark на HEAD и риск равных ADMIN_TOKEN/VIEWER_TOKEN.
 См. полный журнал: CHANGELOG.md
 ```
