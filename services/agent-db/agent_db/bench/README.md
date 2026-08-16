@@ -138,7 +138,7 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
 |---|---|
 | **verdicts** (CORRECT/PARTIAL/WRONG/ERROR доли) | `_compute_verdict`; главная метрика качества |
 | **verdict_pass_rate** | `(CORRECT + PARTIAL) / total` |
-| **infra_error_rate** | % кейсов с `INFRA_ERROR` |
+| **infra_error_rate** | % кейсов с `INFRA_ERROR`, включая request-level timeout из `run.errors` |
 | **tool_attempt_failure_rate** | % кейсов с любым `backlog.tool_errors > 0`, включая client-validation 400 |
 | **error_classes** (histogram по классам) | ErrorClass |
 | retrieval_success_rate | атом найден в tool_results |
@@ -166,7 +166,7 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
 
 | Active case | Явный смысл | Ground truth (seed=42) | Допустимый инструмент |
 |---|---|---:|---|
-| `product-count-price-discount-001` | текущая цена ниже старой: `old_price > price` | 72 | `filter_catalog_product` / `db_search` |
+| `product-count-price-discount-001` | текущая цена ниже старой: `old_price > price` | 72 | `filter_catalog_product` с `old_price__gt_field=price` / `db_search` |
 | `product-count-promo-label-001` | маркетинговая метка `label IN ('sale', 'promo')` | 49 | `filter_catalog_product` / `db_search` |
 
 В versioned `seed_fixture.py` PostgreSQL comments для обоих полей попадают через introspection/configgen в описания параметров `filter_catalog_product`; поэтому модель видит, что price discount и marketing label независимы. После reseed нужен обычный tenant rewrite, а не ручная правка `.data/tenants/autoparts.json`.
@@ -253,4 +253,4 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 - `final_text` в backlog обрезается до 2000 символов (для полного — SSE или bench-лог).
 
 ---
-**Last verified:** 2026-08-15 (рабочая ветка) — добавлены fixture-scoped payment `value_aliases` с защитой от отрицания, versioned `autoparts-benchmark-v1` policy synchronizer и generic filter contract (`filter` обязателен, `limit` не filter, `total` авторитетен для count). Verdict: `CORRECT/PARTIAL/WRONG/ERROR`; таксономия ErrorClass, проверки aliases/SKU/LOST_TOTAL/FALSE_UNCERTAINTY/budget/loop/dedupe/error payload/derived/breakdown/row-numbers и отчёт verdicts/percentiles/run_metadata сверены с кодом. Benchmark unit suite: 100 тестов. Первый реальный baseline: 80% CORRECT / 16% PARTIAL / 4% WRONG / 0% ERROR (см. секцию «Первый реальный baseline»).
+**Last verified:** 2026-08-16 (рабочая ветка) — `run.errors` теперь детерминированно даёт `ERROR`/`INFRA_ERROR` и входит в `infra_error_rate`; fixture allowances покрывают допустимые stats/describe/filter paths. Generic field-reference contract поддерживает `old_price__gt_field=price` с whitelist/quoting validation. Versioned policy обновлена до `autoparts-benchmark-v2`: literal ID preservation, relation ID from prior result, no internal thinking in final, no schema-absent field inference и field-to-field guidance. Verdict: `CORRECT/PARTIAL/WRONG/ERROR`; таксономия ErrorClass и отчёт verdicts/percentiles/run_metadata сверены с кодом. Новый NIM benchmark не выполнялся.

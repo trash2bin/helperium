@@ -181,6 +181,7 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 
 **agent-db**
 
+
 | Файл | Когда читать | Глубина |
 |---|---|---|
 | `services/agent-db/README.md` | Seedgen, e2e orchestration | 🔧 |
@@ -216,8 +217,8 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 | `doc/benchmark/README.md` | Дизайн и цели core-бенчмарка | 📖 живая документация |
 | `doc/benchmark/core-benchmark.md` | Запуск, метрики и интерпретация результатов | 🔧 живая документация |
 | `doc/benchmark/runs/README.md` | Реестр машинных прогонов и отчётов | 🔧 живая документация |
-| `doc/benchmark/runs/2026-08-15-nvidia-nim-post-discount-split-analysis.md` | Case-level разбор третьего NIM run | 🗃️ архив: run analysis |
-| `doc/benchmark/runs/2026-08-15-nvidia-nim-post-discount-split-tool-traces.md` | Извлечённые tool traces третьего NIM run | 🗃️ архив: trace evidence |
+
+| `doc/benchmark/runs/2026-08-16-nvidia-nim-rebuilt-final-full-run-analysis.md` | Case-level разбор clean rebuilt full NIM run; содержит timeout и границу runtime/agent | 🗃️ архив: run analysis |
 | `doc/benchmark/incident-camry.md` | Историческое расследование инцидента Camry | 🗃️ архив: расследование |
 | `doc/benchmark/data-service-audit.md` | Исторический аудит data-service по итогам бенчмарка | 🗃️ архив: аудит |
 | `doc/benchmark/demo-integration-audit.md` | Исторический аудит интеграции demo-web и виджета | 🗃️ архив: аудит |
@@ -321,9 +322,9 @@ make ci-admin      # Admin dashboard tests
 
 **E2E (нужны сервисы):**
 ```bash
-./scripts/dev.sh start
+./infra/scripts/dev.sh start
 uv run pytest services/agent-db/tests/e2e/ -v
-./scripts/dev.sh stop
+./infra/scripts/dev.sh stop
 ```
 
 **Docker (`--profile test`) — только для CI:** см. `doc/agents/testing-guide.md`
@@ -337,6 +338,7 @@ uv run pytest services/agent-db/tests/e2e/ -v
 ```
 Last verified: 2026-08-10 (HEAD be9a991) — разделены живая документация benchmark и архивные отчёты
 2026-08-11 (рабочая ветка) — переработка бенча: verdict (CORRECT/PARTIAL/WRONG/ERROR) + таксономия ErrorClass, новые проверки (SKU, LOST_TOTAL, FALSE_UNCERTAINTY, budget, loop, dedupe, error payload, derived), отчёт (verdicts/percentiles/run_metadata), diff_reports, кейсы обогащены, smoke починен и прогнан. 73 теста. Первый реальный baseline: 80% CORRECT / 16% PARTIAL / 4% WRONG (reports/baseline-c1d7f81). Обновлены README бенча + core-benchmark.md + CHANGELOG.
-2026-08-15 (рабочая ветка) — добавлены payment value aliases, versioned autoparts benchmark policy, generic filter contract и третий NIM run с deterministic re-evaluation; run analysis и tool traces внесены в каталог benchmark artifacts.
+2026-08-15 (рабочая ветка) — payment value aliases, versioned autoparts benchmark policy и generic filter contract были проверены на NIM runs; старые raw/re-evaluation artifacts теперь сохранены только в локальном reversible archive, а active registry содержит canonical rebuilt run от 2026-08-16.
+2026-08-16 (рабочая ветка) — `run.errors` классифицируется как `ERROR`/`INFRA_ERROR`; benchmark fixtures дополнены допустимыми deterministic tool paths; FilterStrategy поддерживает whitelist-validated field comparison (`old_price__gt_field=price`); policy обновлена до `autoparts-benchmark-v2`, а leaked-thinking preamble не может стать final. `make ci-test-go`, `make ci-test-py` и `make ci-docs` пройдены; Docker live manifest и filter total=72 подтверждены после seed=42 + tenant rewrite. Новый NIM benchmark не запускался.
 См. полный журнал: CHANGELOG.md
 ```

@@ -1,99 +1,18 @@
 # Benchmark run artifacts
 
-Machine-readable reports from Core Benchmark runs (deterministic evaluator,
-no LLM judge). Each JSON is the full `report_to_dict()` output: per-case
-success/eval/metrics/outcome/final_text — usable for post-hoc analysis.
+Этот каталог содержит только **актуальный canonical rebuilt run** и его case-level analysis. Старые raw runs, deterministic re-evaluations, smoke reports и extracted traces больше не являются активными artifacts; они сохранены локально в обратимом архиве `.data/benchmark-archive-20260816/` и остаются доступны через историю Git до отдельной очистки истории.
 
-| File | Date | Scope | Result |
-|---|---|---|---|
-| `2026-08-05-full-49-baseline-report.json` | 2026-08-05 | Full 49 cases, polza/deepseek-v4-flash, seed=42 (pre-fix baseline) | **81.6%** (40/49) |
-| `2026-08-05-full-49-baseline.log` | 2026-08-05 | Console log of the same run | — |
-| `2026-08-05-fail-selection-analysis.json` | 2026-08-05 | FAIL-case selection dump used by the failure-analysis swarm | — |
-| `2026-08-06-9fail-recheck-report.json` | 2026-08-06 | 9 FAIL cases re-run after code fixes (entity-name, preview, `__in`) | 55.6% → 4 fixed by code |
-| `2026-08-06-4fail-recheck-report.json` | 2026-08-06 | 4 remaining FAIL re-run after evaluator fixes (bool/derived) | 75.0% |
-| `2026-08-06-1fail-recheck-report.json` | 2026-08-06 | order-lookup-total alone (derived-arithmetic fix) | PASS |
-| `2026-08-06-3eval-fixes-report.json` | 2026-08-06 | brand-lookup-001 + 2 absence cases after evaluator fixes (morphology, db_map-not-data) | **100%** |
-| `2026-08-06-full-49-after-fixes-report.json` | 2026-08-06 | Full 49 cases after ALL fixes (code + evaluator + case tweak) | **89.8%** (44/49); honest = **93.9%** (46/49, 2 real model hallucinations excluded) |
+## 2026-08-16 — clean rebuilt final run
 
-## What the 89.8% → 93.9% difference is
+16 августа выполнен отдельный 49-case live NIM run после rebuild `data-service`, `mcp-gateway` и `api`, повторного deterministic seed `autoparts`, tenant rewrite и sync policy `autoparts-benchmark-v2`. До model run был проверен live MCP manifest: generic field-reference contract присутствовал в `filter_catalog_product`, а `old_price__gt_field=price` вернул authoritative `total=72`.
 
-The full-after-fixes run reported 5 FAILs; 3 of them were evaluator false
-positives (db_map counted as data in absence cases, country morphology
-«Германии» vs «Германия»), fixed in `evaluator.py` and confirmed by re-runs
-(`3eval-fixes-report` = 100%). The 2 remaining FAILs
-(`product-filter-price-002`, `product-filter-discount-001`) are genuine model
-hallucinations: the compact preview (`{id, name}`) exposes no prices, so the
-model fabricates them instead of calling `db_get` — a known limitation
-(scout-1 in `../data-service-audit.md`).
-
-Raw per-session traces (SSE events, tool calls, tool results) live in
-`bench-backlog/` (gitignored, ~1.7MB for the full run) — keyed by question text.
-
-## 2026-08-15 — NVIDIA NIM: три полных прогона и детерминированные переоценки
-
-Ниже зафиксированы **шесть разных артефактов**. Их нельзя смешивать при сравнении
-verdict: первый и второй — самостоятельные live NIM runs с разными ответами
-стохастичной модели; третий — только повторная оценка сохранённых логов второго
-run, без NIM-вызовов.
-
-| Артефакт | Тип | Commit / время | CORRECT | PARTIAL | WRONG | ERROR | Назначение |
+| Artifact | Type | Runtime | CORRECT | PARTIAL | WRONG | ERROR | Purpose |
 |---|---|---|---:|---:|---:|---:|---|
-| [`benchmark_report.json`](../../../benchmark_report.json) | Первый полный live NIM run | `3e2d83d`, 2026-08-15 00:35:17 | 36 | 8 | 3 | 2 | Интеграционный baseline NIM до runtime/benchmark fixes |
-| [`2026-08-15-nvidia-nim-post-fix-full-run-raw-report.json`](2026-08-15-nvidia-nim-post-fix-full-run-raw-report.json) | Второй полный live NIM run | `c7c22a7`, 2026-08-15 01:18:46 | 39 | 5 | 4 | 1 | Raw outcome после исправления `/q/search` и runner telemetry |
-| [`2026-08-15-nvidia-nim-post-fixes-report.json`](2026-08-15-nvidia-nim-post-fixes-report.json) | Deterministic re-evaluation второго run | без новых model-вызовов | 44 | 1 | 4 | 0 | Историческая оценка saved logs финальным evaluator и fixtures |
-| [`2026-08-15-nvidia-nim-post-discount-split-full-run-raw-report.json`](2026-08-15-nvidia-nim-post-discount-split-full-run-raw-report.json) | Третий полный live NIM run | `ae20ede`, 2026-08-15 15:57:53 | 46 | 1 | 2 | 0 | Clean 49-case run после split discount fixtures |
-| [`2026-08-15-nvidia-nim-post-discount-split-payment-aliases-deterministic-re-evaluation-report.json`](2026-08-15-nvidia-nim-post-discount-split-payment-aliases-deterministic-re-evaluation-report.json) | Deterministic re-evaluation третьего run | без новых model-вызовов | 47 | 1 | 1 | 0 | **Текущий scoring** тех же saved traces после fixture-scoped payment aliases |
-| [`2026-08-15-nvidia-nim-post-discount-split-analysis.md`](2026-08-15-nvidia-nim-post-discount-split-analysis.md) | Case-level analysis | `ae20ede` | — | — | — | — | Сравнение run и объяснение проблемных verdict |
-| [`2026-08-15-nvidia-nim-post-discount-split-tool-traces.md`](2026-08-15-nvidia-nim-post-discount-split-tool-traces.md) | Extracted traces | `ae20ede` | — | — | — | — | Tool sequences для non-CORRECT cases |
+| [`2026-08-16-nvidia-nim-rebuilt-final-full-run-raw-report.json`](2026-08-16-nvidia-nim-rebuilt-final-full-run-raw-report.json) | Full live NIM run | Rebuilt + reseeded + rewritten | 45 | 2 | 1 | 1 | Canonical raw integration evidence |
+| [`2026-08-16-nvidia-nim-rebuilt-final-full-run-analysis.md`](2026-08-16-nvidia-nim-rebuilt-final-full-run-analysis.md) | Case-level analysis | Same run | — | — | — | — | Separates infra, fixture and agent-side failures |
 
-### Первый NIM run — integration baseline
+The run has `verdict_pass_rate = 95.9%` (47/49). The single `ERROR` is a provider/transport timeout and is now represented by the evaluator as `ERROR` with `INFRA_ERROR`; the two `PARTIAL` cases include deterministic fixture allowance findings. The remaining `WRONG` is classified as agent-side behavior rather than evaluator or runtime failure.
 
-Первый full run выполнил 49 кейсов через `nvidia-nim-bench` с моделью
-`nvidia/nemotron-3.5-lightning-30b-a3b` после исправления передачи `api_key` в
-ветке `provider_priority` API Service. SSE smoke прошёл (`token: OK` →
-`final: OK` → `done`). Он выявил HTTP 500 в `/q/search`, нулевые backlog metrics
-и склейку `token` + `final`; поэтому этот артефакт — baseline интеграции, а не
-валидная точка для latency/token comparison.
+The historical 2026-08-12 autoparts baseline remains documented in `services/agent-db/agent_db/bench/README.md` as a separate non-NIM baseline. It is not part of this active run registry.
 
-### Второй NIM run — raw post-fix outcome
-
-Второй **отдельный** 49-case NIM run выполнен после исправления `/q/search`,
-SSE dedupe и чтения live backlog. Его raw distribution: 39 CORRECT, 5 PARTIAL,
-4 WRONG, 1 ERROR. Он содержит реальные новые ответы модели; например,
-`brand-lookup-002` отвечает о Denso по внешнему знанию без tool call. Следовательно,
-изменения verdict между первым и вторым run нельзя объяснять одной лишь
-переоценкой.
-
-### Deterministic re-evaluation второго run — historical scoring
-
-Текущий отчёт переоценивает **сохранённые логи второго run** без model-вызовов.
-Он применяет исправления классификации tool 400/422, count fixtures,
-одноцифровых totals, Unicode-разделителей чисел и false-uncertainty matching.
-Итог: **44 CORRECT, 1 PARTIAL, 4 WRONG, 0 ERROR**, `verdict_pass_rate` **91,8%**.
-Фактические P50/P95 duration — 5,256 с / 15,549 с; P50/P95 tokens — 25 041 /
-82 910. Стоимость остаётся $0,00, поскольку NIM не вернул тарифицируемую
-стоимость.
-
-> Baseline 2026-08-12 в `services/agent-db/agent_db/bench/README.md` — это
-> отдельный 49-case run **polza/deepseek-v4-flash** (`39/8/2/0`), не NVIDIA NIM;
-> он не участвует в сравнении NIM run 2026-08-15.
-
-### Третий NIM run и payment-alias re-evaluation — current scoring
-
-Третий **отдельный** clean 49-case live NIM run выполнен с commit `ae20ede` после
-разделения ambiguous discount fixtures. Raw outcome: **46 CORRECT, 1 PARTIAL,
-2 WRONG, 0 ERROR**. Его не следует механически сравнивать с предыдущими live
-runs: ответы стохастичны, а два old discount case были заменены двумя explicit
-case.
-
-Отдельная deterministic re-evaluation тех же saved traces добавила только
-fixture-scoped display aliases для `payment=online` (`онлайн`, `онлайн-оплата`) с
-защитой от явного отрицания. Она не сделала model-вызовов и изменила **только**
-`order-lookup-payment-001`: **47 CORRECT, 1 PARTIAL, 1 WRONG, 0 ERROR**,
-`verdict_pass_rate` **98,0%**. Оставшийся WRONG — `brand-lookup-001` (Bosch,
-answer from external knowledge without retrieval); PARTIAL —
-`product-count-price-discount-001` (`TOOL_OVERUSE`, correct total 72 but 7 calls
-при бюджете 5).
-
----
-**Last verified:** 2026-08-15 (рабочая ветка) — добавлены третий raw NIM run, его payment-alias deterministic re-evaluation и case-level trace analysis; provenance raw versus re-evaluation проверен.
+**Last verified:** 2026-08-16 (рабочая ветка) — canonical rebuilt raw report and case-level analysis checked; live MCP manifest, field-reference total=72, evaluator timeout classification and policy v2 state verified. No newer NIM benchmark was executed after this run.

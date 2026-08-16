@@ -108,8 +108,11 @@ cd demo/autoparts-store && DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell
 ```
 
 Даёт 30 брендов / 117 категорий / 407 товаров / 6 заказов — детерминированно. Fixture также идемпотентно задаёт PostgreSQL comments для `old_price` и `label`; после tenant rewrite configgen переносит их в descriptions параметров filter-инструмента.
-**id меняются между прогонами** (sequence не сбрасывается), но артикулы/цены/статусы/
-счётчики стабильны — кейсы используют их, не id.
+**id меняются между прогонами** (sequence не сбрасывается), но артикулы/цены/статусы/счётчики стабильны — кейсы используют их, не id.
+### Целостность fixture (регрессии)
+- `order-count-total-001` допускает `stats`: этот tool возвращает авторитетный total для неотфильтрованного количества заказов.
+- `product-lookup-hit-001` сохранён для истории идентификатора, но вопрос теперь опирается только на стабильный артикул `EXT-01401`; у этой записи label=`none`, поэтому предпосылка о метке «ХИТ» была удалена.
+
 
 ## Ревизия кейсов (2026-08-05, независимое ревью)
 
@@ -148,7 +151,9 @@ Ground truth сверен с data-service (источник правды): це�
 
 `error_source` отделяет вину агента (`agent`) от сбоя сервиса (`tool`/`infra`).
 Интересный факт: раньше `{"error": "timeout"}` считался данными (баг) — теперь
-это INFRA_ERROR, т.е. дефекты бенча не наказывают агента.
+это INFRA_ERROR; то же правило действует для request-level timeout, записанного runner в
+`run.errors`. Поэтому дефекты инфраструктуры не наказывают агента и учитываются в
+`infra_error_rate`.
 
 **Camry-кейс** (из `incident-camry.md`) теперь разложился бы так:
 
@@ -177,4 +182,4 @@ verdict = PARTIAL
 - [agent_db/bench/README.md](../../services/agent-db/agent_db/bench/README.md) — код, метрики, тесты
 
 ---
-**Last verified:** 2026-08-15 (рабочая ветка) — добавлены fixture-scoped payment aliases, versioned `autoparts-benchmark-v1` prompt policy synchronizer и generic FilterStrategy guidance о required filter/`limit`/`total`. Бенч выдаёт verdict + error_classes, отчёт — verdicts/percentiles; сверено с evaluator/models/report.
+**Last verified:** 2026-08-16 (рабочая ветка) — runner-level `run.errors`, включая request timeout, классифицируется как `ERROR`/`INFRA_ERROR` и входит в `infra_error_rate`; обновлены fixture allowances. Generic FilterStrategy поддерживает безопасный field-reference comparison, например `old_price__gt_field=price`; benchmark policy — `autoparts-benchmark-v2` с guard against leaked thinking in final. Сверено детерминированными Go/Python regression tests; новый NIM benchmark не выполнялся.
