@@ -7,7 +7,6 @@ import time
 
 from fastapi.responses import StreamingResponse
 
-from api_service.anti_abuse import AntiAbuseChecker, TokenBucket
 from api_service.abuse_live import get_live_abuse_provider
 from api_service.sessions import session_store
 from .sse import _single_error
@@ -29,9 +28,7 @@ def _make_error_message(request, retry_after: float) -> str:
 
 async def check_abuse(request, session_id, message, agent_abuse_config=None):
     live = get_live_abuse_provider()
-    effective_cfg = live.get_effective_config(agent_abuse_config)
-    checker = AntiAbuseChecker(effective_cfg.to_anti_abuse_config())
-    token_bucket = TokenBucket(effective_cfg.to_anti_abuse_config())
+    checker, token_bucket = live.get_enforcers(agent_abuse_config)
 
     user_agent = request.headers.get("User-Agent", "") or ""
     ip = request.client.host if request.client else "127.0.0.1"
@@ -44,6 +41,7 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
         return StreamingResponse(
             _single_error(msg),
             media_type="text/event-stream",
+            status_code=429,
             headers={"Retry-After": str(int(retry_after))},
         )
 

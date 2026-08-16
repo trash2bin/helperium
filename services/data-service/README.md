@@ -295,7 +295,7 @@ datasource.Adapter.Introspect() → Schema
 ```json
 {
   "version": 4,
-  "data_source": { "driver": "sqlite|postgres", "dsn": "...", "read_only": true },
+  "data_source": { "driver": "sqlite|postgres", "dsn": "...", "readonly_dsn": "...", "read_only": true },
   "entities": [...],
   "endpoints": [...],
   "custom_queries": {...},
@@ -363,6 +363,8 @@ ADMIN_TOKEN=secret .venv/bin/python -m pytest tests/e2e/test_data_isolation.py -
 - Только SELECT, prepared statements (`?`/`$1`), `max_rows` для custom_query.
 - `read_only: true` по умолчанию (`configgen.go:114`), write-методы не регистрируются (`endpoint_builder.go:147`).
 - `ReadOnlyConn` блокирует `ExecContext` (`readonly.go:62`).
+- `readonly_dsn` создаёт отдельное database-level read-only соединение для data path; PostgreSQL DSN должен использовать роль без write grants, SQLite — `file:...?...mode=ro&immutable=1`.
+- Fixture публичной demo `testdata/scenarios/shop` использует `read_only: true` и `readonly_dsn: file:data.db?mode=ro&immutable=1`; URI разрешается относительно tenant config.
 - Field whitelist: `Entity.FindColumn()` (`types.go:326`), незнакомые поля тихо скипаются.
 - Tenant isolation: `tenant_id` не доступен LLM (grep.go:148, filter.go:211); `tenantFilter` из auth.RowFilters; `/stats` (`stats.go:36`) и `count` (`count.go:37-42`) тоже применяют tenant-фильтр / исключают tenant_id.
 - Body-лимит и конкурентность: `BodyLimitMiddleware` подключён в admin- (`tenant_admin.go:44`) и tenant-роутере (`endpoint_builder.go:66`), `ThrottleMiddleware` в rootRouter (`cmd/server/main.go:186`).
@@ -370,3 +372,6 @@ ADMIN_TOKEN=secret .venv/bin/python -m pytest tests/e2e/test_data_isolation.py -
 - Per-query timeout: 30s (`QUERY_TIMEOUT_SECONDS`).
 - Ошибки БД → generic message + structured log (без утечки деталей).
 - **Известный gap:** RowFilters не обязателен при AuthStrategyHeader — без него tenant-изоляции нет. Регресс-тест: `runtime/handlers/row_filter_security_test.go`.
+
+---
+**Last verified:** 2026-08-16 (HEAD `a6d899d`) — shop demo переведён на database-level SQLite read-only URI; lifecycle разрешает относительный `file:...?...mode=ro` DSN.

@@ -39,6 +39,10 @@ func main() {
 	adminToken := flag.String("admin-token", os.Getenv("ADMIN_TOKEN"), "Admin auth token (full access)")
 	viewerToken := flag.String("viewer-token", os.Getenv("VIEWER_TOKEN"), "Viewer auth token (read-only)")
 	flag.Parse()
+	if err := server.ValidateAuthTokens(*adminToken, *viewerToken); err != nil {
+		slog.Error("invalid auth token configuration", "error", err)
+		os.Exit(2)
+	}
 
 	if *adminToken == "" && *viewerToken == "" {
 		slog.Warn("Neither ADMIN_TOKEN nor VIEWER_TOKEN set — admin API endpoints will reject requests")

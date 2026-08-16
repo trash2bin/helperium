@@ -110,6 +110,7 @@ class LiveAbuseProvider:
             self._full_config.to_anti_abuse_config()
         )
         self._token_bucket = TokenBucket(self._full_config.to_anti_abuse_config())
+        self._agent_enforcers: dict[str, tuple[AntiAbuseChecker, TokenBucket]] = {}
         self._rwlock = threading.RLock()
 
     @classmethod
@@ -165,6 +166,21 @@ class LiveAbuseProvider:
         with self._rwlock:
             return self._token_bucket
 
+    def get_enforcers(
+        self, agent_abuse_config: dict | None = None
+    ) -> tuple[AntiAbuseChecker, TokenBucket]:
+        """Return persistent checker and bucket for global or agent policy."""
+        if not agent_abuse_config:
+            return self.get_anti_abuse_checker(), self.get_token_bucket()
+        key = json.dumps(agent_abuse_config, sort_keys=True, separators=(",", ":"))
+        with self._rwlock:
+            enforcers = self._agent_enforcers.get(key)
+            if enforcers is None:
+                anti_cfg = self.get_effective_config(agent_abuse_config).to_anti_abuse_config()
+                enforcers = (AntiAbuseChecker(anti_cfg), TokenBucket(anti_cfg))
+                self._agent_enforcers[key] = enforcers
+            return enforcers
+
     def reload(self) -> FullAbuseConfig:
         """Reload config from disk and recreate checker/bucket (thread-safe)."""
         with self._rwlock:
@@ -172,6 +188,7 @@ class LiveAbuseProvider:
             anti_cfg = self._full_config.to_anti_abuse_config()
             self._anti_abuse_checker = AntiAbuseChecker(anti_cfg)
             self._token_bucket = TokenBucket(anti_cfg)
+            self._agent_enforcers = {}
             logger.info("Abuse config reloaded from %s", self._config_path)
         return self.get_config()
 

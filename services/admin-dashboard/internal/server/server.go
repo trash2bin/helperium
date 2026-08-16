@@ -1,20 +1,21 @@
 // Package server provides the admin-dashboard HTTP server.
 //
 // HTTP routes called (proxy to upstream services):
-//   proxyGetToDataService()  -> data-service:GET /admin/{path}  (tenant CRUD, config, tools)
-//   proxyPostToDataService() -> data-service:POST /admin/{path} (create tenant, rewrite config)
-//   proxyGetToApiService()   -> api-service:GET /api/agents/{name}  (get agent abuse config)
-//   proxyPutToApiService()   -> api-service:PUT /api/agents/{name}  (update agent abuse config)
-//   notifyApiServiceReload() -> api-service:POST /admin/abuse-config/reload (reload abuse)
-//   RagClient.GetConfig()    -> rag:GET /admin/config  (get RAG config)
-//   RagClient.UpdateConfig() -> rag:PUT /admin/config  (update RAG config)
-//   RagClient.GetStats()     -> rag:GET /admin/stats   (get RAG stats)
+//
+//	proxyGetToDataService()  -> data-service:GET /admin/{path}  (tenant CRUD, config, tools)
+//	proxyPostToDataService() -> data-service:POST /admin/{path} (create tenant, rewrite config)
+//	proxyGetToApiService()   -> api-service:GET /api/agents/{name}  (get agent abuse config)
+//	proxyPutToApiService()   -> api-service:PUT /api/agents/{name}  (update agent abuse config)
+//	notifyApiServiceReload() -> api-service:POST /admin/abuse-config/reload (reload abuse)
+//	RagClient.GetConfig()    -> rag:GET /admin/config  (get RAG config)
+//	RagClient.UpdateConfig() -> rag:PUT /admin/config  (update RAG config)
+//	RagClient.GetStats()     -> rag:GET /admin/stats   (get RAG stats)
 package server
 
 import (
+	"bytes"
 	"context"
 	"embed"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,12 +32,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/trash2bin/helperium/admin-dashboard/internal/openapi"
-	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
-	"github.com/trash2bin/helperium/helperium-go/pkg/tracing"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/trash2bin/helperium/admin-dashboard/internal/openapi"
+	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
+	"github.com/trash2bin/helperium/helperium-go/pkg/tracing"
 )
 
 // Options для создания сервера.
@@ -265,6 +266,11 @@ func authMiddleware(adminToken, viewerToken string) func(http.Handler) http.Hand
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
+
+			if err := ValidateAuthTokens(adminToken, viewerToken); err != nil {
+				http.Error(w, `{"error":"invalid auth token configuration"}`, http.StatusInternalServerError)
+				return
+			}
 
 			// Static files — без auth
 			if isPublicPath(path) {
@@ -687,7 +693,7 @@ func (s *Server) tenantDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	// data-service удаляет tenant через DELETE /admin/tenants/{id} (не POST .../delete —
 	// тот путь не существует, возвращает 404). Проверено вживую: DELETE /admin/tenants/{id} → 200.
-	body, status, err := s.proxyDeleteToDataService("/admin/tenants/"+id)
+	body, status, err := s.proxyDeleteToDataService("/admin/tenants/" + id)
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
 		return

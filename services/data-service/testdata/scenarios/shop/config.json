@@ -3,7 +3,8 @@
   "data_source": {
     "driver": "sqlite",
     "dsn": "data.db",
-    "read_only": false
+    "readonly_dsn": "file:data.db?mode=ro&immutable=1",
+    "read_only": true
   },
   "entities": [
     {

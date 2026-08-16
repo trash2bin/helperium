@@ -7,9 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -292,19 +290,8 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 		return nil, fmt.Errorf("unsupported driver: %s", cfg.DataSource.Driver)
 	}
 
-	resolvePath := func(dsn string) string {
-		// URL-формат (postgres://, file:, etc.) — не трогаем, это not a file path
-		if strings.Contains(dsn, "://") {
-			return dsn
-		}
-		if dsn != "" && !filepath.IsAbs(dsn) && configPath != "" {
-			return filepath.Join(filepath.Dir(configPath), dsn)
-		}
-		return dsn
-	}
-
 	// Main connection (readwrite DSN — для admin/introspection/health)
-	dsn := resolvePath(cfg.DataSource.DSN)
+	dsn := resolveDataSourceDSN(cfg.DataSource.DSN, configPath)
 	conn, err := adapter.Connect(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect to database: %w", err)
@@ -314,7 +301,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	var readonlyConn datasource.Conn
 	readonlyDSN := cfg.DataSource.ReadonlyDSN
 	if readonlyDSN != "" {
-		readonlyDSN = resolvePath(readonlyDSN)
+		readonlyDSN = resolveDataSourceDSN(readonlyDSN, configPath)
 		roConn, err := adapter.Connect(ctx, readonlyDSN)
 		if err != nil {
 			_ = conn.Close()
@@ -346,17 +333,17 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	}
 
 	return &TenantInstance{
-		ID:            id,
-		Config:        cfg,
-		Conn:          conn,
-		ReadonlyConn:  readonlyConn,
-		Adapter:       adapter,
-		AdapterSub:    adapterSub,
-		Router:        router,
-		ConfigPath:    configPath,
-		CreatedAt:     time.Now(),
-		Healthy:       true,
-		healthMu:      &sync.Mutex{},
-		schemaMu:      &sync.RWMutex{},
+		ID:           id,
+		Config:       cfg,
+		Conn:         conn,
+		ReadonlyConn: readonlyConn,
+		Adapter:      adapter,
+		AdapterSub:   adapterSub,
+		Router:       router,
+		ConfigPath:   configPath,
+		CreatedAt:    time.Now(),
+		Healthy:      true,
+		healthMu:     &sync.Mutex{},
+		schemaMu:     &sync.RWMutex{},
 	}, nil
 }

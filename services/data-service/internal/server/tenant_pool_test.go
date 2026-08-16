@@ -149,3 +149,47 @@ func TestRemoveTenant_ClosesBothPools(t *testing.T) {
 		t.Errorf("request to removed tenant: status = %d, want 404", rec.Code)
 	}
 }
+
+func TestBuildTenantInstance_SQLiteReadonlyURIRejectsWrites(t *testing.T) {
+	ts := newTestTenantStore(t)
+	dir := t.TempDir()
+	dbPath := dir + "/demo.db"
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO products (name) VALUES ('Demo product')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Version: 1,
+		DataSource: config.DataSourceConfig{
+			Driver:      config.DriverSQLite,
+			DSN:         "demo.db",
+			ReadonlyDSN: "file:demo.db?mode=ro&immutable=1",
+			ReadOnly:    boolPtr(true),
+		},
+		Entities:  []config.Entity{{Name: "product", Table: "products", IDColumn: "id"}},
+		Endpoints: []config.Endpoint{{Method: http.MethodGet, Path: "/products/{id}", Op: config.OpGetByID, Entity: "product"}},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	inst, err := buildTenantInstance(ctx, ts, ts.registry, "demo", cfg, dir+"/demo.json")
+	if err != nil {
+		t.Fatalf("buildTenantInstance: %v", err)
+	}
+	t.Cleanup(func() { closeTenantConns(inst) })
+	if inst.ReadonlyConn == nil {
+		t.Fatal("readonly connection was not created")
+	}
+	if _, err := inst.ReadonlyConn.ExecContext(ctx, "INSERT INTO products (name) VALUES ('Must fail')"); err == nil {
+		t.Fatal("write via readonly SQLite URI unexpectedly succeeded")
+	}
+}

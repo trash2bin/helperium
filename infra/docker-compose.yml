@@ -58,6 +58,8 @@ services:
       - TENANTS_DIR=/workspace/.data/tenants
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
       - VIEWER_TOKEN=${VIEWER_TOKEN:-}
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8084/health"]
       <<: *hc-curl
@@ -107,6 +109,8 @@ services:
     environment:
       - DATA_SERVICE_URL=http://data-service:8084
       - RAG_SERVICE_URL=http://rag:8082
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8083/health"]
       <<: *hc-curl
@@ -154,6 +158,8 @@ services:
       - CHAT_RATE_LIMIT=${CHAT_RATE_LIMIT:-30/minute}
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-*}
       - DEMO_DEBUG=${DEMO_DEBUG:-false}
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health')"]
       interval: 10s
@@ -183,6 +189,8 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
       - VIEWER_TOKEN=${VIEWER_TOKEN:-}
       - DATA_DIR=/data/uploads
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
     depends_on:
       data-service:
         condition: service_healthy

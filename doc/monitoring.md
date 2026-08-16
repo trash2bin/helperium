@@ -236,3 +236,24 @@ flowchart TD
 | `.data/logs/{svc}.log` | JSON-логи сервисов |
 | `.env` | ADMIN_API_TOKEN (для RAG /admin/*), ADMIN_TOKEN |
 | `doc/monitoring.md` | **Эта документация** |
+
+---
+## Проверка готовности observability для публичной demo
+
+Текущий monitoring-контур является рабочим single-host стеком, но не полноценной production observability-платформой. Prometheus, Grafana, Loki, Promtail, Tempo и OTEL Collector запускаются через compose-профили `monitoring`, `logging` и `tracing`; порты привязаны к `127.0.0.1`, поэтому наружу они не публикуются по умолчанию.
+
+В core compose tracing теперь выключен по умолчанию (`OTEL_ENABLED=false`). Для включения tracing нужно задать `OTEL_ENABLED=true`; endpoint по умолчанию внутри compose указывает на `http://otel-collector:4318`. Prometheus и Grafana используют имена сервисов compose (`data-service`, `mcp-gateway`, `api`, `admin-dashboard`, `prometheus`, `tempo`, `loki`), а не `host.docker.internal`, что важно для запуска внутри Docker-сети.
+
+Практическое покрытие хорошее для диагностики: есть health checks, Prometheus-метрики запросов, длительности DB/LLM/tool операций, rate-limit hits, abuse blocks, backlog, structured logs, корреляционные и trace IDs, Loki и Tempo. При этом в dashboard есть намеренно пустая панель `Web Proxy`, а production alerts пока не заведены: раздел ниже содержит только пример. Перед публичным трафиком минимум следует добавить алерты на недоступность core services, HTTP 5xx, rate-limit saturation, LLM/tool latency и отсутствие scrape targets.
+
+Проверка:
+
+```bash
+docker-compose -f infra/docker-compose.yml config
+# базовый стек
+docker-compose -f infra/docker-compose.yml up -d
+# стек с мониторингом и tracing
+docker-compose -f infra/docker-compose.yml --profile monitoring --profile tracing up -d
+```
+
+**Last verified:** 2026-08-16 — Prometheus/Grafana service-DNS wiring, OTEL defaults and dashboard queries reviewed against current HEAD.
