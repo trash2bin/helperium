@@ -71,6 +71,7 @@ func (s *FilterStrategy) ToolDescription(entity config.Entity) string {
 			"  {field}__lt=value   — less than (price__lt=5000)\n"+
 			"  {field}__gte=value  — greater than or equal\n"+
 			"  {field}__lte=value  — less than or equal\n"+
+			"  {field}__gt_field=other_field — compare numeric fields (old_price__gt_field=price)\n"+
 			"  {field}__like=value — LIKE search (name__like='%%head%%')\n"+
 			"  {field}__in=a,b,c   — IN list (status__in=shipped,delivered)\n"+
 			"\n"+
@@ -137,6 +138,25 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 			}
 		}
 
+		// Field-to-field comparisons accept a field name as a string.
+		// ParseRequest validates the target as a filterable numeric column
+		// and quotes it before it reaches the SQL renderer.
+		if !isFK && isNumericField(field) {
+			for _, op := range []struct{ suffix, desc string }{
+				{"__gt_field", "greater than another numeric field"},
+				{"__gte_field", "greater than or equal to another numeric field"},
+				{"__lt_field", "less than another numeric field"},
+				{"__lte_field", "less than or equal to another numeric field"},
+			} {
+				params = append(params, config.EndpointParam{
+					Name:        field.Name + op.suffix,
+					In:          config.ParamInQuery,
+					Type:        config.ParamTypeString,
+					Required:    &f,
+					Description: filterParamDescription(fmt.Sprintf("Filter: %s; value must be another filterable numeric field name.", op.desc), field),
+				})
+			}
+		}
 		// LIKE for string fields.
 		if field.Type == config.FieldTypeString {
 			params = append(params, config.EndpointParam{
@@ -166,6 +186,25 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 	})
 
 	return params
+}
+
+func isNumericField(field config.EntityField) bool {
+	return field.Type == config.FieldTypeInt || field.Type == config.FieldTypeFloat
+}
+
+func comparisonOperator(op string) query.Operator {
+	switch op {
+	case "gt":
+		return query.OpGt
+	case "gte":
+		return query.OpGte
+	case "lt":
+		return query.OpLt
+	case "lte":
+		return query.OpLte
+	default:
+		panic("unsupported field comparison operator: " + op)
+	}
 }
 
 // ParseRequest разбирает HTTP-запрос в QueryPlan для filter-стратегии.
@@ -258,6 +297,23 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 			}
 			conditions = append(conditions, c)
 
+		case "gt_field", "lt_field", "gte_field", "lte_field":
+			// Compare two validated numeric entity columns. The right side is a field
+			// name, never a raw SQL expression.
+			if !isNumericField(f) || strings.HasSuffix(f.Name, "_id") {
+				continue
+			}
+			target, ok := fieldMap[val]
+			if !ok || !isNumericField(target) || strings.HasSuffix(target.Name, "_id") ||
+				(target.PrimaryKey != nil && *target.PrimaryKey) || target.Column == "tenant_id" {
+				continue
+			}
+			comparison_op := strings.TrimSuffix(op, "_field")
+			conditions = append(conditions, query.Condition{
+				Field:    qName,
+				FieldRef: a.QuoteIdentifier(target.Column),
+				Operator: comparisonOperator(comparison_op),
+			})
 		case "like":
 			if f.Type != config.FieldTypeString {
 				continue

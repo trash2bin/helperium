@@ -332,3 +332,25 @@ func TestDBRelated_MultipleRelations_RequireExplicit(t *testing.T) {
 		t.Errorf("multiple relations without explicit relation must be 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestDBGet_NonIntegerID_ReturnsValidationError(t *testing.T) {
+	_, ctx, _ := setupTenantDB(t, "tenant-a")
+	ctx.URLParam = func(r *http.Request, name string) string {
+		if name == "id" {
+			return r.URL.Query().Get("id")
+		}
+		return ""
+	}
+
+	h := GetByIDHandler(ctx, "product")
+	req := httptest.NewRequest(http.MethodGet, "/products/AP-100006", nil)
+	w := httptest.NewRecorder()
+	h(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("non-integer ID for integer primary key must return 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "validation_error") || strings.Contains(w.Body.String(), "db_error") {
+		t.Fatalf("invalid ID must be a validation_error, got %s", w.Body.String())
+	}
+}

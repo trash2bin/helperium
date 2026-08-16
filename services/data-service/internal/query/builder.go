@@ -154,6 +154,29 @@ func (e *Engine) buildColumnList(cols []string) string {
 
 // renderCondition превращает одно Condition в SQL-фрагмент + args.
 func (e *Engine) renderCondition(c Condition, phIdx *int) (string, []any, error) {
+	// FieldRef is set only by strategies that validated a second entity field
+	// and quoted it through the active adapter. Never treat user input as a
+	// raw identifier here.
+	if c.FieldRef != "" {
+		var op string
+		switch c.Operator {
+		case OpLt:
+			op = "<"
+		case OpGt:
+			op = ">"
+		case OpLte:
+			op = "<="
+		case OpGte:
+			op = ">="
+		default:
+			return "", nil, fmt.Errorf("field reference requires a comparison operator")
+		}
+		if c.Not {
+			return "", nil, fmt.Errorf("field reference comparison does not support NOT")
+		}
+		return c.Field + " " + op + " " + c.FieldRef, nil, nil
+	}
+
 	switch c.Operator {
 	case OpEq:
 		ph := e.adapter.TranslatePlaceholder(*phIdx)

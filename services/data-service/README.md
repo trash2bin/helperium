@@ -98,6 +98,13 @@ Multi-token AND по полям, OR между полями. Лимиты в `Ne
 `ToolParams()` :86 — фильтрует поля через `config.IsFilterableField(field, s.filterableRules)` :99.
 `ParseRequest()` :165 — exact / `__gt` / `__gte` / `__lt` / `__lte` / `__like` / `__in` / `__neq`; maxFilters :299, maxInValues :269.
 
+Числовые, filterable поля также поддерживают безопасное сравнение поле-с-полем:
+`<field>__gt_field=<other_field>` (также `__gte_field`, `__lt_field`,
+`__lte_field`). Например, `old_price__gt_field=price` формирует
+`"old_price" > "price"` без value placeholder. Обе стороны обязаны быть
+whitelist-совместимыми числовыми колонками одной сущности и проходят
+`QuoteIdentifier`; PK, FK и `tenant_id` отклоняются.
+
 ### SchemaStrategy (`schema.go:25`)
 
 `ToolParams()` :48 — nil (без параметров). `ParseRequest()` :54 — nil (не использует Engine; handler работает напрямую с БД). `FieldInfo()` :58 — поля для schema-ответа.
@@ -131,6 +138,7 @@ Multi-token AND по полям, OR между полями. Лимиты в `Ne
 - `/stats` (`stats.go:36`): `StatsHandler` вызывает `tenantFilter` для каждого counter — иначе в multi-tenant `/stats` отдавал глобальные счётчики (cross-tenant leak). `tenantWhere` конкатенируется поверх `counter.Filter`.
 - `CountHandler` (`count.go:37-42`): `tenant_id` исключён из fieldMap и из системных параметров (:54) — HIGH-15 fix, защита от фильтрации по чужому tenant_id.
 - `GetByIDHandler` (`get_by_id.go`): применяет `tenantFilter` перед SQL — fail-closed (400 без X-Tenant-ID, 403 без RowFilter), затем `AND tenant_id = ?`. **Чужой id → 404** (не отличимо от «не существует» — нет оракула перебора id между тенантами). Регресс-тесты: `q_isolation_test.go` (TestDBGet_*), E2E `test_data_isolation.py::test_db_get_other_tenant_id_denied`.
+- **Typed ID validation:** для сущности с integer primary key `id` разбирается до SQL; нецелое значение возвращает `400 validation_error`, а не `500 db_error`. Регрессия: `TestDBGet_NonIntegerID_ReturnsValidationError`.
 - `db_related` (`related_handler.go`): тот же `tenantFilter` + явная проекция БЕЗ `tenant_id` (SELECT * не используется — L2-загрязнение). PG-плейсхолдеры id=$1, tenant=$2, limit=$3 (регресс: `TestDBRelated_PGPlaceholdersAndTenantStrip`).
 - **Security Gap:** при `AuthStrategyHeader` без настроенных `RowFilters` — tenant-фильтр не применяется, запрос вернёт все строки. Регресс-тест: `row_filter_security_test.go`.
 

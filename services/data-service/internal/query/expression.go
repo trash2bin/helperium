@@ -59,6 +59,9 @@ type Condition struct {
 	Operator Operator
 	// Value — скалярное значение (для бинарных операторов).
 	Value any
+	// FieldRef — уже квотированная и валидированная правая колонка для
+	// сравнений поле-с-полем. При заданном FieldRef Value не используется.
+	FieldRef string
 	// Values — список значений (для IN/Between).
 	Values []any
 	// Not — NOT-флаг (инвертирует условие).

@@ -874,3 +874,75 @@ func TestFilterStrategy_ToolDescription_ExplainsRequiredFilterAndTotal(t *testin
 		}
 	}
 }
+
+func TestFilterStrategy_FieldReferenceComparison(t *testing.T) {
+	entity := config.Entity{
+		Name:     "products",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+			{Name: "price", Column: "price", Type: config.FieldTypeFloat},
+			{Name: "old_price", Column: "old_price", Type: config.FieldTypeFloat},
+		},
+	}
+	s := NewFilterStrategy("id", "name")
+	r := makeRequest(map[string]string{"old_price__gt_field": "price"})
+	plan, err := s.ParseRequest(r, entity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest: unexpected error: %v", err)
+	}
+	if len(plan.Where) != 1 {
+		t.Fatalf("Where conditions = %d, want 1", len(plan.Where))
+	}
+	if plan.Where[0].FieldRef != `"price"` {
+		t.Errorf("FieldRef = %q, want quoted price", plan.Where[0].FieldRef)
+	}
+	sql, args, err := buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: unexpected error: %v", err)
+	}
+	wantSQL := `SELECT "id", "name" FROM "products" WHERE "old_price" > "price" LIMIT ?`
+	if sql != wantSQL {
+		t.Errorf("SQL = %q\nwant %q", sql, wantSQL)
+	}
+	if len(args) != 1 {
+		t.Errorf("Args = %v, want only limit", args)
+	}
+
+	params := map[string]bool{}
+	for _, param := range s.ToolParams(entity) {
+		params[param.Name] = true
+	}
+	if !params["old_price__gt_field"] || !params["price__lte_field"] {
+		t.Errorf("ToolParams missing generic field comparison operators: %v", params)
+	}
+	if !strings.Contains(s.ToolDescription(entity), "__gt_field=other_field") {
+		t.Error("ToolDescription does not explain field-to-field comparison")
+	}
+}
+
+func TestFilterStrategy_FieldReferenceRejectsInvalidTarget(t *testing.T) {
+	entity := config.Entity{
+		Name:     "products",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+			{Name: "price", Column: "price", Type: config.FieldTypeFloat},
+			{Name: "old_price", Column: "old_price", Type: config.FieldTypeFloat},
+		},
+	}
+	s := NewFilterStrategy("id", "name")
+	for _, target := range []string{"name", "missing", `price); DROP TABLE products;--`} {
+		t.Run(target, func(t *testing.T) {
+			r := makeRequest(map[string]string{"old_price__gt_field": target})
+			_, err := s.ParseRequest(r, entity, testAdapter{})
+			if err == nil || !strings.Contains(err.Error(), "at least one filter parameter") {
+				t.Fatalf("ParseRequest error = %v, want rejected target", err)
+			}
+		})
+	}
+}

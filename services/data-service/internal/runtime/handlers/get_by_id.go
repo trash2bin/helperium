@@ -18,8 +18,8 @@ func GetByIDHandler(c *Context, entityName string) http.HandlerFunc {
 			return
 		}
 
-		id := c.URLParam(r, "id")
-		if err := ValidateID(id); err != nil {
+		id, err := parseEntityID(entity, c.URLParam(r, "id"))
+		if err != nil {
 			RespondError(w, http.StatusBadRequest, "validation_error", err.Error())
 			return
 		}
