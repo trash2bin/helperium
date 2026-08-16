@@ -145,6 +145,23 @@ class TestLLMStage:
         assert ctx.turn.empty_rounds == 1
 
     @pytest.mark.asyncio
+    async def test_thinking_preamble_content_is_not_final(self):
+        """Known provider thought-channel leakage must not be emitted as final."""
+        llm = TestLLMProvider()
+        llm.queue(llm_response.final("Here's a thinking process:\n1. internal step"))
+        ctx = await make_pipeline_ctx(llm_provider=llm)
+
+        events = await collect_events(LLMStage().run(ctx))
+
+        assert not any(event_type == "final" for event_type, _ in events)
+        assert ctx.turn.final_content == ""
+        assert ctx.turn.empty_rounds == 1
+        assert any(
+            event_type == "status" and data.get("phase") == "empty_round"
+            for event_type, data in events
+        )
+
+    @pytest.mark.asyncio
     async def test_empty_response_no_retry(self):
         """Пустой ответ с отключённым retry — empty_rounds++."""
         llm = TestLLMProvider()

@@ -154,7 +154,12 @@ class DeterministicEvaluator:
         # ── infra/tool error detection first ────────────────────────────────
         tool_errors = self._detect_tool_errors(run)
         has_tool_error = len(tool_errors) > 0
-        if has_tool_error:
+        # Request-level errors are emitted by BenchmarkRunner before an MCP
+        # tool result exists (for example provider/API timeouts). They are
+        # infrastructure failures just like tool-side timeout responses.
+        has_runner_error = bool(run.errors)
+        has_infra_error = has_tool_error or has_runner_error
+        if has_infra_error:
             error_classes.append(ErrorClass.INFRA_ERROR)
 
         tool_ok = self._check_tool_calls(case, run.tool_calls, reasons)
@@ -242,7 +247,7 @@ class DeterministicEvaluator:
             case,
             run,
             error_classes,
-            has_tool_error,
+            has_infra_error,
             tool_ok,
             retrieval_ok,
             answer_ok,

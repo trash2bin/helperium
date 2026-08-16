@@ -114,7 +114,7 @@
     },
     {
       "id": "product-lookup-hit-001",
-      "question": "Сколько стоит товар с меткой ХИТ артикул EXT-01401?",
+      "question": "Сколько стоит товар с артикулом EXT-01401?",
       "category": "lookup",
       "ground_truth": {
         "type": "exact_value",
@@ -137,7 +137,7 @@
       "tags": [
         "product",
         "price",
-        "hit"
+        "article"
       ]
     },
     {
@@ -717,7 +717,8 @@
         "must_call_any": [
           "filter_catalog_brand",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_describe"
         ]
       },
       "tags": [
@@ -1045,7 +1046,8 @@
         "must_call_any": [
           "filter_catalog_order",
           "db_search",
-          "db_describe"
+          "db_describe",
+          "stats"
         ]
       },
       "tags": [
@@ -1094,7 +1096,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_product",
-          "db_search"
+          "db_search",
+          "filter_catalog_brand"
         ]
       },
       "expect_refusal": true,

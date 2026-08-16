@@ -75,7 +75,11 @@ def aggregate_report(
             tool_calls=tool_cnt,
             iterations=iters,
             cost_usd=cost,
-            outcome=backlog.outcome if backlog else "final",
+            # A request-level runner error has no turn_end record, but
+            # must never be reported as a successful final outcome.
+            outcome=(
+                "error" if run.errors else (backlog.outcome if backlog else "final")
+            ),
             final_text=run.final_text,
             errors=run.errors,
         )

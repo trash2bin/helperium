@@ -1147,6 +1147,15 @@ class TestEvaluator:
         assert ErrorClass.INFRA_ERROR in res.error_classes
         assert res.error_source == "tool"
 
+    def test_verdict_error_runner_request_failure(self):
+        """Request-level timeout is infra, even before a tool result exists."""
+        case = make_case(expected={"price": 3064})
+        run = make_run(errors=["Request failed: timed out"])
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.verdict.value == "ERROR", res.reasons
+        assert ErrorClass.INFRA_ERROR in res.error_classes
+        assert res.error_source == "infra"
+
     def test_client_validation_tool_error_is_not_infra(self):
         """HTTP 400/422 from invalid tool arguments is an agent-side error."""
         run = make_run(
@@ -1530,6 +1539,15 @@ class TestReport:
         assert "eval" in d["cases"][0]
         assert "metrics" in d["cases"][0]
 
+    def test_report_marks_runner_request_error_as_infra(self):
+        case = make_case(cid="request-timeout", expected={"price": 1})
+        run = make_run(errors=["Request failed: timed out"])
+        ev = DeterministicEvaluator().evaluate(case, run)
+        report = aggregate_report([case], [run], [ev])
+        assert report.infra_error_count == 1
+        assert report.infra_error_rate == pytest.approx(1.0)
+        assert report.case_results[0].outcome == "error"
+
     def test_print_report_contains_metrics(self):
         cases, runs, evals = [], [], []
         for i in range(2):
@@ -1902,6 +1920,9 @@ class TestAutopartsBenchmarkAgentPolicy:
     def test_policy_requires_catalog_grounding_and_stop_after_sufficient_result(self):
         assert "сначала получи подтверждение через\nMCP-инструменты" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
         assert "поле total для вопроса о количестве" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        assert "Сохраняй пользовательские идентификаторы буквально" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        assert "Не выводи внутренние рассуждения" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        assert "`__gt_field` / `__lt_field`" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
         assert "общий вопрос, не требующий данных каталога" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
 
     def test_sync_updates_only_system_prompt(self, monkeypatch):
@@ -1943,3 +1964,91 @@ class TestAutopartsBenchmarkAgentPolicy:
             sync_autoparts_benchmark_agent_policy(
                 "http://api.test", "bench-agent", ""
             )
+
+
+class TestAutopartsDeterministicFixtureRegressions:
+    def _raw_case(self, case_id):
+        cases_path = (
+            Path(__file__).resolve().parents[1]
+            / "agent_db"
+            / "bench"
+            / "cases"
+            / "autoparts.json"
+        )
+        return next(
+            item
+            for item in json.loads(cases_path.read_text(encoding="utf-8"))["cases"]
+            if item["id"] == case_id
+        )
+
+    def test_order_total_fixture_accepts_stats(self):
+        raw_case = self._raw_case("order-count-total-001")
+        assert "stats" in raw_case["expected_tool"]["must_call_any"]
+        case = TestCase.from_dict(raw_case)
+        run = make_run(
+            final_text="Всего заказов: 6.",
+            tool_calls=[{"name": "stats", "arguments": {}}],
+            tool_results=[
+                {"name": "stats", "result": json.dumps({"catalog_order": 6})}
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.tool_ok, res.reasons
+        assert res.verdict.value == "CORRECT", res.reasons
+
+    def test_article_lookup_fixture_has_no_unsupported_label_premise(self):
+        raw_case = self._raw_case("product-lookup-hit-001")
+        assert "меткой" not in raw_case["question"].lower()
+        assert "ХИТ" not in raw_case["question"]
+        assert "hit" not in raw_case["tags"]
+        assert "article" in raw_case["tags"]
+
+
+    def test_denso_fixture_accepts_grounded_describe_path(self):
+        raw_case = self._raw_case("brand-lookup-002")
+        assert "db_describe" in raw_case["expected_tool"]["must_call_any"]
+        case = TestCase.from_dict(raw_case)
+        run = make_run(
+            final_text="Denso из Японии.",
+            tool_calls=[{"name": "db_describe", "arguments": {"entity": "catalog_brand"}}],
+            tool_results=[
+                {
+                    "name": "db_describe",
+                    "result": json.dumps(
+                        {
+                            "fields": {
+                                "country": {"distinct": ["Япония"]},
+                                "description": {
+                                    "distinct": ["Denso OEM из Япония."]
+                                },
+                            }
+                        }
+                    ),
+                }
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.tool_ok, res.reasons
+
+    def test_absence_fixture_accepts_brand_first_lookup_path(self):
+        raw_case = self._raw_case("product-absence-003")
+        assert "filter_catalog_brand" in raw_case["expected_tool"]["must_call_any"]
+        case = TestCase.from_dict(raw_case)
+        run = make_run(
+            final_text="Brand is not found.",
+            tool_calls=[
+                {
+                    "name": "filter_catalog_brand",
+                    "arguments": {"name": "MISSING"},
+                }
+            ],
+            tool_results=[
+                {
+                    "name": "filter_catalog_brand",
+                    "result": json.dumps({"total": 0, "returned": 0}),
+                }
+            ],
+        )
+        res = DeterministicEvaluator().evaluate(case, run)
+        assert res.tool_ok, res.reasons
+        assert res.verdict.value == "CORRECT", res.reasons

@@ -82,6 +82,14 @@ class LLMStage:
                 yield event
             return
 
+        elif response.content and _looks_like_leaked_thinking(response.content):
+            logger.warning(
+                "[LLM_STAGE] Suppressed leaked thinking preamble (iteration %d)",
+                ctx.turn.iteration,
+            )
+            async for event in self._handle_reasoning(ctx, response):
+                yield event
+            return
         elif response.content:
             async for event in self._handle_content_response(ctx, response):
                 yield event
@@ -326,6 +334,24 @@ class LLMStage:
         )
         return
 
+
+
+_THINKING_PREAMBLES = (
+    "here's a thinking process:",
+    "here is a thinking process:",
+)
+
+
+def _looks_like_leaked_thinking(content: str) -> bool:
+    """Return true only for known provider thought-channel leakage markers.
+
+    This deliberately avoids broad analysis-language heuristics: a normal final
+    response may explain a result.  The guard blocks the exact malformed preamble
+    observed in the benchmark, then lets existing reasoning-only retry/fallback
+    handling decide the next step.
+    """
+    normalized = " ".join(content.strip().lower().split())
+    return normalized.startswith(_THINKING_PREAMBLES)
 
 def _looks_like_raw_json_tool_calls(content: str) -> bool:
     """Safety net: проверка что ``final`` не уйдёт с голым JSON тулов.
