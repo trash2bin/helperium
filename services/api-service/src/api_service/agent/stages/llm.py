@@ -335,7 +335,6 @@ class LLMStage:
         return
 
 
-
 _THINKING_PREAMBLES = (
     "here's a thinking process:",
     "here is a thinking process:",
@@ -352,6 +351,7 @@ def _looks_like_leaked_thinking(content: str) -> bool:
     """
     normalized = " ".join(content.strip().lower().split())
     return normalized.startswith(_THINKING_PREAMBLES)
+
 
 def _looks_like_raw_json_tool_calls(content: str) -> bool:
     """Safety net: проверка что ``final`` не уйдёт с голым JSON тулов.
