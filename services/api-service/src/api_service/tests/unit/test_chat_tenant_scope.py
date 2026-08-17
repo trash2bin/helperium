@@ -52,7 +52,10 @@ async def test_direct_chat_ignores_browser_tenant_header(monkeypatch) -> None:
     """Public direct chat uses only the server-configured safe demo tenant."""
     from api_service.server.routes.chat import chat_endpoint
 
-    monkeypatch.setenv("DEFAULT_TENANT_ID", "configured-demo-tenant")
+    monkeypatch.setattr(
+        "api_service.server.tenant_authority.settings.default_tenant_id",
+        "configured-demo-tenant",
+    )
     agent = _SpyAgent()
     request = _request(
         {"message": "hello", "session_id": "scope-direct"},
