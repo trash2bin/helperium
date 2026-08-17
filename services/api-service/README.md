@@ -322,6 +322,26 @@ curl -X POST http://localhost:8081/api/agents \
 
 В production необходимо задать отдельный `MCP_CLIENT_API_KEY` и тот же секрет в gateway `MCP_API_KEY`; не публикуй mcp-gateway без service authentication. Legacy GET-SSE/POST MCP transport намеренно удалён: откат этой migration выполняется git revert/redeploy предыдущего image, а не переключением runtime transport.
 
+### Контракт api-service → mcp-gateway
+
+| Аспект | Поведение |
+|---|---|
+| Transport | `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` и `Client(transport)` из SDK v2; application не собирает JSON-RPC и не управляет session IDs вручную |
+| Tenant scope | `X-Tenant-ID` передаётся на каждое transport request после того, как named-agent route разрешил `tenant_ids`; query parameter не используется и не принимается gateway |
+| Composite agent | Несколько ID передаются как `tenant-a,tenant-b`; gateway возвращает только prefixed tools (`tenant-a__db_map`) |
+| Service auth | При непустом `MCP_CLIENT_API_KEY` в каждый request добавляется `Authorization: Bearer …` |
+| Connection lifecycle | Один persistent connection на tenant scope; `asyncio.Lock` сохраняет порядок tool calls; idle GC и `Client` context teardown закрывают connection корректно |
+
+### Диагностика ошибок MCP
+
+| Наблюдение | Значение | Действие |
+|---|---|---|
+| `400 X-Tenant-ID header is required` | Внутренний caller потерял уже разрешённый tenant scope | Проверить agent `tenant_ids` и propagation header, не добавлять query fallback |
+| `401 Unauthorized` | `MCP_CLIENT_API_KEY` не совпадает с gateway `MCP_API_KEY` | Синхронизировать один секрет и перезапустить оба сервиса |
+| `429 Too Many Requests` | Gateway rate limiter защитил `/mcp` | Снизить параллелизм/повторы либо пересмотреть `MCP_RATE_LIMIT_*` осознанно |
+| `503 too many active Streamable HTTP tenant scopes` | Достигнут bounded cache `MCP_MAX_STREAMABLE_TENANT_SCOPES` | Проверить churn tenant sets, не увеличивать limit без memory-capacity оценки |
+| MCP result `is_error=true` | Transport работает; tool отверг аргументы или data-service вернул domain error | Показывать пользователю безопасный tool error, анализировать audit logs и tool schema |
+
 ## Запуск
 
 ```bash
@@ -331,7 +351,14 @@ uv run --package api-service python -m uvicorn api_service.server:app --port 808
 ## Тестирование
 
 ```bash
-uv run pytest api-service/src/api_service/tests/ -v
+# Unit and integration checks for api-service, including MCP client failures,
+# reconnect, initialization timeout and idle connection GC.
+uv run pytest services/api-service/src/api_service/tests/ -v
+
+# Live contract tests against started data-service + mcp-gateway. The file uses
+# the official MCP v2 client and covers read-only tools, composite scopes and
+# rejection of tenant query-parameter routing.
+uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 ```
 
 ## Архитектура Agent Pipeline
@@ -505,4 +532,4 @@ Pipeline(
 ```
 
 ---
-**Last verified:** 2026-07-30 (post-refactor: agent pipeline docs, stages, protocols, factory)
+**Last verified:** 2026-08-17 (working tree after `7de9feb`) — MCP SDK v2 lifecycle, header-only tenant scope, service authentication, failure modes and modern E2E commands verified against current code.

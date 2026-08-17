@@ -245,6 +245,51 @@ func TestNotFoundRoutes(t *testing.T) {
 	}
 }
 
+func TestLegacyMCPRoutesAreNotRegistered(t *testing.T) {
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+	for _, path := range []string{"/", "/sse", "/mcp/message", "/mcp/v2"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("GET %s = %d, want 404", path, rec.Code)
+			}
+		})
+	}
+}
+
+func TestResolveTenantIDsUsesHeaderOnly(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/mcp?tenant=query-tenant", nil)
+	if got := resolveTenantIDs(req); len(got) != 0 {
+		t.Fatalf("query parameter selected tenant scope: got %v, want no tenant IDs", got)
+	}
+
+	req.Header.Set("X-Tenant-ID", "header-a, header-b")
+	if got, want := strings.Join(resolveTenantIDs(req), ","), "header-a,header-b"; got != want {
+		t.Fatalf("resolveTenantIDs() = %q, want %q", got, want)
+	}
+}
+
+func TestStreamableTenantRegistryRejectsNewScopeAtCapacity(t *testing.T) {
+	registry := &streamableTenantRegistry{
+		handlers: map[string]http.Handler{"tenant-a": http.NotFoundHandler()},
+		max:      1,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-b")
+	rec := httptest.NewRecorder()
+
+	registry.serveHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("new tenant scope at capacity = %d, want 503; body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "too many active Streamable HTTP tenant scopes") {
+		t.Errorf("503 body = %q, want capacity error message", rec.Body.String())
+	}
+}
+
 func TestConcurrentRequests(t *testing.T) {
 	r := newTestRouterFromConfig(t, defaultTestConfig())
 	done := make(chan bool, 20)

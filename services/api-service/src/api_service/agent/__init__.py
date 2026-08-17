@@ -12,7 +12,7 @@ token_estimator     — Token estimation & fallback trimming
 event_stream        — SSE formatting utilities
 litellm_provider    — Clean LiteLLM adapter under LLMProvider protocol [NEW]
 provider_pool       — Health-checked LLM provider pool with failover [NEW]
-mcp_client          — MCP SSE client
+mcp_client          — Tenant-scoped MCP Streamable HTTP v2 client
 tool_parser         — Tool call extraction from LLM output
 conversation        — Conversation history manager
 types               — Shared type definitions

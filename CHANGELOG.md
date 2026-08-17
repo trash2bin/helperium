@@ -1,5 +1,10 @@
 # CHANGELOG.md
 
+## 2026-08-17
+
+- **test(mcp):** native Streamable HTTP v2 E2E теперь покрывает read-only tool call, composite tenant scope с prefixed tools и fail-closed rejection tenant query parameter без `X-Tenant-ID`; gateway unit suite дополнена регрессиями отсутствия legacy routes, header-only scope resolver и `503` при saturation bounded tenant-scope cache. Полный deterministic E2E: **123 passed**.
+- **docs(mcp):** AGENTS.md, README api-service, mcp-gateway и agent-db синхронизированы с единственным `/mcp` transport contract, service auth, error/status semantics, diagnostics и executable focused test commands. Package map агента больше не маркирует MCP client как SSE.
+
 ## 2026-08-15
 - **fix(bench/evaluator):** добавлены fixture-scoped `value_aliases` с проверкой явного отрицания; `payment=online` теперь корректно принимает display labels «онлайн»/«онлайн-оплата» без generic fuzzy matching. Deterministic re-evaluation сохранённого третьего NIM run изменила только payment case: **47 CORRECT / 1 PARTIAL / 1 WRONG / 0 ERROR** (98,0%), без model-вызовов.
 - **feat(bench/policy):** versioned `autoparts-benchmark-v1` policy и CLI `sync-agent-policy` воспроизводимо синхронизируют только `system_prompt` через Agent API, не меняя provider/tenant config. Policy требует MCP-grounding для tenant facts и остановки после достаточного tool result.

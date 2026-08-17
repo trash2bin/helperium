@@ -91,7 +91,8 @@ agent-db drop <scenario> # remove scenario database
 New modular pytest tests in `services/agent-db/tests/e2e/` — faster, self-documented, with proper fixtures.
 
 ```bash
-# All e2e without LLM — 124 tests, ~30 sec (нужны поднятые сервисы: ./infra/scripts/dev.sh start)
+# Full deterministic E2E without a real LLM (requires running services).
+# The pytest summary is the authoritative current test count and duration.
 ./infra/scripts/dev.sh e2e
 
 # Compose-режим: тесты выполняются внутри /workspace и видят те же SQLite-пути, что data-service
@@ -111,7 +112,8 @@ uv run pytest services/agent-db/tests/e2e/ --no-traceback
 uv run pytest services/agent-db/tests/e2e/test_data_isolation.py -v
 uv run pytest services/agent-db/tests/e2e/test_agents.py -v
 uv run pytest services/agent-db/tests/e2e/test_mcp_composite.py -v
-uv run pytest services/agent-db/tests/e2e/test_sse_session.py -v
+# Official MCP SDK v2: tool call, composite scope and header-only tenant routing.
+uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 uv run pytest services/agent-db/tests/e2e-llm/test_llm_chat.py -v
 ```
 
@@ -155,10 +157,10 @@ curl -H "X-Tenant-ID: mydb" http://127.0.0.1:8084/health
 |---|---|---|
 | Seed generation | `data-service/cmd/seed-cli/` (Go, ~130 строк) | `agent-db/agent_db/seedgen/` (Python, ~650 строк) |
 | Materialize | `data-service --materialize` (в production binary) | `materialize()` из Python-пакета |
-| E2E tests | `cli.py` `_run_*` функции (~900 строк) | `services/agent-db/tests/e2e/*.py` — модульные, 124 теста |
+| E2E tests | `cli.py` `_run_*` функции (~900 строк) | `services/agent-db/tests/e2e/*.py` — модульные deterministic tests, включая native MCP SDK v2 contract |
 | LLM tests | — | `services/agent-db/tests/e2e-llm/test_llm_chat.py — 4 теста (opt-in) |
 | DB generation in e2e | `subprocess.run(["go", "run", "./cmd/seed-cli/"])` | `from agent_db.seedgen import materialize` |
 | CLI entry point | `cli.py` (root) | `agent_db/cli.py` |
 | Benchmark | — | `agent_db/bench/` — парсинг, прогон, отчёт |
 ---
-**Last verified:** 2026-08-16 (HEAD `0dbc8af`) — E2E команды разделены на native и compose режимы; compose full suite прошёл 124/124.
+**Last verified:** 2026-08-17 (working tree after `7de9feb`) — E2E commands distinguish full suite, composite tenant coverage and the official Streamable HTTP v2 contract test; obsolete SSE-only test is removed.

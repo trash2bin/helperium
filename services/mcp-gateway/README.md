@@ -49,6 +49,19 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 
 Не публикуй этот endpoint без `MCP_API_KEY`: `X-Tenant-ID` определяет scope tools, но сам по себе не является криптографическим доказательством права клиента на tenant. Legacy GET-SSE/POST JSON-RPC compatibility path удалён; rollback выполняется deploy предыдущего tested image.
 
+### Transport и security contract
+
+| Контракт | Гарантия gateway |
+|---|---|
+| Единственный transport path | Только `GET`, `POST` и `DELETE /mcp` обслуживаются mcp-go Streamable HTTP server; `/`, `/sse`, `/mcp/message` и `/mcp/v2` возвращают `404` |
+| Tenant scope | Только header `X-Tenant-ID`; query parameters намеренно игнорируются. Отсутствие header на `/mcp` возвращает `400` |
+| Composite scope | `X-Tenant-ID: a,b` создаёт handler для exact ordered scope и публикует только prefixed tools (`a__db_map`, `b__db_map`) |
+| Service authentication | При непустом `MCP_API_KEY` все non-health/metrics routes требуют exact `Authorization: Bearer <token>`; отсутствие или ошибка — `401` |
+| Capacity bound | Новый tenant scope свыше `MCP_MAX_STREAMABLE_TENANT_SCOPES` получает `503`, существующий cached scope остаётся доступным |
+| Abuse control | Rate limiter применяется ко всем Streamable HTTP methods на `/mcp`; превышение возвращает `429` |
+
+> Gateway не принимает raw session ID от application-кода. Используй официальный MCP SDK v2; он согласует initialization, request/response и `DELETE` cleanup через `/mcp`.
+
 ## Как работают инструменты
 
 ### Создание MCP-сервера
@@ -183,10 +196,14 @@ DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 ## Smoke test
 
 ```bash
-# Манифест tenant'a
+# Metadata endpoint for a registered tenant.
 curl -s -H "X-Tenant-ID: default" http://127.0.0.1:8083/mcp/manifest | jq '.tools | length'
 
-# Real standard MCP v2 client: initialize, list_tools and read-only db_map.
+# Fast gateway regression: header-only routing, capacity fail-closed behaviour
+# and proof that deleted legacy routes stay absent.
+go test ./cmd -run 'Test(LegacyMCPRoutesAreNotRegistered|ResolveTenantIDsUsesHeaderOnly|StreamableTenantRegistryRejectsNewScopeAtCapacity)$' -v
+
+# Live SDK v2 contract: tool call, composite scope and query-parameter rejection.
 cd ../..
 uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 ```
@@ -196,8 +213,11 @@ uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 | Симптом | Причина | Фикс |
 |---|---|---|
 | `connection refused` :8083 | mcp-gateway не запущен | `go run ./cmd/` |
+| `400 X-Tenant-ID header is required` | Client передал tenant в query либо вовсе его потерял | Передать resolved scope только через `X-Tenant-ID` |
 | Пустой манифест (0 tools) | Tenant не зарегистрирован | register через data-service admin API |
 | 401 Unauthorized | MCP_API_KEY mismatch | Синхронизируй токен |
+| 429 Too Many Requests | Исчерпан rate-limit burst для client IP | Ограничить повторные попытки или пересмотреть limits после capacity review |
+| 503 too many active Streamable HTTP tenant scopes | Churn tenant sets заполнил bounded cache | Стабилизировать scopes или оценить безопасное увеличение `MCP_MAX_STREAMABLE_TENANT_SCOPES` |
 
 ---
-**Last verified:** 2026-08-17 (working tree, modern-only MCP experiment) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp` и Python SDK v2 сверены локально; deterministic E2E будет повторно прогнан перед merge.
+**Last verified:** 2026-08-17 (working tree after `7de9feb`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, header-only tenant scope, bounded scope cache, legacy-route absence и native Python SDK v2 E2E сверены локально.
