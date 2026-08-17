@@ -228,3 +228,20 @@ The project also uses a [Contributor License Agreement](CLA.md). Contributions s
 
 For enterprise deployment assistance, custom integrations, and security audits — commercial services are available.
 # CI trigger
+
+## Public auto-parts demo
+
+The repository also contains an **independent public storefront demo** in `demo/autoparts-store`. It is intentionally separate from the core Helperium Compose stack: Django runs behind its own Caddy ingress, PostgreSQL has no host-published port, and the Helperium widget is opt-in after a tenant and agent have been registered.
+
+The demo keeps its synthetic catalogue generator unchanged. Before deployment, copy `.env.public.example` to `.env.public`, generate both secrets, set the real domain and start the isolated stack:
+
+```bash
+cd demo/autoparts-store
+cp .env.public.example .env.public
+# Edit DEMO_DOMAIN, ACME_EMAIL, DJANGO_SECRET_KEY, STORE_DB_PASSWORD,
+# DJANGO_ALLOWED_HOSTS and DJANGO_CSRF_TRUSTED_ORIGINS.
+docker compose --env-file .env.public -f docker-compose.public.yml up -d --build
+curl -fsS https://<demo-domain>/healthz/
+```
+
+Caddy terminates TLS and redirects HTTP to HTTPS. The PostgreSQL service is internal-only; do not add a host port. The storefront does not process payments, and `DEMO_ORDER_SUBMISSIONS=false` keeps order-form data from being persisted. See [the public-demo section of the runbook](doc/RUNBOOK.md#public-auto-parts-demo) for release and verification steps.

@@ -402,3 +402,53 @@ uv run agent-db drop autoparts  # реальная команда: drop <scenari
 ```bash
 bash infra/scripts/backup.sh  # → backups/<date>/tenants/ + .env
 ```
+
+## Public auto-parts demo
+
+This is a standalone public storefront, not a replacement for the core Helperium deployment. Its production files live in `demo/autoparts-store`; the synthetic catalogue generator is intentionally out of scope for the deployment workflow.
+
+### Release checklist
+
+- [ ] A DNS `A`/`AAAA` record for `DEMO_DOMAIN` points to the server.
+- [ ] Ports `80` and `443` are open to the internet and unused by another ingress.
+- [ ] The root Helperium `prod` Caddy is not bound to the same ports on this host.
+- [ ] `DJANGO_SECRET_KEY` and `STORE_DB_PASSWORD` are unique, high-entropy values.
+- [ ] `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS` use the real HTTPS domain.
+- [ ] Leave `DEMO_ORDER_SUBMISSIONS=false` until there is an explicit, consented order-processing workflow.
+
+### Deploy
+
+```bash
+cd helperium/demo/autoparts-store
+cp .env.public.example .env.public
+# Generate secrets locally; never commit .env.public.
+openssl rand -base64 48   # DJANGO_SECRET_KEY
+openssl rand -base64 36   # STORE_DB_PASSWORD
+$EDITOR .env.public
+docker compose --env-file .env.public -f docker-compose.public.yml up -d --build
+docker compose --env-file .env.public -f docker-compose.public.yml ps
+curl -fsS https://$DEMO_DOMAIN/healthz/
+```
+
+The database is attached only to `storefront_internal`; its Compose definition deliberately has no `ports:` section. Caddy is the only public service. It obtains and renews TLS certificates and proxies the storefront to Gunicorn.
+
+### Helperium assistant (opt-in)
+
+Deploy the storefront with `HELPERIUM_WIDGET_ENABLED=false`. Only after the public tenant, an agent and allowlisted embed origin are configured in the core stack should you set `HELPERIUM_WIDGET_ENABLED=true`, `HELPERIUM_API_BASE=https://<helperium-domain>` and `HELPERIUM_AGENT=<agent-id>`, then recreate `storefront`.
+
+```bash
+docker compose --env-file .env.public -f docker-compose.public.yml up -d --force-recreate storefront
+```
+
+### Smoke check and rollback
+
+```bash
+# Expected: 200 plus Caddy/Django security headers.
+curl -fsSI https://$DEMO_DOMAIN/healthz/
+docker compose --env-file .env.public -f docker-compose.public.yml logs --tail=100 storefront storefront-caddy
+
+# Stop public ingress without deleting synthetic catalogue data.
+docker compose --env-file .env.public -f docker-compose.public.yml stop storefront-caddy storefront
+```
+
+For a browser pass, verify the homepage, a catalogue category, product card, cart POST action, checkout disclosure, responsive layout and — only when enabled — the assistant opening and one successful streamed response.
