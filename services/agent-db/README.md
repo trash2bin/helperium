@@ -113,8 +113,9 @@ uv run pytest services/agent-db/tests/e2e/test_data_isolation.py -v
 uv run pytest services/agent-db/tests/e2e/test_agents.py -v
 uv run pytest services/agent-db/tests/e2e/test_mcp_composite.py -v
 # Real named-agent pipeline: persisted Agent Store composite scope -> api-service
-# -> MCPClient -> prefixed MCP tool -> data-service -> SSE result. The request
-# deliberately contains a hostile X-Tenant-ID and it must not affect the scope.
+# -> MCPClient -> two prefixed MCP tools -> two data-service tenant DBs -> SSE
+# results. The request deliberately contains a hostile X-Tenant-ID and it must
+# not affect the persisted scope.
 MCP_API_KEY="$MCP_API_KEY" MCP_CLIENT_API_KEY="$MCP_CLIENT_API_KEY" \
   uv run pytest services/agent-db/tests/e2e/test_named_agent_composite_pipeline.py -v
 # Official MCP SDK v2: tool calls, composite prefixed tools, header-only
@@ -171,4 +172,4 @@ curl -H "X-Tenant-ID: mydb" http://127.0.0.1:8084/health
 | CLI entry point | `cli.py` (root) | `agent_db/cli.py` |
 | Benchmark | — | `agent_db/bench/` — парсинг, прогон, отчёт |
 ---
-**Last verified:** 2026-08-18 (working tree after `8725612`) — full E2E distinguishes database isolation and composite tenant tools. `test_named_agent_composite_pipeline.py` proves the persisted named-agent scope reaches a real prefixed MCP tool and data-service result despite hostile request `X-Tenant-ID`; `test_mcp_streamable_http.py` separately verifies the native transport contract. Obsolete SSE-only coverage is removed.
+**Last verified:** 2026-08-18 (working tree after `3749daa`) — full E2E distinguishes database isolation and composite tenant tools. `test_named_agent_composite_pipeline.py` proves one persisted named-agent composite scope reaches two real prefixed MCP tools and distinct data-service tenant DB results despite hostile request `X-Tenant-ID`; `test_mcp_streamable_http.py` separately verifies the native transport contract. Obsolete SSE-only coverage is removed.

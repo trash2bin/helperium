@@ -7,7 +7,7 @@
 - **test(mcp):** native SDK v2 E2E добавил session replay isolation, composite-scope abuse rejection, configured missing-auth и invalid-Origin checks; полный secure-stack deterministic E2E: **127 passed**.
 - **docs(mcp):** `.env.example`, Compose, dev launcher, MCP service READMEs, lifecycle guide и production RUNBOOK документируют обязательные production credentials, Origin policy, stateful topology и executable verification commands.
 - **refactor(api/tenant):** server-controlled direct-chat scope вынесен из HTTP handlers в `tenant_authority.py`; route code теперь выражает только вызов policy resolver, а не читает environment и не содержит authorization policy inline.
-- **test(mcp):** добавлен настоящий ScriptedLLM E2E pipeline persisted named-agent composite scope → api-service → MCPClient → prefixed gateway tool → data-service → SSE. Request с hostile `X-Tenant-ID` не влияет на result; rebuilt secure stack: **128 passed**.
+- **test(mcp):** добавлен настоящий ScriptedLLM E2E pipeline persisted named-agent composite scope → api-service → MCPClient → два prefixed gateway tools → две tenant БД data-service → SSE. Request с hostile `X-Tenant-ID` не влияет на result; rebuilt secure stack: **128 passed**.
 
 ## 2026-08-17
 

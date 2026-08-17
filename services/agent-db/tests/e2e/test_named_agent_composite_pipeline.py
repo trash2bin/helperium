@@ -38,13 +38,20 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _write_composite_script(path: Path, tool_name: str) -> None:
+def _write_composite_script(
+    path: Path, first_tool: str, second_tool: str
+) -> None:
+    """Write one dialogue that reads from two different tenant databases."""
     rounds = [
         {
-            "content": "Проверю каталог первого тенанта.",
+            "content": "Сначала проверю схему первого тенанта.",
+            "tool_calls": [{"name": first_tool, "arguments": {}}],
+        },
+        {
+            "content": "Теперь найду запчасть во втором тенанте.",
             "tool_calls": [
                 {
-                    "name": tool_name,
+                    "name": second_tool,
                     "arguments": {
                         "entity": "auto_parts",
                         "pattern": "глушитель",
@@ -66,10 +73,10 @@ def named_composite_scripted_api(tmp_path):
     """Create two tenants and an isolated ScriptedLLM API process."""
     first = make_tenant("sqlite-testseed", prefix="named-composite-first").register()
     second = make_tenant("auto-shop", prefix="named-composite-second").register()
-    expected_tool = f"{second.id}__db_search"
+    expected_tools = [f"{first.id}__db_map", f"{second.id}__db_search"]
 
     script_path = tmp_path / "composite.jsonl"
-    _write_composite_script(script_path, expected_tool)
+    _write_composite_script(script_path, *expected_tools)
     port = find_free_port()
     api_url = f"http://127.0.0.1:{port}"
     agent_name = f"e2e-named-composite-{uuid.uuid4().hex[:8]}"
@@ -140,7 +147,7 @@ def named_composite_scripted_api(tmp_path):
             timeout=10,
         )
         assert response.status_code in (200, 201), response.text
-        yield api_url, agent_name, first.id, second.id, expected_tool
+        yield api_url, agent_name, expected_tools
     finally:
         proc.send_signal(signal.SIGTERM)
         try:
@@ -157,7 +164,7 @@ def test_named_agent_composite_scope_reaches_prefixed_mcp_tool(
     named_composite_scripted_api,
 ):
     """Persisted composite scope reaches real prefixed tools end-to-end."""
-    api_url, agent_name, _, _, expected_tool = named_composite_scripted_api
+    api_url, agent_name, expected_tools = named_composite_scripted_api
     response = requests.post(
         f"{api_url}/api/chat/{agent_name}",
         json={"message": "Найди глушитель", "session_id": "composite-pipeline"},
@@ -173,8 +180,11 @@ def test_named_agent_composite_scope_reaches_prefixed_mcp_tool(
     result = parse_sse_stream(response, idle_timeout=20)
 
     assert not result["errors"], result["errors"]
-    assert [event["name"] for event in result["tool_calls"]] == [expected_tool]
-    assert [event["name"] for event in result["tool_results"]] == [expected_tool]
-    result_text = json.dumps(result["tool_results"], ensure_ascii=False)
-    assert "глушитель" in result_text.lower(), result_text
+    assert [event["name"] for event in result["tool_calls"]] == expected_tools
+    assert [event["name"] for event in result["tool_results"]] == expected_tools
+
+    first_result = json.dumps(result["tool_results"][0], ensure_ascii=False)
+    second_result = json.dumps(result["tool_results"][1], ensure_ascii=False)
+    assert "student" in first_result.lower(), first_result
+    assert "глушитель" in second_result.lower(), second_result
     assert result["final_text"].endswith("Composite MCP pipeline completed.")

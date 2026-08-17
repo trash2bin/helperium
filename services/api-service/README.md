@@ -363,7 +363,7 @@ uv run pytest services/api-service/src/api_service/tests/unit/test_chat_tenant_s
 
 # Real persisted named-agent composite pipeline. It starts a ScriptedLLM API
 # process, sends a hostile browser tenant header and proves the Agent Store scope
-# reaches a prefixed MCP tool and data-service result.
+# reaches two prefixed MCP tools and results from two distinct tenant databases.
 MCP_API_KEY="$MCP_API_KEY" MCP_CLIENT_API_KEY="$MCP_CLIENT_API_KEY" \
   uv run pytest services/agent-db/tests/e2e/test_named_agent_composite_pipeline.py -v
 
@@ -545,4 +545,4 @@ Pipeline(
 ```
 
 ---
-**Last verified:** 2026-08-18 (working tree after `8725612`) — MCP SDK v2 lifecycle, production service auth, Origin allow-list, direct-chat authority and real persisted named-agent composite pipeline through api-service, gateway and data-service verified locally.
+**Last verified:** 2026-08-18 (working tree after `3749daa`) — MCP SDK v2 lifecycle, production service auth, Origin allow-list, direct-chat authority and real persisted named-agent composite pipeline through api-service, gateway and two distinct data-service tenant databases verified locally.
