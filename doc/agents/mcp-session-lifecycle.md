@@ -2,31 +2,28 @@
 
 ## Архитектура
 
+`api-service` использует официальный Python `mcp` v2 и обращается к единственному standard Streamable HTTP endpoint `/mcp`.
+
+| Transport | Flow | Состояние |
+|---|---|---|
+| **Streamable HTTP** | `/mcp` → `streamableTenantRegistry` → tenant-set-specific `mcp-go StreamableHTTPServer` → `createCompositeServer()` → tool handler → data-service | Единственный supported transport |
+
+В Streamable HTTP gateway создаёт и кэширует отдельный stateful handler для уже переданного набора `X-Tenant-ID`. Поэтому manifest и closures остаются tenant-scoped; primary tenant инжектируется в request context только для single-tenant compatibility handlers. MCP session id никогда не используется как авторизационный источник.
+
 ```
-GET /mcp (клиент — api-service/widget)
+POST /mcp (api-service v2 Client, X-Tenant-ID + optional bearer)
   │
-  │ 1. sseHandler():
-  │    - MaxSessions = 1000
-  │    - sseSession{sessionID, writer, flusher, tenantIDs}
-  │    - `event: endpoint\ndata: http://.../mcp/message?sessionId={id}`
-  │    - idle-таймер (SessionIdleTimeout = 5m)
+  ├─ streamableTenantRegistry.handlerFor(tenantIDs)
+  │    └─ createCompositeServer(tenantIDs) on first scope use
+  │         └─ registry.RegisterAll(mcpServer)
   │
-  │ 2. POST /mcp/message?sessionId={id}
-  │    - mcpPostHandler():
-  │      a. Загружает SSE-сессию из sync.Map
-  │      b. session.ensureCompositeServer(tenantIDs)
-  │         → lazy init или reuse
-  │      c. mcpServer.HandleMessage(ctx, rawMessage) — JSON-RPC
-  │         → validateArgs() — 3 уровня защиты
-  │         → execute() — HTTP запрос к data-service /mcp/manifest
-  │      d. Response → SSE `event: message\ndata: {...}`
-  │      e. POST возвращает 202 Accepted
-  │
-  │ idle → session.isExpired() → удаление из sync.Map
-  │ ctx.Done() → defer delete
+  └─ StreamableHTTPServer
+       └─ tools/list or tools/call → validateArgs() → data-service
 ```
 
-**Ключевые файлы:** `services/mcp-gateway/cmd/main.go` — `sseHandler()`, `mcpPostHandler()`, `createCompositeServer()`
+Legacy GET-SSE/POST JSON-RPC transport intentionally removed. Rollback этой migration выполняется deploy предыдущего tested image, а не runtime transport switch.
+
+**Ключевые файлы:** `services/mcp-gateway/cmd/main.go` — `streamableTenantRegistry`, `createCompositeServer()`; `services/api-service/src/api_service/agent/mcp_client.py` — Streamable HTTP client и per-tenant connection lifecycle.
 
 ## Tool Registry
 
@@ -105,7 +102,7 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 // → createCompositeServer() создаёт инструменты с префиксом {tenantID}__
 // Пример: tenant-a__grep_catalog_product
 
-// Single tenant (backward compat):
+// Single tenant:
 // → инструменты без префикса
 // grep_catalog_product, filter_catalog_product, ...
 ```
@@ -121,14 +118,11 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 
 | Параметр | Значение | Кем задаётся |
 |---|---|---|
-| SessionIdleTimeout | 5 минут | mcp-gateway main.go |
-| SessionMaxLifetime | 30 минут | mcp-gateway main.go |
+| Streamable HTTP session idle TTL | 5 минут | mcp-gateway main.go / mcp-go transport |
 | api-service reconnect | 4 минуты (240s) | mcp_client.py |
 | Per-query timeout | 30 секунд | data-service handlers.Context |
 
-**Координация:** api-service реконнектится при 4 минутах idle, за 60с до
-Go-таймаута в 5 минут. После реконнекта → новый SSE session → свежий `/mcp/manifest`
-→ полный ребилд registry.
+**Координация:** api-service реконнектится при 4 минутах idle. После реконнекта создаётся новая transport-managed Streamable HTTP session; tenant-scoped handler и registry остаются корректно привязаны к исходному tenant set.
 
 ## Безопасность
 
@@ -152,4 +146,4 @@ Go-таймаута в 5 минут. После реконнекта → нов�
 
 Подробнее о стратегиях поиска: [search-strategies.md](search-strategies.md)
 ---
-**Last verified:** 2026-08-09 (HEAD `be9a991`) — сессии MCP и registry сверены с кодом
+**Last verified:** 2026-08-17 (working tree, modern-only MCP experiment) — единственный Streamable HTTP `/mcp`, Python SDK v2 и tenant-scoped gateway handlers проверены deterministic E2E.

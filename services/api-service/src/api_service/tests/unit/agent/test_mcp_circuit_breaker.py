@@ -29,7 +29,6 @@ class TestTenantConnectionFields:
         conn = _TenantConnection(
             tenant_id="test",
             session=MagicMock(),
-            http_ctx=MagicMock(),
             session_ctx=MagicMock(),
         )
         assert hasattr(conn, "consecutive_failures"), (
@@ -42,7 +41,6 @@ class TestTenantConnectionFields:
         conn = _TenantConnection(
             tenant_id="test",
             session=MagicMock(),
-            http_ctx=MagicMock(),
             session_ctx=MagicMock(),
         )
         assert hasattr(conn, "last_failure_time"), (
@@ -65,7 +63,6 @@ class TestCircuitBreakerReconnect:
         conn = _TenantConnection(
             tenant_id="test-tenant",
             session=MagicMock(),
-            http_ctx=MagicMock(),
             session_ctx=MagicMock(),
         )
         conn.consecutive_failures = 3
@@ -96,7 +93,6 @@ class TestCircuitBreakerReconnect:
         real_conn = _TenantConnection(
             tenant_id="test-reset",
             session=MagicMock(),
-            http_ctx=MagicMock(),
             session_ctx=MagicMock(),
         )
         real_conn.consecutive_failures = 3
@@ -125,7 +121,6 @@ class TestCircuitBreakerHalfOpen:
         conn = _TenantConnection(
             tenant_id="test-half",
             session=MagicMock(),
-            http_ctx=MagicMock(),
             session_ctx=MagicMock(),
         )
         conn.consecutive_failures = 3

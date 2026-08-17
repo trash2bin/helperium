@@ -1,7 +1,7 @@
 # HTTP Client Layer — Как сервисы общаются
 
 > Детальные описания сервисов и их API — в соответствующих README:
-> - [`services/mcp-gateway/README.md`](../../services/mcp-gateway/README.md) — MCP-шлюз, SSE-сессии
+> - [`services/mcp-gateway/README.md`](../../services/mcp-gateway/README.md) — MCP-шлюз, Streamable HTTP transport
 > - [`services/data-service/README.md`](../../services/data-service/README.md) — CRUD, query builder
 > - [`services/api-service/README.md`](../../services/api-service/README.md) — оркестратор, LLM, виджет
 > - [`demo/web/README.md`](../../demo/web/README.md) — reverse-proxy для разработки
@@ -23,10 +23,10 @@
 ## api-service (MCPClient) → mcp-gateway
 
 `services/api-service/src/api_service/agent/mcp_client.py`:
-- Один persistent SSE-сеанс на tenant (GET /mcp + очередь POST)
-- `mcp.client.sse.sse_client()` из официального Python MCP SDK
-- `asyncio.Lock` на сессию, `LOCK_ACQUIRE_TIMEOUT = 10s`, `TOOL_EXECUTION_TIMEOUT = 15s`, `sse_read_timeout = 30 min`
-- При ошибке — переоткрытие сессии
+- Один persistent Streamable HTTP v2 connection на tenant scope через единый endpoint `POST/GET/DELETE /mcp`
+- `mcp.client.streamable_http.streamable_http_client()` и `Client(transport)` из официального Python MCP SDK v2
+- `asyncio.Lock` на connection, `MCP_LOCK_ACQUIRE_TIMEOUT = 10s`, `MCP_TOOL_EXECUTION_TIMEOUT = 15s`, `MCP_HTTP_READ_TIMEOUT = 30 min`
+- При ошибке — переоткрытие Streamable HTTP connection; idle connections закрываются фоновой очисткой
 
 ## demo-web → все сервисы (для разработки/демо)
 
@@ -41,4 +41,4 @@
 Основной клиент — embed-виджет, который ходит напрямую в api-service (:8081).
 Админка (admin-dashboard) ходит напрямую в свои бэкенды, минуя demo-web.
 ---
-**Last verified:** 2026-08-07 (HEAD `07f7515`) — структура клиентов, таймауты, SSE-сессия сверены с кодом
+**Last verified:** 2026-08-17 (working tree, modern-only MCP experiment) — структура клиентов, Streamable HTTP lifecycle и таймауты сверены с кодом.

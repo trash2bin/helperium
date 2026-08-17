@@ -1,42 +1,22 @@
 """MCP (Model Context Protocol) client for tool interaction.
 
 HTTP routes called:
-    _open_connection() -> mcp-gateway:GET /mcp (SSE handshake, opens stream)
-    call_tool()        -> mcp-gateway:POST /mcp/message?sessionId=... (JSON-RPC)
-    list_tools()       -> mcp-gateway:POST /mcp/message?sessionId=... (JSON-RPC)
-    _reconnect()       -> mcp-gateway:GET /mcp (SSE reconnection)
+    _open_connection() -> mcp-gateway:/mcp (Streamable HTTP handshake)
+    call_tool()        -> transport-managed JSON-RPC tools/call
+    list_tools()       -> transport-managed JSON-RPC tools/list
+    _reconnect()       -> new Streamable HTTP MCP session
 
-MCP transport: legacy HTTP+SSE (GET opens SSE stream, POST sends JSON-RPC).
+MCP transport: standard Streamable HTTP using the official Python `mcp` v2
+SDK. The gateway exposes one endpoint (`/mcp`) and mcp-go owns MCP session
+lifecycle and response delivery.
 
-Talks to the MCP Gateway via the *legacy* HTTP+SSE transport, using the
-official `mcp` Python SDK's `sse_client`.
+Multi-tenancy: the client adds an already-resolved `X-Tenant-ID` scope and an
+optional service Bearer credential to every transport request. The gateway
+creates a separate stateful handler for each tenant set; generated tool
+closures retain the resolved tenant identity when calling data-service.
 
-IMPORTANT: this Gateway (see internal/httpclient + main.go) implements the
-old two-endpoint SSE pattern, not the newer single-endpoint Streamable HTTP
-transport:
-  - GET  /mcp (or /sse, /) opens an SSE stream and immediately sends an
-    `event: endpoint` with a `messageURL` containing `?sessionId=...`.
-  - POST /mcp/message?sessionId=... carries JSON-RPC requests; the Gateway
-    replies with a bare 202 Accepted and writes the *actual* JSON-RPC
-    response as an `event: message` on the still-open SSE stream from the
-    GET request above.
-
-`streamablehttp_client` does NOT speak this dialect (it POSTs JSON-RPC
-directly to a single endpoint and expects the response inline). Use
-`sse_client` from `mcp.client.sse` instead — it performs the GET-then-POST
-handshake and correlates responses arriving on the SSE stream.
-
-Multi-tenancy: `sse_client` accepts a `headers` kwarg. Those headers are
-attached to the shared httpx client used for *both* the initial GET (where
-the Gateway's sseHandler reads X-Tenant-ID into session.tenantID) and every
-subsequent POST (where mcpPostHandler re-reads X-Tenant-ID, falling back to
-the value already stored on the session). So passing X-Tenant-ID via
-`headers=` covers both code paths on the Go side.
-
-One persistent ClientSession (== one SSE connection == one Gateway session)
-is kept per tenant. A lock serializes calls per tenant: the Gateway writes
-JSON-RPC responses to a single shared http.ResponseWriter per session, and
-concurrent writes to that writer are not safe on the Go side.
+One persistent v2 Client connection is kept per tenant set. A lock serializes
+tool calls per connection so conversation-level tool ordering remains stable.
 """
 
 from __future__ import annotations
@@ -50,8 +30,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from mcp import ClientSession
-from mcp.client.sse import sse_client
+import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 
 from helperium_sdk.settings import settings
 
@@ -65,8 +46,8 @@ logger = logging.getLogger("api_service.agent.mcp_client")
 #   MCP_MAX_IDLE_SECONDS          (default: 600.0)
 #   MCP_LOCK_ACQUIRE_TIMEOUT      (default: 10.0)
 #   MCP_TOOL_EXECUTION_TIMEOUT    (default: 15.0)
-#   MCP_SSE_TIMEOUT               (default: 10.0)
-#   MCP_SSE_READ_TIMEOUT          (default: 1800.0)
+#   MCP_HTTP_TIMEOUT              (default: 10.0)
+#   MCP_HTTP_READ_TIMEOUT         (default: 1800.0)
 #   MCP_SESSION_INIT_TIMEOUT      (default: 15.0)
 
 
@@ -90,9 +71,11 @@ class _TenantConnection:
     """Holds the live streamable-HTTP transport + session for one tenant."""
 
     tenant_id: str
-    session: ClientSession
-    http_ctx: Any  # the streamablehttp_client(...) async context manager
-    session_ctx: Any  # the ClientSession(...) async context manager
+    # Official MCP SDK v2 Client owns the Streamable HTTP transport and performs
+    # protocol negotiation/initialization on context entry.
+    session: Client
+    session_ctx: Any  # the Client(...) async context manager
+    transport_http_client: Any | None = None  # owned httpx2 client for Streamable HTTP
     call_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     list_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     tool_display_names: dict[str, str] = field(default_factory=dict)
@@ -105,12 +88,13 @@ class _TenantConnection:
     async def close(self) -> None:
         with contextlib.suppress(Exception):
             await self.session_ctx.__aexit__(None, None, None)
-        with contextlib.suppress(Exception):
-            await self.http_ctx.__aexit__(None, None, None)
+        if self.transport_http_client is not None:
+            with contextlib.suppress(Exception):
+                await self.transport_http_client.aclose()
 
 
 class MCPClient:
-    """Maintains one persistent SSE session per tenant.
+    """Maintains one persistent MCP connection per tenant scope.
 
     Public API is unchanged from the previous REST-bridge version:
     `get_session()`, `list_tools(session)`, `call_tool(session, name, args)`,
@@ -136,51 +120,54 @@ class MCPClient:
         """
         tenant_key = ",".join(tenant_ids) if tenant_ids else ""
         headers = {"X-Tenant-ID": tenant_key} if tenant_key else {}
+        if settings.mcp_client_api_key:
+            headers["Authorization"] = f"Bearer {settings.mcp_client_api_key}"
 
-        logger.info(
-            "[MCP] Opening SSE session for tenants=%s", tenant_key or "(default)"
-        )
-        http_ctx = sse_client(
-            settings.mcp_service_url,
+        logger.info("[MCP] Opening Streamable HTTP connection for tenants=%s", tenant_key or "(default)")
+        # The standard v2 transport carries request/response JSON-RPC over one
+        # endpoint. Keep the client per tenant connection so headers, pooling
+        # and lifecycle remain tenant-scoped.
+        transport_http_client = httpx2.AsyncClient(
             headers=headers,
-            timeout=settings.mcp_sse_timeout,
-            sse_read_timeout=settings.mcp_sse_read_timeout,
+            timeout=httpx2.Timeout(
+                settings.mcp_http_timeout,
+                read=settings.mcp_http_read_timeout,
+            ),
+            follow_redirects=True,
         )
-        try:
-            read_stream, write_stream = await http_ctx.__aenter__()
-        except Exception:
-            logger.exception(
-                "[MCP] Failed to open transport for tenants=%s",
-                tenant_key or "(default)",
-            )
-            raise
+        transport = streamable_http_client(
+            settings.mcp_streamable_http_url,
+            http_client=transport_http_client,
+        )
 
-        session_ctx = ClientSession(read_stream, write_stream)
+        session_ctx = Client(transport)
         try:
-            session = await session_ctx.__aenter__()
             async with asyncio.timeout(settings.mcp_session_init_timeout):
-                await session.initialize()
+                session = await session_ctx.__aenter__()
         except Exception:
             logger.exception(
-                "[MCP] Failed to initialize session for tenants=%s",
+                "[MCP] Failed to open or initialize Streamable HTTP session for tenants=%s",
                 tenant_key or "(default)",
             )
             with contextlib.suppress(Exception):
-                await http_ctx.__aexit__(None, None, None)
+                await session_ctx.__aexit__(None, None, None)
+            if transport_http_client is not None:
+                with contextlib.suppress(Exception):
+                    await transport_http_client.aclose()
             raise
 
         logger.info("[MCP] Session ready for tenants=%s", tenant_key or "(default)")
         conn = _TenantConnection(
             tenant_id=tenant_key,
             session=session,
-            http_ctx=http_ctx,
             session_ctx=session_ctx,
+            transport_http_client=transport_http_client,
         )
 
         # ── Load tool display_name mapping from mcp-gateway ────────────
         try:
             async with httpx.AsyncClient(timeout=5.0) as hclient:
-                url = settings.mcp_service_url.rstrip("/") + "/mcp/tools/mapping"
+                url = settings.mcp_gateway_url + "/mcp/tools/mapping"
                 resp = await hclient.get(url, headers=headers)
                 if resp.status_code == 200:
                     conn.tool_display_names = resp.json()
@@ -198,7 +185,7 @@ class MCPClient:
         # ── Load LLM-friendly schema from mcp-gateway ──────────────────
         try:
             async with httpx.AsyncClient(timeout=5.0) as hclient:
-                url = settings.mcp_service_url.rstrip("/") + "/mcp/schema"
+                url = settings.mcp_gateway_url + "/mcp/schema"
                 resp = await hclient.get(url, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -369,7 +356,7 @@ class MCPClient:
                 "function": {
                     "name": tool.name,
                     "description": tool.description or "",
-                    "parameters": tool.inputSchema or {},
+                    "parameters": tool.input_schema or {},
                 },
             }
             for tool in result.tools
@@ -677,14 +664,14 @@ class MCPClient:
         raw_text = "\n".join(text_parts)
 
         logger.info(
-            "[MCP] _build_tool_result for %s: isError=%s, result_length=%d, preview=%s...",
+            "[MCP] _build_tool_result for %s: is_error=%s, result_length=%d, preview=%s...",
             name,
-            getattr(result, "isError", False),
+            getattr(result, "is_error", False),
             len(raw_text),
             raw_text[:150],
         )
 
-        if getattr(result, "isError", False):
+        if getattr(result, "is_error", False):
             error_text = raw_text or "Unknown error"
             return ToolResult(
                 tool_content=json.dumps(

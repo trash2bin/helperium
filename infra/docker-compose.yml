@@ -135,7 +135,8 @@ services:
       - USE_SCRIPTED_LLM=${USE_SCRIPTED_LLM:-0}
       - HEALTH_CHECK_SKIP_LLM=true
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
-      - MCP_SERVICE_URL=http://mcp-gateway:8083/mcp
+      - MCP_GATEWAY_URL=http://mcp-gateway:8083
+      - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
       - DB_PATH=/data/app/university.db
       - DEMO_SESSION_DB_PATH=/data/app/demo_sessions.sqlite
       - PROVIDER_STORE_PATH=/data/app/providers.json
@@ -244,7 +245,8 @@ services:
     environment:
       # e2e ходит на сервисы по внутренним именам compose-сети
       - DATA_SERVICE_URL=http://data-service:8084
-      - MCP_SERVICE_URL=http://mcp-gateway:8083
+      - MCP_GATEWAY_URL=http://mcp-gateway:8083
+      - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
       - API_SERVICE_URL=http://api:8081
       - DEMO_WEB_URL=http://web:8080
       - ADMIN_TOKEN=${ADMIN_TOKEN:-ci-secret-token}

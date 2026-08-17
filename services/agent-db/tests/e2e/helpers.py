@@ -5,19 +5,17 @@ Provides:
 - register_tenant(): register a tenant via admin API
 - delete_tenant(): remove a tenant
 - seed_database(): generate SQLite DB from a scenario (agent-db seedgen)
-- mcp_call(): make MCP JSON-RPC tool call over SSE
+- mcp_call(): invoke an MCP tool over standard Streamable HTTP v2
 - save_and_check_persistence(): verify config written to .data/tenants/
 - run(): subprocess helper
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-import queue
 import subprocess
-
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -61,7 +59,7 @@ def data_service_url() -> str:
 
 
 def mcp_gateway_url() -> str:
-    return _env_url("MCP_SERVICE_URL", "http://127.0.0.1:8083")
+    return _env_url("MCP_GATEWAY_URL", "http://127.0.0.1:8083")
 
 
 def api_service_url() -> str:
@@ -386,8 +384,6 @@ def make_tenant(
     tid = tenant_id or e2e_tenant_id(prefix)
     sc_dir = scenarios_dir() / scenario if scenario else None
     has_config = bool(sc_dir and (sc_dir / "config.json").exists())
-    has_script = bool(sc_dir and (sc_dir / "create_db.py").exists())
-
     if db_path is None:
         if scenario:
             # Config-backed scenarios must get a private materialized DB for
@@ -454,11 +450,11 @@ def delete_tenant(tenant_id: str, service_url: str | None = None) -> int:
     return resp.status_code
 
 
-# ── MCP tool call (SSE protocol) ───────────────────────────────────────────
+# ── MCP tool call (Streamable HTTP v2) ──────────────────────────────────────
 
 
 class MCPCallResult:
-    """Result of an MCP tool call over SSE."""
+    """Compatibility result for a tenant-scoped Streamable HTTP MCP tool call."""
 
     def __init__(
         self,
@@ -481,6 +477,51 @@ class MCPCallResult:
         return f"<MCPCallResult FAIL: {self.error[:100]}>"
 
 
+def _content_block_to_dict(block: Any) -> dict[str, Any]:
+    """Convert an official SDK content block into the historical test shape."""
+    if hasattr(block, "model_dump"):
+        return block.model_dump(mode="json", exclude_none=True)
+    if isinstance(block, dict):
+        return block
+    data: dict[str, Any] = {"type": getattr(block, "type", "text")}
+    if text := getattr(block, "text", None):
+        data["text"] = text
+    return data
+
+
+async def _streamable_mcp_call(
+    tool_name: str,
+    arguments: dict[str, Any],
+    tenant_ids: str,
+    base_url: str,
+    timeout: float,
+) -> dict[str, Any]:
+    """Invoke one tool through the official Python MCP SDK v2."""
+    import httpx2
+    from mcp import Client
+    from mcp.client.streamable_http import streamable_http_client
+
+    headers = {"X-Tenant-ID": tenant_ids}
+    if api_key := os.environ.get("MCP_API_KEY"):
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    async with httpx2.AsyncClient(
+        headers=headers,
+        timeout=httpx2.Timeout(timeout, read=timeout),
+        follow_redirects=True,
+    ) as http_client:
+        transport = streamable_http_client(
+            f"{base_url.rstrip('/')}/mcp", http_client=http_client
+        )
+        async with Client(transport) as client:
+            response = await client.call_tool(tool_name, arguments)
+
+    return {
+        "content": [_content_block_to_dict(block) for block in response.content],
+        "isError": response.is_error,
+    }
+
+
 def mcp_call(
     tool_name: str,
     arguments: dict | None = None,
@@ -488,132 +529,25 @@ def mcp_call(
     mcp_url: str | None = None,
     timeout: float = 30,
 ) -> MCPCallResult:
-    """Make an MCP JSON-RPC tool call over SSE (full protocol).
+    """Invoke a tenant-scoped MCP tool over standard Streamable HTTP.
 
-    Opens SSE session → gets endpoint URL → POSTs JSON-RPC →
-    reads result from SSE stream or HTTP response.
-
-    Args:
-        tool_name: Name of the MCP tool to call
-        arguments: Tool arguments dict (default: {})
-        tenant_ids: X-Tenant-ID header value (comma-separated for composite)
-        mcp_url: mcp-gateway URL (default: http://127.0.0.1:8083)
-        timeout: Max seconds to wait for result
-
-    Returns:
-        MCPCallResult with success flag + result/error
+    The helper preserves the historical `content`/`isError` result dictionary so
+    business-level E2E assertions remain transport agnostic. The official MCP
+    v2 SDK owns transport initialization, requests and shutdown.
     """
-    base = mcp_url or mcp_gateway_url()
-    args = arguments or {}
-
-    # 1. Open SSE session
-    headers = {"X-Tenant-ID": tenant_ids, "Accept": "text/event-stream"}
-    sse_q: queue.Queue = queue.Queue()
-    ready = threading.Event()
-    endpoint_url: list[str] = [""]
-    sse_error: list[str] = [""]
-
-    def _read_sse():
-        try:
-            resp = requests.get(
-                f"{base}/mcp", headers=headers, stream=True, timeout=timeout
-            )
-            resp.raise_for_status()
-            seen_endpoint = False
-            for line_bytes in resp.iter_lines():
-                if not line_bytes:
-                    continue
-                line = line_bytes.decode("utf-8", errors="replace")
-                if line.startswith("event: endpoint"):
-                    seen_endpoint = True
-                elif (
-                    line.startswith("data: ") and seen_endpoint and not endpoint_url[0]
-                ):
-                    endpoint_url[0] = line[6:].strip()
-                    ready.set()
-                elif line.startswith("data: ") and endpoint_url[0]:
-                    sse_q.put(line[6:])
-        except Exception as e:
-            sse_error[0] = str(e)
-        finally:
-            sse_q.put(None)
-
-    t = threading.Thread(target=_read_sse, daemon=True)
-    t.start()
-
-    if not ready.wait(timeout=10):
-        err = sse_error[0] or "SSE session not ready (timeout)"
-        return MCPCallResult(False, error=err, session_ok=False)
-
-    ep = endpoint_url[0]
-    if not ep:
-        return MCPCallResult(
-            False, error="No MCP endpoint URL received", session_ok=False
-        )
-
-    # 2. Call tool via JSON-RPC
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {"name": tool_name, "arguments": args},
-        "id": 1,
-    }
     try:
-        r = requests.post(
-            ep,
-            json=payload,
-            headers={
-                "X-Tenant-ID": tenant_ids,
-                "Content-Type": "application/json",
-            },
-            timeout=15,
+        result = asyncio.run(
+            _streamable_mcp_call(
+                tool_name,
+                arguments or {},
+                tenant_ids,
+                mcp_url or mcp_gateway_url(),
+                timeout,
+            )
         )
-    except requests.RequestException as e:
-        return MCPCallResult(False, error=f"POST failed: {e}")
-
-    # 3. Parse immediate result
-    if r.status_code in (200, 202):
-        try:
-            data = r.json()
-            if "result" in data:
-                return MCPCallResult(True, result=data["result"])
-            if "error" in data:
-                err_info = data["error"]
-                err_msg = (
-                    err_info.get("message", str(err_info))[:300]
-                    if isinstance(err_info, dict)
-                    else str(err_info)[:300]
-                )
-                return MCPCallResult(False, error=err_msg)
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-    # 4. Wait for SSE result
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            msg = sse_q.get(timeout=2)
-            if msg is None:
-                break
-            try:
-                chunk = json.loads(msg)
-                if chunk.get("id") == 1:
-                    if "result" in chunk:
-                        return MCPCallResult(True, result=chunk["result"])
-                    if "error" in chunk:
-                        err_info = chunk["error"]
-                        err_msg = (
-                            err_info.get("message", str(err_info))[:300]
-                            if isinstance(err_info, dict)
-                            else str(err_info)[:300]
-                        )
-                        return MCPCallResult(False, error=err_msg)
-            except json.JSONDecodeError:
-                pass
-        except queue.Empty:
-            continue
-
-    return MCPCallResult(False, error="No result received via SSE (timeout)")
+    except Exception as exc:
+        return MCPCallResult(False, error=f"Streamable HTTP call failed: {exc}")
+    return MCPCallResult(True, result=result)
 
 
 # ── Config persistence check ────────────────────────────────────────────────

@@ -56,11 +56,11 @@ var MCPToolCallsTotal = prometheus.NewCounterVec(
 	[]string{"tool", "tenant", "status"},
 )
 
-// MCPSessionsActive tracks the current number of active SSE sessions per tenant.
+// MCPSessionsActive tracks the current number of active Streamable HTTP sessions per tenant.
 var MCPSessionsActive = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "mcp_sessions_active",
-		Help: "Currently active SSE sessions per tenant.",
+		Help: "Currently active Streamable HTTP sessions per tenant.",
 	},
 	[]string{"tenant"},
 )

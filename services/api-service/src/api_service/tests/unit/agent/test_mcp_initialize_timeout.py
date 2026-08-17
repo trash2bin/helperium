@@ -1,16 +1,14 @@
-"""Контрактный тест #3: MCP initialize timeout.
-
-Проверяет что MCP client не висит вечно если sse_client упал.
-Использует mock на уровне sse_client, чтобы не требовать реального MCP gateway.
-
-Related: api-service/src/api_service/agent/mcp_client.py _open_connection()
-Добавленный asyncio.timeout(15) на initialize() (PR #...)
+"""
+Ensures the MCP v2 client does not hang indefinitely while entering a legacy
+SSE connection.  The v2 ``Client`` owns transport setup and initialization,
+so these tests mock its async context-manager boundary rather than raw
+``ClientSession`` streams.
 """
 
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,113 +16,75 @@ from api_service.agent.mcp_client import MCPClient
 
 
 class TestMCPInitializeTimeout:
-    """MCPClient._open_connection должен падать с таймаутом, а не виснуть."""
+    """``MCPClient._open_connection`` must respect the connection deadline."""
 
     @pytest.mark.asyncio
     async def test_initialize_timeout_with_slow_gateway(self):
-        """Если initialize() не отвечает >15с, клиент падает с TimeoutError.
-
-        Mock'аем sse_client так, что initialize() никогда не завершается.
-        """
+        """A stalled v2 Client entry must fail within the configured timeout."""
         client = MCPClient()
 
-        # Создаём read_stream/write_stream с вечным initialize
-        read_stream = AsyncMock()
-        write_stream = AsyncMock()
+        async def never_connect(*args, **kwargs):
+            await asyncio.Event().wait()
 
-        async def never_ending_initialize(*args, **kwargs):
-            """Simulate a gateway that never responds."""
-            await asyncio.Event().wait()  # hangs forever
+        client_ctx = MagicMock()
+        client_ctx.__aenter__ = never_connect
+        client_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        mock_session = AsyncMock()
-        mock_session.initialize = never_ending_initialize
-
-        # sse_client возвращает рабочую пару стримов
-        sse_ctx = AsyncMock()
-        sse_ctx.__aenter__ = AsyncMock(return_value=(read_stream, write_stream))
-
-        # session_ctx возвращает session с вечным initialize
-        session_ctx = AsyncMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
-
-        with (
-            patch("api_service.agent.mcp_client.sse_client", return_value=sse_ctx),
-            patch(
-                "api_service.agent.mcp_client.ClientSession",
-                return_value=session_ctx,
-            ),
-        ):
+        with patch("api_service.agent.mcp_client.Client", return_value=client_ctx):
             with pytest.raises((TimeoutError, asyncio.TimeoutError)):
-                async with asyncio.timeout(20):  # safety net
+                async with asyncio.timeout(20):
                     await client._open_connection(["test-tenant"])
+
+        client_ctx.__aexit__.assert_awaited_once_with(None, None, None)
 
     @pytest.mark.asyncio
     async def test_initialize_timeout_fast_fallback(self):
-        """Timeout срабатывает ~15с (не 30+), даже если sse_client тоже медленный."""
+        """The MCP session-init deadline bounds an indefinitely slow connect."""
         client = MCPClient()
 
-        # sse_client сам медленный — долго открывает соединение
-        async def slow_sse_enter(*args, **kwargs):
+        async def slow_client_enter(*args, **kwargs):
             await asyncio.sleep(30)
-            return (AsyncMock(), AsyncMock())
+            return MagicMock()
 
-        sse_ctx = AsyncMock()
-        sse_ctx.__aenter__ = slow_sse_enter
+        client_ctx = MagicMock()
+        client_ctx.__aenter__ = slow_client_enter
+        client_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        mock_session = AsyncMock()
-        mock_session.initialize = AsyncMock()
-
-        session_ctx = AsyncMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
-
-        with (
-            patch("api_service.agent.mcp_client.sse_client", return_value=sse_ctx),
-            patch(
-                "api_service.agent.mcp_client.ClientSession",
-                return_value=session_ctx,
-            ),
-        ):
+        with patch("api_service.agent.mcp_client.Client", return_value=client_ctx):
             t0 = asyncio.get_event_loop().time()
             with pytest.raises((TimeoutError, asyncio.TimeoutError)):
-                async with asyncio.timeout(20):  # safety net
+                async with asyncio.timeout(20):
                     await client._open_connection(["test-tenant"])
             elapsed = asyncio.get_event_loop().time() - t0
-            # Должно упасть из-за sse_timeout=10 (sse_client), не ждать 30с
-            assert elapsed < 25, (
-                f"_open_connection выполнялся {elapsed:.1f}s — sse timeout не сработал"
-            )
+
+        assert elapsed < 25, (
+            f"_open_connection выполнялся {elapsed:.1f}s — session init timeout не сработал"
+        )
 
     @pytest.mark.asyncio
     async def test_normal_initialize_passes(self):
-        """Нормальный initialize() проходит, таймаут не срабатывает."""
+        """A normally connected v2 Client produces a reusable tenant connection."""
         client = MCPClient()
-
-        read_stream = AsyncMock()
-        write_stream = AsyncMock()
-
         mock_session = AsyncMock()
-        mock_session.initialize = AsyncMock(return_value=None)
-
-        sse_ctx = AsyncMock()
-        sse_ctx.__aenter__ = AsyncMock(return_value=(read_stream, write_stream))
-
-        session_ctx = AsyncMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        client_ctx = MagicMock()
+        client_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        client_ctx.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch("api_service.agent.mcp_client.sse_client", return_value=sse_ctx),
+            patch("api_service.agent.mcp_client.Client", return_value=client_ctx),
             patch(
-                "api_service.agent.mcp_client.ClientSession",
-                return_value=session_ctx,
-            ),
-            patch(
-                "api_service.agent.mcp_client.settings.mcp_service_url",
+                "api_service.agent.mcp_client.settings.mcp_gateway_url",
                 "http://localhost:9999",
             ),
             patch(
-                "api_service.agent.mcp_client.httpx.AsyncClient",
+                "api_service.agent.mcp_client.settings.mcp_streamable_http_url",
+                "http://localhost:9999/mcp",
             ),
+            patch("api_service.agent.mcp_client.httpx.AsyncClient"),
+            patch("api_service.agent.mcp_client.httpx2.AsyncClient"),
         ):
             conn = await client._open_connection(["test-tenant"])
-            assert conn is not None
-            mock_session.initialize.assert_awaited_once()
+
+        assert conn is not None
+        assert conn.session is mock_session
+        client_ctx.__aenter__.assert_awaited_once()

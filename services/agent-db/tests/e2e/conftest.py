@@ -190,7 +190,7 @@ def data_service_url() -> str:
 
 @pytest.fixture(scope="session")
 def mcp_gateway_url() -> str:
-    return os.environ.get("MCP_SERVICE_URL", "http://127.0.0.1:8083")
+    return os.environ.get("MCP_GATEWAY_URL", "http://127.0.0.1:8083")
 
 
 @pytest.fixture(scope="session")
@@ -248,7 +248,7 @@ def _check_services():
 
     services = {
         "data-service": (os.environ.get("DATA_SERVICE_URL", "http://127.0.0.1:8084") + "/health", False),
-        "mcp-gateway": (os.environ.get("MCP_SERVICE_URL", "http://127.0.0.1:8083") + "/health", False),
+        "mcp-gateway": (os.environ.get("MCP_GATEWAY_URL", "http://127.0.0.1:8083") + "/health", False),
     }
     fatal = []
     for name, (url, optional) in services.items():

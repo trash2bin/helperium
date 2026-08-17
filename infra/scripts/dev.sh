@@ -125,7 +125,7 @@ health_url() {
 
 cmd_start() {
   MCP_DEV=true
-  echo "🧪 Dev mode enabled — MCP Playground at http://127.0.0.1:${MCP_PORT:-8083}/debug"
+  echo "🧪 Dev mode enabled — gateway debug logging is active"
 
   load_env
   ensure_dirs
@@ -232,7 +232,7 @@ cmd_start() {
           extra_env="MCP_DEV=true $extra_env"
         fi
         ;;
-      api) extra_env="MCP_SERVICE_URL=http://127.0.0.1:$MCP_PORT${USE_SCRIPTED_LLM:+ USE_SCRIPTED_LLM=$USE_SCRIPTED_LLM}${SCRIPTED_LLM_PATH:+ SCRIPTED_LLM_PATH=$SCRIPTED_LLM_PATH}${SCRIPTED_LLM_RECORD:+ SCRIPTED_LLM_RECORD=$SCRIPTED_LLM_RECORD}" ;;
+      api) extra_env="MCP_GATEWAY_URL=http://127.0.0.1:$MCP_PORT MCP_STREAMABLE_HTTP_URL=http://127.0.0.1:$MCP_PORT/mcp${USE_SCRIPTED_LLM:+ USE_SCRIPTED_LLM=$USE_SCRIPTED_LLM}${SCRIPTED_LLM_PATH:+ SCRIPTED_LLM_PATH=$SCRIPTED_LLM_PATH}${SCRIPTED_LLM_RECORD:+ SCRIPTED_LLM_RECORD=$SCRIPTED_LLM_RECORD}" ;;
       web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT" ;;
       admin) extra_env="LISTEN_ADDR=:$ADMIN_PORT ADMIN_TOKEN=$ADMIN_TOKEN VIEWER_TOKEN=$VIEWER_TOKEN DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT API_SERVICE_URL=http://127.0.0.1:$API_PORT LOG_LEVEL=$LOG_LEVEL LOG_FORMAT=$LOG_FORMAT" ;;
     esac
@@ -266,7 +266,7 @@ cmd_start() {
   echo "    ./scripts/dev.sh status          — healthcheck"
   echo "    ./scripts/dev.sh logs api        — tail -f лога"
   echo "    ./scripts/dev.sh stop            — остановить все"
-  echo "    ./scripts/dev.sh start          — dev-режим (MCP Playground ��строен)"
+  echo "    ./scripts/dev.sh start          — dev-режим с gateway debug logging"
   if [ -n "${ADMIN_TOKEN:-}" ]; then
     echo ""
     echo "  🔐 ADMIN_TOKEN задан — open admin dashboard at http://127.0.0.1:$ADMIN_PORT"

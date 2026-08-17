@@ -72,10 +72,17 @@ class DemoSettings:
         )
         self.backlog_mode: str = os.environ.get("BACKLOG_MODE", "full")
 
-        # MCP service URL for HTTP transport
-        self.mcp_service_url: str = os.environ.get(
-            "MCP_SERVICE_URL", "http://127.0.0.1:8083/mcp"
+        # MCP gateway uses one standard Streamable HTTP endpoint.
+        self.mcp_gateway_url: str = os.environ.get(
+            "MCP_GATEWAY_URL", "http://127.0.0.1:8083"
+        ).rstrip("/")
+        self.mcp_streamable_http_url: str = os.environ.get(
+            "MCP_STREAMABLE_HTTP_URL",
+            self.mcp_gateway_url + "/mcp",
         )
+        # Optional service credential for api-service → mcp-gateway. Keep this
+        # distinct from public/admin tokens and inject it only at deployment.
+        self.mcp_client_api_key: str | None = os.environ.get("MCP_CLIENT_API_KEY")
 
         # Direct service URLs (for web proxy bypassing api-service)
         self.data_service_url: str = os.environ.get(
@@ -144,11 +151,11 @@ class DemoSettings:
         self.mcp_tool_execution_timeout: float = float(
             os.environ.get("MCP_TOOL_EXECUTION_TIMEOUT", "15.0")
         )
-        self.mcp_sse_timeout: float = float(
-            os.environ.get("MCP_SSE_TIMEOUT", "10.0")
+        self.mcp_http_timeout: float = float(
+            os.environ.get("MCP_HTTP_TIMEOUT", "10.0")
         )
-        self.mcp_sse_read_timeout: float = float(
-            os.environ.get("MCP_SSE_READ_TIMEOUT", "1800.0")
+        self.mcp_http_read_timeout: float = float(
+            os.environ.get("MCP_HTTP_READ_TIMEOUT", "1800.0")
         )
         self.mcp_session_init_timeout: float = float(
             os.environ.get("MCP_SESSION_INIT_TIMEOUT", "15.0")

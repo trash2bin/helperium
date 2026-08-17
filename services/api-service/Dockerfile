@@ -42,7 +42,8 @@ ENV PATH=/app/.venv/bin:$PATH \
     HOME=/home/app \
     DEMO_API_HOST=0.0.0.0 \
     DEMO_API_PORT=8081 \
-    MCP_SERVICE_URL=http://mcp:8083/mcp
+    MCP_GATEWAY_URL=http://mcp:8083 \
+    MCP_STREAMABLE_HTTP_URL=http://mcp:8083/mcp
 
 USER app
 WORKDIR /app

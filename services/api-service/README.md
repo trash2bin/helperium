@@ -268,7 +268,11 @@ curl -X POST http://localhost:8081/api/agents \
 | `DEMO_API_PORT` | `8081` | Порт API |
 | `DEMO_WEB_HOST` | `127.0.0.1` | Хост Web сервера |
 | `DEMO_WEB_PORT` | `8080` | Порт Web |
-| `MCP_SERVICE_URL` | `http://127.0.0.1:8083/mcp` | URL mcp-gateway |
+| `MCP_GATEWAY_URL` | `http://127.0.0.1:8083` | Base URL mcp-gateway for schema and mapping requests |
+| `MCP_STREAMABLE_HTTP_URL` | derived `http://127.0.0.1:8083/mcp` | Единственный standard Streamable HTTP MCP endpoint |
+| `MCP_HTTP_TIMEOUT` | `10` | Connect/request timeout MCP transport (сек) |
+| `MCP_HTTP_READ_TIMEOUT` | `1800` | Max Streamable HTTP read duration (сек) |
+| `MCP_CLIENT_API_KEY` | — | Service bearer credential for mcp-gateway; в production совпадает с gateway `MCP_API_KEY` |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | URL Ollama (LLM) |
 | `OLLAMA_MODEL` | `qwen2.5:0.5b` | Модель Ollama |
 | `MISTRAL_API_KEY` | — | Ключ Mistral (альтернатива Ollama) |
@@ -311,6 +315,12 @@ curl -X POST http://localhost:8081/api/agents \
 | `VOICE_MAX_SIZE_BYTES` | `10485760` | Макс. размер голосового сообщения (байт) |
 | `VOICE_MIN_INTERVAL_SEC` | `10` | Мин. интервал между голосовыми сообщениями (сек) |
 | `VOICE_MAX_DURATION_SEC` | `120` | Макс. длительность записи (сек) |
+
+## MCP v2 Streamable HTTP
+
+`api-service` использует официальный Python SDK `mcp` v2 и подключается только к standard Streamable HTTP gateway endpoint `/mcp`. Named-agent chat route разрешает `tenant_ids` до запуска agent loop; MCP client получает уже готовый scope и передаёт его в gateway только как routing context.
+
+В production необходимо задать отдельный `MCP_CLIENT_API_KEY` и тот же секрет в gateway `MCP_API_KEY`; не публикуй mcp-gateway без service authentication. Legacy GET-SSE/POST MCP transport намеренно удалён: откат этой migration выполняется git revert/redeploy предыдущего image, а не переключением runtime transport.
 
 ## Запуск
 
@@ -465,12 +475,12 @@ API-ключи передаются напрямую в `LiteLLMProvider(api_key
 |---|---|---|
 | `MCP_MAX_CONSECUTIVE_FAILURES` | `3` | Circuit breaker: порог отказов перед пропуском reconnect |
 | `MCP_CIRCUIT_BREAKER_TIMEOUT` | `30.0` | Время (сек) до half-open retry после размыкания circuit breaker |
-| `MCP_GC_INTERVAL` | `60.0` | Интервал (сек) фонового GC для idle SSE сессий |
-| `MCP_MAX_IDLE_SECONDS` | `600.0` | Время (сек) бездействия SSE сессии до закрытия |
+| `MCP_GC_INTERVAL` | `60.0` | Интервал (сек) фонового GC для неактивных Streamable HTTP connections |
+| `MCP_MAX_IDLE_SECONDS` | `600.0` | Время (сек) бездействия Streamable HTTP connection до закрытия |
 | `MCP_LOCK_ACQUIRE_TIMEOUT` | `10.0` | Таймаут (сек) захвата per-tenant блокировки tool call |
 | `MCP_TOOL_EXECUTION_TIMEOUT` | `15.0` | Таймаут (сек) выполнения одного tool call |
-| `MCP_SSE_TIMEOUT` | `10.0` | Таймаут (сек) открытия SSE соединения |
-| `MCP_SSE_READ_TIMEOUT` | `1800.0` | Таймаут (сек) чтения SSE стрима |
+| `MCP_HTTP_TIMEOUT` | `10.0` | Таймаут (сек) открытия Streamable HTTP соединения |
+| `MCP_HTTP_READ_TIMEOUT` | `1800.0` | Таймаут (сек) чтения Streamable HTTP ответа/стрима |
 | `MCP_SESSION_INIT_TIMEOUT` | `15.0` | Таймаут (сек) инициализации MCP сессии (session.initialize) |
 
 Заменяют предыдущие хардкоды в `mcp_client.py`, читаются из `helperium_sdk.settings` при каждом вызове.
