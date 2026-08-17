@@ -1,88 +1,12 @@
-{% extends 'catalog/base.html' %}
-{% load static catalog_tags %}
-
-{% block title %}{{ site_settings.site_name }} — интернет-магазин автозапчастей{% endblock %}
-
+{% extends "catalog/base.html" %}
+{% block title %}АВТОЛИНИЯ — каталог автозапчастей{% endblock %}
 {% block content %}
-<!-- Hero -->
-<section class="hero">
-    <h1>🔧 Автозапчасти с доставкой по всей России</h1>
-    <p>Оригинальные запчасти и качественные аналоги от ведущих мировых производителей. Быстрая доставка, гарантия на все товары.</p>
-    <a href="{% url 'catalog' %}" class="btn btn-primary btn-lg">Перейти в каталог →</a>
+<section class="hero-panel">
+<div class="hero-copy"><p class="eyebrow">Интерактивная product demo</p><h1>Запчасти для тех, кто ценит точность подбора.</h1><p>Большой каталог, понятные фильтры и готовое место для AI-помощника по ассортименту.</p><div class="hero-actions"><a class="button button-primary" href="{% url "catalog" %}">Открыть каталог</a><a class="button button-quiet" href="#popular">Посмотреть хиты</a></div><dl class="hero-stats"><div><dt>1,7 млн</dt><dd>товарных позиций</dd></div><div><dt>60+</dt><dd>проверенных брендов</dd></div><div><dt>24/7</dt><dd>поиск по артикулу</dd></div></dl></div>
+<div class="hero-orbit"><div class="orbit-card orbit-card-top">Артикул · OEM · бренд</div><div class="part-disc"><span>01</span><strong>PART<br>FINDER</strong></div><div class="orbit-card orbit-card-bottom">Подбор без лишних шагов</div></div>
 </section>
-
-<!-- Benefits -->
-<section class="benefits">
-    <div class="benefit-card">
-        <span class="icon">🚚</span>
-        <h3>Быстрая доставка</h3>
-        <p>Доставка по Москве за 2–4 часа, по России от 1 дня</p>
-    </div>
-    <div class="benefit-card">
-        <span class="icon">✅</span>
-        <h3>Гарантия качества</h3>
-        <p>Все товары сертифицированы, гарантия от 12 месяцев</p>
-    </div>
-    <div class="benefit-card">
-        <span class="icon">💰</span>
-        <h3>Лучшие цены</h3>
-        <p>Прямые поставки от производителей, без наценок</p>
-    </div>
-    <div class="benefit-card">
-        <span class="icon">🔄</span>
-        <h3>Лёгкий возврат</h3>
-        <p>Возврат и обмен в течение 14 дней без вопросов</p>
-    </div>
-</section>
-
-<!-- Categories -->
-<section class="mb-40">
-    <h2 class="section-title">Категории запчастей</h2>
-    <div class="categories-grid">
-        {% get_categories as categories %}
-        {% for cat in categories %}
-        <a href="{% url 'category_detail' cat.slug %}" class="category-card">
-            <span class="icon">{{ cat.icon|default:"🔩" }}</span>
-            <div class="name">{{ cat.name }}</div>
-            {% if cat.children.all %}
-            <div class="count">{{ cat.children.count }} подкатегорий</div>
-            {% endif %}
-        </a>
-        {% endfor %}
-    </div>
-</section>
-
-<!-- Popular Products -->
-{% if popular_products %}
-<section class="mb-40">
-    <div class="flex-between mb-20">
-        <h2 class="section-title" style="border-bottom: none; margin-bottom: 0;">🔥 Популярные товары</h2>
-        <a href="{% url 'catalog' %}?popular=1" class="btn btn-outline btn-sm">Все популярные</a>
-    </div>
-    <div class="products-grid">
-        {% for product in popular_products %}
-        {% include 'catalog/includes/product_card.html' %}
-        {% endfor %}
-    </div>
-</section>
-{% endif %}
-
-<!-- Brands -->
-{% if brands %}
-<section class="mb-40">
-    <div class="flex-between mb-20">
-        <h2 class="section-title" style="border-bottom: none; margin-bottom: 0;">🏭 Производители</h2>
-        <a href="{% url 'brands_list' %}" class="btn btn-outline btn-sm">Все бренды</a>
-    </div>
-    <div class="brands-grid" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));">
-        {% for brand in brands %}
-        <a href="{% url 'brand_detail' brand.slug %}" class="brand-card">
-            <div class="name">{{ brand.name }}</div>
-            {% if brand.is_oem %}<div class="oem-badge">OEM</div>{% endif %}
-            <div class="country">{{ brand.country }}</div>
-        </a>
-        {% endfor %}
-    </div>
-</section>
-{% endif %}
+<section class="quick-find"><div><p class="eyebrow">Быстрый старт</p><h2>Что вы ищете сегодня?</h2></div><div class="quick-links">{% for category in categories|slice:":4" %}<a href="{% url "category_detail" category.slug %}">{{ category.name }} <span>→</span></a>{% endfor %}</div></section>
+<section class="section-block"><div class="section-heading"><div><p class="eyebrow">Каталог</p><h2>Категории для каждого узла автомобиля</h2></div><a class="text-link" href="{% url "catalog" %}">Все категории <span>→</span></a></div><div class="category-grid">{% for category in categories %}<a href="{% url "category_detail" category.slug %}" class="category-tile"><span class="category-index">0{{ forloop.counter }}</span><h3>{{ category.name }}</h3><p>{% if category.children.all %}{{ category.children.count }} подкатегорий{% else %}Подбор по модели и артикулу{% endif %}</p><span class="tile-arrow">↗</span></a>{% endfor %}</div></section>
+{% if popular_products %}<section id="popular" class="section-block"><div class="section-heading"><div><p class="eyebrow">В наличии</p><h2>Популярные позиции</h2></div><a class="text-link" href="{% url "catalog" %}?popular=1">Смотреть каталог <span>→</span></a></div><div class="products-grid">{% for product in popular_products %}{% include "catalog/includes/product_card.html" %}{% endfor %}</div></section>{% endif %}
+<section class="assurance-grid"><article><span>01</span><h3>Прозрачный каталог</h3><p>Детали, бренды, остатки и характеристики структурированы так, как в реальном e-commerce.</p></article><article><span>02</span><h3>Безопасный demo-контур</h3><p>Заказы не обрабатываются, а форма не сохраняет персональные данные посетителей.</p></article><article><span>03</span><h3>Готово для ассистента</h3><p>Виджет подключается отдельной конфигурацией, когда tenant и агент зарегистрированы.</p></article></section>
 {% endblock %}

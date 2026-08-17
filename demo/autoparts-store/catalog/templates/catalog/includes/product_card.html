@@ -1,37 +1,4 @@
-{% load catalog_tags %}
-<div class="product-card">
-    {% if product.label != 'none' %}
-    <div class="badge badge-{{ product.label }}">{{ product.get_label_display }}</div>
-    {% elif product.old_price and product.old_price > product.price %}
-    <div class="badge badge-sale">-{% widthratio product.price product.old_price 100 as discount %}{{ discount|add:"-100"|cut:"-"|default:"0" }}%</div>
-    {% endif %}
-    <a href="{% url 'product_detail' product.slug %}">
-        <div class="image-wrap">
-            <span class="no-img">🔧</span>
-        </div>
-    </a>
-    <div class="info">
-        <div class="brand-name">{{ product.brand.name }}</div>
-        <a href="{% url 'product_detail' product.slug %}" class="product-name">{{ product.name }}</a>
-        <div class="article">Арт. {{ product.article }}</div>
-        <div class="meta">
-            <span class="stock {% if product.is_available %}stock-in{% else %}stock-out{% endif %}">
-                {% if product.is_available %}✅ В наличии{% else %}❌ Нет в наличии{% endif %}
-            </span>
-            {% if product.warranty_months %}
-            <span>🛡️ {{ product.warranty_months|ru_plural:"месяц,месяца,месяцев" }}</span>
-            {% endif %}
-        </div>
-        <div class="price-block">
-            <span class="current-price">{{ product.price|floatformat:2 }} ₽</span>
-            {% if product.old_price %}
-            <span class="old-price">{{ product.old_price|floatformat:2 }} ₽</span>
-            {% endif %}
-        </div>
-        {% if product.is_available %}
-        <a href="{% url 'add_to_cart' product.id %}" class="add-to-cart">В корзину</a>
-        {% else %}
-        <button class="add-to-cart" disabled>Нет в наличии</button>
-        {% endif %}
-    </div>
-</div>
+<article class="product-card">
+  <a class="product-visual" href="{% url "product_detail" product.slug %}" aria-label="{{ product.name }}"><span>{{ product.brand.name|slice:":1" }}</span><small>{{ product.article }}</small>{% if product.label != "none" %}<b>{{ product.get_label_display }}</b>{% endif %}</a>
+  <div class="product-body"><p class="product-brand">{{ product.brand.name }}</p><a class="product-name" href="{% url "product_detail" product.slug %}">{{ product.name }}</a><p class="product-meta">Арт. {{ product.article }} · {% if product.is_available %}в наличии{% else %}под заказ{% endif %}</p><div class="product-bottom"><div><strong>{{ product.price|floatformat:0 }} ₽</strong>{% if product.old_price %}<del>{{ product.old_price|floatformat:0 }} ₽</del>{% endif %}</div>{% if product.is_available %}<form method="post" action="{% url "add_to_cart" product.id %}">{% csrf_token %}<input type="hidden" name="quantity" value="1"><button class="icon-button" type="submit" aria-label="Добавить {{ product.name }} в корзину">+</button></form>{% else %}<span class="stock-note">Нет в наличии</span>{% endif %}</div></div>
+</article>

@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
+from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.db.models import Q, Count, F
 from django.contrib import messages
@@ -189,13 +191,12 @@ def add_to_cart_handler(request, product, quantity=1):
     messages.success(request, f'«{product.name}» добавлен в корзину')
 
 
+
+@require_POST
 def add_to_cart(request, product_id):
-    """Добавление в корзину (GET/POST)"""
+    """Добавление товара в текущую корзину."""
     product = get_object_or_404(Product, id=product_id, is_active=True)
-    if request.method == 'POST':
-        qty = int(request.POST.get('quantity', 1))
-    else:
-        qty = int(request.GET.get('quantity', 1))
+    qty = int(request.POST.get("quantity", 1))
     add_to_cart_handler(request, product, qty)
     return redirect(request.META.get('HTTP_REFERER', 'catalog'))
 
@@ -220,6 +221,8 @@ def cart_view(request):
     })
 
 
+
+@require_POST
 def cart_update(request, item_id):
     """Обновить количество"""
     item = get_object_or_404(CartItem, id=item_id)
@@ -234,6 +237,8 @@ def cart_update(request, item_id):
     return redirect('cart_view')
 
 
+
+@require_POST
 def cart_remove(request, item_id):
     """Удалить из корзины"""
     item = get_object_or_404(CartItem, id=item_id)
@@ -259,7 +264,10 @@ def checkout(request):
     except Cart.DoesNotExist:
         return redirect('catalog')
 
-    if request.method == 'POST':
+    if request.method == "POST":
+        if not settings.DEMO_ORDER_SUBMISSIONS:
+            messages.info(request, "Это публичная демо-витрина: заказ не отправлен, а персональные данные не сохраняются.")
+            return redirect("cart_view")
         order = Order(
             first_name=request.POST.get('first_name', ''),
             last_name=request.POST.get('last_name', ''),

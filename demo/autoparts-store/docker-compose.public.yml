@@ -1,0 +1,97 @@
+services:
+  storefront-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${STORE_DB_NAME:-autoparts}
+      POSTGRES_USER: ${STORE_DB_USER:-autoparts}
+      POSTGRES_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env.public}
+    volumes:
+      - storefront_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STORE_DB_USER:-autoparts} -d ${STORE_DB_NAME:-autoparts}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks: [storefront_internal]
+
+  storefront-init:
+    build: .
+    environment:
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env.public}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?set DJANGO_ALLOWED_HOSTS in .env.public}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:?set DJANGO_CSRF_TRUSTED_ORIGINS in .env.public}
+      DJANGO_SECURE_COOKIES: "true"
+      DB_HOST: storefront-db
+      DB_NAME: ${STORE_DB_NAME:-autoparts}
+      DB_USER: ${STORE_DB_USER:-autoparts}
+      DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env.public}
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_data && python manage.py collectstatic --noinput"]
+    depends_on:
+      storefront-db:
+        condition: service_healthy
+    networks: [storefront_internal]
+
+  storefront:
+    build: .
+    environment:
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env.public}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?set DJANGO_ALLOWED_HOSTS in .env.public}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:?set DJANGO_CSRF_TRUSTED_ORIGINS in .env.public}
+      DJANGO_SECURE_COOKIES: "true"
+      DB_HOST: storefront-db
+      DB_NAME: ${STORE_DB_NAME:-autoparts}
+      DB_USER: ${STORE_DB_USER:-autoparts}
+      DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env.public}
+      HELPERIUM_WIDGET_ENABLED: ${HELPERIUM_WIDGET_ENABLED:-false}
+      HELPERIUM_API_BASE: ${HELPERIUM_API_BASE:-}
+      HELPERIUM_AGENT: ${HELPERIUM_AGENT:-autoparts-demo}
+      HELPERIUM_WIDGET_TITLE: ${HELPERIUM_WIDGET_TITLE:-Помощник по подбору}
+      DEMO_ORDER_SUBMISSIONS: ${DEMO_ORDER_SUBMISSIONS:-false}
+      DJANGO_SECURE_SSL_REDIRECT: "false"
+      DJANGO_HSTS_SECONDS: ${DJANGO_HSTS_SECONDS:-0}
+    depends_on:
+      storefront-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/healthz/\")"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks: [storefront_internal]
+
+  storefront-caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:?set DEMO_DOMAIN in .env.public}
+      HELPERIUM_API_UPSTREAM: ${HELPERIUM_API_UPSTREAM:-}
+    volumes:
+      - ./Caddyfile.public:/etc/caddy/Caddyfile:ro
+      - storefront_caddy_data:/data
+      - storefront_caddy_config:/config
+    depends_on:
+      storefront:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [storefront_internal, helperium_bridge]
+
+volumes:
+  storefront_pg_data:
+  storefront_caddy_data:
+  storefront_caddy_config:
+
+networks:
+  storefront_internal:
+    driver: bridge
+    internal: true
+  helperium_bridge:
+    external: true
+    name: ${HELPERIUM_DOCKER_NETWORK:-infra_helperium-net}

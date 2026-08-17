@@ -45,7 +45,7 @@
                 </td>
                 <td style="font-weight: 600;">{{ item.total|floatformat:2 }} ₽</td>
                 <td>
-                    <a href="{% url 'cart_remove' item.id %}" style="color: var(--primary); font-size: 20px;" onclick="return confirm('Удалить товар из корзины?')">✕</a>
+                    <form method="POST" action="{% url 'cart_remove' item.id %}" onsubmit="return confirm('Удалить товар из корзины?');">{% csrf_token %}<button type="submit" class="cart-remove" aria-label="Удалить товар">×</button></form>
                 </td>
             </tr>
             {% endfor %}
