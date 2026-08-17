@@ -99,8 +99,12 @@ def product_detail(request, slug):
     ).exclude(pk=product.pk).select_related('brand')[:4]
 
     if request.method == 'POST':
-        quantity = int(request.POST.get('quantity', 1))
-        return add_to_cart_handler(request, product, quantity)
+        try:
+            quantity = max(1, min(int(request.POST.get('quantity', 1)), 99))
+        except (TypeError, ValueError):
+            quantity = 1
+        add_to_cart_handler(request, product, quantity)
+        return redirect('cart_view')
 
     return render(request, 'catalog/product_detail.html', {
         'product': product,
@@ -196,7 +200,10 @@ def add_to_cart_handler(request, product, quantity=1):
 def add_to_cart(request, product_id):
     """Добавление товара в текущую корзину."""
     product = get_object_or_404(Product, id=product_id, is_active=True)
-    qty = int(request.POST.get("quantity", 1))
+    try:
+        qty = max(1, min(int(request.POST.get("quantity", 1)), 99))
+    except (TypeError, ValueError):
+        qty = 1
     add_to_cart_handler(request, product, qty)
     return redirect(request.META.get('HTTP_REFERER', 'catalog'))
 
@@ -225,9 +232,13 @@ def cart_view(request):
 @require_POST
 def cart_update(request, item_id):
     """Обновить количество"""
-    item = get_object_or_404(CartItem, id=item_id)
+    cart = _get_or_create_cart(request)
+    item = get_object_or_404(CartItem, id=item_id, cart=cart)
     if request.method == 'POST':
-        qty = int(request.POST.get('quantity', 1))
+        try:
+            qty = max(0, min(int(request.POST.get('quantity', 1)), 99))
+        except (TypeError, ValueError):
+            qty = 1
         if qty <= 0:
             item.delete()
             messages.success(request, 'Товар удалён из корзины')
@@ -241,7 +252,8 @@ def cart_update(request, item_id):
 @require_POST
 def cart_remove(request, item_id):
     """Удалить из корзины"""
-    item = get_object_or_404(CartItem, id=item_id)
+    cart = _get_or_create_cart(request)
+    item = get_object_or_404(CartItem, id=item_id, cart=cart)
     name = item.product.name
     item.delete()
     messages.success(request, f'«{name}» удалён из корзины')
