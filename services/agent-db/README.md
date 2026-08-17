@@ -112,8 +112,11 @@ uv run pytest services/agent-db/tests/e2e/ --no-traceback
 uv run pytest services/agent-db/tests/e2e/test_data_isolation.py -v
 uv run pytest services/agent-db/tests/e2e/test_agents.py -v
 uv run pytest services/agent-db/tests/e2e/test_mcp_composite.py -v
-# Official MCP SDK v2: tool call, composite scope and header-only tenant routing.
-uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
+# Official MCP SDK v2: tool calls, composite prefixed tools, header-only
+# routing, cross-scope session replay rejection, scope bounds and configured
+# service-auth / Origin rejection. Supply these values for a secure stack.
+MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
+  uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 uv run pytest services/agent-db/tests/e2e-llm/test_llm_chat.py -v
 ```
 
@@ -157,10 +160,10 @@ curl -H "X-Tenant-ID: mydb" http://127.0.0.1:8084/health
 |---|---|---|
 | Seed generation | `data-service/cmd/seed-cli/` (Go, ~130 строк) | `agent-db/agent_db/seedgen/` (Python, ~650 строк) |
 | Materialize | `data-service --materialize` (в production binary) | `materialize()` из Python-пакета |
-| E2E tests | `cli.py` `_run_*` функции (~900 строк) | `services/agent-db/tests/e2e/*.py` — модульные deterministic tests, включая native MCP SDK v2 contract |
+| E2E tests | `cli.py` `_run_*` функции (~900 строк) | `services/agent-db/tests/e2e/*.py` — deterministic coverage data isolation, named-agent composite routing и native MCP SDK v2 contract |
 | LLM tests | — | `services/agent-db/tests/e2e-llm/test_llm_chat.py — 4 теста (opt-in) |
 | DB generation in e2e | `subprocess.run(["go", "run", "./cmd/seed-cli/"])` | `from agent_db.seedgen import materialize` |
 | CLI entry point | `cli.py` (root) | `agent_db/cli.py` |
 | Benchmark | — | `agent_db/bench/` — парсинг, прогон, отчёт |
 ---
-**Last verified:** 2026-08-17 (working tree after `7de9feb`) — E2E commands distinguish full suite, composite tenant coverage and the official Streamable HTTP v2 contract test; obsolete SSE-only test is removed.
+**Last verified:** 2026-08-18 (working tree after `267974c`) — full E2E distinguishes database isolation and composite tenant tools; `test_mcp_streamable_http.py` additionally verifies official SDK v2 calls, header-only routing, cross-scope session rejection, scope cardinality, configured service auth and Origin policy. Obsolete SSE-only coverage is removed.

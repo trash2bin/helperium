@@ -11,7 +11,7 @@
 В Streamable HTTP gateway создаёт и кэширует отдельный stateful handler для уже переданного набора `X-Tenant-ID`. Поэтому manifest и closures остаются tenant-scoped; primary tenant инжектируется в request context только для single-tenant compatibility handlers. MCP session id никогда не используется как авторизационный источник.
 
 ```
-POST /mcp (api-service v2 Client, X-Tenant-ID + optional bearer)
+POST /mcp (api-service v2 Client, authorized X-Tenant-ID + required production bearer)
   │
   ├─ streamableTenantRegistry.handlerFor(tenantIDs)
   │    └─ createCompositeServer(tenantIDs) on first scope use
@@ -110,6 +110,7 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 **Поведение:**
 - Composite: тулы с префиксом (`tenant-a__grep_products`, `tenant-b__grep_products`)
 - Single: тулы без префикса (`grep_products`)
+- Scope сохраняет порядок, допускает не более `MCP_MAX_TENANTS_PER_SCOPE` unique IDs; duplicate или oversized header получает `400` до загрузки manifests.
 - RAG-тулы: регистрируются один раз (не per-tenant).
   Защита: если RAG недоступен (`RagEnabled()` → false), `registerRagTools()`
   не регистрирует ни один RAG-тул, возвращаясь без ошибки.
@@ -126,11 +127,20 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 
 ## Безопасность
 
-### Tenant isolation
+### Tenant authority and isolation
 
-- `tenant_id` не доступен LLM как параметр (заблокирован на ParseRequest уровне)
-- TenantID инжектится сервером из HTTP-заголовка в Condition
-- Composite mode: префикс tenant'а в имени инструмента гарантирует изоляцию
+- Public direct `/api/chat` и direct voice chat всегда используют server-configured `[DEFAULT_TENANT_ID]` scope (fallback `default`) и игнорируют browser `X-Tenant-ID`.
+- Только named-agent route берёт tenant IDs из persisted Agent Store; browser header не является авторизацией.
+- `tenant_id` не доступен LLM как параметр (заблокирован на ParseRequest уровне).
+- Gateway получает уже разрешённый scope только через `X-Tenant-ID`; query parameter не принимается.
+- Composite mode: префикс tenant'а в имени инструмента и closure `tenantID` гарантируют изоляцию; session ID одного scope возвращает `404` при replay под другим scope.
+
+### Transport ingress
+
+- Production включает `MCP_REQUIRE_AUTH=true`; gateway не стартует без `MCP_API_KEY`, а api-service передаёт совпадающий `MCP_CLIENT_API_KEY`.
+- Native service requests обычно не имеют `Origin`. Любой present browser Origin должен exactly match `MCP_ALLOWED_ORIGINS`, иначе gateway возвращает `403`.
+- Sessions и tenant handler cache process-local в stateful mcp-go transport: держать один gateway instance, пока не настроены sticky sessions для scale-out.
+- `/mcp/manifest`, `/mcp/tools/mapping` и `/mcp/schema` требуют ровно один validated tenant header; отсутствующий default fallback отключён.
 
 ### Field whitelist
 
@@ -146,4 +156,4 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 
 Подробнее о стратегиях поиска: [search-strategies.md](search-strategies.md)
 ---
-**Last verified:** 2026-08-17 (working tree, modern-only MCP experiment) — единственный Streamable HTTP `/mcp`, Python SDK v2 и tenant-scoped gateway handlers проверены deterministic E2E.
+**Last verified:** 2026-08-18 (working tree after `267974c`) — единственный Streamable HTTP `/mcp`, Python SDK v2, required-production auth, Origin policy, fixed direct-chat authority, tenant-scoped handlers, composite tools и cross-scope session rejection проверены deterministic E2E.

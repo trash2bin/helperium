@@ -69,12 +69,29 @@ var (
 		}
 		return 256
 	}()
+
+	// MaxTenantsPerScope limits one composite tenant header. Without this bound,
+	// one request could synchronously fetch and register an unbounded number of
+	// tenant manifests before the scope-cache limit is reached.
+	// Can be overridden with MCP_MAX_TENANTS_PER_SCOPE.
+	MaxTenantsPerScope = func() int {
+		if v := os.Getenv("MCP_MAX_TENANTS_PER_SCOPE"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+		}
+		return 8
+	}()
 )
 
 // streamableTenantRegistry keeps a separate standard Streamable HTTP MCP
 // transport for each already-resolved tenant set. Tool manifests are tenant
 // specific, so one global MCPServer cannot safely serve all tenant scopes.
-var errMaxStreamableTenantScopes = errors.New("maximum streamable tenant scopes reached")
+var (
+	errMaxStreamableTenantScopes = errors.New("maximum streamable tenant scopes reached")
+	errTooManyTenantsPerScope    = errors.New("maximum tenants per MCP scope reached")
+	errDuplicateTenantInScope    = errors.New("duplicate tenant ID in MCP scope")
+)
 
 type streamableTenantRegistry struct {
 	mu       sync.Mutex
@@ -91,22 +108,27 @@ func newStreamableTenantRegistry() *streamableTenantRegistry {
 
 func (registry *streamableTenantRegistry) handlerFor(tenantIDs []string) (http.Handler, error) {
 	tenantKey := strings.Join(tenantIDs, ",")
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
 
+	// Do not hold the registry mutex while loading manifests from data-service.
+	// A slow or unavailable tenant must not block already-cached scopes.
+	registry.mu.Lock()
 	if handler, ok := registry.handlers[tenantKey]; ok {
+		registry.mu.Unlock()
 		return handler, nil
 	}
 	if len(registry.handlers) >= registry.max {
+		registry.mu.Unlock()
 		return nil, errMaxStreamableTenantScopes
 	}
+	registry.mu.Unlock()
+
 	mcpServer, err := createCompositeServer(tenantIDs)
 	if err != nil {
 		return nil, err
 	}
 
 	primaryTenantID := tenantIDs[0]
-	handler := server.NewStreamableHTTPServer(
+	candidate := server.NewStreamableHTTPServer(
 		mcpServer,
 		server.WithEndpointPath("/mcp"),
 		server.WithStateful(true),
@@ -116,14 +138,29 @@ func (registry *streamableTenantRegistry) handlerFor(tenantIDs []string) (http.H
 			return context.WithValue(ctx, httpclient.TenantIDKey, primaryTenantID)
 		}),
 	)
-	registry.handlers[tenantKey] = handler
-	return handler, nil
+
+	// Another request may have built the same scope while its manifest was
+	// loading. Reuse that canonical handler and discard the duplicate candidate.
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if handler, ok := registry.handlers[tenantKey]; ok {
+		return handler, nil
+	}
+	if len(registry.handlers) >= registry.max {
+		return nil, errMaxStreamableTenantScopes
+	}
+	registry.handlers[tenantKey] = candidate
+	return candidate, nil
 }
 
 func (registry *streamableTenantRegistry) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	tenantIDs := resolveTenantIDs(r)
 	if len(tenantIDs) == 0 {
 		http.Error(w, "X-Tenant-ID header is required", http.StatusBadRequest)
+		return
+	}
+	if err := validateTenantScope(tenantIDs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	handler, err := registry.handlerFor(tenantIDs)
@@ -140,6 +177,11 @@ func (registry *streamableTenantRegistry) serveHTTP(w http.ResponseWriter, r *ht
 }
 
 func main() {
+	if err := validateStartupConfiguration(); err != nil {
+		slog.Error("invalid MCP gateway configuration", "error", err)
+		os.Exit(1)
+	}
+
 	devMode := os.Getenv("MCP_DEV") == "true"
 	logLevel := slog.LevelInfo
 	if devMode {
@@ -256,13 +298,84 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 	return composite, nil
 }
 
+// validateStartupConfiguration protects production-style deployments from
+// accidentally exposing a gateway with auth disabled. Local development remains
+// explicit through MCP_REQUIRE_AUTH=false (the default).
+func validateStartupConfiguration() error {
+	if os.Getenv("MCP_REQUIRE_AUTH") == "true" && strings.TrimSpace(os.Getenv("MCP_API_KEY")) == "" {
+		return errors.New("MCP_REQUIRE_AUTH=true requires a non-empty MCP_API_KEY")
+	}
+	return nil
+}
+
+// originMiddleware implements the Streamable HTTP DNS-rebinding defence. Native
+// service clients normally omit Origin; browser-originated requests must match
+// the configured comma-separated MCP_ALLOWED_ORIGINS allow-list exactly.
+func originMiddleware(next http.Handler) http.Handler {
+	allowed := make(map[string]struct{})
+	for _, value := range strings.Split(os.Getenv("MCP_ALLOWED_ORIGINS"), ",") {
+		if origin := strings.TrimSpace(value); origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			if _, ok := allowed[origin]; !ok {
+				http.Error(w, "Origin is not allowed", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// validateTenantScope constrains composite setup work before any upstream
+// manifest requests. Ordering is preserved because it determines the exposed
+// tool names, while duplicate IDs have no valid composite meaning.
+func validateTenantScope(tenantIDs []string) error {
+	if len(tenantIDs) > MaxTenantsPerScope {
+		return errTooManyTenantsPerScope
+	}
+	seen := make(map[string]struct{}, len(tenantIDs))
+	for _, tenantID := range tenantIDs {
+		if _, duplicate := seen[tenantID]; duplicate {
+			return errDuplicateTenantInScope
+		}
+		seen[tenantID] = struct{}{}
+	}
+	return nil
+}
+
+// requiredSingleTenant resolves metadata routes that are meaningful only for one
+// manifest. Unlike the old fallback, an absent X-Tenant-ID cannot silently read
+// a default scope and a composite scope must use the MCP tool manifest instead.
+func requiredSingleTenant(w http.ResponseWriter, r *http.Request) (string, bool) {
+	tenantIDs := resolveTenantIDs(r)
+	if len(tenantIDs) == 0 {
+		http.Error(w, "X-Tenant-ID header is required", http.StatusBadRequest)
+		return "", false
+	}
+	if err := validateTenantScope(tenantIDs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return "", false
+	}
+	if len(tenantIDs) != 1 {
+		http.Error(w, "metadata endpoints require exactly one X-Tenant-ID", http.StatusBadRequest)
+		return "", false
+	}
+	return tenantIDs[0], true
+}
+
 // authMiddleware проверяет Authorization: Bearer <token> на всех маршрутах,
 // кроме /health. Если переменная окружения MCP_API_KEY не установлена,
-// middleware пропускает все запросы (backward compat).
+// middleware пропускает все запросы only when MCP_REQUIRE_AUTH is false.
 func authMiddleware(next http.Handler) http.Handler {
 	apiKey := os.Getenv("MCP_API_KEY")
 	if apiKey == "" {
-		// No auth configured — skip entirely
+		// Local development may deliberately opt out. Production launch paths set
+		// MCP_REQUIRE_AUTH=true and fail before router construction if no key exists.
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -301,8 +414,12 @@ func buildRouter() *chi.Mux {
 	// OpenTelemetry tracing middleware
 	r.Use(tracing.Middleware)
 
+	// Reject browser-originated requests unless their Origin is explicitly
+	// allow-listed. Service-to-service clients do not send Origin.
+	r.Use(originMiddleware)
+
 	// Auth middleware — check Authorization: Bearer <token> on all routes
-	// except /health. If MCP_API_KEY env is empty, auth is skipped.
+	// except /health. MCP_REQUIRE_AUTH prevents an accidental empty-key deploy.
 	r.Use(authMiddleware)
 
 	// Global request logger to debug routing issues
@@ -341,11 +458,9 @@ func healthHandler() http.HandlerFunc {
 }
 
 func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
-	tenantIDs := resolveTenantIDs(r)
-	// Use the first tenant for manifest (backward compat)
-	tenantID := ""
-	if len(tenantIDs) > 0 {
-		tenantID = tenantIDs[0]
+	tenantID, ok := requiredSingleTenant(w, r)
+	if !ok {
+		return
 	}
 	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
 	if err != nil {
@@ -357,10 +472,9 @@ func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func mappingHandler(w http.ResponseWriter, r *http.Request) {
-	tenantIDs := resolveTenantIDs(r)
-	tenantID := ""
-	if len(tenantIDs) > 0 {
-		tenantID = tenantIDs[0]
+	tenantID, ok := requiredSingleTenant(w, r)
+	if !ok {
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -389,10 +503,9 @@ func mappingHandler(w http.ResponseWriter, r *http.Request) {
 
 // schemaProxyHandler прокидывает запрос /mcp/schema в data-service.
 func schemaProxyHandler(w http.ResponseWriter, r *http.Request) {
-	tenantIDs := resolveTenantIDs(r)
-	tenantID := ""
-	if len(tenantIDs) > 0 {
-		tenantID = tenantIDs[0]
+	tenantID, ok := requiredSingleTenant(w, r)
+	if !ok {
+		return
 	}
 
 	data, err := globalClient.FetchSchemaWithTenant(tenantID)

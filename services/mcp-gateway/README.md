@@ -6,7 +6,7 @@ Generic MCP (Model Context Protocol) сервер на Go. Заменил Python
 
 ## 🏢 Multi-tenancy архитектура
 
-`mcp-gateway` — stateless шлюз между агентами и data-service.
+`mcp-gateway` — tenant-scoped **stateful** Streamable HTTP gateway между агентами и data-service. MCP sessions и registry handlers process-local; production topology пока должна использовать один gateway instance (либо sticky routing при будущем scale-out).
 
 ### Одноtenantный режим
 
@@ -32,7 +32,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 Инструмент `tenant-a__grep_products` всегда идёт в data-service с `X-Tenant-ID: tenant-a`,
 даже если клиент подменит заголовок.
 
-**Кэш handler-а:** `streamableTenantRegistry` переиспользует stateful Streamable HTTP handler для одного tenant set; число scopes ограничено `MCP_MAX_STREAMABLE_TENANT_SCOPES`.
+**Кэш handler-а:** `streamableTenantRegistry` переиспользует stateful Streamable HTTP handler для exact ordered tenant set; число scopes ограничено `MCP_MAX_STREAMABLE_TENANT_SCOPES`. Один composite scope допускает не более `MCP_MAX_TENANTS_PER_SCOPE` unique tenant IDs; duplicate IDs получают `400`.
 
 ### Ключевые файлы
 
@@ -47,7 +47,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 
 `/mcp` — **единственный стандартный Streamable HTTP MCP endpoint** на `mcp-go v0.58`. Он поддерживает standard single-endpoint request/response flow и transport-managed MCP sessions. Для каждого уже разрешённого набора `X-Tenant-ID` gateway создаёт отдельный stateful handler: manifest и tool closures остаются tenant-scoped, а `data-service` получает primary tenant через request context.
 
-Не публикуй этот endpoint без `MCP_API_KEY`: `X-Tenant-ID` определяет scope tools, но сам по себе не является криптографическим доказательством права клиента на tenant. Legacy GET-SSE/POST JSON-RPC compatibility path удалён; rollback выполняется deploy предыдущего tested image.
+Не публикуй этот endpoint без `MCP_API_KEY`: `X-Tenant-ID` определяет scope tools, но сам по себе не является криптографическим доказательством права клиента на tenant. Production ставит `MCP_REQUIRE_AUTH=true`; gateway fail-fast завершится, если ключ пуст. Legacy GET-SSE/POST JSON-RPC compatibility path удалён; rollback выполняется deploy предыдущего tested image.
 
 ### Transport и security contract
 
@@ -55,8 +55,10 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 |---|---|
 | Единственный transport path | Только `GET`, `POST` и `DELETE /mcp` обслуживаются mcp-go Streamable HTTP server; `/`, `/sse`, `/mcp/message` и `/mcp/v2` возвращают `404` |
 | Tenant scope | Только header `X-Tenant-ID`; query parameters намеренно игнорируются. Отсутствие header на `/mcp` возвращает `400` |
-| Composite scope | `X-Tenant-ID: a,b` создаёт handler для exact ordered scope и публикует только prefixed tools (`a__db_map`, `b__db_map`) |
-| Service authentication | При непустом `MCP_API_KEY` все non-health/metrics routes требуют exact `Authorization: Bearer <token>`; отсутствие или ошибка — `401` |
+| Composite scope | `X-Tenant-ID: a,b` создаёт handler для exact ordered scope и публикует только prefixed tools (`a__db_map`, `b__db_map`); duplicate IDs и scope выше `MCP_MAX_TENANTS_PER_SCOPE` возвращают `400` до загрузки manifests |
+| Metadata scope | `/mcp/manifest`, `/mcp/tools/mapping` и `/mcp/schema` требуют ровно один validated tenant ID; отсутствующий/default fallback и composite metadata request получают `400` |
+| Service authentication | `MCP_REQUIRE_AUTH=true` требует non-empty `MCP_API_KEY` already at startup; все non-health/metrics routes требуют exact `Authorization: Bearer <token>`, отсутствие или ошибка — `401` |
+| Browser Origin | Requests без `Origin` разрешены для service clients. Любой present Origin должен exactly match `MCP_ALLOWED_ORIGINS`, иначе `403` |
 | Capacity bound | Новый tenant scope свыше `MCP_MAX_STREAMABLE_TENANT_SCOPES` получает `503`, существующий cached scope остаётся доступным |
 | Abuse control | Rate limiter применяется ко всем Streamable HTTP methods на `/mcp`; превышение возвращает `429` |
 
@@ -132,7 +134,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | `/docs` | GET | Swagger UI | MCP_API_KEY |
 | `/openapi.json` | GET | OpenAPI spec | MCP_API_KEY |
 
-**Auth:** если `MCP_API_KEY` не установлена — все маршруты без аутентификации. `/health` и `/metrics` всегда открыты.
+**Auth:** development может оставить `MCP_REQUIRE_AUTH=false`. Production обязан установить `MCP_REQUIRE_AUTH=true` и тот же сильный secret в gateway `MCP_API_KEY` и api-service `MCP_CLIENT_API_KEY`; `/health` и `/metrics` всегда открыты.
 
 ## 📚 Ссылки
 
@@ -146,7 +148,10 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | Переменная | Дефолт | Описание |
 |---|---|---|
 | `MCP_PORT` | `8083` | Порт HTTP |
-| `MCP_API_KEY` | — | Gateway Bearer-токен (пустой → auth отключён); должен совпадать с `MCP_CLIENT_API_KEY` api-service |
+| `MCP_REQUIRE_AUTH` | `false` | `true` запрещает старт gateway с пустым `MCP_API_KEY`; production setting |
+| `MCP_API_KEY` | — | Gateway Bearer-токен; должен совпадать с `MCP_CLIENT_API_KEY` api-service |
+| `MCP_ALLOWED_ORIGINS` | — | Comma-separated exact browser Origin allow-list; absent Origin разрешён service clients |
+| `MCP_MAX_TENANTS_PER_SCOPE` | `8` | Maximum unique tenant IDs в composite scope; duplicate/oversize получают `400` |
 | `DATA_SERVICE_URL` | `http://127.0.0.1:8084` | Базовый URL data-service |
 | `DATA_SERVICE_TIMEOUT` | `30` | Таймаут HTTP к data-service (сек) |
 | `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | Базовый URL RAG |
@@ -196,16 +201,19 @@ DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 ## Smoke test
 
 ```bash
-# Metadata endpoint for a registered tenant.
-curl -s -H "X-Tenant-ID: default" http://127.0.0.1:8083/mcp/manifest | jq '.tools | length'
+# Metadata endpoint for a registered tenant in a secure deployment.
+curl -s -H "Authorization: Bearer $MCP_API_KEY" -H "X-Tenant-ID: default" \
+  http://127.0.0.1:8083/mcp/manifest | jq '.tools | length'
 
-# Fast gateway regression: header-only routing, capacity fail-closed behaviour
-# and proof that deleted legacy routes stay absent.
-go test ./cmd -run 'Test(LegacyMCPRoutesAreNotRegistered|ResolveTenantIDsUsesHeaderOnly|StreamableTenantRegistryRejectsNewScopeAtCapacity)$' -v
+# Gateway security regression: legacy-route absence, auth startup validation,
+# Origin policy, header-only routing and bounded composite scopes.
+go test ./cmd -v
 
-# Live SDK v2 contract: tool call, composite scope and query-parameter rejection.
+# Live SDK v2 contract: tools, composite scopes, session isolation, query
+# rejection, auth and Origin policy (security tests activate when env is set).
 cd ../..
-uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
+MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
+  uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 ```
 
 ## Troubleshooting
@@ -215,9 +223,10 @@ uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 | `connection refused` :8083 | mcp-gateway не запущен | `go run ./cmd/` |
 | `400 X-Tenant-ID header is required` | Client передал tenant в query либо вовсе его потерял | Передать resolved scope только через `X-Tenant-ID` |
 | Пустой манифест (0 tools) | Tenant не зарегистрирован | register через data-service admin API |
-| 401 Unauthorized | MCP_API_KEY mismatch | Синхронизируй токен |
+| 401 Unauthorized | Missing/mismatched MCP Bearer token | Синхронизируй `MCP_API_KEY` gateway и `MCP_CLIENT_API_KEY` api-service |
+| 403 Origin is not allowed | Browser Origin absent from `MCP_ALLOWED_ORIGINS` | Keep MCP internal or add only the explicit trusted HTTPS origin |
 | 429 Too Many Requests | Исчерпан rate-limit burst для client IP | Ограничить повторные попытки или пересмотреть limits после capacity review |
 | 503 too many active Streamable HTTP tenant scopes | Churn tenant sets заполнил bounded cache | Стабилизировать scopes или оценить безопасное увеличение `MCP_MAX_STREAMABLE_TENANT_SCOPES` |
 
 ---
-**Last verified:** 2026-08-17 (working tree after `7de9feb`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, header-only tenant scope, bounded scope cache, legacy-route absence и native Python SDK v2 E2E сверены локально.
+**Last verified:** 2026-08-18 (working tree after `267974c`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, required-production auth, Origin allow-list, header-only tenant scope, bounded composite scopes, session isolation и native Python SDK v2 E2E сверены локально.

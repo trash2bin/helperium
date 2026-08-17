@@ -346,9 +346,12 @@ class TestTenant:
     def tools(self, refresh: bool = False) -> list[dict]:
         """List MCP tools for this tenant (cached)."""
         if refresh or not self._tools:
+            headers = {"X-Tenant-ID": self.id}
+            if api_key := os.environ.get("MCP_API_KEY"):
+                headers["Authorization"] = f"Bearer {api_key}"
             resp = requests.get(
                 f"{mcp_gateway_url()}/mcp/manifest",
-                headers={"X-Tenant-ID": self.id},
+                headers=headers,
                 timeout=10,
             )
             if resp.status_code == 200:

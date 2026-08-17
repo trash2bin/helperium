@@ -1,5 +1,12 @@
 # CHANGELOG.md
 
+## 2026-08-18
+
+- **fix(mcp/security):** gateway получил production fail-fast `MCP_REQUIRE_AUTH=true`, shared `MCP_API_KEY`/`MCP_CLIENT_API_KEY` Compose wiring, strict `MCP_ALLOWED_ORIGINS` policy, header-only metadata access и bounds для composite scopes (8 unique tenant IDs by default). Registry больше не удерживает mutex во время manifest fetch.
+- **fix(tenant-authority):** public direct text/voice chat использует только server-configured `DEFAULT_TENANT_ID` и игнорирует browser `X-Tenant-ID`; composite scope может происходить только из persisted named-agent record.
+- **test(mcp):** native SDK v2 E2E добавил session replay isolation, composite-scope abuse rejection, configured missing-auth и invalid-Origin checks; полный secure-stack deterministic E2E: **127 passed**.
+- **docs(mcp):** `.env.example`, Compose, dev launcher, MCP service READMEs, lifecycle guide и production RUNBOOK документируют обязательные production credentials, Origin policy, stateful topology и executable verification commands.
+
 ## 2026-08-17
 
 - **test(mcp):** native Streamable HTTP v2 E2E теперь покрывает read-only tool call, composite tenant scope с prefixed tools и fail-closed rejection tenant query parameter без `X-Tenant-ID`; gateway unit suite дополнена регрессиями отсутствия legacy routes, header-only scope resolver и `503` при saturation bounded tenant-scope cache. Полный deterministic E2E: **123 passed**.

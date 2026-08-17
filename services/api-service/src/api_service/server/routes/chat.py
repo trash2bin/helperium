@@ -1,8 +1,9 @@
 """Chat endpoints — text, agent-scoped, and voice."""
 
 from __future__ import annotations
-import logging
 import asyncio
+import logging
+import os
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, UploadFile, File, Form
@@ -49,12 +50,11 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
 
     message = chat_req.message
     session_id = chat_req.session_id
-    tenant_header = request.headers.get("X-Tenant-ID", "")
-    tenant_ids = (
-        [t.strip() for t in tenant_header.split(",") if t.strip()]
-        if tenant_header
-        else None
-    )
+    # The public direct-chat endpoint is a server-configured single-tenant demo
+    # surface. A browser-controlled X-Tenant-ID must never turn api-service into
+    # a confused deputy; multi-tenant scopes are resolved only from persisted
+    # named-agent configuration below.
+    tenant_ids = [os.environ.get("DEFAULT_TENANT_ID", "default").strip() or "default"]
 
     if not message:
         return StreamingResponse(
@@ -188,12 +188,10 @@ async def chat_voice_endpoint(
         tenant_ids_raw = agent_data.get("tenant_ids")
         tenant_ids = tenant_ids_raw if tenant_ids_raw else None
     if not tenant_ids:
-        tenant_header = request.headers.get("X-Tenant-ID", "")
-        tenant_ids = (
-            [t.strip() for t in tenant_header.split(",") if t.strip()]
-            if tenant_header
-            else None
-        )
+        # Voice chat without a named agent has the same server-configured demo
+        # boundary as direct text chat. Never consume a tenant scope from browser
+        # headers.
+        tenant_ids = [os.environ.get("DEFAULT_TENANT_ID", "default").strip() or "default"]
 
     if agent:
         effective_session_id = f"agent:{agent}:{session_id}"

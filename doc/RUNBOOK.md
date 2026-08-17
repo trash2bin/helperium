@@ -47,12 +47,19 @@ DEMO_TENANTS=client-name
 
 # Only for prod:
 DOMAIN=chat.client.com
+# Generate one strong secret, keep it out of Git, and set the same value in both.
+MCP_REQUIRE_AUTH=true
+MCP_API_KEY=<generated-strong-secret>
+MCP_CLIENT_API_KEY=<same-generated-strong-secret>
+# MCP stays internal behind web/Caddy. Leave empty unless a browser-facing MCP
+# ingress is intentionally added; then list only its exact HTTPS origin.
+MCP_ALLOWED_ORIGINS=
 
 # Optional: read-only access to admin dashboard
 # VIEWER_TOKEN=viewer-token
 ```
 
-The other ~170 vars have safe defaults. Only change per client.
+The remaining variables have safe defaults for the demo. **Do not leave MCP auth disabled in a public deployment**: `MCP_REQUIRE_AUTH=true` plus matching non-empty credentials are mandatory.
 
 ---
 
@@ -137,7 +144,13 @@ Insert into `<body>` on the client's page. Shadow DOM — no CSS conflicts.
 uv run agent-db e2e          # full E2E: materialize → register → web proxy + SSE chat
 uv run agent-db test          # tenant isolation tests
 
-# Chat via web (http://localhost:8080) — check streaming, tool calling
+# Public chat via web (http://localhost:8080) — check streaming and tool calling.
+# Direct chat is fixed to DEFAULT_TENANT_ID/default; named agents own their
+# persisted tenant scope and are the only public multi-tenant surface.
+
+# Secure MCP transport + multi-tenant isolation contract.
+MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
+  uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 
 # Check logs for errors
 ./infra/scripts/compose.sh logs --tail 100 2>&1 | grep -i error
@@ -253,9 +266,16 @@ DEMO_TENANTS=client-name
 
 # Только для prod:
 DOMAIN=chat.client.com
+# Сгенерируй один сильный секрет, не клади его в Git, оба значения совпадают.
+MCP_REQUIRE_AUTH=true
+MCP_API_KEY=<сгенерированный-сильный-secret>
+MCP_CLIENT_API_KEY=<тот-же-secret>
+# MCP остаётся internal. Оставь пустым, пока browser-facing MCP ingress не нужен;
+# тогда укажи только точный HTTPS Origin.
+MCP_ALLOWED_ORIGINS=
 ```
 
-Остальные ~170 переменных с безопасными дефолтами. Править только под клиента.
+Остальные переменные имеют безопасные demo-дефолты. **В public deployment нельзя оставлять MCP auth выключенным**: обязательны `MCP_REQUIRE_AUTH=true` и совпадающие непустые credentials.
 
 ---
 

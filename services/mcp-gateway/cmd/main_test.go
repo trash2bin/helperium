@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -231,6 +232,62 @@ func TestAuthMiddleware_InvalidAuthScheme_Returns401(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("Basic auth = %d, want 401", rec.Code)
+	}
+}
+
+func TestValidateStartupConfigurationRequiresKeyWhenEnabled(t *testing.T) {
+	t.Setenv("MCP_REQUIRE_AUTH", "true")
+	t.Setenv("MCP_API_KEY", "")
+	if err := validateStartupConfiguration(); err == nil {
+		t.Fatal("MCP_REQUIRE_AUTH=true without MCP_API_KEY should fail validation")
+	}
+
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+	if err := validateStartupConfiguration(); err != nil {
+		t.Fatalf("MCP_REQUIRE_AUTH=true with key: %v", err)
+	}
+}
+
+func TestOriginMiddlewareRejectsUnexpectedBrowserOrigin(t *testing.T) {
+	t.Setenv("MCP_ALLOWED_ORIGINS", "https://console.example.test")
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	for _, tc := range []struct {
+		name   string
+		origin string
+		want   int
+	}{
+		{name: "service client without Origin", want: http.StatusOK},
+		{name: "allowed browser origin", origin: "https://console.example.test", want: http.StatusOK},
+		{name: "unexpected browser origin", origin: "https://attacker.invalid", want: http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/health", nil)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("GET /health with Origin %q = %d, want %d", tc.origin, rec.Code, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateTenantScopeRejectsDuplicatesAndExcess(t *testing.T) {
+	previous := MaxTenantsPerScope
+	MaxTenantsPerScope = 2
+	t.Cleanup(func() { MaxTenantsPerScope = previous })
+
+	if err := validateTenantScope([]string{"tenant-a", "tenant-a"}); !errors.Is(err, errDuplicateTenantInScope) {
+		t.Fatalf("duplicate tenant scope error = %v, want %v", err, errDuplicateTenantInScope)
+	}
+	if err := validateTenantScope([]string{"tenant-a", "tenant-b", "tenant-c"}); !errors.Is(err, errTooManyTenantsPerScope) {
+		t.Fatalf("oversized tenant scope error = %v, want %v", err, errTooManyTenantsPerScope)
+	}
+	if err := validateTenantScope([]string{"tenant-a", "tenant-b"}); err != nil {
+		t.Fatalf("valid composite scope rejected: %v", err)
 	}
 }
 
