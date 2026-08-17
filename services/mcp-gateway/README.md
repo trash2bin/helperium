@@ -176,6 +176,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | Метрика | Тип | Labels |
 |---|---|---|
 | `mcp_tool_calls_total` | Counter | `tool`, `tenant`, `status` |
+| `mcp_sessions_active` | Gauge | `tenant_scope` |
 | `mcp_rate_limit_hits_total` | Counter | `tenant` |
 
 ## Dev-режим
@@ -229,4 +230,4 @@ MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
 | 503 too many active Streamable HTTP tenant scopes | Churn tenant sets заполнил bounded cache | Стабилизировать scopes или оценить безопасное увеличение `MCP_MAX_STREAMABLE_TENANT_SCOPES` |
 
 ---
-**Last verified:** 2026-08-18 (working tree after `267974c`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, required-production auth, Origin allow-list, header-only tenant scope, bounded composite scopes, session isolation и native Python SDK v2 E2E сверены локально.
+**Last verified:** 2026-08-18 (working tree after `6cdb51f`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, required-production auth, Origin allow-list, header-only tenant scope, bounded composite scopes, lifecycle-backed session metrics, session isolation и native Python SDK v2 E2E сверены локально.

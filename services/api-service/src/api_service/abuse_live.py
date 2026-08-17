@@ -176,7 +176,9 @@ class LiveAbuseProvider:
         with self._rwlock:
             enforcers = self._agent_enforcers.get(key)
             if enforcers is None:
-                anti_cfg = self.get_effective_config(agent_abuse_config).to_anti_abuse_config()
+                anti_cfg = self.get_effective_config(
+                    agent_abuse_config
+                ).to_anti_abuse_config()
                 enforcers = (AntiAbuseChecker(anti_cfg), TokenBucket(anti_cfg))
                 self._agent_enforcers[key] = enforcers
             return enforcers

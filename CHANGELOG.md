@@ -8,6 +8,7 @@
 - **docs(mcp):** `.env.example`, Compose, dev launcher, MCP service READMEs, lifecycle guide и production RUNBOOK документируют обязательные production credentials, Origin policy, stateful topology и executable verification commands.
 - **refactor(api/tenant):** server-controlled direct-chat scope вынесен из HTTP handlers в `tenant_authority.py`; route code теперь выражает только вызов policy resolver, а не читает environment и не содержит authorization policy inline.
 - **test(mcp):** добавлен настоящий ScriptedLLM E2E pipeline persisted named-agent composite scope → api-service → MCPClient → два prefixed gateway tools → две tenant БД data-service → SSE. Request с hostile `X-Tenant-ID` не влияет на result; rebuilt secure stack: **128 passed**.
+- **fix(ci/mcp):** полный `make ci` восстановлен: Ruff отформатировал четыре Python-файла, устаревшая demo-проверка удалённого `mcp_service_url` удалена, а gateway снова публикует `mcp_tool_calls_total` и lifecycle-based `mcp_sessions_active` для Streamable HTTP. Grafana и monitoring docs больше не называют этот transport legacy SSE.
 
 ## 2026-08-17
 

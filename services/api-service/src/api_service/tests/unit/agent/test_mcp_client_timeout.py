@@ -116,7 +116,10 @@ async def test_list_tools_lock_acquires_normally():
     mock_tool = MagicMock()
     mock_tool.name = "get_student"
     mock_tool.description = "Get student info"
-    mock_tool.input_schema = {"type": "object", "properties": {"id": {"type": "string"}}}
+    mock_tool.input_schema = {
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+    }
     conn.session.list_tools = AsyncMock(return_value=MagicMock(tools=[mock_tool]))
     client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
 

@@ -251,6 +251,19 @@ func buildHTTPServer(r http.Handler, port string) *http.Server {
 	}
 }
 
+// newMCPServer creates an MCP server whose lifecycle hooks maintain the
+// Streamable HTTP active-session gauge for one resolved tenant scope.
+func newMCPServer(tenantScope string) *server.MCPServer {
+	hooks := &server.Hooks{}
+	hooks.AddOnRegisterSession(func(context.Context, server.ClientSession) {
+		mcpSessionsActive.WithLabelValues(tenantScope).Inc()
+	})
+	hooks.AddOnUnregisterSession(func(context.Context, server.ClientSession) {
+		mcpSessionsActive.WithLabelValues(tenantScope).Dec()
+	})
+	return server.NewMCPServer("helperium", "1.0.0", server.WithHooks(hooks))
+}
+
 // createServerForTenant creates a per-tenant MCP server with unprefixed tools.
 func createServerForTenant(tenantID string) (*server.MCPServer, error) {
 	slog.Info("Fetching config for tenant", "tenantID", tenantID)
@@ -260,9 +273,9 @@ func createServerForTenant(tenantID string) (*server.MCPServer, error) {
 		return nil, err
 	}
 	slog.Info("Config fetched, creating server", "tenantID", tenantID)
-	mcpServer := server.NewMCPServer("helperium", "1.0.0")
+	mcpServer := newMCPServer(tenantID)
 	slog.Info("Creating registry", "tenantID", tenantID)
-	registry := tools.NewRegistry(cfg)
+	registry := tools.NewTenantRegistry(cfg, tenantID)
 	slog.Info("Registering tools", "tenantID", tenantID)
 	registry.RegisterAll(mcpServer)
 	slog.Info("MCP server ready", "tenantID", tenantID)
@@ -279,7 +292,7 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 	}
 
 	slog.Info("Creating composite MCP server", "tenants", tenantIDs)
-	composite := server.NewMCPServer("helperium", "1.0.0")
+	composite := newMCPServer(strings.Join(tenantIDs, ","))
 
 	for _, tenantID := range tenantIDs {
 		slog.Info("Fetching config for tenant", "tenantID", tenantID)

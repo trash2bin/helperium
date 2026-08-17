@@ -79,13 +79,13 @@ Grafana визуализирует данные с Prometheus-датасорса
 | Панель | Метрика | Ед.изм. | Норма | Тревога |
 |---|---|---|---|---|
 | Tool Calls Rate | `rate(mcp_tool_calls_total[1m])` | req/s | <10 | >50 |
-| Active SSE Sessions | `sum(mcp_sessions_active)` | шт | <100 | >500 / MaxSessions=1000 |
+| Active Streamable HTTP Sessions | `sum(mcp_sessions_active)` | шт | <100 | >500 |
 | Rate Limit Hits | `rate(mcp_rate_limit_hits_total[5m])` | req/s | 0 | >0 |
 | Errors (tool calls) | `mcp_tool_calls_total{status!="ok"}` | шт | 0 | >0 |
 
 **Где копать при аномалиях:**
 - **Rate limit >0** → увеличить RPS/burst в `services/mcp-gateway/cmd/ratelimit.go`
-- **Сессии падают** → `services/mcp-gateway/cmd/main.go` (SSE-хендлер, idle-таймауты)
+- **Сессии падают** → `services/mcp-gateway/cmd/main.go` (Streamable HTTP lifecycle hooks, idle TTL)
 - **Tool call errors** → `services/mcp-gateway/internal/tools/` (маппинг инструментов), `services/mcp-gateway/internal/httpclient/client.go` (HTTP к data-service)
 
 ### 🧠 API — LLM & Chat
@@ -149,7 +149,7 @@ Grafana визуализирует данные с Prometheus-датасорса
 | Метрика | Тип | Лейблы | Описание |
 |---|---|---|---|
 | `mcp_tool_calls_total` | Counter | `tool, status, tenant` | Вызовы MCP-инструментов |
-| `mcp_sessions_active` | Gauge | `tenant` | Активные SSE-сессии |
+| `mcp_sessions_active` | Gauge | `tenant_scope` | Активные Streamable HTTP сессии для разрешённого tenant scope |
 | `mcp_rate_limit_hits_total` | Counter | `tenant` | Заблокированные rate-limiter'ом |
 
 ### api-service (`:8081/metrics`)
@@ -208,7 +208,7 @@ flowchart TD
     A[График вырос/упал] --> B{Какой сервис?}
 
     B -->|data-service| C[1. Request Rate / Error Rate]
-    B -->|mcp-gateway| D[1. Tool Calls / SSE Sessions]
+    B -->|mcp-gateway| D[1. Tool Calls / Streamable HTTP Sessions]
     B -->|api-service| E[1. LLM Calls / Latency]
     B -->|rag-service| F[1. Search Rate / Duration]
 
@@ -256,4 +256,4 @@ docker-compose -f infra/docker-compose.yml up -d
 docker-compose -f infra/docker-compose.yml --profile monitoring --profile tracing up -d
 ```
 
-**Last verified:** 2026-08-16 — Prometheus/Grafana service-DNS wiring, OTEL defaults and dashboard queries reviewed against current HEAD.
+**Last verified:** 2026-08-18 (working tree after `6cdb51f`) — Streamable HTTP gateway metrics, lifecycle-backed active sessions label and Grafana queries reviewed locally.

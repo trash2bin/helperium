@@ -123,7 +123,10 @@ class MCPClient:
         if settings.mcp_client_api_key:
             headers["Authorization"] = f"Bearer {settings.mcp_client_api_key}"
 
-        logger.info("[MCP] Opening Streamable HTTP connection for tenants=%s", tenant_key or "(default)")
+        logger.info(
+            "[MCP] Opening Streamable HTTP connection for tenants=%s",
+            tenant_key or "(default)",
+        )
         # The standard v2 transport carries request/response JSON-RPC over one
         # endpoint. Keep the client per tenant connection so headers, pooling
         # and lifecycle remain tenant-scoped.
