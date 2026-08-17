@@ -7,22 +7,15 @@ import (
 
 // ── MCP-Gateway Metrics ─────────────────────────────────────────────────────
 
-// mcpToolCallsTotal counts every MCP tool call
-var mcpToolCallsTotal = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "mcp_tool_calls_total",
-		Help: "Total MCP tool calls by tool, tenant, and status.",
-	},
-	[]string{"tool", "tenant", "status"},
-)
-
-// mcpSessionsActive tracks the current number of active SSE sessions per tenant.
+// mcpSessionsActive tracks the current number of active Streamable HTTP
+// sessions per resolved tenant scope. Its value is maintained by MCP SDK
+// register/unregister session hooks in main.go.
 var mcpSessionsActive = promauto.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "mcp_sessions_active",
-		Help: "Currently active SSE sessions per tenant.",
+		Help: "Currently active Streamable HTTP sessions per resolved tenant scope.",
 	},
-	[]string{"tenant"},
+	[]string{"tenant_scope"},
 )
 
 // mcpRateLimitHits counts how many requests were rate-limited per tenant.

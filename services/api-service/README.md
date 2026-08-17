@@ -19,9 +19,9 @@
 | Путь | Метод | Описание |
 |---|---|---|
 | `/health` | GET | Статус сервиса |
-| `/api/chat` | POST | SSE-стрим чата с агентом |
-| `/api/chat/voice` | POST | SSE-стрим голосового чата (multipart/form-data с audio) |
-| `/api/chat/{name}` | POST | SSE-чат с именованным агентом (tenant_ids из Agent Store) |
+| `/api/chat` | POST | Public SSE chat, жёстко привязан к server-configured demo tenant `DEFAULT_TENANT_ID` |
+| `/api/chat/voice` | POST | Public voice SSE chat; без named agent использует только `DEFAULT_TENANT_ID` |
+| `/api/chat/{name}` | POST | SSE-чат с именованным агентом; `tenant_ids` только из persisted Agent Store |
 | `/api/session/history` | GET | История сессии (query params: session_id, agent_name) |
 | `/api/backlog` | GET | Список бэклогов |
 | `/api/backlog/{id}` | GET | Детали бэклога |
@@ -268,7 +268,11 @@ curl -X POST http://localhost:8081/api/agents \
 | `DEMO_API_PORT` | `8081` | Порт API |
 | `DEMO_WEB_HOST` | `127.0.0.1` | Хост Web сервера |
 | `DEMO_WEB_PORT` | `8080` | Порт Web |
-| `MCP_SERVICE_URL` | `http://127.0.0.1:8083/mcp` | URL mcp-gateway |
+| `MCP_GATEWAY_URL` | `http://127.0.0.1:8083` | Base URL mcp-gateway for schema and mapping requests |
+| `MCP_STREAMABLE_HTTP_URL` | derived `http://127.0.0.1:8083/mcp` | Единственный standard Streamable HTTP MCP endpoint |
+| `MCP_HTTP_TIMEOUT` | `10` | Connect/request timeout MCP transport (сек) |
+| `MCP_HTTP_READ_TIMEOUT` | `1800` | Max Streamable HTTP read duration (сек) |
+| `MCP_CLIENT_API_KEY` | — | Required production service bearer credential; совпадает с gateway `MCP_API_KEY` при `MCP_REQUIRE_AUTH=true` |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | URL Ollama (LLM) |
 | `OLLAMA_MODEL` | `qwen2.5:0.5b` | Модель Ollama |
 | `MISTRAL_API_KEY` | — | Ключ Mistral (альтернатива Ollama) |
@@ -312,6 +316,34 @@ curl -X POST http://localhost:8081/api/agents \
 | `VOICE_MIN_INTERVAL_SEC` | `10` | Мин. интервал между голосовыми сообщениями (сек) |
 | `VOICE_MAX_DURATION_SEC` | `120` | Макс. длительность записи (сек) |
 
+## MCP v2 Streamable HTTP
+
+`api-service` использует официальный Python SDK `mcp` v2 и подключается только к standard Streamable HTTP gateway endpoint `/mcp`. Прямые public routes `/api/chat` и `/api/chat/voice` всегда используют server-configured demo scope `[DEFAULT_TENANT_ID]` (fallback `default`) и **игнорируют browser `X-Tenant-ID`**. Только named-agent route разрешает один или несколько `tenant_ids` из persisted Agent Store до запуска agent loop; MCP client получает уже готовый authorized scope и передаёт его в gateway только как routing context.
+
+В production необходимо задать один сильный secret одновременно в `MCP_CLIENT_API_KEY` api-service и `MCP_API_KEY` gateway, а в gateway включить `MCP_REQUIRE_AUTH=true`. Не публикуй mcp-gateway без service authentication. Legacy GET-SSE/POST MCP transport намеренно удалён: откат этой migration выполняется git revert/redeploy предыдущего image, а не переключением runtime transport.
+
+### Контракт api-service → mcp-gateway
+
+| Аспект | Поведение |
+|---|---|
+| Transport | `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` и `Client(transport)` из SDK v2; application не собирает JSON-RPC и не управляет session IDs вручную |
+| Tenant authority | Direct public chat всегда передаёт `[DEFAULT_TENANT_ID]`; только named-agent route может передать persisted `tenant_ids`. Browser `X-Tenant-ID` не читается API routes |
+| Tenant scope | Resolved `tenant_ids` передаётся на каждое transport request как `X-Tenant-ID`; query parameter не используется и не принимается gateway |
+| Composite agent | Несколько persisted IDs передаются как `tenant-a,tenant-b`; gateway возвращает только prefixed tools (`tenant-a__db_map`) и отклоняет duplicate/oversized scopes |
+| Service auth | В production non-empty `MCP_CLIENT_API_KEY` обязателен и добавляется в каждый request как `Authorization: Bearer …`; он должен совпасть с gateway `MCP_API_KEY` |
+| Connection lifecycle | Один persistent connection на tenant scope; `asyncio.Lock` сохраняет порядок tool calls; idle GC и `Client` context teardown закрывают connection корректно |
+
+### Диагностика ошибок MCP
+
+| Наблюдение | Значение | Действие |
+|---|---|---|
+| `400 X-Tenant-ID header is required` | Внутренний caller потерял уже разрешённый tenant scope | Проверить agent `tenant_ids` и propagation header, не добавлять query fallback |
+| `401 Unauthorized` | Missing/mismatched `MCP_CLIENT_API_KEY` | Синхронизировать один secret с gateway `MCP_API_KEY` и перезапустить оба сервиса |
+| `403 Origin is not allowed` | Gateway получил browser-like Origin вне allow-list | MCP должен остаться internal service path; если browser ingress намерен, согласовать explicit `MCP_ALLOWED_ORIGINS` |
+| `429 Too Many Requests` | Gateway rate limiter защитил `/mcp` | Снизить параллелизм/повторы либо пересмотреть `MCP_RATE_LIMIT_*` осознанно |
+| `503 too many active Streamable HTTP tenant scopes` | Достигнут bounded cache `MCP_MAX_STREAMABLE_TENANT_SCOPES` | Проверить churn tenant sets, не увеличивать limit без memory-capacity оценки |
+| MCP result `is_error=true` | Transport работает; tool отверг аргументы или data-service вернул domain error | Показывать пользователю безопасный tool error, анализировать audit logs и tool schema |
+
 ## Запуск
 
 ```bash
@@ -321,7 +353,25 @@ uv run --package api-service python -m uvicorn api_service.server:app --port 808
 ## Тестирование
 
 ```bash
-uv run pytest api-service/src/api_service/tests/ -v
+# Unit and integration checks for api-service, including MCP client failures,
+# reconnect, initialization timeout and idle connection GC.
+uv run pytest services/api-service/src/api_service/tests/ -v
+
+# API tenant authority regression: direct header spoofing is ignored while
+# named agents retain their persisted composite scope.
+uv run pytest services/api-service/src/api_service/tests/unit/test_chat_tenant_scope.py -v
+
+# Real persisted named-agent composite pipeline. It starts a ScriptedLLM API
+# process, sends a hostile browser tenant header and proves the Agent Store scope
+# reaches two prefixed MCP tools and results from two distinct tenant databases.
+MCP_API_KEY="$MCP_API_KEY" MCP_CLIENT_API_KEY="$MCP_CLIENT_API_KEY" \
+  uv run pytest services/agent-db/tests/e2e/test_named_agent_composite_pipeline.py -v
+
+# Live gateway contract against started data-service + mcp-gateway. The official
+# MCP v2 client covers tools, composite scopes, session replay isolation, query
+# rejection, cardinality bounds and configured auth/Origin rejection.
+MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
+  uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 ```
 
 ## Архитектура Agent Pipeline
@@ -465,12 +515,12 @@ API-ключи передаются напрямую в `LiteLLMProvider(api_key
 |---|---|---|
 | `MCP_MAX_CONSECUTIVE_FAILURES` | `3` | Circuit breaker: порог отказов перед пропуском reconnect |
 | `MCP_CIRCUIT_BREAKER_TIMEOUT` | `30.0` | Время (сек) до half-open retry после размыкания circuit breaker |
-| `MCP_GC_INTERVAL` | `60.0` | Интервал (сек) фонового GC для idle SSE сессий |
-| `MCP_MAX_IDLE_SECONDS` | `600.0` | Время (сек) бездействия SSE сессии до закрытия |
+| `MCP_GC_INTERVAL` | `60.0` | Интервал (сек) фонового GC для неактивных Streamable HTTP connections |
+| `MCP_MAX_IDLE_SECONDS` | `600.0` | Время (сек) бездействия Streamable HTTP connection до закрытия |
 | `MCP_LOCK_ACQUIRE_TIMEOUT` | `10.0` | Таймаут (сек) захвата per-tenant блокировки tool call |
 | `MCP_TOOL_EXECUTION_TIMEOUT` | `15.0` | Таймаут (сек) выполнения одного tool call |
-| `MCP_SSE_TIMEOUT` | `10.0` | Таймаут (сек) открытия SSE соединения |
-| `MCP_SSE_READ_TIMEOUT` | `1800.0` | Таймаут (сек) чтения SSE стрима |
+| `MCP_HTTP_TIMEOUT` | `10.0` | Таймаут (сек) открытия Streamable HTTP соединения |
+| `MCP_HTTP_READ_TIMEOUT` | `1800.0` | Таймаут (сек) чтения Streamable HTTP ответа/стрима |
 | `MCP_SESSION_INIT_TIMEOUT` | `15.0` | Таймаут (сек) инициализации MCP сессии (session.initialize) |
 
 Заменяют предыдущие хардкоды в `mcp_client.py`, читаются из `helperium_sdk.settings` при каждом вызове.
@@ -495,4 +545,4 @@ Pipeline(
 ```
 
 ---
-**Last verified:** 2026-07-30 (post-refactor: agent pipeline docs, stages, protocols, factory)
+**Last verified:** 2026-08-18 (working tree after `3749daa`) — MCP SDK v2 lifecycle, production service auth, Origin allow-list, direct-chat authority and real persisted named-agent composite pipeline through api-service, gateway and two distinct data-service tenant databases verified locally.

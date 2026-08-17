@@ -6,22 +6,22 @@ Generic MCP (Model Context Protocol) сервер на Go. Заменил Python
 
 ## 🏢 Multi-tenancy архитектура
 
-`mcp-gateway` — stateless шлюз между агентами и data-service.
+`mcp-gateway` — tenant-scoped **stateful** Streamable HTTP gateway между агентами и data-service. MCP sessions и registry handlers process-local; production topology пока должна использовать один gateway instance (либо sticky routing при будущем scale-out).
 
-### Одноtenantный режим (Legacy)
+### Одноtenantный режим
 
 ```
-Агент → SSE → mcp-gateway → HTTP → data-service (X-Tenant-ID: tenant-a)
+Агент → Streamable HTTP `/mcp` → mcp-gateway → HTTP → data-service (X-Tenant-ID: tenant-a)
 ```
 
-- SSE-сессия (GET /mcp) → одна на tenant
+- Stateful Streamable HTTP handler создаётся для одного уже разрешённого tenant scope
 - Инструменты без префикса: `grep_products`, `filter_products`, `get_products`
 - Включён, когда `X-Tenant-ID` содержит **один** tenant
 
 ### Composite Multi-Tenant Mode
 
 ```text
-X-Tenant-ID: tenant-a               → legacy: инструменты без префикса
+X-Tenant-ID: tenant-a               → инструменты без префикса
 X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tenant-b__grep_products
 ```
 
@@ -32,26 +32,44 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 Инструмент `tenant-a__grep_products` всегда идёт в data-service с `X-Tenant-ID: tenant-a`,
 даже если клиент подменит заголовок.
 
-**Кэш на SSE-сессии:** `sseSession.ensureCompositeServer()` переиспользует созданный сервер,
-пока список tenant'ов не изменится.
+**Кэш handler-а:** `streamableTenantRegistry` переиспользует stateful Streamable HTTP handler для exact ordered tenant set; число scopes ограничено `MCP_MAX_STREAMABLE_TENANT_SCOPES`. Один composite scope допускает не более `MCP_MAX_TENANTS_PER_SCOPE` unique tenant IDs; duplicate IDs получают `400`.
 
 ### Ключевые файлы
 
 | Файл | Назначение |
 |---|---|
-| `cmd/main.go` | Точка входа: SSE-сессии, JSON-RPC, composite/routing, debug |
-| `cmd/mcp_debug.go` | `//go:embed playground.html` |
+| `cmd/main.go` | Точка входа: Streamable HTTP, tenant-scoped registry, composite routing и config diagnostics |
 | `internal/httpclient/client.go` | HTTP-клиент к data-service: `FetchConfigWithTenant`, `Call` |
 | `internal/ragclient/client.go` | HTTP-клиент к RAG: `SearchDocuments`, `ListDocuments`, `GetRagContext` |
 | `internal/tools/tools.go` | **Реестр инструментов**: `NewRegistry`, `NewPrefixedRegistry`, `RegisterAll`, `makeHandler`, `deriveToolName` |
+
+## MCP transport
+
+`/mcp` — **единственный стандартный Streamable HTTP MCP endpoint** на `mcp-go v0.58`. Он поддерживает standard single-endpoint request/response flow и transport-managed MCP sessions. Для каждого уже разрешённого набора `X-Tenant-ID` gateway создаёт отдельный stateful handler: manifest и tool closures остаются tenant-scoped, а `data-service` получает primary tenant через request context.
+
+Не публикуй этот endpoint без `MCP_API_KEY`: `X-Tenant-ID` определяет scope tools, но сам по себе не является криптографическим доказательством права клиента на tenant. Production ставит `MCP_REQUIRE_AUTH=true`; gateway fail-fast завершится, если ключ пуст. Legacy GET-SSE/POST JSON-RPC compatibility path удалён; rollback выполняется deploy предыдущего tested image.
+
+### Transport и security contract
+
+| Контракт | Гарантия gateway |
+|---|---|
+| Единственный transport path | Только `GET`, `POST` и `DELETE /mcp` обслуживаются mcp-go Streamable HTTP server; `/`, `/sse`, `/mcp/message` и `/mcp/v2` возвращают `404` |
+| Tenant scope | Только header `X-Tenant-ID`; query parameters намеренно игнорируются. Отсутствие header на `/mcp` возвращает `400` |
+| Composite scope | `X-Tenant-ID: a,b` создаёт handler для exact ordered scope и публикует только prefixed tools (`a__db_map`, `b__db_map`); duplicate IDs и scope выше `MCP_MAX_TENANTS_PER_SCOPE` возвращают `400` до загрузки manifests |
+| Metadata scope | `/mcp/manifest`, `/mcp/tools/mapping` и `/mcp/schema` требуют ровно один validated tenant ID; отсутствующий/default fallback и composite metadata request получают `400` |
+| Service authentication | `MCP_REQUIRE_AUTH=true` требует non-empty `MCP_API_KEY` already at startup; все non-health/metrics routes требуют exact `Authorization: Bearer <token>`, отсутствие или ошибка — `401` |
+| Browser Origin | Requests без `Origin` разрешены для service clients. Любой present Origin должен exactly match `MCP_ALLOWED_ORIGINS`, иначе `403` |
+| Capacity bound | Новый tenant scope свыше `MCP_MAX_STREAMABLE_TENANT_SCOPES` получает `503`, существующий cached scope остаётся доступным |
+| Abuse control | Rate limiter применяется ко всем Streamable HTTP methods на `/mcp`; превышение возвращает `429` |
+
+> Gateway не принимает raw session ID от application-кода. Используй официальный MCP SDK v2; он согласует initialization, request/response и `DELETE` cleanup через `/mcp`.
 
 ## Как работают инструменты
 
 ### Создание MCP-сервера
 
-1. **SSE-сессия** (GET /mcp): клиент открывает долгий SSE-стрим, получает `event: endpoint` с URL для POST
-2. **POST /mcp/message?sessionId=...**: JSON-RPC → `mcpPostHandler()` → `mcpServer.HandleMessage()`
-3. **Создание MCP-сервера** (`createServerForTenant` / `createCompositeServer`):
+1. **Streamable HTTP request** (`/mcp`): transport-managed MCP session несёт JSON-RPC request/response
+2. **Создание MCP-сервера** (`createServerForTenant` / `createCompositeServer`) на первом request tenant scope:
    - `httpClient.FetchConfigWithTenant(tenantID)` → GET к data-service `/mcp/manifest`
    - `tools.NewRegistry(cfg)` → конвертирует `mcp_tools[]` из конфига в MCP-инструменты
    - `registry.RegisterAll(mcpServer)` → регистрирует хендлеры
@@ -61,11 +79,11 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 > После config rewrite (POST /admin/config/rewrite) нужно вызвать `InvalidateManifestCache(tenantID)`
 > для принудительного сброса кэша — иначе до 30 секунд будут использоваться старые тулы.
 > `InvalidateManifestCache()` без аргументов очищает весь кэш.
-4. **Каждый инструмент** — closure с `client.Call(ctx, endpoint, params)` к data-service
+3. **Каждый инструмент** — closure с `client.Call(ctx, endpoint, params)` к data-service
 
 ### Поток вызова инструмента
 
-1. **Запрос**: Агент шлёт JSON-RPC `tools/call` через SSE-сессию с `X-Tenant-ID`
+1. **Запрос**: Агент шлёт JSON-RPC `tools/call` через Streamable HTTP `/mcp` с `X-Tenant-ID`
 2. **Манифест**: mcp-gateway проксирует `/mcp/manifest` → data-service (тем tenant'ом)
 3. **Разрешение**: `Registry.buildTools()` — маппинг endpoint → MCP toolDef
 4. **Вызов**: `makeHandler()` → `client.Call(ctx, endpoint, params)` → data-service → JSON → MCP-результат
@@ -90,14 +108,6 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 
 Санитизация: `deriveToolName()` удаляет `{` `}` из имён (Mistral reject).
 
-> **⚠️ Баг в legacy fallback `deriveToolName()`:** функция корректно обрабатывает только `OpGetByID`.
-> Все остальные операции (`find`, `list`, `distinct`, `count` и стратегии) падают в `default: return ""`.
-> На практике это не критично, т.к. data-service возвращает явный `mcp_tools[]` в манифесте,
-> и `buildTools()` использует его в приоритете. Fallback срабатывает только в legacy-режиме
-> (конфиг без `mcp_tools[]`), где в итоге регистрируются только `get_*` инструменты.
->
-> Аналогичная ситуация в `buildDefaultDesc()` — осмысленное описание генерируется только для `OpGetByID`.
-
 ## RAG-инструменты
 
 Три тула регистрируются через `registerRagTools()`, но **только если RAG доступен** (проверка `RagEnabled()` → `ragClient.IsAvailable()`).
@@ -115,24 +125,16 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 |---|---|---|---|
 | `/health` | GET | Статус | — |
 | `/metrics` | GET | Prometheus | — |
-| `/mcp` | GET | SSE endpoint | MCP_API_KEY |
-| `/sse` | GET | Алиас `/mcp` | MCP_API_KEY |
-| `/` | GET | Алиас `/mcp` | MCP_API_KEY |
-| `/mcp/message` | POST | JSON-RPC | MCP_API_KEY |
-| `/mcp` | POST | Алиас `/mcp/message` | MCP_API_KEY |
-| `/message` | POST | Алиас `/mcp/message` | MCP_API_KEY |
-| `/` | POST | Алиас `/mcp/message` | MCP_API_KEY |
+| `/mcp` | GET/POST/DELETE | Standard Streamable HTTP MCP | MCP_API_KEY |
 | `/mcp/manifest` | GET | Прокси манифеста → data-service | MCP_API_KEY |
 | `/mcp/tools/mapping` | GET | JSON `{tool: display_name}` | MCP_API_KEY |
 | `/mcp/schema` | GET | Прокси схемы → data-service | MCP_API_KEY |
-| `/debug` | GET | MCP Playground (dev) | MCP_API_KEY |
-| `/debug/sessions` | GET | Активные SSE-сессии | MCP_API_KEY |
 | `/debug/config` | GET | Текущий конфиг | MCP_API_KEY |
 | `/config` | GET | Алиас `/debug/config` | MCP_API_KEY |
 | `/docs` | GET | Swagger UI | MCP_API_KEY |
 | `/openapi.json` | GET | OpenAPI spec | MCP_API_KEY |
 
-**Auth:** если `MCP_API_KEY` не установлена — все маршруты без аутентификации. `/health` и `/metrics` всегда открыты.
+**Auth:** development может оставить `MCP_REQUIRE_AUTH=false`. Production обязан установить `MCP_REQUIRE_AUTH=true` и тот же сильный secret в gateway `MCP_API_KEY` и api-service `MCP_CLIENT_API_KEY`; `/health` и `/metrics` всегда открыты.
 
 ## 📚 Ссылки
 
@@ -146,36 +148,35 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | Переменная | Дефолт | Описание |
 |---|---|---|
 | `MCP_PORT` | `8083` | Порт HTTP |
-| `MCP_API_KEY` | — | Bearer-токен для auth (пустой → auth отключён) |
+| `MCP_REQUIRE_AUTH` | `false` | `true` запрещает старт gateway с пустым `MCP_API_KEY`; production setting |
+| `MCP_API_KEY` | — | Gateway Bearer-токен; должен совпадать с `MCP_CLIENT_API_KEY` api-service |
+| `MCP_ALLOWED_ORIGINS` | — | Comma-separated exact browser Origin allow-list; absent Origin разрешён service clients |
+| `MCP_MAX_TENANTS_PER_SCOPE` | `8` | Maximum unique tenant IDs в composite scope; duplicate/oversize получают `400` |
 | `DATA_SERVICE_URL` | `http://127.0.0.1:8084` | Базовый URL data-service |
 | `DATA_SERVICE_TIMEOUT` | `30` | Таймаут HTTP к data-service (сек) |
 | `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | Базовый URL RAG |
 | `RAG_HTTP_TIMEOUT` | `30` | Таймаут HTTP к RAG (сек) |
 | `BOOTSTRAP_TENANT_ID` | — | Tenant ID для первоначальной загрузки манифеста |
-| `MCP_MAX_SESSIONS` | `1000` | Max SSE-сессий (OOM protection) |
-| `MCP_SESSION_IDLE_TIMEOUT` | `5m` | Таймаут простоя SSE |
-| `MCP_SESSION_MAX_LIFETIME` | `30m` | Макс. время жизни SSE |
-| `MCP_POST_HANDLER_TIMEOUT` | `25` | Таймаут JSON-RPC (сек) |
+| `MCP_MAX_STREAMABLE_TENANT_SCOPES` | `256` | Max cached tenant-set handlers for stateful Streamable HTTP; new scope above limit receives `503` |
+| `MCP_SESSION_IDLE_TIMEOUT` | `5m` | Idle TTL transport-managed Streamable HTTP sessions |
 | `MCP_READ_HEADER_TIMEOUT` | `10` | Read header timeout (сек, slowloris защита) |
 | `MCP_IDLE_TIMEOUT` | `120` | Idle timeout HTTP (сек) |
-| `MCP_DEV` | — | Debug-режим (playground, доп. логи) |
+| `MCP_DEV` | — | Debug log level для gateway |
 | `MCP_RATE_LIMIT_RPS` | `10` | Requests per second (rate limiter) |
 | `MCP_RATE_LIMIT_BURST` | `20` | Burst size (rate limiter) |
 
 ## Управление сессиями
 
-- **MaxSessions = 1000** — лимит одновременных SSE-сессий
-- **SessionIdleTimeout = 5m** — закрытие неактивных SSE
-- **SessionMaxLifetime = 30m** — макс. время жизни SSE
-- При превышении лимита → `503 Service Unavailable`
-- `/debug/sessions` — мониторинг активных сессий
+- **Streamable HTTP session TTL = 5m** — transport-managed сессия закрывается при простое.
+- **MaxStreamableTenantScopes = 256** — ограничение cached tenant-set handlers; новый scope выше лимита получает `503 Service Unavailable`.
+- В gateway больше нет самописных SSE session IDs, long-lived GET streams и session debug endpoint.
 
 ## Метрики (Prometheus)
 
 | Метрика | Тип | Labels |
 |---|---|---|
 | `mcp_tool_calls_total` | Counter | `tool`, `tenant`, `status` |
-| `mcp_sessions_active` | Gauge | `tenant` |
+| `mcp_sessions_active` | Gauge | `tenant_scope` |
 | `mcp_rate_limit_hits_total` | Counter | `tenant` |
 
 ## Dev-режим
@@ -184,7 +185,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 MCP_DEV=true DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 ```
 
-Доступен `MCP Playground` на `/debug` (веб-интерфейс для тестирования тулов).
+`MCP_DEV` включает debug log level; ручной SSE playground намеренно удалён вместе с устаревшим transport.
 
 ## Запуск
 
@@ -201,13 +202,19 @@ DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 ## Smoke test
 
 ```bash
-# Манифест tenant'a
-curl -s -H "X-Tenant-ID: default" http://127.0.0.1:8083/mcp/manifest | jq '.tools | length'
+# Metadata endpoint for a registered tenant in a secure deployment.
+curl -s -H "Authorization: Bearer $MCP_API_KEY" -H "X-Tenant-ID: default" \
+  http://127.0.0.1:8083/mcp/manifest | jq '.tools | length'
 
-# Прямой JSON-RPC вызов (без SSE)
-curl -s -X POST http://127.0.0.1:8083/mcp/message \
-  -H "X-Tenant-ID: default" -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' | jq .
+# Gateway security regression: legacy-route absence, auth startup validation,
+# Origin policy, header-only routing and bounded composite scopes.
+go test ./cmd -v
+
+# Live SDK v2 contract: tools, composite scopes, session isolation, query
+# rejection, auth and Origin policy (security tests activate when env is set).
+cd ../..
+MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
+  uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 ```
 
 ## Troubleshooting
@@ -215,8 +222,12 @@ curl -s -X POST http://127.0.0.1:8083/mcp/message \
 | Симптом | Причина | Фикс |
 |---|---|---|
 | `connection refused` :8083 | mcp-gateway не запущен | `go run ./cmd/` |
+| `400 X-Tenant-ID header is required` | Client передал tenant в query либо вовсе его потерял | Передать resolved scope только через `X-Tenant-ID` |
 | Пустой манифест (0 tools) | Tenant не зарегистрирован | register через data-service admin API |
-| 401 Unauthorized | MCP_API_KEY mismatch | Синхронизируй токен |
+| 401 Unauthorized | Missing/mismatched MCP Bearer token | Синхронизируй `MCP_API_KEY` gateway и `MCP_CLIENT_API_KEY` api-service |
+| 403 Origin is not allowed | Browser Origin absent from `MCP_ALLOWED_ORIGINS` | Keep MCP internal or add only the explicit trusted HTTPS origin |
+| 429 Too Many Requests | Исчерпан rate-limit burst для client IP | Ограничить повторные попытки или пересмотреть limits после capacity review |
+| 503 too many active Streamable HTTP tenant scopes | Churn tenant sets заполнил bounded cache | Стабилизировать scopes или оценить безопасное увеличение `MCP_MAX_STREAMABLE_TENANT_SCOPES` |
 
 ---
-**Last verified:** 2026-08-02 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — после верификации были изменения (см. AGENTS.md §Verification)
+**Last verified:** 2026-08-18 (working tree after `6cdb51f`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, required-production auth, Origin allow-list, header-only tenant scope, bounded composite scopes, lifecycle-backed session metrics, session isolation и native Python SDK v2 E2E сверены локально.

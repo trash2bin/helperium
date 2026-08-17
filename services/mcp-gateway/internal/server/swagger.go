@@ -21,7 +21,7 @@ func OpenAPIHandler() http.HandlerFunc {
 			"info": map[string]any{
 				"title":       "MCP Gateway",
 				"version":     "1.1.0",
-				"description": "MCP Gateway - Proxy for MCP tools and SSE streaming",
+				"description": "MCP Gateway - tenant-scoped MCP tools over standard Streamable HTTP",
 			},
 			"servers": []map[string]any{
 				{"url": "http://127.0.0.1:8083"},
@@ -37,45 +37,37 @@ func OpenAPIHandler() http.HandlerFunc {
 				},
 				"/mcp": map[string]any{
 					"get": map[string]any{
-						"summary": "SSE endpoint for MCP",
+						"summary": "MCP Streamable HTTP session stream",
 						"responses": map[string]any{
-							"200": map[string]any{"description": "SSE Stream"},
-						},
-					},
-				},
-				"/sse": map[string]any{
-					"get": map[string]any{
-						"summary": "SSE endpoint (alias)",
-						"responses": map[string]any{
-							"200": map[string]any{"description": "SSE Stream"},
-						},
-					},
-				},
-				"/": map[string]any{
-					"get": map[string]any{
-						"summary": "Root endpoint (SSE)",
-						"responses": map[string]any{
-							"200": map[string]any{"description": "SSE Stream"},
+							"200": map[string]any{"description": "MCP Streamable HTTP response"},
 						},
 					},
 					"post": map[string]any{
-						"summary": "MCP JSON-RPC request",
+						"summary": "MCP Streamable HTTP request",
 						"responses": map[string]any{
-							"200": map[string]any{"description": "JSON-RPC Response"},
+							"200": map[string]any{"description": "MCP JSON-RPC response"},
+						},
+					},
+					"delete": map[string]any{
+						"summary": "Terminate an MCP Streamable HTTP session",
+						"responses": map[string]any{
+							"200": map[string]any{"description": "MCP session terminated"},
 						},
 					},
 				},
+
 				"/mcp/manifest": map[string]any{
 					"get": map[string]any{
 						"summary": "Get MCP tools manifest",
 						"parameters": []map[string]any{
 							{
-								"name":     "tenant",
-								"in":       "query",
+								"name":     "X-Tenant-ID",
+								"in":       "header",
 								"required": false,
 								"schema":   map[string]any{"type": "string"},
 							},
 						},
+
 						"responses": map[string]any{
 							"200": map[string]any{"description": "JSON Manifest"},
 						},

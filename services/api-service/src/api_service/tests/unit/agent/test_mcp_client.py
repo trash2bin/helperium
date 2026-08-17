@@ -42,7 +42,7 @@ def _mock_tool(
     tool = MagicMock()
     tool.name = name
     tool.description = description
-    tool.inputSchema = input_schema or {"type": "object", "properties": {}}
+    tool.input_schema = input_schema or {"type": "object", "properties": {}}
     return tool
 
 
@@ -55,7 +55,7 @@ def _mock_result(content_parts: list[dict], is_error: bool = False) -> MagicMock
         block.type = part.get("type", "text")
         block.text = part.get("text", "")
         result.content.append(block)
-    result.isError = is_error
+    result.is_error = is_error
     return result
 
 
@@ -89,7 +89,7 @@ class TestBuildToolResult:
         assert parsed == inner
 
     def test_error_result(self):
-        """isError=True should produce ok=False with error message."""
+        """is_error=True should produce ok=False with error message."""
         result = _mock_result(
             [{"type": "text", "text": "Student not found"}], is_error=True
         )

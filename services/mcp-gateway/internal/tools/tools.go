@@ -25,9 +25,22 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/mcp-gateway/internal/httpclient"
 	"github.com/trash2bin/helperium/mcp-gateway/internal/ragclient"
+)
+
+// mcpToolCallsTotal records every completed MCP tool call. It is defined beside
+// MakeAuditHandler because that wrapper covers both unprefixed and composite
+// tenant-prefixed tools.
+var mcpToolCallsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "mcp_tool_calls_total",
+		Help: "Total MCP tool calls by tool, tenant, and status.",
+	},
+	[]string{"tool", "tenant", "status"},
 )
 
 // Registry manages auto-generated + explicit MCP tools.
@@ -54,6 +67,12 @@ type toolDef struct {
 // still registered but return a friendly error message at call time.
 func NewRegistry(cfg *config.Config) *Registry {
 	return newRegistry(cfg, "")
+}
+
+// NewTenantRegistry creates an unprefixed registry whose audit and metric labels
+// identify the single resolved tenant.
+func NewTenantRegistry(cfg *config.Config, tenantID string) *Registry {
+	return newRegistry(cfg, tenantID)
 }
 
 // NewPrefixedRegistry creates a registry with a tenant prefix for composite multi-tenant mode.
@@ -203,12 +222,16 @@ func (r *Registry) makeRagHandler(kind string) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("RAG unavailable: %s. Check RAG_SERVICE_URL and ensure rag-service is running.", r.RagDisabledReason())), nil
 		}
 
-		args := request.Params.Arguments
+		args, ok := toolArguments(request.Params.Arguments)
+		if !ok {
+			return mcp.NewToolResultError("invalid tool arguments: expected an object"), nil
+		}
 		query, _ := args["query"].(string)
 		disciplineID, _ := args["discipline_id"].(string)
 
 		var limit int
 		switch v := args["limit"].(type) {
+
 		case float64:
 			limit = int(v)
 		case int:
@@ -326,12 +349,11 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 		//    No need to re-fetch the manifest for endpoint resolution.
 		endpoint := td.Endpoint
 
-		args := make(map[string]any)
-		if request.Params.Arguments != nil {
-			for k, v := range request.Params.Arguments {
-				args[k] = v
-			}
+		args, ok := toolArguments(request.Params.Arguments)
+		if !ok {
+			return mcp.NewToolResultError("invalid tool arguments: expected an object"), nil
 		}
+
 		slog.Info("Tool call", "tool", td.Name, "tenantID", actualTenantID, "args", args)
 
 		// 4. Validate tool arguments before forwarding to data-service.
@@ -683,6 +705,18 @@ func validateScalar(paramName, val string, t config.ParamType) error {
 	}
 }
 
+// toolArguments converts the SDK v0.58 untyped Arguments payload to the
+// object shape required by Helperium tools. MCP JSON-RPC tool arguments must be
+// an object; rejecting any other shape prevents panics and avoids forwarding
+// malformed payloads to data-service.
+func toolArguments(raw any) (map[string]any, bool) {
+	if raw == nil {
+		return map[string]any{}, true
+	}
+	args, ok := raw.(map[string]any)
+	return args, ok
+}
+
 // truncateResult truncates a result string to at most maxLen characters.
 // If truncated, appends a note that the result was truncated.
 // Returns the original string unchanged if within limit.
@@ -710,7 +744,9 @@ func MakeAuditHandler(toolName, tenantID string, inner server.ToolHandlerFunc) s
 		result, err := inner(ctx, request)
 
 		elapsed := time.Since(start)
-		argsStr := truncateArgs(request.Params.Arguments)
+		args, _ := toolArguments(request.Params.Arguments)
+		argsStr := truncateArgs(args)
+
 		resultSize := 0
 		if result != nil {
 			for _, c := range result.Content {
@@ -728,6 +764,12 @@ func MakeAuditHandler(toolName, tenantID string, inner server.ToolHandlerFunc) s
 			slog.Int64("duration_ms", elapsed.Milliseconds()),
 			slog.Int("result_size", resultSize),
 		}
+
+		status := "ok"
+		if err != nil || result == nil || result.IsError {
+			status = "error"
+		}
+		mcpToolCallsTotal.WithLabelValues(toolName, tenantID, status).Inc()
 
 		if err != nil {
 			attrs = append(attrs, slog.String("error", err.Error()))

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -119,234 +120,6 @@ func TestHealthEndpoint_ContentType(t *testing.T) {
 	}
 }
 
-// ════════════════════════════════════════════════════════════════
-// Tools list / call tests
-// ════════════════════════════════════════════════════════════════
-
-func TestToolsListEndpoint(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-	req := httptest.NewRequest("GET", "/tools/list", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /tools/list = %d, want %d\nbody: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-
-	result, ok := resp["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("response missing result field: %v", resp)
-	}
-	toolsArr, ok := result["tools"].([]any)
-	if !ok {
-		t.Fatalf("result missing tools array: %v", result)
-	}
-
-	found := false
-	for _, tAny := range toolsArr {
-		tool, ok := tAny.(map[string]any)
-		if !ok {
-			continue
-		}
-		if tool["name"] == "get_student" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("tools list does not contain 'get_student'. Tools: %v", toolsArr)
-	}
-}
-
-func TestToolsCallEndpoint(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-	body := map[string]any{
-		"name": "get_student",
-		"arguments": map[string]any{
-			"id": "test-123",
-		},
-	}
-	bodyBytes, _ := json.Marshal(body)
-
-	req := httptest.NewRequest("POST", "/tools/call", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /tools/call = %d, want %d\nbody: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-
-	_, hasResult := resp["result"]
-	_, hasError := resp["error"]
-	if !hasResult && !hasError {
-		t.Errorf("response should have 'result' or 'error' field: %v", resp)
-	}
-}
-
-func TestToolsCallEndpoint_InvalidBody(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-	req := httptest.NewRequest("POST", "/tools/call", bytes.NewReader([]byte(`{invalid}`)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("POST /tools/call with invalid JSON = %d, want %d\nbody: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
-	}
-}
-
-func TestToolsCallEndpoint_EmptyName(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-	body := map[string]any{
-		"arguments": map[string]any{"x": "y"},
-	}
-	bodyBytes, _ := json.Marshal(body)
-
-	req := httptest.NewRequest("POST", "/tools/call", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("POST /tools/call with empty name = %d, want %d", rec.Code, http.StatusOK)
-	}
-}
-
-// ════════════════════════════════════════════════════════════════
-// MCP message endpoint tests
-// ════════════════════════════════════════════════════════════════
-
-func TestMCPMessageEndpoint(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-
-	msg := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "test-1",
-		"method":  "tools/list",
-		"params":  map[string]any{},
-	}
-	bodyBytes, _ := json.Marshal(msg)
-
-	req := httptest.NewRequest("POST", "/mcp/message", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	// Without SSE session, should return 200 with direct JSON-RPC response
-	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /mcp/message = %d, want 200\nbody: %s", rec.Code, rec.Body.String())
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v (body: %s)", err, rec.Body.String())
-	}
-	if resp["jsonrpc"] != "2.0" {
-		t.Errorf(`jsonrpc = %v, want "2.0"`, resp["jsonrpc"])
-	}
-	_, hasResult := resp["result"]
-	_, hasError := resp["error"]
-	if !hasResult && !hasError {
-		t.Errorf("response should have 'result' or 'error': %v", resp)
-	}
-}
-
-func TestMCPMessageEndpoint_DirectResponseWithoutSession(t *testing.T) {
-	prevClient := globalClient
-	defer func() { globalClient = prevClient }()
-
-	manifestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/mcp/manifest" {
-			http.NotFound(w, r)
-			return
-		}
-		if got := r.Header.Get("X-Tenant-ID"); got != "tenant-a" {
-			t.Errorf("manifest request tenant = %q, want tenant-a", got)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, defaultTestConfig())
-	}))
-	defer manifestServer.Close()
-
-	t.Setenv("DATA_SERVICE_URL", manifestServer.URL)
-	globalClient = httpclient.New()
-
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-	msg := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "test-1",
-		"method":  "tools/list",
-		"params":  map[string]any{},
-	}
-	bodyBytes, _ := json.Marshal(msg)
-
-	req := httptest.NewRequest("POST", "/mcp/message", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Tenant-ID", "tenant-a")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /mcp/message without session = %d, want 200\nbody: %s", rec.Code, rec.Body.String())
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v (body: %s)", err, rec.Body.String())
-	}
-	if resp["jsonrpc"] != "2.0" {
-		t.Fatalf(`jsonrpc = %v, want "2.0"`, resp["jsonrpc"])
-	}
-	if _, ok := resp["result"]; !ok {
-		t.Fatalf("response missing result: %v", resp)
-	}
-}
-
-func TestMCPMessageEndpoint_ParseError(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-
-	req := httptest.NewRequest("POST", "/mcp/message", bytes.NewReader([]byte(`not json`)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	// Should return a JSON-RPC parse error
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("POST /mcp/message with invalid JSON = %d, want 400\nbody: %s", rec.Code, rec.Body.String())
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	errObj, ok := resp["error"].(map[string]any)
-	if !ok {
-		t.Fatal("error field missing")
-	}
-	code, _ := errObj["code"].(float64)
-	expectedCode := float64(-32700)
-	if code != expectedCode {
-		t.Errorf("error.code = %v, want %v", code, expectedCode)
-	}
-}
-
 func TestDebugConfigAlias(t *testing.T) {
 	prevClient := globalClient
 	defer func() { globalClient = prevClient }()
@@ -380,51 +153,6 @@ func TestDebugConfigAlias(t *testing.T) {
 	}
 	if cfg["version"] == nil {
 		t.Fatalf("config response missing version: %v", cfg)
-	}
-}
-
-func TestMCPFallbackEndpoint(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-
-	msg := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "test-1",
-		"method":  "tools/list",
-		"params":  map[string]any{},
-	}
-	bodyBytes, _ := json.Marshal(msg)
-
-	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /mcp (fallback) = %d, want 200\nbody: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestMCPMessageEndpoint_WithSessionID(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	r := newTestRouterFromConfig(t, defaultTestConfig())
-
-	// Without active SSE session, sessionId in query should still work (returns direct response)
-	msg := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "test-1",
-		"method":  "tools/list",
-		"params":  map[string]any{},
-	}
-	bodyBytes, _ := json.Marshal(msg)
-
-	req := httptest.NewRequest("POST", "/mcp/message?sessionId=some-session", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("POST /mcp/message with sessionId = %d, want 200\nbody: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -507,36 +235,59 @@ func TestAuthMiddleware_InvalidAuthScheme_Returns401(t *testing.T) {
 	}
 }
 
-// ════════════════════════════════════════════════════════════════
-// Helper function tests
-// ════════════════════════════════════════════════════════════════
-
-func TestWriteJSONRPCError(t *testing.T) {
-	t.Skip("test written for old REST endpoints — needs rewrite for MCP SSE protocol")
-	rec := httptest.NewRecorder()
-	writeJSONRPCError(rec, "req-1", -32600, "Invalid Request")
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+func TestValidateStartupConfigurationRequiresKeyWhenEnabled(t *testing.T) {
+	t.Setenv("MCP_REQUIRE_AUTH", "true")
+	t.Setenv("MCP_API_KEY", "")
+	if err := validateStartupConfiguration(); err == nil {
+		t.Fatal("MCP_REQUIRE_AUTH=true without MCP_API_KEY should fail validation")
 	}
 
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+	if err := validateStartupConfiguration(); err != nil {
+		t.Fatalf("MCP_REQUIRE_AUTH=true with key: %v", err)
 	}
-	if resp["id"] != "req-1" {
-		t.Errorf("id = %v, want req-1", resp["id"])
+}
+
+func TestOriginMiddlewareRejectsUnexpectedBrowserOrigin(t *testing.T) {
+	t.Setenv("MCP_ALLOWED_ORIGINS", "https://console.example.test")
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	for _, tc := range []struct {
+		name   string
+		origin string
+		want   int
+	}{
+		{name: "service client without Origin", want: http.StatusOK},
+		{name: "allowed browser origin", origin: "https://console.example.test", want: http.StatusOK},
+		{name: "unexpected browser origin", origin: "https://attacker.invalid", want: http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/health", nil)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("GET /health with Origin %q = %d, want %d", tc.origin, rec.Code, tc.want)
+			}
+		})
 	}
-	errObj, ok := resp["error"].(map[string]any)
-	if !ok {
-		t.Fatal("error field missing")
+}
+
+func TestValidateTenantScopeRejectsDuplicatesAndExcess(t *testing.T) {
+	previous := MaxTenantsPerScope
+	MaxTenantsPerScope = 2
+	t.Cleanup(func() { MaxTenantsPerScope = previous })
+
+	if err := validateTenantScope([]string{"tenant-a", "tenant-a"}); !errors.Is(err, errDuplicateTenantInScope) {
+		t.Fatalf("duplicate tenant scope error = %v, want %v", err, errDuplicateTenantInScope)
 	}
-	code, _ := errObj["code"].(float64)
-	if int(code) != -32600 {
-		t.Errorf("error.code = %v, want -32600", code)
+	if err := validateTenantScope([]string{"tenant-a", "tenant-b", "tenant-c"}); !errors.Is(err, errTooManyTenantsPerScope) {
+		t.Fatalf("oversized tenant scope error = %v, want %v", err, errTooManyTenantsPerScope)
 	}
-	if errObj["message"] != "Invalid Request" {
-		t.Errorf("error.message = %v, want 'Invalid Request'", errObj["message"])
+	if err := validateTenantScope([]string{"tenant-a", "tenant-b"}); err != nil {
+		t.Fatalf("valid composite scope rejected: %v", err)
 	}
 }
 
@@ -548,6 +299,51 @@ func TestNotFoundRoutes(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("GET /nonexistent = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestLegacyMCPRoutesAreNotRegistered(t *testing.T) {
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+	for _, path := range []string{"/", "/sse", "/mcp/message", "/mcp/v2"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("GET %s = %d, want 404", path, rec.Code)
+			}
+		})
+	}
+}
+
+func TestResolveTenantIDsUsesHeaderOnly(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/mcp?tenant=query-tenant", nil)
+	if got := resolveTenantIDs(req); len(got) != 0 {
+		t.Fatalf("query parameter selected tenant scope: got %v, want no tenant IDs", got)
+	}
+
+	req.Header.Set("X-Tenant-ID", "header-a, header-b")
+	if got, want := strings.Join(resolveTenantIDs(req), ","), "header-a,header-b"; got != want {
+		t.Fatalf("resolveTenantIDs() = %q, want %q", got, want)
+	}
+}
+
+func TestStreamableTenantRegistryRejectsNewScopeAtCapacity(t *testing.T) {
+	registry := &streamableTenantRegistry{
+		handlers: map[string]http.Handler{"tenant-a": http.NotFoundHandler()},
+		max:      1,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-b")
+	rec := httptest.NewRecorder()
+
+	registry.serveHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("new tenant scope at capacity = %d, want 503; body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "too many active Streamable HTTP tenant scopes") {
+		t.Errorf("503 body = %q, want capacity error message", rec.Body.String())
 	}
 }
 
@@ -675,7 +471,7 @@ func TestRateLimitMiddleware_EnforcesOnPOST(t *testing.T) {
 
 	sendPost := func() int {
 		body := bytes.NewReader(bodyBytes)
-		req := httptest.NewRequest("POST", "/mcp/message", body)
+		req := httptest.NewRequest("POST", "/mcp", body)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Tenant-ID", "default")
 		req.RemoteAddr = "10.0.0.99:54321"

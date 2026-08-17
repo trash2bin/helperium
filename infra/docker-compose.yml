@@ -109,6 +109,10 @@ services:
     environment:
       - DATA_SERVICE_URL=http://data-service:8084
       - RAG_SERVICE_URL=http://rag:8082
+      - MCP_REQUIRE_AUTH=${MCP_REQUIRE_AUTH:-false}
+      - MCP_API_KEY=${MCP_API_KEY:-}
+      - MCP_ALLOWED_ORIGINS=${MCP_ALLOWED_ORIGINS:-}
+      - MCP_MAX_TENANTS_PER_SCOPE=${MCP_MAX_TENANTS_PER_SCOPE:-8}
       - OTEL_ENABLED=${OTEL_ENABLED:-false}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
     healthcheck:
@@ -135,7 +139,10 @@ services:
       - USE_SCRIPTED_LLM=${USE_SCRIPTED_LLM:-0}
       - HEALTH_CHECK_SKIP_LLM=true
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
-      - MCP_SERVICE_URL=http://mcp-gateway:8083/mcp
+      - MCP_GATEWAY_URL=http://mcp-gateway:8083
+      - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
+      - MCP_CLIENT_API_KEY=${MCP_CLIENT_API_KEY:-}
+      - DEFAULT_TENANT_ID=${DEFAULT_TENANT_ID:-default}
       - DB_PATH=/data/app/university.db
       - DEMO_SESSION_DB_PATH=/data/app/demo_sessions.sqlite
       - PROVIDER_STORE_PATH=/data/app/providers.json
@@ -244,7 +251,9 @@ services:
     environment:
       # e2e ходит на сервисы по внутренним именам compose-сети
       - DATA_SERVICE_URL=http://data-service:8084
-      - MCP_SERVICE_URL=http://mcp-gateway:8083
+      - MCP_GATEWAY_URL=http://mcp-gateway:8083
+      - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
+      - MCP_API_KEY=${MCP_API_KEY:-}
       - API_SERVICE_URL=http://api:8081
       - DEMO_WEB_URL=http://web:8080
       - ADMIN_TOKEN=${ADMIN_TOKEN:-ci-secret-token}

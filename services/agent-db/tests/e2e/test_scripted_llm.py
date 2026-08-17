@@ -218,7 +218,10 @@ def scripted_server(tmp_path_factory):
     env["USE_SCRIPTED_LLM"] = "1"
     env["SCRIPTED_LLM_PATH"] = str(script_path)
     env["ADMIN_TOKEN"] = os.environ.get("ADMIN_TOKEN", "secret")
-    env["MCP_SERVICE_URL"] = os.environ.get("MCP_SERVICE_URL", "http://127.0.0.1:8083")
+    env["MCP_GATEWAY_URL"] = os.environ.get("MCP_GATEWAY_URL", "http://127.0.0.1:8083")
+    env["MCP_STREAMABLE_HTTP_URL"] = os.environ.get(
+        "MCP_STREAMABLE_HTTP_URL", env["MCP_GATEWAY_URL"] + "/mcp"
+    )
     env["DATA_SERVICE_URL"] = os.environ.get("DATA_SERVICE_URL", "http://127.0.0.1:8084")
     # Своя БД — чтобы не лочить основную
     env["DEMO_SESSION_DB_PATH"] = str(data_dir / "session.db")

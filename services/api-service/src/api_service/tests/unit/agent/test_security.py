@@ -68,16 +68,22 @@ class TestCheckAbuse:
 @pytest.mark.asyncio
 async def test_rate_limit_state_persists_between_requests(tmp_path, monkeypatch):
     config_path = tmp_path / "abuse.json"
-    config_path.write_text(json.dumps({
-        "rps": 0.001,
-        "burst": 1,
-        "block_empty_user_agent": False,
-        "min_interval_ms": 0,
-    }))
+    config_path.write_text(
+        json.dumps(
+            {
+                "rps": 0.001,
+                "burst": 1,
+                "block_empty_user_agent": False,
+                "min_interval_ms": 0,
+            }
+        )
+    )
     provider = LiveAbuseProvider(str(config_path))
     import api_service.server.security as security
+
     monkeypatch.setattr(security, "get_live_abuse_provider", lambda: provider)
     app = FastAPI()
+
     @app.post("/test")
     async def handler(request: Request):
         blocked = await security.check_abuse(request, "rate-limit-session", "hello")

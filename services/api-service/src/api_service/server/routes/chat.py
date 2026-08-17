@@ -1,8 +1,8 @@
 """Chat endpoints — text, agent-scoped, and voice."""
 
 from __future__ import annotations
-import logging
 import asyncio
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, UploadFile, File, Form
@@ -19,6 +19,7 @@ from api_service.audio.stt_engine import STTEngine
 from ..deps import get_agent, get_agent_store
 from ..sse import _sse, _single_error, _event_payload, _get_lang
 from ..security import check_abuse
+from ..tenant_authority import direct_chat_scope, named_agent_scope
 
 logger = logging.getLogger("api_service.server")
 router = APIRouter()
@@ -49,12 +50,7 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
 
     message = chat_req.message
     session_id = chat_req.session_id
-    tenant_header = request.headers.get("X-Tenant-ID", "")
-    tenant_ids = (
-        [t.strip() for t in tenant_header.split(",") if t.strip()]
-        if tenant_header
-        else None
-    )
+    tenant_ids = direct_chat_scope()
 
     if not message:
         return StreamingResponse(
@@ -183,17 +179,9 @@ async def chat_voice_endpoint(
             media_type="text/event-stream",
         )
 
-    tenant_ids = None
-    if agent_data and agent_data.get("tenant_ids"):
-        tenant_ids_raw = agent_data.get("tenant_ids")
-        tenant_ids = tenant_ids_raw if tenant_ids_raw else None
+    tenant_ids = named_agent_scope(agent_data) if agent_data else None
     if not tenant_ids:
-        tenant_header = request.headers.get("X-Tenant-ID", "")
-        tenant_ids = (
-            [t.strip() for t in tenant_header.split(",") if t.strip()]
-            if tenant_header
-            else None
-        )
+        tenant_ids = direct_chat_scope()
 
     if agent:
         effective_session_id = f"agent:{agent}:{session_id}"
@@ -269,8 +257,7 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
 
     message = chat_req.message
     session_id = chat_req.session_id
-    tenant_ids_raw = agent.get("tenant_ids")
-    tenant_ids = tenant_ids_raw if tenant_ids_raw else None
+    tenant_ids = named_agent_scope(agent)
     llm_config = agent.get("llm_config")
     system_prompt = agent.get("system_prompt") or (
         llm_config.get("system_prompt") if llm_config else None

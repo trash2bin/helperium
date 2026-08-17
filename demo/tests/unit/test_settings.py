@@ -68,12 +68,6 @@ class TestDemoSettingsDefaults:
         assert s.rag_service_url == "http://127.0.0.1:8082"
         assert s.web_proxy_timeout == 30.0
 
-    def test_mcp_service_url_default(self):
-        from demo.settings import DemoSettings
-
-        s = DemoSettings()
-        assert s.mcp_service_url == "http://127.0.0.1:8083/mcp"
-
 
 class TestDemoSettingsFromEnv:
     """С env vars — проверяем что парсинг корректный."""

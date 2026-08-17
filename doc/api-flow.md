@@ -102,28 +102,26 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 | `fetch_tool_mapping()` | GET `/mcp/tools/mapping` | HTTP | Get `{tool_name: display_name}` map |
 
 **Auth:** `X-Tenant-ID` from context
-**Used for:** SSE payload enrichment — `display_name` field in `tool_call` and `tool_result` events
+**Used for:** Enrichment of `display_name` in api-service tool-call and tool-result events
 
-### 6. api-service → mcp-gateway (MCP SSE + JSON-RPC)
+### 6. api-service → mcp-gateway (MCP Streamable HTTP v2)
 
 **Source:** `services/api-service/src/api_service/agent/mcp_client.py`
 **Target:** `mcp-gateway:8083`
 
-| Step | Protocol | Purpose |
-|---|---|---|
-| GET `/mcp` | SSE stream | Open persistent SSE session |
-| POST `/mcp/message?sessionId=...` | JSON-RPC | Send tool_call, receive via SSE |
-| `event: endpoint` → `event: message` | SSE | Gateway publishes tool results |
+| Endpoint | Methods | Protocol | Purpose |
+|---|---|---|---|
+| `/mcp` | `GET`, `POST`, `DELETE` | MCP Streamable HTTP | Единственный transport endpoint: initialization, JSON-RPC requests/responses and transport-managed session lifecycle |
 
 **MCP Protocol flow:**
-1. `sse_client()` opens GET `/mcp` → receives `event: endpoint` with `messageURL`
-2. `ClientSession` sends JSON-RPC via POST `/mcp/message?sessionId=...`
-3. Gateway responds `202 Accepted` immediately
-4. Actual response arrives as `event: message` on the SSE stream
+1. `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` creates the standard v2 transport.
+2. `Client(transport)` initializes the MCP session through the same `/mcp` endpoint.
+3. `list_tools()` and `call_tool()` issue protocol requests through the transport; the SDK owns response delivery and any stream/session identifiers.
+4. `Client` context exit or idle cleanup closes the connection through the supported transport lifecycle.
 
-**Multi-tenancy:** Headers `{"X-Tenant-ID": "tenant-a,tenant-b"}` trigger composite mode
-**Config env:** `MCP_SERVICE_URL`
-**One persistent SSE session per tenant**, lock-serialized per tenant
+**Multi-tenancy:** Header `X-Tenant-ID` is the only accepted tenant scope input; a comma-separated value triggers composite mode. The gateway creates a bounded tenant-scope handler cache.
+**Config env:** `MCP_GATEWAY_URL`, `MCP_STREAMABLE_HTTP_URL`, `MCP_HTTP_TIMEOUT`, `MCP_HTTP_READ_TIMEOUT`
+**One persistent Streamable HTTP connection per tenant scope**, lock-serialized per connection.
 
 ### 7. api-service → rag (RAG context for agent)
 
@@ -190,7 +188,7 @@ Browser
   │
   ├── POST /api/chat (SSE) ──→ demo-web ──→ api-service:8081
   │                                               │
-  │                                               ├── SSE ──→ mcp-gateway:8083 ──→ data-service:8084
+  │                                               ├── MCP Streamable HTTP `/mcp` ──→ mcp-gateway:8083 ──→ data-service:8084
   │                                               │       grep_* tools   → GET /{entity}/grep?pattern=...
   │                                               │       filter_* tools → GET /{entity}/filter?field__gt=...
   │                                               │       schema_* tools → GET /{entity}/schema
@@ -208,7 +206,7 @@ Browser
 ```
 LLM → tool_call("grep_catalog_product", {pattern: "brake pads", limit: 10})
   │
-  └── api-service MCPClient → POST /mcp/message?sessionId=... (JSON-RPC call_tool)
+  └── api-service MCPClient → `/mcp` Streamable HTTP (MCP `tools/call`)
         │
         └── mcp-gateway (tools.go) → validates required params, resolves endpoint from toolDef.Endpoint
               │
@@ -223,7 +221,7 @@ LLM → tool_call("grep_catalog_product", {pattern: "brake pads", limit: 10})
 ```
 LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 1000, limit: 10})
   │
-  └── api-service MCPClient → POST /mcp/message?sessionId=... (JSON-RPC call_tool)
+  └── api-service MCPClient → `/mcp` Streamable HTTP (MCP `tools/call`)
         │
         └── mcp-gateway (tools.go) → validates required params
               │
@@ -241,11 +239,12 @@ LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 100
 | `DATA_SERVICE_URL` | `http://127.0.0.1:8084` | demo-web, mcp-gateway | data-service |
 | `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | demo-web, api-service, admin-dashboard | rag |
 | `API_HOST` + `API_PORT` | `0.0.0.0:8081` | demo-web | api-service |
-| `MCP_SERVICE_URL` | `http://127.0.0.1:8083` | api-service | mcp-gateway |
+| `MCP_GATEWAY_URL` | `http://127.0.0.1:8083` | api-service | mcp-gateway auxiliary metadata endpoints |
+| `MCP_STREAMABLE_HTTP_URL` | `http://127.0.0.1:8083/mcp` | api-service | mcp-gateway standard MCP transport |
 | `DATA_SERVICE_URL` (для admin) | `http://127.0.0.1:8084` | admin-dashboard | data-service |
 | `API_SERVICE_URL` | `http://127.0.0.1:8081` | admin-dashboard | api-service |
 | `RAG_SERVICE_URL` (для admin) | `http://127.0.0.1:8082` | admin-dashboard | rag |
 
 > **Прим.:** admin-dashboard использует общие `DATA_SERVICE_URL` / `API_SERVICE_URL` / `RAG_SERVICE_URL` (`cmd/server/main.go:36-38`), а не отдельные `ADMIN_DASHBOARD_*`.
 ---
-**Last verified:** 2026-08-07 (HEAD `07f7515`) — все маршруты/порты/SSE сверены с кодом
+**Last verified:** 2026-08-17 (working tree, modern-only MCP experiment) — маршруты, порты и Streamable HTTP lifecycle сверены с кодом; full deterministic E2E повторяется перед merge.

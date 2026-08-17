@@ -47,7 +47,7 @@ Embed Widget → api-service (:8081) → orchestrator → LLM (LiteLLM)
 
 ### 3b. MCP — как агент получает данные
 
-**MCP** (Model Context Protocol) — способ, которым агент вызывает данные: api-service ↔ mcp-gateway через SSE + JSON-RPC. Агент открывает MCP-сессию, получает **манифест тулов** (генерируется из конфига тенанта, кэшируется, можно сбросить), и вызывает тулы для получения данных.
+**MCP** (Model Context Protocol) — способ, которым агент вызывает данные: api-service ↔ mcp-gateway через единственный standard Streamable HTTP endpoint `/mcp`. Официальный SDK управляет MCP-сессией, получает **манифест тулов** (генерируется из конфига тенанта, кэшируется, можно сбросить) и вызывает тулы для получения данных.
 
 → доки: §5b (api-service, mcp-gateway)
 
@@ -69,7 +69,7 @@ Embed Widget → api-service (:8081) → orchestrator → LLM (LiteLLM)
 Каждый тип БД (SQLite, PostgreSQL) реализует `datasource.Adapter` — как подключаться, интроспектировать схему, транслировать SQL. Добавление нового типа БД — новая реализация адаптера. → доки: §5b (data-service)
 
 ### 3g. HTTP Client Layer
-Сервисы общаются по HTTP: mcp-gateway → data-service (конфиг, данные), api-service → mcp-gateway (MCP-сессия на tenant, SSE), demo-web → все (SSE streaming).
+Сервисы общаются по HTTP: mcp-gateway → data-service (конфиг, данные), api-service → mcp-gateway (tenant-scoped MCP Streamable HTTP connection), demo-web → все (SSE streaming публичного чата).
 
 HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api.openapi.yaml`.
 
@@ -90,7 +90,7 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 | **api-service** (Python) | :8081 | оркестратор, LiteLLM | [README](services/api-service/README.md) |
 | **api-service/embed** (TypeScript) | :8081 | Embed-виджет | [README](services/api-service/embed/README.md) |
 | **data-service** (Go) | :8084 | Expression AST → SQL, search strategies | [README](services/data-service/README.md) |
-| **mcp-gateway** (Go) | :8083 | MCP SSE/JSON-RPC, composite, кэш манифеста | [README](services/mcp-gateway/README.md) |
+| **mcp-gateway** (Go) | :8083 | MCP Streamable HTTP `/mcp`, composite, bounded tenant-scope cache | [README](services/mcp-gateway/README.md) |
 | **admin-dashboard** (Go) | :8085 | Admin Web UI (Alpine.js) | [README](services/admin-dashboard/README.md) |
 | **rag-service** (Python) | :8082 | ChromaDB, опционально | [README](services/rag/README.md) |
 | **demo/web** (Python) | :8080 | Dev-only | [README](demo/web/README.md) |

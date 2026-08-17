@@ -1,16 +1,17 @@
 // Package main is the MCP Gateway server.
 //
 // HTTP routes served:
-//   GET  /mcp                             -> SSE stream (opens persistent connection)
-//   POST /mcp/message?sessionId=...       -> JSON-RPC (tool calls, list tools)
+//
+//	GET/POST/DELETE /mcp                  -> standard Streamable HTTP MCP
 //
 // HTTP routes called (to upstream services):
-//   createServerForTenant() / createCompositeServer():
-//     FetchConfigWithTenant() -> data-service:GET /mcp/manifest (load MCP config)
-//   makeHandler -> client.Call() -> data-service:GET /{endpoint} (data query)
-//   ragClient.SearchDocuments() -> rag:POST /search
-//   ragClient.ListDocuments()   -> rag:POST /documents/list
-//   ragClient.GetRagContext()   -> rag:POST /context
+//
+//	createServerForTenant() / createCompositeServer():
+//	  FetchConfigWithTenant() -> data-service:GET /mcp/manifest (load MCP config)
+//	makeHandler -> client.Call() -> data-service:GET /{endpoint} (data query)
+//	ragClient.SearchDocuments() -> rag:POST /search
+//	ragClient.ListDocuments()   -> rag:POST /documents/list
+//	ragClient.GetRagContext()   -> rag:POST /context
 //
 // Config env: DATA_SERVICE_URL, RAG_SERVICE_URL
 package main
@@ -18,7 +19,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -31,12 +32,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/trash2bin/helperium/helperium-go/pkg/cors"
 	"github.com/trash2bin/helperium/helperium-go/pkg/tracing"
 	"github.com/trash2bin/helperium/mcp-gateway/internal/httpclient"
 	gwserver "github.com/trash2bin/helperium/mcp-gateway/internal/server"
@@ -45,38 +44,11 @@ import (
 
 var globalClient *httpclient.Client
 
-// postHandlerTimeout bounds a single JSON-RPC request/response cycle
-// (HandleMessage + write to the SSE stream). It is intentionally short
-// and scoped to the POST handler only — it must NOT be confused with the
-// old http.Server.WriteTimeout, which used to apply to the *entire*
-// lifetime of the associated GET /mcp SSE connection and silently killed
-// every session after 30s of being open. See buildHTTPServer for the fix.
-// Can be overridden with MCP_POST_HANDLER_TIMEOUT environment variable (seconds).
-var postHandlerTimeout = func() time.Duration {
-	if v := os.Getenv("MCP_POST_HANDLER_TIMEOUT"); v != "" {
-		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
-			return time.Duration(sec) * time.Second
-		}
-	}
-	return 25 * time.Second
-}()
-
 // Session management constants
 // Can be overridden with environment variables
 var (
-	// MaxSessions limits concurrent SSE sessions per process to prevent OOM
-	// Can be overridden with MCP_MAX_SESSIONS environment variable
-	MaxSessions = func() int {
-		if v := os.Getenv("MCP_MAX_SESSIONS"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				return n
-			}
-		}
-		return 1000 // default
-	}()
-
-	// SessionIdleTimeout closes idle SSE connections after this duration
-	// Can be overridden with MCP_SESSION_IDLE_TIMEOUT environment variable (e.g., "5m", "30s")
+	// SessionIdleTimeout configures mcp-go transport-managed Streamable HTTP
+	// session expiry. Can be overridden with MCP_SESSION_IDLE_TIMEOUT.
 	SessionIdleTimeout = func() time.Duration {
 		if v := os.Getenv("MCP_SESSION_IDLE_TIMEOUT"); v != "" {
 			if d, err := time.ParseDuration(v); err == nil {
@@ -86,94 +58,130 @@ var (
 		return 5 * time.Minute // default
 	}()
 
-	// SessionMaxLifetime forces session recreation after this duration
-	// Can be overridden with MCP_SESSION_MAX_LIFETIME environment variable (e.g., "30m", "1h")
-	SessionMaxLifetime = func() time.Duration {
-		if v := os.Getenv("MCP_SESSION_MAX_LIFETIME"); v != "" {
-			if d, err := time.ParseDuration(v); err == nil {
-				return d
+	// MaxStreamableTenantScopes bounds cached stateful Streamable HTTP
+	// handlers, whose tool manifest is unique for each tenant set.
+	// Can be overridden with MCP_MAX_STREAMABLE_TENANT_SCOPES.
+	MaxStreamableTenantScopes = func() int {
+		if v := os.Getenv("MCP_MAX_STREAMABLE_TENANT_SCOPES"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
 			}
 		}
-		return 30 * time.Minute // default
+		return 256
+	}()
+
+	// MaxTenantsPerScope limits one composite tenant header. Without this bound,
+	// one request could synchronously fetch and register an unbounded number of
+	// tenant manifests before the scope-cache limit is reached.
+	// Can be overridden with MCP_MAX_TENANTS_PER_SCOPE.
+	MaxTenantsPerScope = func() int {
+		if v := os.Getenv("MCP_MAX_TENANTS_PER_SCOPE"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+		}
+		return 8
 	}()
 )
 
-// sseSession represents one long-lived SSE connection (opened via GET) and
-// the (possibly composite) MCP server state associated with it.
-//
-// mu guards mcpServer, tenantIDs, and all writes to writer/flusher.
-type sseSession struct {
-	mu           sync.Mutex
-	writer       http.ResponseWriter
-	flusher      http.Flusher
-	done         chan struct{}
-	tenantIDs    []string
-	mcpServer    *server.MCPServer
-	createdAt    time.Time
-	lastActivity time.Time
+// streamableTenantRegistry keeps a separate standard Streamable HTTP MCP
+// transport for each already-resolved tenant set. Tool manifests are tenant
+// specific, so one global MCPServer cannot safely serve all tenant scopes.
+var (
+	errMaxStreamableTenantScopes = errors.New("maximum streamable tenant scopes reached")
+	errTooManyTenantsPerScope    = errors.New("maximum tenants per MCP scope reached")
+	errDuplicateTenantInScope    = errors.New("duplicate tenant ID in MCP scope")
+)
+
+type streamableTenantRegistry struct {
+	mu       sync.Mutex
+	handlers map[string]http.Handler
+	max      int
 }
 
-func (s *sseSession) getTenantIDs() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.tenantIDs
-}
-
-func (s *sseSession) isExpired() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
-	return now.Sub(s.lastActivity) > SessionIdleTimeout || now.Sub(s.createdAt) > SessionMaxLifetime
-}
-
-// writeMessage safely writes a JSON-RPC "message" SSE event to this
-// session's underlying connection.
-func (s *sseSession) writeMessage(eventData []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	fmt.Fprintf(s.writer, "event: message\ndata: %s\n\n", eventData)
-	s.flusher.Flush()
-	s.lastActivity = time.Now()
-}
-
-// ensureCompositeServer lazily creates (or re-creates, on tenant list change)
-// the (possibly composite) MCP server for this session.
-// Guarded by mu so concurrent POSTs on the same session can't race.
-func (s *sseSession) ensureCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Fast path: same tenants → reuse
-	if s.mcpServer != nil && sliceEqual(s.tenantIDs, tenantIDs) {
-		s.lastActivity = time.Now()
-		return s.mcpServer, nil
+func newStreamableTenantRegistry() *streamableTenantRegistry {
+	return &streamableTenantRegistry{
+		handlers: make(map[string]http.Handler),
+		max:      MaxStreamableTenantScopes,
 	}
+}
 
-	slog.Info("Initializing MCP server for session", "tenants", tenantIDs)
+func (registry *streamableTenantRegistry) handlerFor(tenantIDs []string) (http.Handler, error) {
+	tenantKey := strings.Join(tenantIDs, ",")
+
+	// Do not hold the registry mutex while loading manifests from data-service.
+	// A slow or unavailable tenant must not block already-cached scopes.
+	registry.mu.Lock()
+	if handler, ok := registry.handlers[tenantKey]; ok {
+		registry.mu.Unlock()
+		return handler, nil
+	}
+	if len(registry.handlers) >= registry.max {
+		registry.mu.Unlock()
+		return nil, errMaxStreamableTenantScopes
+	}
+	registry.mu.Unlock()
+
 	mcpServer, err := createCompositeServer(tenantIDs)
 	if err != nil {
 		return nil, err
 	}
-	s.mcpServer = mcpServer
-	s.tenantIDs = tenantIDs
-	s.lastActivity = time.Now()
-	return mcpServer, nil
+
+	primaryTenantID := tenantIDs[0]
+	candidate := server.NewStreamableHTTPServer(
+		mcpServer,
+		server.WithEndpointPath("/mcp"),
+		server.WithStateful(true),
+		server.WithSessionIdleTTL(SessionIdleTimeout),
+		server.WithStreamableHTTPLogger(slog.Default()),
+		server.WithHTTPContextFunc(func(ctx context.Context, _ *http.Request) context.Context {
+			return context.WithValue(ctx, httpclient.TenantIDKey, primaryTenantID)
+		}),
+	)
+
+	// Another request may have built the same scope while its manifest was
+	// loading. Reuse that canonical handler and discard the duplicate candidate.
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if handler, ok := registry.handlers[tenantKey]; ok {
+		return handler, nil
+	}
+	if len(registry.handlers) >= registry.max {
+		return nil, errMaxStreamableTenantScopes
+	}
+	registry.handlers[tenantKey] = candidate
+	return candidate, nil
 }
 
-// sliceEqual checks if two string slices have the same elements in the same order.
-func sliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
+func (registry *streamableTenantRegistry) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	tenantIDs := resolveTenantIDs(r)
+	if len(tenantIDs) == 0 {
+		http.Error(w, "X-Tenant-ID header is required", http.StatusBadRequest)
+		return
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
+	if err := validateTenantScope(tenantIDs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	handler, err := registry.handlerFor(tenantIDs)
+	if err != nil {
+		if errors.Is(err, errMaxStreamableTenantScopes) {
+			http.Error(w, "too many active Streamable HTTP tenant scopes", http.StatusServiceUnavailable)
+			return
 		}
+		slog.Error("Failed to create Streamable HTTP MCP server", "tenant_ids", tenantIDs, "error", err)
+		http.Error(w, "Failed to create MCP server", http.StatusInternalServerError)
+		return
 	}
-	return true
+	handler.ServeHTTP(w, r)
 }
 
 func main() {
+	if err := validateStartupConfiguration(); err != nil {
+		slog.Error("invalid MCP gateway configuration", "error", err)
+		os.Exit(1)
+	}
+
 	devMode := os.Getenv("MCP_DEV") == "true"
 	logLevel := slog.LevelInfo
 	if devMode {
@@ -212,17 +220,10 @@ func main() {
 	}
 }
 
-// buildHTTPServer configures server-level timeouts.
-//
-// WriteTimeout is intentionally NOT set: it applies to the entire
-// lifetime of a connection's response, and our GET /mcp handler holds
-// that response open indefinitely to stream SSE events. A non-zero
-// WriteTimeout here silently kills every SSE session ~N seconds after it
-// opens, regardless of activity. Slow-client/slow-write protection is
-// instead applied per-request inside mcpPostHandler via context, and
-// ReadHeaderTimeout below still protects against slow/stalled request
-// headers (slowloris-style attacks) without touching long-lived SSE
-// writes.
+// buildHTTPServer configures server-level timeouts. WriteTimeout remains
+// unset because Streamable HTTP may keep a response stream open while the
+// transport manages MCP session/event delivery. ReadHeaderTimeout protects
+// against slow/stalled request headers (slowloris-style attacks).
 //
 // Can be overridden with env vars:
 //
@@ -250,8 +251,20 @@ func buildHTTPServer(r http.Handler, port string) *http.Server {
 	}
 }
 
-// createServerForTenant creates a per-tenant MCP server (single-tenant, no prefix).
-// Kept for backward compatibility and internal use.
+// newMCPServer creates an MCP server whose lifecycle hooks maintain the
+// Streamable HTTP active-session gauge for one resolved tenant scope.
+func newMCPServer(tenantScope string) *server.MCPServer {
+	hooks := &server.Hooks{}
+	hooks.AddOnRegisterSession(func(context.Context, server.ClientSession) {
+		mcpSessionsActive.WithLabelValues(tenantScope).Inc()
+	})
+	hooks.AddOnUnregisterSession(func(context.Context, server.ClientSession) {
+		mcpSessionsActive.WithLabelValues(tenantScope).Dec()
+	})
+	return server.NewMCPServer("helperium", "1.0.0", server.WithHooks(hooks))
+}
+
+// createServerForTenant creates a per-tenant MCP server with unprefixed tools.
 func createServerForTenant(tenantID string) (*server.MCPServer, error) {
 	slog.Info("Fetching config for tenant", "tenantID", tenantID)
 	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
@@ -260,9 +273,9 @@ func createServerForTenant(tenantID string) (*server.MCPServer, error) {
 		return nil, err
 	}
 	slog.Info("Config fetched, creating server", "tenantID", tenantID)
-	mcpServer := server.NewMCPServer("helperium", "1.0.0")
+	mcpServer := newMCPServer(tenantID)
 	slog.Info("Creating registry", "tenantID", tenantID)
-	registry := tools.NewRegistry(cfg)
+	registry := tools.NewTenantRegistry(cfg, tenantID)
 	slog.Info("Registering tools", "tenantID", tenantID)
 	registry.RegisterAll(mcpServer)
 	slog.Info("MCP server ready", "tenantID", tenantID)
@@ -270,16 +283,16 @@ func createServerForTenant(tenantID string) (*server.MCPServer, error) {
 }
 
 // createCompositeServer creates a composite MCP server for multiple tenants.
-// Single tenant → standard mode (no prefix, backward compat).
+// Single tenant → standard mode (no prefix).
 // Multiple tenants → all tools registered with "{tenantID}__" prefix.
 func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
-	// Single tenant: backward-compatible path (no prefix)
+	// Single tenant: unprefixed tools.
 	if len(tenantIDs) == 1 {
 		return createServerForTenant(tenantIDs[0])
 	}
 
 	slog.Info("Creating composite MCP server", "tenants", tenantIDs)
-	composite := server.NewMCPServer("helperium", "1.0.0")
+	composite := newMCPServer(strings.Join(tenantIDs, ","))
 
 	for _, tenantID := range tenantIDs {
 		slog.Info("Fetching config for tenant", "tenantID", tenantID)
@@ -298,13 +311,84 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 	return composite, nil
 }
 
+// validateStartupConfiguration protects production-style deployments from
+// accidentally exposing a gateway with auth disabled. Local development remains
+// explicit through MCP_REQUIRE_AUTH=false (the default).
+func validateStartupConfiguration() error {
+	if os.Getenv("MCP_REQUIRE_AUTH") == "true" && strings.TrimSpace(os.Getenv("MCP_API_KEY")) == "" {
+		return errors.New("MCP_REQUIRE_AUTH=true requires a non-empty MCP_API_KEY")
+	}
+	return nil
+}
+
+// originMiddleware implements the Streamable HTTP DNS-rebinding defence. Native
+// service clients normally omit Origin; browser-originated requests must match
+// the configured comma-separated MCP_ALLOWED_ORIGINS allow-list exactly.
+func originMiddleware(next http.Handler) http.Handler {
+	allowed := make(map[string]struct{})
+	for _, value := range strings.Split(os.Getenv("MCP_ALLOWED_ORIGINS"), ",") {
+		if origin := strings.TrimSpace(value); origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			if _, ok := allowed[origin]; !ok {
+				http.Error(w, "Origin is not allowed", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// validateTenantScope constrains composite setup work before any upstream
+// manifest requests. Ordering is preserved because it determines the exposed
+// tool names, while duplicate IDs have no valid composite meaning.
+func validateTenantScope(tenantIDs []string) error {
+	if len(tenantIDs) > MaxTenantsPerScope {
+		return errTooManyTenantsPerScope
+	}
+	seen := make(map[string]struct{}, len(tenantIDs))
+	for _, tenantID := range tenantIDs {
+		if _, duplicate := seen[tenantID]; duplicate {
+			return errDuplicateTenantInScope
+		}
+		seen[tenantID] = struct{}{}
+	}
+	return nil
+}
+
+// requiredSingleTenant resolves metadata routes that are meaningful only for one
+// manifest. Unlike the old fallback, an absent X-Tenant-ID cannot silently read
+// a default scope and a composite scope must use the MCP tool manifest instead.
+func requiredSingleTenant(w http.ResponseWriter, r *http.Request) (string, bool) {
+	tenantIDs := resolveTenantIDs(r)
+	if len(tenantIDs) == 0 {
+		http.Error(w, "X-Tenant-ID header is required", http.StatusBadRequest)
+		return "", false
+	}
+	if err := validateTenantScope(tenantIDs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return "", false
+	}
+	if len(tenantIDs) != 1 {
+		http.Error(w, "metadata endpoints require exactly one X-Tenant-ID", http.StatusBadRequest)
+		return "", false
+	}
+	return tenantIDs[0], true
+}
+
 // authMiddleware проверяет Authorization: Bearer <token> на всех маршрутах,
 // кроме /health. Если переменная окружения MCP_API_KEY не установлена,
-// middleware пропускает все запросы (backward compat).
+// middleware пропускает все запросы only when MCP_REQUIRE_AUTH is false.
 func authMiddleware(next http.Handler) http.Handler {
 	apiKey := os.Getenv("MCP_API_KEY")
 	if apiKey == "" {
-		// No auth configured — skip entirely
+		// Local development may deliberately opt out. Production launch paths set
+		// MCP_REQUIRE_AUTH=true and fail before router construction if no key exists.
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -332,7 +416,7 @@ func authMiddleware(next http.Handler) http.Handler {
 }
 
 func buildRouter() *chi.Mux {
-	sessions := &sync.Map{}
+	streamableHandlers := newStreamableTenantRegistry()
 	r := chi.NewRouter()
 
 	// Recover from panics in any handler (e.g. a misbehaving tool) so one
@@ -343,15 +427,19 @@ func buildRouter() *chi.Mux {
 	// OpenTelemetry tracing middleware
 	r.Use(tracing.Middleware)
 
+	// Reject browser-originated requests unless their Origin is explicitly
+	// allow-listed. Service-to-service clients do not send Origin.
+	r.Use(originMiddleware)
+
 	// Auth middleware — check Authorization: Bearer <token> on all routes
-	// except /health. If MCP_API_KEY env is empty, auth is skipped.
+	// except /health. MCP_REQUIRE_AUTH prevents an accidental empty-key deploy.
 	r.Use(authMiddleware)
 
 	// Global request logger to debug routing issues
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			traceID := tracing.TraceIDFromContext(r.Context())
-		slog.Info("INCOMING REQUEST", "method", r.Method, "path", r.URL.Path, "tenant", r.Header.Get("X-Tenant-ID"), "trace_id", traceID)
+			slog.Info("INCOMING REQUEST", "method", r.Method, "path", r.URL.Path, "tenant", r.Header.Get("X-Tenant-ID"), "trace_id", traceID)
 			next.ServeHTTP(w, r)
 		})
 	})
@@ -360,22 +448,13 @@ func buildRouter() *chi.Mux {
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/docs", gwserver.SwaggerHandler())
 	r.Get("/openapi.json", gwserver.OpenAPIHandler())
-	r.Get("/debug", debugPlaygroundHandler())
 	r.Get("/config", debugConfigHandler())
-	r.Get("/debug/sessions", debugSessionsHandler(sessions))
 	r.Get("/debug/config", debugConfigHandler())
-	r.Get("/mcp", sseHandler(sessions))
-	r.Get("/sse", sseHandler(sessions))
-	r.Get("/", sseHandler(sessions))
-	mcpPost := mcpPostHandler(sessions)
-
-	// POST (MCP JSON-RPC message) endpoints have rate limiting applied
+	// One standard MCP endpoint for all Streamable HTTP methods. Rate limit
+	// applies to GET, POST and DELETE so transport sessions cannot bypass it.
 	r.Group(func(r chi.Router) {
 		r.Use(mcpRateLimitMiddleware())
-		r.Post("/mcp/message", mcpPost)
-		r.Post("/mcp", mcpPost)
-		r.Post("/message", mcpPost)
-		r.Post("/", mcpPost)
+		r.HandleFunc("/mcp", streamableHandlers.serveHTTP)
 	})
 
 	r.Get("/mcp/manifest", manifestProxyHandler)
@@ -391,193 +470,10 @@ func healthHandler() http.HandlerFunc {
 	}
 }
 
-func sseHandler(sessions *sync.Map) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Access-Control-Allow-Origin", cors.AllowOrigin())
-
-		// Enforce session limit to prevent OOM
-		count := 0
-		sessions.Range(func(_, _ any) bool {
-			count++
-			return true
-		})
-		if count >= MaxSessions {
-			http.Error(w, "Too many SSE sessions", http.StatusServiceUnavailable)
-			return
-		}
-
-		sessionID := uuid.New().String()
-		now := time.Now()
-		session := &sseSession{
-			writer:       w,
-			flusher:      flusher,
-			done:         make(chan struct{}),
-			tenantIDs:    resolveTenantIDs(r),
-			createdAt:    now,
-			lastActivity: now,
-		}
-		sessions.Store(sessionID, session)
-		mcpSessionsActive.WithLabelValues(strings.Join(session.tenantIDs, ",")).Inc()
-		defer func() {
-			sessions.Delete(sessionID)
-			mcpSessionsActive.WithLabelValues(strings.Join(session.tenantIDs, ",")).Dec()
-			slog.Info("MCP session closed", "sessionID", sessionID)
-		}()
-
-		messageURL := fmt.Sprintf("http://%s/mcp/message?sessionId=%s", r.Host, sessionID)
-		fmt.Fprintf(w, "event: endpoint\ndata: %s\r\n\r\n", messageURL)
-		flusher.Flush()
-
-		// Start idle timeout monitor for this session
-		idleTimer := time.NewTimer(SessionIdleTimeout)
-		defer idleTimer.Stop()
-
-		for {
-			select {
-			case <-r.Context().Done():
-				return
-			case <-idleTimer.C:
-				if session.isExpired() {
-					slog.Info("Closing idle SSE session", "sessionID", sessionID)
-					sessions.Delete(sessionID)
-					return
-				}
-				idleTimer.Reset(SessionIdleTimeout)
-			}
-		}
-	}
-}
-
-// jsonRPCMessage is a minimal parse target for logging the method name.
-type jsonRPCMessage struct {
-	Method string `json:"method"`
-}
-
-func mcpPostHandler(sessions *sync.Map) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		var rawMessage json.RawMessage
-		if err := json.NewDecoder(r.Body).Decode(&rawMessage); err != nil {
-			writeJSONRPCError(w, nil, 400, "Parse error")
-			return
-		}
-
-		// Extract method name for audit logging (best-effort, ignore parse errors)
-		var msgMeta jsonRPCMessage
-		_ = json.Unmarshal(rawMessage, &msgMeta)
-		rpcMethod := msgMeta.Method
-		if rpcMethod == "" {
-			rpcMethod = "unknown"
-		}
-
-		sessionID := r.URL.Query().Get("sessionId")
-		tenantIDs := resolveTenantIDs(r)
-		var session *sseSession
-
-		if sessionID != "" {
-			si, ok := sessions.Load(sessionID)
-			if !ok {
-				http.Error(w, "session not found", http.StatusNotFound)
-				return
-			}
-			session = si.(*sseSession)
-
-			if len(tenantIDs) == 0 {
-				tenantIDs = session.getTenantIDs()
-			}
-		}
-
-		if len(tenantIDs) == 0 {
-			http.Error(w, "X-Tenant-ID header is required", http.StatusBadRequest)
-			return
-		}
-
-		var mcpServer *server.MCPServer
-		var err error
-		if session != nil {
-			mcpServer, err = session.ensureCompositeServer(tenantIDs)
-		} else {
-			mcpServer, err = createCompositeServer(tenantIDs)
-		}
-		if err != nil {
-			http.Error(w, "Failed to create MCP server", http.StatusInternalServerError)
-			return
-		}
-
-		// Bound this single request/response cycle instead of relying on
-		// http.Server.WriteTimeout (which would also cap the unrelated,
-		// long-lived GET /mcp SSE connection this response is written
-		// through). If HandleMessage hangs (e.g. a slow downstream tool),
-		// this context expires and callers get a clean timeout instead of
-		// a connection that hangs forever.
-		ctx, cancel := context.WithTimeout(r.Context(), postHandlerTimeout)
-		defer cancel()
-
-		// Inject primary tenantID into context for backward compat with
-		// single-tenant tool handlers (composite handlers use their own closure).
-		ctx = context.WithValue(ctx, httpclient.TenantIDKey, tenantIDs[0])
-
-		if session != nil {
-			ctx = mcpServer.WithContext(ctx, server.NotificationContext{
-				ClientID:  sessionID,
-				SessionID: sessionID,
-			})
-		}
-
-		response := mcpServer.HandleMessage(ctx, rawMessage)
-		if response != nil {
-			if session != nil {
-				eventData, _ := json.Marshal(response)
-				session.writeMessage(eventData)
-				w.WriteHeader(http.StatusAccepted)
-				mcpToolCallsTotal.WithLabelValues(rpcMethod, strings.Join(tenantIDs, ","), "ok").Inc()
-				slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
-					slog.String("method", rpcMethod),
-					slog.String("session_id", sessionID),
-					slog.Any("tenant_ids", tenantIDs),
-					slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-				)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(response)
-			mcpToolCallsTotal.WithLabelValues(rpcMethod, strings.Join(tenantIDs, ","), "ok").Inc()
-			slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
-				slog.String("method", rpcMethod),
-				slog.Any("tenant_ids", tenantIDs),
-				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-			)
-			return
-		}
-
-		w.WriteHeader(http.StatusAccepted)
-		mcpToolCallsTotal.WithLabelValues(rpcMethod, strings.Join(tenantIDs, ","), "ok").Inc()
-		slog.LogAttrs(ctx, slog.LevelInfo, "jsonrpc_call",
-			slog.String("method", rpcMethod),
-			slog.String("session_id", sessionID),
-			slog.Any("tenant_ids", tenantIDs),
-			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-		)
-	}
-}
-
 func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
-	tenantIDs := resolveTenantIDs(r)
-	// Use the first tenant for manifest (backward compat)
-	tenantID := ""
-	if len(tenantIDs) > 0 {
-		tenantID = tenantIDs[0]
+	tenantID, ok := requiredSingleTenant(w, r)
+	if !ok {
+		return
 	}
 	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
 	if err != nil {
@@ -589,10 +485,9 @@ func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func mappingHandler(w http.ResponseWriter, r *http.Request) {
-	tenantIDs := resolveTenantIDs(r)
-	tenantID := ""
-	if len(tenantIDs) > 0 {
-		tenantID = tenantIDs[0]
+	tenantID, ok := requiredSingleTenant(w, r)
+	if !ok {
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -619,19 +514,11 @@ func mappingHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(mapping)
 }
 
-func writeJSONRPCError(w http.ResponseWriter, id any, code int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"jsonrpc": "2.0", "error": map[string]any{"code": code, "message": message}, "id": id,
-	})
-}
-
 // schemaProxyHandler прокидывает запрос /mcp/schema в data-service.
 func schemaProxyHandler(w http.ResponseWriter, r *http.Request) {
-	tenantIDs := resolveTenantIDs(r)
-	tenantID := ""
-	if len(tenantIDs) > 0 {
-		tenantID = tenantIDs[0]
+	tenantID, ok := requiredSingleTenant(w, r)
+	if !ok {
+		return
 	}
 
 	data, err := globalClient.FetchSchemaWithTenant(tenantID)
@@ -645,57 +532,6 @@ func schemaProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 // ── Debug Handlers ──
 
-func debugPlaygroundHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		w.Write([]byte(playgroundHTML))
-	}
-}
-
-type sessionInfo struct {
-	SessionID string   `json:"session_id"`
-	TenantIDs []string `json:"tenant_ids"`
-}
-
-func debugSessionsHandler(sessions *sync.Map) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tenantIDs := resolveTenantIDs(r)
-		var result []sessionInfo
-		sessions.Range(func(key, value any) bool {
-			s := value.(*sseSession)
-			sTenantIDs := s.getTenantIDs()
-			// If no tenant filter, show all sessions; otherwise filter by tenant
-			if len(tenantIDs) == 0 || sliceContainsAny(sTenantIDs, tenantIDs) {
-				result = append(result, sessionInfo{
-					SessionID: key.(string),
-					TenantIDs: sTenantIDs,
-				})
-			}
-			return true
-		})
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		json.NewEncoder(w).Encode(map[string]any{"sessions": result})
-	}
-}
-
-// sliceContainsAny returns true if a contains any element from b.
-func sliceContainsAny(a, b []string) bool {
-	for _, va := range a {
-		for _, vb := range b {
-			if va == vb {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func debugConfigHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Reuse the same logic as manifestProxyHandler
@@ -706,16 +542,11 @@ func debugConfigHandler() http.HandlerFunc {
 	}
 }
 
-// resolveTenantIDs parses X-Tenant-ID header as a comma-separated list.
-// Returns a slice (never nil). Supports backward compat with single tenant.
+// resolveTenantIDs parses the server-to-server X-Tenant-ID header as a
+// comma-separated list. Query parameters are deliberately not accepted because
+// tenant scope must not be selected through an alternate public input surface.
 func resolveTenantIDs(r *http.Request) []string {
 	tenantID := r.Header.Get("X-Tenant-ID")
-	if tenantID == "" {
-		tenantID = r.URL.Query().Get("tenant")
-	}
-	if tenantID == "" {
-		tenantID = r.URL.Query().Get("tenat")
-	}
 
 	parts := strings.Split(tenantID, ",")
 	result := make([]string, 0, len(parts))

@@ -13,7 +13,6 @@ import os
 import signal
 import subprocess
 import sys
-import time
 import uuid
 from pathlib import Path
 
@@ -71,7 +70,8 @@ def main() -> int:
     env["USE_SCRIPTED_LLM"] = "1"
     env["SCRIPTED_LLM_PATH"] = str(script_path)
     env["ADMIN_TOKEN"] = os.environ.get("ADMIN_TOKEN", "secret")
-    env["MCP_SERVICE_URL"] = "http://127.0.0.1:8083"
+    env["MCP_GATEWAY_URL"] = "http://127.0.0.1:8083"
+    env["MCP_STREAMABLE_HTTP_URL"] = "http://127.0.0.1:8083/mcp"
     env["DATA_SERVICE_URL"] = "http://127.0.0.1:8084"
     env["DEMO_SESSION_DB_PATH"] = str(data_dir / "session.db")
     env["BACKLOG_DIR"] = str(data_dir / "backlog")
@@ -116,7 +116,6 @@ def main() -> int:
 
         # Run the bench CLI on a subset of cases
         from agent_db.bench.cli import _load_cases
-        from agent_db.bench.models import TestCase
         from agent_db.bench.runner import BenchmarkRunner
         from agent_db.bench.evaluator import DeterministicEvaluator
         from agent_db.bench.report import aggregate_report, print_report
@@ -153,7 +152,8 @@ def main() -> int:
                     return 1
             run = runner.run_case(c.question)
             ev = evaluator.evaluate(c, run)
-            runs.append(run); evals.append(ev)
+            runs.append(run)
+            evals.append(ev)
             print(f"  [{c.id}] tool={ev.tool_ok} retrieval={ev.retrieval_ok} "
                   f"answer={ev.answer_ok} halluc={ev.hallucination} refusal={ev.refusal_ok} "
                   f"final={run.final_text[:60]!r}")

@@ -1,5 +1,20 @@
 # CHANGELOG.md
 
+## 2026-08-18
+
+- **fix(mcp/security):** gateway получил production fail-fast `MCP_REQUIRE_AUTH=true`, shared `MCP_API_KEY`/`MCP_CLIENT_API_KEY` Compose wiring, strict `MCP_ALLOWED_ORIGINS` policy, header-only metadata access и bounds для composite scopes (8 unique tenant IDs by default). Registry больше не удерживает mutex во время manifest fetch.
+- **fix(tenant-authority):** public direct text/voice chat использует только server-configured `DEFAULT_TENANT_ID` и игнорирует browser `X-Tenant-ID`; composite scope может происходить только из persisted named-agent record.
+- **test(mcp):** native SDK v2 E2E добавил session replay isolation, composite-scope abuse rejection, configured missing-auth и invalid-Origin checks; полный secure-stack deterministic E2E: **127 passed**.
+- **docs(mcp):** `.env.example`, Compose, dev launcher, MCP service READMEs, lifecycle guide и production RUNBOOK документируют обязательные production credentials, Origin policy, stateful topology и executable verification commands.
+- **refactor(api/tenant):** server-controlled direct-chat scope вынесен из HTTP handlers в `tenant_authority.py`; route code теперь выражает только вызов policy resolver, а не читает environment и не содержит authorization policy inline.
+- **test(mcp):** добавлен настоящий ScriptedLLM E2E pipeline persisted named-agent composite scope → api-service → MCPClient → два prefixed gateway tools → две tenant БД data-service → SSE. Request с hostile `X-Tenant-ID` не влияет на result; rebuilt secure stack: **128 passed**.
+- **fix(ci/mcp):** полный `make ci` восстановлен: Ruff отформатировал четыре Python-файла, устаревшая demo-проверка удалённого `mcp_service_url` удалена, а gateway снова публикует `mcp_tool_calls_total` и lifecycle-based `mcp_sessions_active` для Streamable HTTP. Grafana и monitoring docs больше не называют этот transport legacy SSE.
+
+## 2026-08-17
+
+- **test(mcp):** native Streamable HTTP v2 E2E теперь покрывает read-only tool call, composite tenant scope с prefixed tools и fail-closed rejection tenant query parameter без `X-Tenant-ID`; gateway unit suite дополнена регрессиями отсутствия legacy routes, header-only scope resolver и `503` при saturation bounded tenant-scope cache. Полный deterministic E2E: **123 passed**.
+- **docs(mcp):** AGENTS.md, README api-service, mcp-gateway и agent-db синхронизированы с единственным `/mcp` transport contract, service auth, error/status semantics, diagnostics и executable focused test commands. Package map агента больше не маркирует MCP client как SSE.
+
 ## 2026-08-15
 - **fix(bench/evaluator):** добавлены fixture-scoped `value_aliases` с проверкой явного отрицания; `payment=online` теперь корректно принимает display labels «онлайн»/«онлайн-оплата» без generic fuzzy matching. Deterministic re-evaluation сохранённого третьего NIM run изменила только payment case: **47 CORRECT / 1 PARTIAL / 1 WRONG / 0 ERROR** (98,0%), без model-вызовов.
 - **feat(bench/policy):** versioned `autoparts-benchmark-v1` policy и CLI `sync-agent-policy` воспроизводимо синхронизируют только `system_prompt` через Agent API, не меняя provider/tenant config. Policy требует MCP-grounding для tenant facts и остановки после достаточного tool result.

@@ -1,9 +1,10 @@
 // Package httpclient provides HTTP client for calling data-service.
 //
 // HTTP routes called:
-//   FetchConfigWithTenant() -> data-service:GET /mcp/manifest (load tenant MCP config)
-//   Call()                 -> data-service:GET /{endpoint}       (execute data query)
-//   Call()                 -> data-service:GET /{endpoint}/{id}  (get entity by ID)
+//
+//	FetchConfigWithTenant() -> data-service:GET /mcp/manifest (load tenant MCP config)
+//	Call()                 -> data-service:GET /{endpoint}       (execute data query)
+//	Call()                 -> data-service:GET /{endpoint}/{id}  (get entity by ID)
 package httpclient
 
 import (
@@ -31,13 +32,13 @@ const TenantIDKey contextKey = "x-tenant-id"
 
 // ── Manifest cache ──
 //
-// FetchConfigWithTenant is called on every stateless /mcp/message POST.
+// FetchConfigWithTenant is called when a Streamable HTTP /mcp tenant scope is initialized.
 // The underlying GET /mcp/manifest returns ~28KB JSON per tenant.
 // We cache it so repeated calls within the TTL window don't hit data-service.
 
 type cachedConfig struct {
-	cfg  *config.Config
-	exp  time.Time
+	cfg *config.Config
+	exp time.Time
 }
 
 type Client struct {
@@ -47,9 +48,9 @@ type Client struct {
 	// manifestCache: per-tenant TTL cache for /mcp/manifest responses.
 	//   key: tenantID string (empty for bootstrapped/default)
 	//   value: cached config with expiration
-	manifestCache     map[string]cachedConfig
-	manifestCacheMu   sync.RWMutex
-	manifestCacheTTL  time.Duration
+	manifestCache    map[string]cachedConfig
+	manifestCacheMu  sync.RWMutex
+	manifestCacheTTL time.Duration
 }
 
 // New creates a new HTTP client for data-service.
@@ -88,7 +89,7 @@ func New() *Client {
 	}
 
 	return &Client{
-		baseURL:          base,
+		baseURL: base,
 		http: &http.Client{
 			Timeout:   timeout,
 			Transport: tr,
@@ -97,6 +98,7 @@ func New() *Client {
 		manifestCacheTTL: 30 * time.Second,
 	}
 }
+
 // ── SSRF Protection ──
 
 var (
