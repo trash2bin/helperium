@@ -9,13 +9,13 @@ Expected security posture for /embed/* files:
 from __future__ import annotations
 
 import importlib
-import sys
 
 from fastapi.testclient import TestClient
 
 
 def _get_client():
-    app_mod = importlib.reload(sys.modules["api_service.server.app"])
+    app_mod = importlib.import_module("api_service.server.app")
+    app_mod = importlib.reload(app_mod)
     return TestClient(app_mod.app)
 
 
