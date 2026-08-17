@@ -41,8 +41,10 @@ const EXPECTED_DOMAINS = [
 // ── dashboard() — Alpine component factory ──
 function dashboard(): AnyRecord {
   return {
-    // ── State: merged from all domains ──
+    // ── State and methods merged from all domains ──
+    // Alpine evaluates template expressions before init(); methods must already exist.
     ...AppRegistry.getState(),
+    ...AppRegistry.getMethods(),
 
     // ── Emergency computed getters ──
     get emergencyPresetLabel(): string {
