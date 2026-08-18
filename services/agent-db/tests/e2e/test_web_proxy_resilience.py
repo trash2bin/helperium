@@ -11,7 +11,7 @@ import uuid
 
 import requests
 
-from tests.e2e.helpers import demo_web_url
+from tests.e2e.helpers import api_service_url, demo_web_url
 
 
 def _assert_single_http_body_framing(response: requests.Response) -> None:
@@ -32,6 +32,33 @@ def _chat_via_web(*, agent: str, client_ip: str) -> requests.Response:
         headers={"X-Forwarded-For": client_ip},
         timeout=10,
     )
+
+
+def test_api_compose_cors_default_denies_unconfigured_origin() -> None:
+    """A missing deployment override must not turn the public API into wildcard CORS."""
+
+    headers = {
+        "Origin": "https://attacker.invalid",
+        "Access-Control-Request-Method": "POST",
+    }
+    denied = requests.options(
+        f"{api_service_url()}/api/chat", headers=headers, timeout=10
+    )
+    assert denied.status_code == 400, denied.text[:500]
+    assert "access-control-allow-origin" not in {
+        name.lower() for name in denied.headers
+    }, denied.headers
+
+    allowed = requests.options(
+        f"{api_service_url()}/api/chat",
+        headers={
+            "Origin": "http://localhost:8080",
+            "Access-Control-Request-Method": "POST",
+        },
+        timeout=10,
+    )
+    assert allowed.status_code == 200, allowed.text[:500]
+    assert allowed.headers.get("access-control-allow-origin") == "http://localhost:8080"
 
 
 def test_web_proxy_preserves_upstream_not_found_status() -> None:

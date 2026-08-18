@@ -163,7 +163,9 @@ services:
       - AGENT_MAX_EMPTY_ROUNDS=${AGENT_MAX_EMPTY_ROUNDS:-3}
       - BACKLOG_RETENTION_DAYS=${BACKLOG_RETENTION_DAYS:-30}
       - CHAT_RATE_LIMIT=${CHAT_RATE_LIMIT:-30/minute}
-      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-*}
+      # Public embed origins must be explicitly configured by the deployer.
+      # Falling back to localhost keeps an omitted setting fail-secure.
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost:8080}
       - DEMO_DEBUG=${DEMO_DEBUG:-false}
       - OTEL_ENABLED=${OTEL_ENABLED:-false}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}

@@ -173,6 +173,7 @@ async def test_streamable_http_rejects_invalid_composite_scope_before_loading_ma
     invalid_scopes = {
         "duplicate tenant": f"{target.id},{target.id}",
         "too many tenants": ",".join(f"scope-{index}" for index in range(9)),
+        "malformed tenant identifier": "../../etc",
     }
 
     async with httpx2.AsyncClient(headers=headers, follow_redirects=True) as client:
@@ -183,10 +184,13 @@ async def test_streamable_http_rejects_invalid_composite_scope_before_loading_ma
                 content=b"{}",
             )
             assert response.status_code == 400, f"{label}: {response.text}"
+            assert "Failed to create MCP server" not in response.text
 
 
 @pytest.mark.asyncio
-async def test_streamable_http_requires_service_auth_when_enabled(tenant, mcp_gateway_url):
+async def test_streamable_http_requires_service_auth_when_enabled(
+    tenant, mcp_gateway_url
+):
     """The secure E2E profile rejects a request that omits its MCP bearer token."""
     target = tenant("sqlite-testseed", tenant_id="e2e-streamable-auth-target")
     async with httpx2.AsyncClient(
@@ -202,7 +206,9 @@ async def test_streamable_http_requires_service_auth_when_enabled(tenant, mcp_ga
 
 
 @pytest.mark.asyncio
-async def test_streamable_http_rejects_untrusted_browser_origin(tenant, mcp_gateway_url):
+async def test_streamable_http_rejects_untrusted_browser_origin(
+    tenant, mcp_gateway_url
+):
     """The secure E2E profile rejects browser requests outside its allow-list."""
     target = tenant("sqlite-testseed", tenant_id="e2e-streamable-origin-target")
     async with httpx2.AsyncClient(

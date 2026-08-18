@@ -291,6 +291,26 @@ func TestValidateTenantScopeRejectsDuplicatesAndExcess(t *testing.T) {
 	}
 }
 
+func TestValidateTenantScopeRejectsMalformedTenantIDs(t *testing.T) {
+	for _, tenantID := range []string{
+		"../../etc",
+		"tenant/other",
+		"tenant.with.dot",
+		"-tenant",
+		strings.Repeat("a", 129),
+	} {
+		t.Run(tenantID, func(t *testing.T) {
+			if err := validateTenantScope([]string{tenantID}); !errors.Is(err, errInvalidTenantIDInScope) {
+				t.Fatalf("validateTenantScope(%q) error = %v, want %v", tenantID, err, errInvalidTenantIDInScope)
+			}
+		})
+	}
+
+	if err := validateTenantScope([]string{"tenant_123", "tenant-a"}); err != nil {
+		t.Fatalf("valid tenant IDs rejected: %v", err)
+	}
+}
+
 func TestNotFoundRoutes(t *testing.T) {
 	r := newTestRouterFromConfig(t, defaultTestConfig())
 	req := httptest.NewRequest("GET", "/nonexistent", nil)

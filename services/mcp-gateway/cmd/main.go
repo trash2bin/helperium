@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -91,6 +92,8 @@ var (
 	errMaxStreamableTenantScopes = errors.New("maximum streamable tenant scopes reached")
 	errTooManyTenantsPerScope    = errors.New("maximum tenants per MCP scope reached")
 	errDuplicateTenantInScope    = errors.New("duplicate tenant ID in MCP scope")
+	errInvalidTenantIDInScope    = errors.New("invalid tenant ID in MCP scope")
+	tenantIDPattern              = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 )
 
 type streamableTenantRegistry struct {
@@ -353,6 +356,12 @@ func validateTenantScope(tenantIDs []string) error {
 	}
 	seen := make(map[string]struct{}, len(tenantIDs))
 	for _, tenantID := range tenantIDs {
+		// Tenant IDs are header-controlled lookup keys and cache keys. Keep the
+		// accepted contract intentionally narrow so malformed values cannot reach
+		// manifest routing or produce an internal error response.
+		if !tenantIDPattern.MatchString(tenantID) {
+			return errInvalidTenantIDInScope
+		}
 		if _, duplicate := seen[tenantID]; duplicate {
 			return errDuplicateTenantInScope
 		}
