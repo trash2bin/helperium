@@ -30,6 +30,11 @@ type contextKey string
 
 const TenantIDKey contextKey = "x-tenant-id"
 
+// ErrDataServiceUnavailable marks connection, timeout and 5xx failures from the
+// internal data-service. Callers may safely map it to a stable public message
+// while structured logs retain the wrapped diagnostic.
+var ErrDataServiceUnavailable = errors.New("data service unavailable")
+
 // ── Manifest cache ──
 //
 // FetchConfigWithTenant is called when a Streamable HTTP /mcp tenant scope is initialized.
@@ -330,10 +335,14 @@ func (c *Client) Call(ctx context.Context, endpoint string, params map[string]an
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http: execute request: %w", err)
+		return nil, fmt.Errorf("%w: execute request: %w", ErrDataServiceUnavailable, err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= http.StatusInternalServerError {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("%w: endpoint %s returned status %d: %s", ErrDataServiceUnavailable, endpoint, resp.StatusCode, string(body))
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("http: endpoint %s returned status %d: %s", endpoint, resp.StatusCode, string(body))

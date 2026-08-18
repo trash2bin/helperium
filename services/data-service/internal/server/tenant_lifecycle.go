@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -15,6 +16,11 @@ import (
 	"github.com/trash2bin/helperium/data-service/internal/runtime"
 	"github.com/trash2bin/helperium/helperium-go/config"
 )
+
+// errTenantDatabaseUnavailable identifies a connection failure to a client
+// database. It is deliberately internal: public handlers expose a stable,
+// non-sensitive 503 contract while structured logs retain the underlying cause.
+var errTenantDatabaseUnavailable = errors.New("tenant database unavailable")
 
 // RegisterTenantInstance registers a pre-built TenantInstance directly.
 // Used by tests that already have an adapter and router — bypasses
@@ -294,7 +300,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	dsn := resolveDataSourceDSN(cfg.DataSource.DSN, configPath)
 	conn, err := adapter.Connect(ctx, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("connect to database: %w", err)
+		return nil, fmt.Errorf("%w: connect to database: %w", errTenantDatabaseUnavailable, err)
 	}
 
 	// Read-only connection (если задан readonly_dsn — database-level изоляция)
@@ -309,7 +315,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 		roConn, err := adapter.Connect(ctx, readonlyDSN)
 		if err != nil {
 			_ = conn.Close()
-			return nil, fmt.Errorf("connect to readonly database: %w", err)
+			return nil, fmt.Errorf("%w: connect to readonly database: %w", errTenantDatabaseUnavailable, err)
 		}
 		readonlyConn = roConn
 		slog.Info("tenant: read-only connection established",

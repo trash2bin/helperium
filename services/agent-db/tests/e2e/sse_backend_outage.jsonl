@@ -1,0 +1,2 @@
+{"tool_calls":[{"name":"db_search","arguments":{"entity":"category","pattern":"Книги","limit":1}}],"delay_ms":2500}
+{"content":"SSE completed after backend dependency failure."}

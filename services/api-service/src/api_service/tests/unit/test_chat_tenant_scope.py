@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -17,6 +18,13 @@ class _SpyAgent:
     async def stream_events(self, *_args, **kwargs):
         self.calls.append(kwargs)
         yield SimpleNamespace(type="final", data={"content": "OK"})
+
+
+class _CancelledAgent:
+    async def stream_events(self, *_args, **_kwargs):
+        if False:  # Keep this an async generator for the production contract.
+            yield SimpleNamespace(type="final", data={})
+        raise asyncio.CancelledError
 
 
 def _request(body: dict, tenant_header: str = "") -> Request:
@@ -82,6 +90,33 @@ async def test_direct_chat_ignores_browser_tenant_header(monkeypatch) -> None:
             "correlation_id": "tenant-scope-test",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_direct_chat_emits_error_and_done_after_internal_cancellation() -> None:
+    """Backend cancellation cannot silently strand an already-connected SSE client."""
+
+    from api_service.server.routes.chat import chat_endpoint
+
+    request = _request({"message": "hello", "session_id": "cancelled-stream"})
+    with (
+        patch(
+            "api_service.server.routes.chat.get_agent",
+            return_value=_CancelledAgent(),
+        ),
+        patch(
+            "api_service.server.routes.chat.check_abuse",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        response = await chat_endpoint(request)
+        body = (await _drain(response)).decode()
+
+    assert response.status_code == 200
+    assert "The data service connection was interrupted. Please try again." in body
+    assert '"type": "error"' in body
+    assert '"type": "done"' in body
 
 
 @pytest.mark.asyncio

@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -96,6 +98,20 @@ class ToolExecutionStage:
                 ctx.turn.iteration,
                 arguments,
             )
+
+            # The deterministic scripted-LLM environment can hold execution
+            # after the client-visible tool_call event. This creates a stable
+            # fault-injection boundary for Docker resilience E2E without
+            # affecting any normal runtime.
+            if os.environ.get("USE_SCRIPTED_LLM") == "1":
+                try:
+                    test_delay_ms = float(
+                        os.environ.get("SCRIPTED_TOOL_EXECUTION_DELAY_MS", "0")
+                    )
+                except ValueError:
+                    test_delay_ms = 0
+                if test_delay_ms > 0:
+                    await asyncio.sleep(test_delay_ms / 1000)
 
             # Execute
             start_time = time.time()

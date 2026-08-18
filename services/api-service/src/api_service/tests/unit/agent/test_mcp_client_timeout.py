@@ -83,6 +83,36 @@ async def test_call_tool_lock_acquires_normally():
     conn.session.call_tool.assert_awaited_once_with("greet", {"who": "world"})
 
 
+@pytest.mark.asyncio
+@patch("helperium_sdk.settings.settings.mcp_tool_execution_timeout", 0.05)
+async def test_call_tool_execution_hard_deadline_when_sdk_suppresses_cancellation():
+    """A reconnecting transport must not keep an SSE request alive indefinitely."""
+    client = MCPClient()
+    conn = _make_conn()
+    cancellation_seen = asyncio.Event()
+    allow_task_exit = asyncio.Event()
+
+    async def cancellation_suppressing_call(*_args, **_kwargs):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancellation_seen.set()
+            await allow_task_exit.wait()
+            return MagicMock(content=[], is_error=True)
+
+    conn.session.call_tool = AsyncMock(side_effect=cancellation_suppressing_call)
+    client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+
+    session = await _session_proxy(client)
+    result = await client.call_tool(session, "stalled_tool", {})
+
+    assert result.ok is False
+    assert "timed out" in (result.error or "")
+    await asyncio.wait_for(cancellation_seen.wait(), timeout=0.5)
+    allow_task_exit.set()
+    await asyncio.sleep(0)
+
+
 # ── Tests: list_tools lock timeout ───────────────────────────────────────────
 
 

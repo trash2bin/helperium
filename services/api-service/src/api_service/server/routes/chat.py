@@ -1,8 +1,12 @@
 """Chat endpoints — text, agent-scoped, and voice."""
 
 from __future__ import annotations
+
 import asyncio
+import contextvars
 import logging
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, UploadFile, File, Form
@@ -29,6 +33,78 @@ def _correlation_id(request: Request) -> str:
     """Extract correlation id from request state, falling back to a fresh UUID."""
     cid = getattr(request.state, "correlation_id", None)
     return cid if isinstance(cid, str) and cid else str(uuid4())
+
+
+def _backend_stream_interrupted_message(lang: str) -> str:
+    """Stable, non-sensitive message for an interrupted internal dependency."""
+    if lang == "ru":
+        return "Соединение с сервисом данных прервано. Пожалуйста, попробуйте ещё раз."
+    return "The data service connection was interrupted. Please try again."
+
+
+async def _buffered_agent_sse_events(
+    source: AsyncIterator[Any], lang: str, correlation_id: str
+) -> AsyncIterator[str]:
+    """Keep MCP transport cancellation inside a producer task, not the SSE writer.
+
+    Streamable MCP uses a cancellation scope for its background GET receiver.
+    When that receiver dies, it can cancel the task driving the agent iterator.
+    A separate producer with an empty context turns that failure into a queued
+    terminal SSE error while the request's writer task remains able to flush it.
+    """
+
+    queue: asyncio.Queue[tuple[str, Any | None]] = asyncio.Queue()
+
+    async def produce() -> None:
+        try:
+            async for event in source:
+                await queue.put(("event", event))
+        except asyncio.CancelledError:
+            await queue.put(("interrupted", None))
+        except Exception as exc:
+            await queue.put(("error", exc))
+        else:
+            await queue.put(("done", None))
+
+    producer = asyncio.create_task(produce(), context=contextvars.Context())
+    try:
+        while True:
+            kind, value = await queue.get()
+            if kind == "event":
+                assert value is not None
+                payload = _event_payload(value.type, value.data)
+                if payload is not None:
+                    yield _sse(payload)
+                continue
+            if kind == "done":
+                yield _sse({"type": "done"})
+                return
+            if kind == "interrupted":
+                logger.warning("chat agent producer interrupted by backend dependency")
+                yield _sse(
+                    {
+                        "type": "error",
+                        "text": _backend_stream_interrupted_message(lang),
+                        "correlation_id": correlation_id,
+                    }
+                )
+                yield _sse({"type": "done"})
+                return
+
+            assert isinstance(value, Exception)
+            logger.warning("chat agent producer failed", exc_info=value)
+            yield _sse(
+                {
+                    "type": "error",
+                    "text": classify_error(value, lang),
+                    "correlation_id": correlation_id,
+                }
+            )
+            yield _sse({"type": "done"})
+            return
+    finally:
+        if not producer.done():
+            producer.cancel()
 
 
 # ── Chat endpoints ──────────────────────────────────────────────────────
@@ -72,27 +148,16 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
     lang = _get_lang(request)
 
     async def events():
-        try:
-            async for event in get_agent().stream_events(
-                message,
-                session_id=effective_session_id,
-                tenant_ids=tenant_ids,
-                lang=lang,
-                correlation_id=correlation_id,
-            ):
-                payload = _event_payload(event.type, event.data)
-                if payload is not None:
-                    yield _sse(payload)
-            chat_messages_total.labels(status="sent").inc()
-            yield _sse({"type": "done"})
-        except Exception as exc:
-            yield _sse(
-                {
-                    "type": "error",
-                    "text": classify_error(exc, lang),
-                    "correlation_id": correlation_id,
-                }
-            )
+        source = get_agent().stream_events(
+            message,
+            session_id=effective_session_id,
+            tenant_ids=tenant_ids,
+            lang=lang,
+            correlation_id=correlation_id,
+        )
+        async for payload in _buffered_agent_sse_events(source, lang, correlation_id):
+            yield payload
+        chat_messages_total.labels(status="sent").inc()
 
     return StreamingResponse(events(), media_type="text/event-stream")
 
@@ -287,29 +352,18 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     lang = _get_lang(request)
 
     async def events():
-        try:
-            async for event in get_agent().stream_events(
-                user_message=message,
-                session_id=effective_session_id,
-                tenant_ids=tenant_ids,
-                system_prompt=system_prompt,
-                lang=lang,
-                llm_config=resolved_llm_config,
-                provider_priority=provider_priority,
-                correlation_id=correlation_id,
-            ):
-                payload = _event_payload(event.type, event.data)
-                if payload is not None:
-                    yield _sse(payload)
-            chat_messages_total.labels(status="sent").inc()
-            yield _sse({"type": "done"})
-        except Exception as exc:
-            yield _sse(
-                {
-                    "type": "error",
-                    "text": classify_error(exc, lang),
-                    "correlation_id": correlation_id,
-                }
-            )
+        source = get_agent().stream_events(
+            user_message=message,
+            session_id=effective_session_id,
+            tenant_ids=tenant_ids,
+            system_prompt=system_prompt,
+            lang=lang,
+            llm_config=resolved_llm_config,
+            provider_priority=provider_priority,
+            correlation_id=correlation_id,
+        )
+        async for payload in _buffered_agent_sse_events(source, lang, correlation_id):
+            yield payload
+        chat_messages_total.labels(status="sent").inc()
 
     return StreamingResponse(events(), media_type="text/event-stream")

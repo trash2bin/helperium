@@ -129,6 +129,39 @@ func TestTenantAdmin_AddTenant_InvalidConfig(t *testing.T) {
 	}
 }
 
+func TestTenantAdmin_AddTenant_UnavailableDatabaseReturnsSafe503(t *testing.T) {
+	ts := newTenantAdminTestStore(t)
+
+	payload := `{
+		"id": "offline-postgres",
+		"config": {
+			"version": 1,
+			"data_source": {
+				"driver": "postgres",
+				"dsn": "postgres://tenant_user:secret@127.0.0.1:1/client_db?sslmode=disable"
+			},
+			"entities": [],
+			"endpoints": []
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/admin/tenants", strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	ts.adminAddTenantHandler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for unavailable tenant database, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"tenant_database_unavailable"`) {
+		t.Errorf("expected stable unavailable error code, got: %s", body)
+	}
+	for _, sensitive := range []string{"127.0.0.1", "tenant_user", "secret", "client_db", "postgres://"} {
+		if strings.Contains(body, sensitive) {
+			t.Errorf("public 503 leaked connection detail %q: %s", sensitive, body)
+		}
+	}
+}
+
 func TestTenantAdmin_AddTenant_InvalidConfigFilter(t *testing.T) {
 	ts := newTenantAdminTestStore(t)
 	ts.TenantsDir = t.TempDir()

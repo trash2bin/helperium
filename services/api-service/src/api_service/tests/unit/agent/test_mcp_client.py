@@ -6,6 +6,7 @@ real SSE connections. Follows the same pattern as test_mcp_client_timeout.py.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -253,6 +254,65 @@ class TestCallTool:
         assert "Student: Ivan Ivanov" in tr.tool_content
         assert "ОБЯЗАТЕЛЬНО" in tr.reminder
         conn.session.call_tool.assert_awaited_once_with("get_student", {"id": "1"})
+
+    @pytest.mark.asyncio
+    async def test_call_tool_transport_cancellation_returns_retryable_result(
+        self, mcp_client: MCPClient
+    ):
+        """An MCP transport cancellation is data-plane failure, not a silent SSE end."""
+        conn = _make_conn()
+        conn.session.call_tool = AsyncMock(side_effect=asyncio.CancelledError())
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+
+        session = await self._session(mcp_client)
+        result = await mcp_client.call_tool(session, "db_search", {"pattern": "books"})
+
+        assert result.ok is False
+        assert result.error == "Tool connection was interrupted; retry shortly."
+        assert "connection was interrupted" in result.tool_content
+        assert "127.0.0.1" not in result.tool_content
+
+    @pytest.mark.asyncio
+    async def test_call_tool_shared_parent_cancellation_returns_retryable_result(
+        self, mcp_client: MCPClient
+    ):
+        """The SDK may cancel its parent on GET-stream loss; it is retryable."""
+        parent_task = asyncio.current_task()
+        assert parent_task is not None
+
+        async def cancel_parent(*_args, **_kwargs):
+            parent_task.cancel()
+            await asyncio.Event().wait()
+
+        conn = _make_conn()
+        conn.session.call_tool = AsyncMock(side_effect=cancel_parent)
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+
+        session = await self._session(mcp_client)
+        result = await mcp_client.call_tool(session, "db_search", {"pattern": "books"})
+
+        assert result.ok is False
+        assert result.error == "Tool connection was interrupted; retry shortly."
+        assert parent_task.cancelling() == 0
+
+    @pytest.mark.asyncio
+    async def test_call_tool_reconnect_cancellation_returns_retryable_result(
+        self, mcp_client: MCPClient
+    ):
+        """Cancellation during retry must not end a connected chat SSE stream."""
+        initial_conn = _make_conn()
+        initial_conn.session.call_tool = AsyncMock(side_effect=ConnectionError("reset"))
+        retry_conn = _make_conn()
+        retry_conn.session.call_tool = AsyncMock(side_effect=asyncio.CancelledError())
+        mcp_client._get_connection = AsyncMock(return_value=initial_conn)  # type: ignore[method-assign]
+        mcp_client._reconnect = AsyncMock(return_value=retry_conn)  # type: ignore[method-assign]
+
+        session = await self._session(mcp_client)
+        result = await mcp_client.call_tool(session, "db_search", {"pattern": "books"})
+
+        assert result.ok is False
+        assert result.error == "Tool connection was interrupted; retry shortly."
+        mcp_client._reconnect.assert_awaited_once_with(session.tenant_ids)  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_call_tool_gateway_error(self, mcp_client: MCPClient):

@@ -504,6 +504,29 @@ class MCPClient:
             error=f"Tool call timed out{suffix}",
         )
 
+    @staticmethod
+    def _connection_interrupted_result(name: str) -> ToolResult:
+        """Return a stable public result when the MCP transport is interrupted."""
+        message = "Tool connection was interrupted; retry shortly."
+        logger.warning("[MCP] call_tool %s interrupted by transport", name)
+        return ToolResult(
+            tool_content=json.dumps(
+                {"ok": False, "error": message}, ensure_ascii=False
+            ),
+            reminder=(
+                f"Инструмент {name} временно недоступен из-за обрыва соединения. "
+                "Не повторяй тот же вызов сразу; сообщи пользователю, что данные временно недоступны."
+            ),
+            ok=False,
+            error=message,
+        )
+
+    @staticmethod
+    def _consume_background_task_result(task: asyncio.Task[Any]) -> None:
+        """Consume a detached timed-out MCP task to avoid unhandled warnings."""
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            task.result()
+
     async def _execute_tool_call(
         self,
         conn: _TenantConnection,
@@ -538,24 +561,52 @@ class MCPClient:
                     f" ({context_label})" if context_label else "",
                     arguments,
                 )
-                async with asyncio.timeout(settings.mcp_tool_execution_timeout):
-                    result = await conn.session.call_tool(name, arguments)
-                    conn.last_used = time.monotonic()
-                    # Log result size for abuse detection
-                    result_size = sum(
-                        len(getattr(b, "text", ""))
-                        for b in result.content
-                        if getattr(b, "type", None) == "text"
+                # The MCP SDK's Streamable HTTP background receiver can
+                # suppress cancellation while it attempts to reconnect. A
+                # normal asyncio.timeout then cannot guarantee that this chat
+                # request returns. Wait on a child task instead, enforce a hard
+                # deadline, and detach the cancelled SDK task safely.
+                tool_task = asyncio.create_task(conn.session.call_tool(name, arguments))
+                try:
+                    done, _ = await asyncio.wait(
+                        {tool_task},
+                        timeout=settings.mcp_tool_execution_timeout,
                     )
-                    label = f" {context_label}" if context_label else ""
-                    logger.info(
-                        "[MCP] Tool %s completed%s: %d content blocks, %d chars total",
-                        name,
-                        label,
-                        len(result.content),
-                        result_size,
+                except BaseException as exc:
+                    current_task = asyncio.current_task()
+                    logger.warning(
+                        "[MCP] tool task wait interrupted by %s (parent cancelling=%s)",
+                        type(exc).__name__,
+                        current_task.cancelling() if current_task is not None else 0,
                     )
-                    return result
+                    if not tool_task.done():
+                        tool_task.cancel()
+                        tool_task.add_done_callback(
+                            self._consume_background_task_result
+                        )
+                    raise
+                if not done:
+                    tool_task.cancel()
+                    tool_task.add_done_callback(self._consume_background_task_result)
+                    raise TimeoutError
+
+                result = tool_task.result()
+                conn.last_used = time.monotonic()
+                # Log result size for abuse detection
+                result_size = sum(
+                    len(getattr(b, "text", ""))
+                    for b in result.content
+                    if getattr(b, "type", None) == "text"
+                )
+                label = f" {context_label}" if context_label else ""
+                logger.info(
+                    "[MCP] Tool %s completed%s: %d content blocks, %d chars total",
+                    name,
+                    label,
+                    len(result.content),
+                    result_size,
+                )
+                return result
 
     # -- public API -------------------------------------------------------------
 
@@ -598,6 +649,22 @@ class MCPClient:
         except TimeoutError:
             self._mark_failure(conn)
             return self._timeout_error_result(name, session.tenant_ids)
+        except asyncio.CancelledError:
+            current_task = asyncio.current_task()
+            logger.warning(
+                "[MCP] call_tool %s received transport cancellation (task cancelling=%s)",
+                name,
+                current_task.cancelling() if current_task is not None else 0,
+            )
+            # The Streamable MCP SDK can cancel its caller task when its
+            # background GET stream dies. This is not necessarily a browser
+            # disconnect; clear the caught cancellation so the caller can emit
+            # a retryable ToolResult. The chat route checks the actual request
+            # connection before yielding subsequent SSE events.
+            if current_task is not None and current_task.cancelling():
+                current_task.uncancel()
+            self._mark_failure(conn)
+            return self._connection_interrupted_result(name)
         except Exception as exc:
             if "Tool not found" in str(exc):
                 logger.warning(
@@ -635,6 +702,17 @@ class MCPClient:
                 return self._timeout_error_result(
                     name, session.tenant_ids, after_reconnect=True
                 )
+            except asyncio.CancelledError:
+                current_task = asyncio.current_task()
+                logger.warning(
+                    "[MCP] call_tool %s retry received transport cancellation (task cancelling=%s)",
+                    name,
+                    current_task.cancelling() if current_task is not None else 0,
+                )
+                if current_task is not None and current_task.cancelling():
+                    current_task.uncancel()
+                self._mark_failure(conn)
+                return self._connection_interrupted_result(name)
             except Exception as exc2:
                 self._mark_failure(conn)
                 logger.exception(

@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -166,6 +167,14 @@ func (ts *TenantStore) adminAddTenantHandler(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		if _, exists := ts.GetTenant(req.ID); exists {
 			handlers.RespondError(w, http.StatusConflict, "duplicate", err.Error())
+		} else if errors.Is(err, errTenantDatabaseUnavailable) {
+			slog.Warn("tenant database unavailable during registration", "tenant", req.ID, "error", err)
+			handlers.RespondError(
+				w,
+				http.StatusServiceUnavailable,
+				"tenant_database_unavailable",
+				"tenant database is unavailable; verify connection details and retry",
+			)
 		} else {
 			handlers.RespondError(w, http.StatusInternalServerError, "add_failed", err.Error())
 		}

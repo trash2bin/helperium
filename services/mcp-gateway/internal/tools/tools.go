@@ -15,6 +15,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -379,8 +380,12 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 		result, err := client.Call(ctx, endpoint, args)
 		if err != nil {
 			slog.Error("Data-service call failed", "endpoint", endpoint, "error", err)
+			if errors.Is(err, httpclient.ErrDataServiceUnavailable) {
+				return mcp.NewToolResultError("tenant data is temporarily unavailable; retry shortly"), nil
+			}
 			return mcp.NewToolResultError(fmt.Sprintf("error calling %s: %v", endpoint, err)), nil
 		}
+
 		if result == nil {
 			slog.Warn("Data-service returned null result", "endpoint", endpoint)
 			return mcp.NewToolResultText("No data found"), nil
