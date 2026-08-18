@@ -1,8 +1,38 @@
 # CI override: all services run as UID 1000 (matching api/e2e)
 # Usage: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test up ...
 services:
+  # Named volumes are root-owned on first creation. Application containers run
+  # as UID 1000, so initialise their writable directories before any health
+  # check or SQLite bootstrap runs.
+  ci-state-init:
+    image: alpine:3.21
+    profiles: [test]
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        mkdir -p /data/app /data/data-service /data/uploads /e2e/db /e2e/tenants
+        chown -R 1000:1000 /data /e2e
+    volumes:
+      - ci_app_data:/data/app
+      - ci_data_service_app:/data/data-service
+      - ci_e2e_db:/e2e/db
+      - ci_tenants:/e2e/tenants
+      - ci_uploads:/data/uploads
+
   data-service:
     user: "1000:1000"
+    volumes:
+      - ci_data_service_app:/data/app:ro
+      - ci_e2e_db:/e2e/db
+      - ci_tenants:/e2e/tenants
+      - ci_uploads:/data/uploads:ro
+    environment:
+      TENANTS_DIR: /e2e/tenants
+    depends_on:
+      ci-state-init:
+        condition: service_completed_successfully
 
   mcp-gateway:
     user: "1000:1000"
@@ -19,18 +49,42 @@ services:
 
   api:
     user: "1000:1000"
+    volumes:
+      - ci_app_data:/data/app
     environment:
       MCP_CLIENT_API_KEY: "helperium-e2e-mcp-token"
+    depends_on:
+      ci-state-init:
+        condition: service_completed_successfully
 
   admin-dashboard:
     user: "1000:1000"
+    volumes:
+      - ci_uploads:/data/uploads
 
   web:
     user: "1000:1000"
 
   e2e:
     user: "1000:1000"
+    volumes:
+      - ci_tenants:/e2e/tenants
+      - ci_e2e_db:/e2e/db
     environment:
       MCP_API_KEY: "helperium-e2e-mcp-token"
       MCP_CLIENT_API_KEY: "helperium-e2e-mcp-token"
       MCP_ALLOWED_ORIGINS: "http://web:8080,http://127.0.0.1:8080,http://localhost:8080"
+      E2E_TENANTS_DIR: /e2e/tenants
+      E2E_DB_DIR: /e2e/db
+
+  db:
+    volumes:
+      - ci_pg_data:/var/lib/postgresql/data
+
+volumes:
+  ci_app_data:
+  ci_data_service_app:
+  ci_e2e_db:
+  ci_pg_data:
+  ci_tenants:
+  ci_uploads:

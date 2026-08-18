@@ -136,9 +136,20 @@ app.state.limiter = limiter
 
 
 def _helperium_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
-    """Adapter: slowapi types its handler with starlette Request[State]; FastAPI
-    registers ExceptionHandlers with plain Request. Delegate to the slowapi impl."""
-    return _rate_limit_exceeded_handler(request, exc)
+    """Return a client-actionable response when the public chat limit is hit.
+
+    SlowAPI emits a valid 429 but does not add ``Retry-After`` by default.  The
+    rate item's expiry is a conservative upper bound for the caller to retry,
+    and is preferable to making the web widget guess or immediately retry.
+    """
+
+    response = _rate_limit_exceeded_handler(request, exc)
+    if "retry-after" not in response.headers:
+        limit = getattr(exc, "limit", None)
+        rate_item = getattr(limit, "limit", None)
+        retry_after = rate_item.get_expiry() if rate_item is not None else 60
+        response.headers["Retry-After"] = str(retry_after)
+    return response
 
 
 app.add_exception_handler(RateLimitExceeded, _helperium_rate_limit_handler)  # pyright: ignore[reportArgumentType]

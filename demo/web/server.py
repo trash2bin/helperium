@@ -140,10 +140,26 @@ async def _proxy_to_api(
                 # ``response.content`` raises ``ResponseNotRead`` and masks the
                 # real response with a 500 from this proxy.
                 content = await response.aread()
+                response_headers = {
+                    k: v
+                    for k, v in response.headers.items()
+                    if k.lower()
+                    not in (
+                        "connection",
+                        "content-length",
+                        "keep-alive",
+                        "proxy-authenticate",
+                        "proxy-authorization",
+                        "te",
+                        "trailer",
+                        "transfer-encoding",
+                        "upgrade",
+                    )
+                }
                 return Response(
                     content=content,
                     status_code=response.status_code,
-                    headers=dict(response.headers),
+                    headers=response_headers,
                     media_type=response.headers.get("content-type"),
                 )
 
@@ -155,7 +171,18 @@ async def _proxy_to_api(
             response_headers = {
                 k: v
                 for k, v in response.headers.items()
-                if k.lower() not in ("transfer-encoding", "connection")
+                if k.lower()
+                not in (
+                    "connection",
+                    "content-length",
+                    "keep-alive",
+                    "proxy-authenticate",
+                    "proxy-authorization",
+                    "te",
+                    "trailer",
+                    "transfer-encoding",
+                    "upgrade",
+                )
             }
 
             return StreamingResponse(
@@ -317,7 +344,9 @@ async def _proxy_to_data_service(
     logger.debug("data-service proxy: %s -> %s", request.method, url)
     # Прокидываем query-параметры (pattern, limit, fields и т.д.) —
     # data-service стратегии (grep/filter) требуют их.
-    response = await http_client.get(url, headers=headers, params=dict(request.query_params))
+    response = await http_client.get(
+        url, headers=headers, params=dict(request.query_params)
+    )
     return Response(
         content=response.content,
         status_code=response.status_code,
@@ -349,10 +378,12 @@ async def proxy_data_entity(request: Request, entity_name: str) -> Response:
 RAG_SERVICE_URL = settings.rag_service_url
 
 
-RAG_UNAVAILABLE_BODY = json.dumps({
-    "available": False,
-    "warning": "RAG service is not running.",
-}).encode()
+RAG_UNAVAILABLE_BODY = json.dumps(
+    {
+        "available": False,
+        "warning": "RAG service is not running.",
+    }
+).encode()
 
 
 async def _proxy_to_rag(

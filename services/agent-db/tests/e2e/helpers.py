@@ -45,6 +45,16 @@ def scenarios_dir() -> Path:
 
 
 def tenants_data_dir() -> Path:
+    """Return the tenant-config directory used by the current E2E run.
+
+    Docker CI sets ``E2E_TENANTS_DIR`` to a dedicated shared volume so tenant
+    lifecycle tests never write to the developer's local ``.data/tenants``.
+    Native runs keep their existing project-local default.
+    """
+
+    configured = os.environ.get("E2E_TENANTS_DIR")
+    if configured:
+        return Path(configured)
     return project_root() / ".data" / "tenants"
 
 
@@ -133,13 +143,17 @@ def seed_database(
 
 
 def cleanup_db(*db_paths: Path) -> None:
-    """Remove temporary database files."""
+    """Remove temporary SQLite databases and their WAL/SHM sidecars."""
     for p in db_paths:
-        try:
-            if p.exists():
-                p.unlink()
-        except OSError:
-            pass
+        for candidate in (
+            p,
+            p.with_name(f"{p.name}-wal"),
+            p.with_name(f"{p.name}-shm"),
+        ):
+            try:
+                candidate.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def temp_db_path(prefix: str, project_root_dir: Path | None = None) -> Path:
@@ -313,9 +327,7 @@ class TestTenant:
         if rewrite is None:
             rewrite = self._rewrite
         if rewrite:
-            register_tenant_and_rewrite(
-                self.id, self.db_path, self.filterable_rules
-            )
+            register_tenant_and_rewrite(self.id, self.db_path, self.filterable_rules)
         else:
             cfg = self.config or {
                 "data_source": {
@@ -416,7 +428,9 @@ def make_tenant(
                 db_path = temp_db_path(prefix)
                 shutil.copy2(source_db, db_path)
         else:
-            db_path = Path(config["data_source"]["dsn"]) if config else temp_db_path(prefix)
+            db_path = (
+                Path(config["data_source"]["dsn"]) if config else temp_db_path(prefix)
+            )
 
     if config is None and scenario and has_config:
         config = load_scenario_config(scenario)
@@ -651,9 +665,7 @@ def create_scenario_db(scenario: str, project_root_dir: Path | None = None) -> P
     return db_path
 
 
-def ensure_scenario_db(
-    scenario: str, project_root_dir: Path | None = None
-) -> Path:
+def ensure_scenario_db(scenario: str, project_root_dir: Path | None = None) -> Path:
     """Return a valid scenario DB, regenerating it if stale/corrupt.
 
     Scenario DBs (auto-shop, clinic, shop) are gitignored and can be left
@@ -691,7 +703,9 @@ def ensure_scenario_db(
         return create_scenario_db(scenario, project_root_dir=root)
 
     # Fallback: shop — генератор в testdata/scripts/create_shop_db.py (как CI-workflow)
-    generator = root / "services/data-service" / "testdata" / "scripts" / "create_shop_db.py"
+    generator = (
+        root / "services/data-service" / "testdata" / "scripts" / "create_shop_db.py"
+    )
     if generator.exists():
         env = {**os.environ, "SHOP_DB": str(db_path)}
         result = subprocess.run(
@@ -772,9 +786,7 @@ def register_tenant_and_rewrite(
         headers={"X-Tenant-ID": tenant_id, **h},
         timeout=30,
     )
-    assert resp.status_code == 200, (
-        f"Rewrite: {resp.status_code} {resp.text[:200]}"
-    )
+    assert resp.status_code == 200, f"Rewrite: {resp.status_code} {resp.text[:200]}"
 
     return resp.json()
 

@@ -1,6 +1,8 @@
 # CHANGELOG.md
 
 ## 2026-08-18
+- **fix(docker-e2e/resilience):** Docker CI получил отдельные named volumes и root-only init gate, поэтому чистый E2E больше не пишет в локальные `.data` и не crash-loop'ит из-за прав на SQLite state. Web SSE-proxy убирает upstream framing headers (`Content-Length`/`Transfer-Encoding`), сохраняя upstream 404/429; API 429 теперь содержит точный `Retry-After` из active SlowAPI window. Добавлены Docker E2E на proxy status/framing, per-visitor forwarded-IP bucket и очистку SQLite WAL/SHM sidecars. **Проверка:** чистый Docker E2E **135 passed**, `make ci`.
+
 - **fix(resilience):** web SSE-прокси теперь передаёт upstream 429 и `Retry-After` без ложного 500; api-service и anti-abuse используют исходный IP из `X-Forwarded-For`, а demo-web сохраняет его через private proxy chain. Добавлены регрессии для 429, forwarded IP и герметичного CORS default-теста; практический resilience-аудит задокументировал измеренный API restart (~5 с), отсутствие alerting/edge DDoS контура и pre-prod gates. **Проверка:** `make ci`.
 
 - **fix(mcp/security):** gateway получил production fail-fast `MCP_REQUIRE_AUTH=true`, shared `MCP_API_KEY`/`MCP_CLIENT_API_KEY` Compose wiring, strict `MCP_ALLOWED_ORIGINS` policy, header-only metadata access и bounds для composite scopes (8 unique tenant IDs by default). Registry больше не удерживает mutex во время manifest fetch.

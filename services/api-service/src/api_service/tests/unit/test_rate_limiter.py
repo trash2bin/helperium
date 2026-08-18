@@ -11,7 +11,10 @@ from starlette.requests import Request
 import importlib
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import patch
+
+from starlette.responses import Response
 
 # Direct reference to the submodule — avoids attribute-shadowing in __init__.py
 _rate_limit_mod_name = "api_service.server.rate_limit"
@@ -94,6 +97,27 @@ def _request(*, headers: list[tuple[bytes, bytes]], client_ip: str) -> Request:
             "server": ("testserver", 80),
         }
     )
+
+
+class TestRateLimitResponse:
+    """The public 429 contract must tell the client when to retry."""
+
+    def test_handler_sets_retry_after_from_limit_expiry(self):
+        from api_service.server.app import _helperium_rate_limit_handler
+
+        request = _request(headers=[], client_ip="172.18.0.7")
+        exc = SimpleNamespace(
+            limit=SimpleNamespace(limit=SimpleNamespace(get_expiry=lambda: 120))
+        )
+
+        with patch(
+            "api_service.server.app._rate_limit_exceeded_handler",
+            return_value=Response(status_code=429),
+        ):
+            response = _helperium_rate_limit_handler(request, exc)
+
+        assert response.status_code == 429
+        assert response.headers["Retry-After"] == "120"
 
 
 class TestRateLimitClientIP:

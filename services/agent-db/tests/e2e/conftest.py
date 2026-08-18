@@ -176,7 +176,10 @@ def scenarios_dir(project_root: Path) -> Path:
 
 @pytest.fixture(scope="session")
 def tenants_data_dir(project_root: Path) -> Path:
-    """Tenant config persistence directory."""
+    """Tenant config persistence directory for this E2E execution."""
+    configured = os.environ.get("E2E_TENANTS_DIR")
+    if configured:
+        return Path(configured)
     return project_root / ".data" / "tenants"
 
 
@@ -252,8 +255,14 @@ def _check_services():
     import requests
 
     services = {
-        "data-service": (os.environ.get("DATA_SERVICE_URL", "http://127.0.0.1:8084") + "/health", False),
-        "mcp-gateway": (os.environ.get("MCP_GATEWAY_URL", "http://127.0.0.1:8083") + "/health", False),
+        "data-service": (
+            os.environ.get("DATA_SERVICE_URL", "http://127.0.0.1:8084") + "/health",
+            False,
+        ),
+        "mcp-gateway": (
+            os.environ.get("MCP_GATEWAY_URL", "http://127.0.0.1:8083") + "/health",
+            False,
+        ),
     }
     fatal = []
     for name, (url, optional) in services.items():
