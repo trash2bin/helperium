@@ -109,8 +109,19 @@ def aggregate_report(
         report.verdict_counts[ev.verdict.value] = (
             report.verdict_counts.get(ev.verdict.value, 0) + 1
         )
-        if any(getattr(cls, "value", cls) == "INFRA_ERROR" for cls in ev.error_classes):
+        has_infra_error_class = any(
+            getattr(cls, "value", cls) == "INFRA_ERROR" for cls in ev.error_classes
+        )
+        # Historical raw reports may retain `error_source=infra` while lacking
+        # the normalized ErrorClass. Both representations must produce the
+        # same top-level infra KPI and histogram signal.
+        is_infra_error = ev.error_source == "infra" or has_infra_error_class
+        if is_infra_error:
             report.infra_error_count += 1
+        if is_infra_error and not has_infra_error_class:
+            report.error_class_histogram["INFRA_ERROR"] = (
+                report.error_class_histogram.get("INFRA_ERROR", 0) + 1
+            )
         for cls in ev.error_classes:
             report.error_class_histogram[cls] = (
                 report.error_class_histogram.get(cls, 0) + 1

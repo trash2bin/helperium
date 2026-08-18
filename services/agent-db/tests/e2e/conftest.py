@@ -212,6 +212,11 @@ def rag_url() -> str:
     return os.environ.get("RAG_SERVICE_URL", "http://127.0.0.1:8082")
 
 
+@pytest.fixture(scope="session")
+def admin_dashboard_url() -> str:
+    return os.environ.get("ADMIN_DASHBOARD_URL", "http://127.0.0.1:8085")
+
+
 # ── Auth ───────────────────────────────────────────────────────────────────
 
 

@@ -386,6 +386,9 @@ func TestViewerDashboardReturnsViewerRole(t *testing.T) {
 	if body["role"] != "viewer" {
 		t.Errorf("role = %v, want viewer", body["role"])
 	}
+	if body["status"] != "unavailable" {
+		t.Errorf("status = %v, want unavailable when data-service is not configured", body["status"])
+	}
 }
 
 func TestAdminDashboardReturnsAdminRole(t *testing.T) {
@@ -408,6 +411,9 @@ func TestAdminDashboardReturnsAdminRole(t *testing.T) {
 	if body["role"] != "admin" {
 		t.Errorf("role = %v, want admin", body["role"])
 	}
+	if body["status"] != "unavailable" {
+		t.Errorf("status = %v, want unavailable when data-service is not configured", body["status"])
+	}
 }
 
 // ── Audit Function Tests (P1.10) ──
@@ -422,10 +428,10 @@ func TestIsIDLike_SlugTenant(t *testing.T) {
 		{"tenant-123", true},
 		{"prod_env", true},
 		{"a-b-c", true},
-		{"x", false},           // too short
-		{"a", false},            // too short
-		{"ab", false},           // too short
-		{"abc", true},           // min length
+		{"x", false},                     // too short
+		{"a", false},                     // too short
+		{"ab", false},                    // too short
+		{"abc", true},                    // min length
 		{strings.Repeat("a", 65), false}, // too long
 		{"uuid-with-dashes", true},
 		{"UPPERCASE", true},

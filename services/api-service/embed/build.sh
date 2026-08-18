@@ -4,6 +4,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+if [ ! -d node_modules ]; then
+  echo "=== Install embed dependencies ==="
+  if [ -f package-lock.json ]; then
+    npm ci
+  else
+    npm install
+  fi
+fi
+
 echo "=== CSS: concatenate component files ==="
 cat css/variables.css css/root.css css/trigger.css css/panel.css css/header.css \
     css/messages.css css/form.css css/tools.css css/animations.css \

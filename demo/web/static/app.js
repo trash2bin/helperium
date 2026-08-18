@@ -41,6 +41,25 @@ let manifestRetries = 0;
 const MANIFEST_MAX_RETRIES = 10;
 const MANIFEST_RETRY_MS = 3000; // 3 секунды между попытками
 
+function activeCollectionEndpoint() {
+  return (state.manifest?.endpoints || []).find(
+    (ep) => ep.path === "/" + state.tab && ep.entity
+  );
+}
+
+function isGrepCollectionEndpoint(endpoint) {
+  return endpoint?.op === "strategy" && endpoint?.strategy === "grep";
+}
+
+function dataUrlForActiveTab(endpoint) {
+  const url = new URL(`${apiBase}/api/data/${state.tab}`, window.location.origin);
+  if (isGrepCollectionEndpoint(endpoint)) {
+    url.searchParams.set("pattern", state.filter.trim());
+    url.searchParams.set("limit", "100");
+  }
+  return url.toString();
+}
+
 // ── Tenant-aware fetch ──
 
 function fetchWithTenant(url, options = {}) {
@@ -88,7 +107,11 @@ function showTabPlaceholder() {
 
   // Фильтр — привязываем сразу (будет работать после загрузки вкладок)
   $("#filter").addEventListener("input", (event) => {
-    state.filter = event.target.value.toLowerCase();
+    state.filter = event.target.value;
+    if (isGrepCollectionEndpoint(activeCollectionEndpoint())) {
+      loadData();
+      return;
+    }
     renderTable();
   });
 }
@@ -125,7 +148,10 @@ function buildTabsFromManifest() {
   if (!tabBar) return;
 
   const endpoints = state.manifest?.endpoints || [];
-  const tabOps = ["list", "find", "custom_query"];
+  // Generated collection routes use `strategy`; legacy manifests may expose
+  // list/find/custom_query. All four are safe tab candidates when they are
+  // collection GET endpoints without path parameters.
+  const tabOps = ["list", "find", "custom_query", "strategy"];
   const collectionEndpoints = endpoints.filter(
     (ep) => ep.method === "GET" && tabOps.includes(ep.op) && !ep.path.includes("{")
   );
@@ -141,7 +167,12 @@ function buildTabsFromManifest() {
     }
   });
 
-  if (tabs.length === 0) return; // ничего не нашли — оставляем fallback
+  if (tabs.length === 0) {
+    tabBar.innerHTML = '<span class="tab-placeholder">No data collections are available for this tenant.</span>';
+    $("#tableTitle").textContent = "No data collections";
+    $("#tableBody").innerHTML = "";
+    return;
+  }
 
   // Сохраняем текущую активную вкладку
   const currentTab = state.tab;
@@ -349,6 +380,22 @@ function switchTab(tabKey, btn) {
 async function loadData() {
   try {
     let stats, docs, tabData;
+    const endpoint = activeCollectionEndpoint();
+
+    // Generated grep strategies correctly require an explicit user query.
+    // Do not leave a blank table or issue an invalid empty request on tab open.
+    if (isGrepCollectionEndpoint(endpoint) && !state.filter.trim()) {
+      state.data = {
+        stats: {},
+        tabData: [],
+        documents: [],
+        emptyHint: "Type a search term to browse this collection.",
+      };
+      state.data[state.tab] = [];
+      renderMetrics();
+      renderTable();
+      return;
+    }
 
     if (state.tab === "documents") {
       [stats, docs] = await Promise.all([
@@ -370,14 +417,16 @@ async function loadData() {
       [stats, docs, tabData] = await Promise.all([
         fetchWithTenant(`${apiBase}/api/data/stats`).then((r) => (r.ok ? r.json() : null)),
         fetchWithTenant(`${apiBase}/api/rag/documents`).then((r) => (r.ok ? r.json() : null)),
-        fetchWithTenant(`${apiBase}/api/data/${state.tab}`).then((r) => (r.ok ? r.json() : null)),
+        fetchWithTenant(dataUrlForActiveTab(endpoint)).then((r) => (r.ok ? r.json() : null)),
       ]);
     }
 
+    const previewRows = Array.isArray(tabData?.preview) ? tabData.preview : [];
     state.data = {
       stats: stats || {},
-      tabData: Array.isArray(tabData) ? tabData : [],
+      tabData: Array.isArray(tabData) ? tabData : previewRows,
       documents: (docs?.documents || docs || []),
+      emptyHint: tabData?.empty_hint?.suggested_action || "",
     };
     state.data[state.tab] = state.data.tabData;
   } catch (err) {
@@ -497,8 +546,9 @@ function renderTable() {
   if (!state.tab) return;
 
   const config = getTabColumns();
+  const filter = state.filter.toLowerCase();
   const rows = (state.data?.[state.tab] || []).filter((row) =>
-    JSON.stringify(row).toLowerCase().includes(state.filter)
+    JSON.stringify(row).toLowerCase().includes(filter)
   );
 
   $("#tableTitle").textContent = config.title;
@@ -508,6 +558,11 @@ function renderTable() {
       .map(([, title]) => "<th>" + escapeHtml(title) + "</th>")
       .join("") +
     "</tr>";
+  if (rows.length === 0 && state.data?.emptyHint) {
+    $("#tableBody").innerHTML = `<tr><td colspan="${config.columns.length}" class="text-muted">${escapeHtml(state.data.emptyHint)}</td></tr>`;
+    return;
+  }
+
   $("#tableBody").innerHTML = rows
     .map((row) => {
       const cells = config.columns.map(([key]) =>

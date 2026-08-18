@@ -6,9 +6,21 @@ services:
 
   mcp-gateway:
     user: "1000:1000"
+    environment:
+      # Test-only profile: parallel localhost/container E2E must not consume
+      # the production anti-abuse budget shared by one source IP.
+      MCP_RATE_LIMIT_RPS: "1000"
+      MCP_RATE_LIMIT_BURST: "1000"
+      # Test-only non-secret credentials make the gateway's security middleware
+      # part of the standard regression contract rather than optional coverage.
+      MCP_REQUIRE_AUTH: "true"
+      MCP_API_KEY: "helperium-e2e-mcp-token"
+      MCP_ALLOWED_ORIGINS: "http://web:8080,http://127.0.0.1:8080,http://localhost:8080"
 
   api:
     user: "1000:1000"
+    environment:
+      MCP_CLIENT_API_KEY: "helperium-e2e-mcp-token"
 
   admin-dashboard:
     user: "1000:1000"
@@ -18,3 +30,6 @@ services:
 
   e2e:
     user: "1000:1000"
+    environment:
+      MCP_API_KEY: "helperium-e2e-mcp-token"
+      MCP_ALLOWED_ORIGINS: "http://web:8080,http://127.0.0.1:8080,http://localhost:8080"

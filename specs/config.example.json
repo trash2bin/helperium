@@ -8,7 +8,7 @@
   "data_source": {
     "driver": "sqlite",
     "dsn": "../services/data-service/testdata/scenarios/shop/data.db",
-    "read_only": false
+    "read_only": true
   },
   "entities": [
     {

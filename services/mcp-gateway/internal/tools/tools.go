@@ -45,11 +45,12 @@ var mcpToolCallsTotal = promauto.NewCounterVec(
 
 // Registry manages auto-generated + explicit MCP tools.
 type Registry struct {
-	cfg       *config.Config
-	client    *httpclient.Client
-	ragClient *ragclient.Client
-	toolDefs  []toolDef
-	tenantID  string // "" for single-tenant (no prefix), "tenant-a" for composite mode
+	cfg             *config.Config
+	client          *httpclient.Client
+	ragClient       *ragclient.Client
+	toolDefs        []toolDef
+	tenantID        string // Execution/audit context for every data-service call.
+	prefixToolNames bool   // True only for composite multi-tenant tool discovery.
 }
 
 // toolDef — внутреннее описание одного MCP-инструмента.
@@ -66,27 +67,28 @@ type toolDef struct {
 // If RAG is not available (nil client or health check fails), RAG tools are
 // still registered but return a friendly error message at call time.
 func NewRegistry(cfg *config.Config) *Registry {
-	return newRegistry(cfg, "")
+	return newRegistry(cfg, "", false)
 }
 
-// NewTenantRegistry creates an unprefixed registry whose audit and metric labels
-// identify the single resolved tenant.
+// NewTenantRegistry creates an unprefixed registry for one resolved tenant.
+// tenantID remains bound to every handler for routing, metrics and audit records.
 func NewTenantRegistry(cfg *config.Config, tenantID string) *Registry {
-	return newRegistry(cfg, tenantID)
+	return newRegistry(cfg, tenantID, false)
 }
 
 // NewPrefixedRegistry creates a registry with a tenant prefix for composite multi-tenant mode.
 // Tools will be registered as "{tenantID}__{toolName}" instead of "{toolName}".
 func NewPrefixedRegistry(cfg *config.Config, tenantID string) *Registry {
-	return newRegistry(cfg, tenantID)
+	return newRegistry(cfg, tenantID, true)
 }
 
-func newRegistry(cfg *config.Config, tenantID string) *Registry {
+func newRegistry(cfg *config.Config, tenantID string, prefixToolNames bool) *Registry {
 	r := &Registry{
-		cfg:       cfg,
-		client:    httpclient.New(),
-		ragClient: ragclient.New(),
-		tenantID:  tenantID,
+		cfg:             cfg,
+		client:          httpclient.New(),
+		ragClient:       ragclient.New(),
+		tenantID:        tenantID,
+		prefixToolNames: prefixToolNames,
 	}
 	if cfg != nil {
 		r.buildTools()
@@ -165,15 +167,20 @@ func (r *Registry) buildTools() {
 	})
 }
 
+// registeredToolName returns the MCP-discovery name without changing the tenant
+// bound to the handler. Only composite registries prefix data tools.
+func (r *Registry) registeredToolName(name string) string {
+	if r.prefixToolNames {
+		return r.tenantID + "__" + name
+	}
+	return name
+}
+
 // RegisterAll registers all tools on the MCP server.
-// In composite mode (tenantID != ""), tool names are prefixed with "{tenantID}__".
+// Single-tenant registries use canonical names; composite registries prefix data tools.
 func (r *Registry) RegisterAll(mcpServer *server.MCPServer) {
 	for _, td := range r.toolDefs {
-		name := td.Name
-		if r.tenantID != "" {
-			name = r.tenantID + "__" + name
-		}
-		registerOne(mcpServer, td, r.client, name, r.tenantID)
+		registerOne(mcpServer, td, r.client, r.registeredToolName(td.Name), r.tenantID)
 	}
 	r.registerRagTools(mcpServer)
 }
@@ -335,11 +342,11 @@ func registerOne(mcpServer *server.MCPServer, td toolDef, client *httpclient.Cli
 }
 
 // makeHandler creates a handler that delegates to data-service via HTTP.
-// In composite mode (tenantID != ""), the tenant is hard-coded into the closure.
-// In single-tenant mode (tenantID == ""), tenantID is read from request context.
+// Registry construction binds the resolved tenant to the closure in both
+// single-tenant and composite modes; only MCP discovery names differ.
 func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// 1. Resolve tenantID: from closure (composite) or from context (legacy)
+		// 1. Resolve tenantID from the registry-bound closure (or legacy context).
 		actualTenantID := tenantID
 		if actualTenantID == "" {
 			actualTenantID, _ = ctx.Value(httpclient.TenantIDKey).(string)

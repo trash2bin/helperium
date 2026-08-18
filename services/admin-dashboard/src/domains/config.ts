@@ -34,6 +34,9 @@ AppRegistry.register('config', {
     disabledDefaultRules: [],
     _configSeq: 0,
     selectedTenant: '',
+    runtimeManifest: null,
+    runtimeManifestUpdatedAt: '',
+    runtimeManifestError: '',
   },
 
   methods() {
@@ -43,7 +46,7 @@ AppRegistry.register('config', {
       poolSize: cfg.data_source?.pool_size || '\u2014',
       entities: cfg.entities?.length || 0,
       endpoints: cfg.endpoints?.length || 0,
-      mcpTools: cfg.mcp_tools?.length || 0,
+      savedMcpTools: cfg.mcp_tools?.length || 0,
       customQueries: cfg.custom_queries ? Object.keys(cfg.custom_queries).length : 0,
       skipRules: cfg.skip_rules?.length || 0,
       displayPrefixes: cfg.display_prefixes?.join(', ') || '\u2014',
@@ -57,12 +60,30 @@ AppRegistry.register('config', {
         const seq = ++this._configSeq;
         this.config = {};
         this.computed = {};
+        this.runtimeManifest = null;
+        this.runtimeManifestUpdatedAt = '';
+        this.runtimeManifestError = '';
         try {
-          const data = await w.Alpine.store('api').get('/api/tenants/' + id + '/config');
+          const [data, runtimeResult] = await Promise.all([
+            w.Alpine.store('api').get('/api/tenants/' + id + '/config'),
+            w.Alpine.store('api').get('/api/tenants/' + id + '/manifest')
+              .then((value: any) => ({ value, error: null as unknown }))
+              .catch((error: unknown) => ({ value: null, error })),
+          ]);
           if (seq !== this._configSeq) return;
+
           this.config = data;
           this.computed = computeSummary(data);
           this.disabledDefaultRules = data.disabled_default_rules || [];
+
+          if (runtimeResult.error === null) {
+            this.runtimeManifest = runtimeResult.value;
+            this.runtimeManifestUpdatedAt = new Date().toLocaleTimeString();
+          } else {
+            this.runtimeManifestError = runtimeResult.error instanceof Error
+              ? runtimeResult.error.message
+              : String(runtimeResult.error);
+          }
         } catch (e: unknown) {
           if (seq !== this._configSeq) return;
           w.Alpine.store('notify').error(e instanceof Error ? e.message : String(e));

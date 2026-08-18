@@ -187,10 +187,7 @@ async def test_streamable_http_rejects_invalid_composite_scope_before_loading_ma
 
 @pytest.mark.asyncio
 async def test_streamable_http_requires_service_auth_when_enabled(tenant, mcp_gateway_url):
-    """A secure deployment rejects a request that omits its MCP bearer token."""
-    if not os.environ.get("MCP_API_KEY"):
-        pytest.skip("MCP_API_KEY is not set; stack intentionally runs without service auth")
-
+    """The secure E2E profile rejects a request that omits its MCP bearer token."""
     target = tenant("sqlite-testseed", tenant_id="e2e-streamable-auth-target")
     async with httpx2.AsyncClient(
         headers={
@@ -206,10 +203,7 @@ async def test_streamable_http_requires_service_auth_when_enabled(tenant, mcp_ga
 
 @pytest.mark.asyncio
 async def test_streamable_http_rejects_untrusted_browser_origin(tenant, mcp_gateway_url):
-    """Configured Origin policy rejects browser requests outside its allow-list."""
-    if not os.environ.get("MCP_ALLOWED_ORIGINS"):
-        pytest.skip("MCP_ALLOWED_ORIGINS is not configured for this stack")
-
+    """The secure E2E profile rejects browser requests outside its allow-list."""
     target = tenant("sqlite-testseed", tenant_id="e2e-streamable-origin-target")
     async with httpx2.AsyncClient(
         headers={
@@ -222,3 +216,4 @@ async def test_streamable_http_rejects_untrusted_browser_origin(tenant, mcp_gate
         response = await client.post(f"{mcp_gateway_url}/mcp", content=b"{}")
 
     assert response.status_code == 403, response.text
+    assert "Origin is not allowed" in response.text

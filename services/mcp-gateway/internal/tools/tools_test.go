@@ -834,3 +834,53 @@ func stringSliceEqual(a, b []string) bool {
 	}
 	return true
 }
+
+func TestRegistryRegisteredToolNamePolicy(t *testing.T) {
+	tests := []struct {
+		name         string
+		registry     *Registry
+		input        string
+		wantName     string
+		wantTenant   string
+		wantPrefixed bool
+	}{
+		{
+			name:         "plain registry has canonical name",
+			registry:     NewRegistry(baseConfig()),
+			input:        "db_map",
+			wantName:     "db_map",
+			wantTenant:   "",
+			wantPrefixed: false,
+		},
+		{
+			name:         "single tenant keeps routing context without prefix",
+			registry:     NewTenantRegistry(baseConfig(), "tenant-a"),
+			input:        "db_map",
+			wantName:     "db_map",
+			wantTenant:   "tenant-a",
+			wantPrefixed: false,
+		},
+		{
+			name:         "composite tenant prefixes discovery name",
+			registry:     NewPrefixedRegistry(baseConfig(), "tenant-a"),
+			input:        "db_map",
+			wantName:     "tenant-a__db_map",
+			wantTenant:   "tenant-a",
+			wantPrefixed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.registry.tenantID != tt.wantTenant {
+				t.Fatalf("tenantID = %q, want %q", tt.registry.tenantID, tt.wantTenant)
+			}
+			if tt.registry.prefixToolNames != tt.wantPrefixed {
+				t.Fatalf("prefixToolNames = %t, want %t", tt.registry.prefixToolNames, tt.wantPrefixed)
+			}
+			if got := tt.registry.registeredToolName(tt.input); got != tt.wantName {
+				t.Errorf("registeredToolName(%q) = %q, want %q", tt.input, got, tt.wantName)
+			}
+		})
+	}
+}

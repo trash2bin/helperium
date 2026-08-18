@@ -7,7 +7,7 @@
 ## Запуск
 
 ```bash
-# Все e2e (без LLM) — 124 теста, ~2-3 мин
+# Все e2e (без LLM) — 131 тест, ~2-3 мин
 uv run pytest tests/e2e/ -v
 
 # Без traceback
@@ -19,7 +19,14 @@ demo-web :8080, rag :8082, admin-dashboard :8085).
 
 **Как поднять сервисы локально:**
 ```bash
-./scripts/dev.sh start
+# Secure E2E profile изолирован от .env: повышает limiter, включает gateway
+# bearer-auth и Origin allowlist. Обычный `start` сохраняет production-like
+# 10 RPS / burst 20 и не подменяет локальную security-конфигурацию.
+./infra/scripts/dev.sh e2e-up
+
+# Полный suite или один product-flow файл.
+./infra/scripts/dev.sh e2e
+./infra/scripts/dev.sh e2e services/agent-db/tests/e2e/test_product_readiness_paths.py -q
 ```
 
 ## Структура
@@ -34,12 +41,16 @@ tests/
 │   ├── test_agents.py            # 10 тестов: agents CRUD, providers, widget
 │   ├── test_config_persistence.py# 4 теста: .data/tenants/{id}.json
 │   ├── test_data_isolation.py    # 9 тестов: tenant A ≠ B, ghost → 404, db_get denied
-│   ├── test_mcp_composite.py     # 5 тестов: composite mode, prefixed tools
-│   ├── test_mcp_dynamic.py       # 5 тестов: tools + cross-tenant isolation
-│   ├── test_mcp_validation.py    # 28 тестов: required-args, limits, tool composition
-│   ├── test_scripted_llm.py      # 11 тестов: pipeline через ScriptedLLMProvider (мок LLM)
-│   ├── test_search_strategies.py # 31 тест: grep/filter/schema/manifest
-│   └── test_sse_session.py       # 4 теста: SSE open, JSON-RPC, tools/list
+│   ├── test_mcp_composite.py     # composite mode, prefixed tools
+│   ├── test_mcp_dynamic.py       # generated tools + cross-tenant isolation
+│   ├── test_mcp_streamable_http.py # v2 Streamable HTTP: scope, sessions, bearer auth и Origin policy
+│   ├── test_mcp_validation.py    # required args, limits, tool composition
+│   ├── test_named_agent_composite_pipeline.py # named-agent composite chain
+│   ├── test_product_readiness_paths.py # 3 product flows: default/demo/MCP/Admin
+│   ├── test_scripted_llm.py      # pipeline through ScriptedLLMProvider (LLM mock)
+│   ├── test_search_strategies.py # grep/filter/schema/manifest
+│   ├── test_tenant_fixture.py    # TestTenant lifecycle helpers
+│   └── test_v5_tool_surface.py   # canonical v5 tool surface
 │
 ├── e2e-llm/                      # требует реальный LLM API ключ (не в CI)
 │   ├── conftest.py
@@ -104,7 +115,7 @@ assert result.success
 1. Создать файл `tests/e2e/test_my_feature.py`
 2. Определить `setup_module`/`teardown_module` для seed + cleanup
 3. Использовать `seed_database()` + `register_tenant()` + `delete_tenant()` из helpers
-4. Проверить: `uv run pytest tests/e2e/test_my_feature.py -v`
+4. Проверить в dedicated profile: `./infra/scripts/dev.sh e2e tests/e2e/test_my_feature.py -v`
 
 ## CI
 
@@ -137,3 +148,6 @@ ADMIN_TOKEN=ci-secret-token ./infra/scripts/compose.sh --profile test down -v
   (`data-service:8084`, `mcp-gateway:8083`, `api:8081`, `web:8080`).
 - `ADMIN_TOKEN`/`VIEWER_TOKEN` обязательны и пробрасываются во все сервисы
   (data-service, api, admin-dashboard).
+- CI override использует только test-only non-secret MCP token и явный Origin
+  allowlist. Поэтому отсутствие bearer token и неразрешённый browser Origin
+  проверяются в каждом стандартном E2E run, а не условно пропускаются.

@@ -529,12 +529,23 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Пытаемся получить список тенантов из data-service
 	body, status, err := s.proxyGetToDataService("/admin/tenants")
-	if err != nil || status != http.StatusOK {
-		// Upstream недоступен — возвращаем пустой список, но с ролью
+	if err != nil {
+		// Upstream недоступен — возвращаем пустой список, но с явным status.
 		respondJSON(w, http.StatusOK, map[string]any{
 			"tenants":      []any{},
 			"tenant_count": 0,
 			"data_service": s.opts.DataSvcURL,
+			"status":       "unavailable",
+			"role":         role,
+		})
+		return
+	}
+	if status != http.StatusOK {
+		respondJSON(w, http.StatusOK, map[string]any{
+			"tenants":      []any{},
+			"tenant_count": 0,
+			"data_service": s.opts.DataSvcURL,
+			"status":       "degraded",
 			"role":         role,
 		})
 		return
@@ -546,6 +557,7 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 			"tenants":      json.RawMessage(body),
 			"tenant_count": 0,
 			"data_service": s.opts.DataSvcURL,
+			"status":       "degraded",
 			"role":         role,
 		})
 		return
@@ -564,6 +576,7 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		"tenants":      respData["tenants"],
 		"tenant_count": tCount,
 		"data_service": s.opts.DataSvcURL,
+		"status":       "ok",
 		"role":         role,
 	})
 }

@@ -1548,6 +1548,18 @@ class TestReport:
         assert report.infra_error_rate == pytest.approx(1.0)
         assert report.case_results[0].outcome == "error"
 
+    def test_report_counts_legacy_infra_error_source_without_class(self):
+        case, run, ev = self._case_run_eval("legacy-infra", success=False)
+        ev.error_source = "infra"
+        ev.error_classes = []
+        ev.verdict = Verdict.ERROR
+
+        report = aggregate_report([case], [run], [ev])
+
+        assert report.infra_error_count == 1
+        assert report.infra_error_rate == pytest.approx(1.0)
+        assert report.error_class_histogram["INFRA_ERROR"] == 1
+
     def test_print_report_contains_metrics(self):
         cases, runs, evals = [], [], []
         for i in range(2):

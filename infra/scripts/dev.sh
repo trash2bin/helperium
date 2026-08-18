@@ -28,6 +28,13 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="$PROJECT_ROOT/.data/logs"
 PID_DIR="$PROJECT_ROOT/.data/pids"
 
+# Deliberately non-secret values for the isolated local E2E profile.  They make
+# MCP bearer-auth and browser-Origin enforcement executable contracts instead
+# of optional skipped tests, without inheriting a developer's production-like
+# credentials from .env.
+MCP_E2E_API_KEY="helperium-e2e-mcp-token"
+MCP_E2E_ALLOWED_ORIGINS="http://127.0.0.1:8080,http://localhost:8080"
+
 SERVICES=("data" "rag" "mcp" "admin" "api" "web")
 declare -A SERVICE_CMD=(
   [data]="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
@@ -128,6 +135,17 @@ cmd_start() {
   echo "🧪 Dev mode enabled — gateway debug logging is active"
 
   load_env
+  if [ "${MCP_E2E_PROFILE:-false}" = "true" ]; then
+    export MCP_RATE_LIMIT_RPS="${MCP_E2E_RATE_LIMIT_RPS:-1000}"
+    export MCP_RATE_LIMIT_BURST="${MCP_E2E_RATE_LIMIT_BURST:-1000}"
+    # Do not inherit credentials from .env here: the profile must be
+    # reproducible and assert the production security middleware end-to-end.
+    export MCP_REQUIRE_AUTH="true"
+    export MCP_API_KEY="$MCP_E2E_API_KEY"
+    export MCP_CLIENT_API_KEY="$MCP_E2E_API_KEY"
+    export MCP_ALLOWED_ORIGINS="$MCP_E2E_ALLOWED_ORIGINS"
+    echo "🧪 Secure E2E profile enabled — RPS=$MCP_RATE_LIMIT_RPS, burst=$MCP_RATE_LIMIT_BURST, auth and Origin policy on"
+  fi
   ensure_dirs
 
   # Если DATABASE_URL задана — переопределяем data-service на PG-конфиг
@@ -219,6 +237,12 @@ cmd_start() {
     # Доп. env для сервиса
     local extra_env=""
     case "$svc" in
+      rag)
+        # The RAG project currently has a flat package layout at services/rag.
+        # Add its parent only for this native process so `python -m rag.service`
+        # resolves deterministically without a user-managed PYTHONPATH workaround.
+        extra_env="PYTHONPATH=$PROJECT_ROOT/services${PYTHONPATH:+:$PYTHONPATH}"
+        ;;
       data)
         extra_env="TENANTS_DIR=$PROJECT_ROOT/.data/tenants"
         # ADMIN_TOKEN — если задан в .env, прокидываем в data-service для /admin/* эндпоинтов
@@ -795,10 +819,24 @@ case "${1:-help}" in
     shift
     cmd_db "$@"
     ;;
+  e2e-up)
+    cmd_stop
+    sleep 1
+    MCP_E2E_PROFILE=true cmd_start
+    ;;
   e2e)
     shift
-    echo "🧪 Running e2e tests (no LLM): services/agent-db/tests/e2e/"
-    .venv/bin/python3 -m pytest services/agent-db/tests/e2e/ "$@"
+    echo "🧪 Running e2e tests (no LLM)"
+    echo "   Start the dedicated local test profile first: $0 e2e-up"
+    # With no positional test path (including flag-only invocations such as
+    # `e2e -q`), keep the E2E directory as pytest's collection target.
+    if [ "$#" -eq 0 ] || [[ "$1" == -* ]]; then
+      set -- services/agent-db/tests/e2e/ "$@"
+    fi
+    MCP_API_KEY="$MCP_E2E_API_KEY" \
+      MCP_CLIENT_API_KEY="$MCP_E2E_API_KEY" \
+      MCP_ALLOWED_ORIGINS="$MCP_E2E_ALLOWED_ORIGINS" \
+      .venv/bin/python3 -m pytest "$@"
     ;;
   help|--help|-h)
     echo "Usage: $0 <command> [args]"
@@ -809,7 +847,8 @@ case "${1:-help}" in
     echo "  restart            — перезапустить"
     echo "  status             — healthcheck"
     echo "  logs [svc]         — tail -f логов (rag|mcp|api|web|data|all)"
-    echo "  e2e [pytest args]  — нативный прогон services/agent-db/tests/e2e/ (нужны поднятые сервисы)"
+    echo "  e2e-up             — перезапустить secure test stack (high MCP rate limit, auth и Origin policy)"
+    echo "  e2e [pytest args]  — нативный прогон services/agent-db/tests/e2e/ (после e2e-up)"
     echo ""
     echo "Сценарии БД data-service (фабрика тестовых БД):"
     echo "  db list                — список сценариев с метаданными"

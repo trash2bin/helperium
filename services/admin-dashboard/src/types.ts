@@ -98,7 +98,7 @@ export interface ComputedSummary {
   poolSize: string | number;
   entities: number;
   endpoints: number;
-  mcpTools: number;
+  savedMcpTools: number;
   customQueries: number;
   skipRules: number;
   displayPrefixes: string;

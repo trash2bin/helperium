@@ -21,8 +21,14 @@
             <div class="cfg-stat"><span class="cfg-label" x-text="__('config.mode')"></span><span class="cfg-val" x-text="computed.readonly ? __('config.readOnly') : __('config.readWrite')"></span></div>
             <div class="cfg-stat"><span class="cfg-label" x-text="__('config.entities')"></span><span class="cfg-val" x-text="computed.entities"></span></div>
             <div class="cfg-stat"><span class="cfg-label" x-text="__('config.endpoints')"></span><span class="cfg-val" x-text="computed.endpoints"></span></div>
-            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.mcpTools')"></span><span class="cfg-val" x-text="computed.mcpTools"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.savedMcpTools')"></span><span class="cfg-val" x-text="computed.savedMcpTools"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.runtimeMcpTools')"></span><span class="cfg-val" x-text="runtimeManifest?.mcp_tools?.length ?? '—'"></span></div>
+            <div class="cfg-stat"><span class="cfg-label" x-text="__('config.runtimeMode')"></span><span class="cfg-val" x-text="runtimeManifest ? (runtimeManifest.read_only ? __('config.readOnly') : __('config.readWrite')) : '—'"></span></div>
             <div class="cfg-stat"><span class="cfg-label" x-text="__('config.customQueries')"></span><span class="cfg-val" x-text="computed.customQueries"></span></div>
+            <div class="cfg-stat cfg-stat-full text-muted" x-show="runtimeManifestUpdatedAt || runtimeManifestError">
+              <span class="cfg-label" x-text="runtimeManifestError ? __('config.runtimeUnavailable') : __('config.runtimeUpdated')"></span>
+              <span class="cfg-val" x-text="runtimeManifestError || runtimeManifestUpdatedAt"></span>
+            </div>
             <div class="cfg-stat cfg-stat-full" x-show="computed.skipRules > 0 || computed.displayPrefixes != '—' || computed.customPlurals > 0">
               <span class="cfg-label">ConfigGen</span>
               <span class="cfg-val">

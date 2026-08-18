@@ -163,7 +163,7 @@ describe('Types — type-level contracts', () => {
       poolSize: 5,
       entities: 10,
       endpoints: 20,
-      mcpTools: 15,
+      savedMcpTools: 15,
       customQueries: 3,
       skipRules: 2,
       displayPrefixes: 'catalog_',
