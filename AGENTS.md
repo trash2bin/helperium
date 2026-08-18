@@ -123,7 +123,7 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 | Аудит data-service / регрессии | 📖 `doc/agents/data-service-refactor-audit` → 📖 `doc/benchmark/data-service-audit` → 📖 `doc/benchmark/plan-for-review` | 📖 |
 | Исторический контекст / миграция | 🔧 `doc/FINAL_TASK` (план к pre-final, исторический) → 📖 `doc/agents/config-migration` | 🔧→📖 |
 | Операции / дебаг / dev-скрипты | 🔧 `doc/agents/operations` → 🔧 `infra/scripts/dev.sh` → 🔧 `doc/agents/web-service` | 🔧 |
-| Независимый PM/технический аудит, готовность к пилоту | 📖 `doc/agents/product-readiness-audit-2026-08-18` → 📖 `doc/agents/remediation-plan-2026-08-18` → 📖 `doc/agents/product-readiness-audit-2026-08-16` → 🔧 `doc/benchmark/core-benchmark` → 🔧 `doc/agents/testing-guide` | 📖→🔧 |
+| Независимый PM/технический аудит, готовность к пилоту | 📖 `doc/agents/product-readiness-audit-2026-08-18-head-14d3758` → 📖 `doc/agents/product-readiness-audit-2026-08-18` → 📖 `doc/agents/remediation-plan-2026-08-18` → 🔧 `doc/benchmark/core-benchmark` → 🔧 `doc/agents/testing-guide` | 📖→🔧 |
 | Новый HTTP-эндпоинт / контракт | 🔧 `doc/agents/api-contracts` → `specs/api.openapi.yaml` → 🔧 `doc/api-flow` | 🔧 |
 
 ### 5b. Каталог документов (файл → сервис → повод читать → глубина)
@@ -227,12 +227,13 @@ HTTP-матрица (11 каналов) — §5b (specs/общее) + `specs/api
 
 > `doc/benchmark/` — не целиком архив. Основные документы бенчмарка остаются живой документацией; отдельные расследования, аудиты и исполненные планы помечены как архивные прямо в этом каталоге.
 
-**Архивные артефакты вне benchmark (не навигационные доки)**
+**Аудиты и планы вне benchmark (навигационные evidence-доки)**
 
 | Файл | Что это · когда создано | Статус |
 |---|---|---|
 | `doc/agents/data-service-refactor-audit.md` | Аудит data-service после 4-дневного рефакторинга (2026-08-01) | ✅ все фиксы применены |
 | `doc/agents/product-readiness-audit-2026-08-18.md` | Независимый PM/технический аудит текущего `main`: core, benchmark, E2E, CI и browser UI (2026-08-18; с поправкой `mcp_tools`) | 🗃️ архив: текущий verdict и evidence |
+| `doc/agents/product-readiness-audit-2026-08-18-head-14d3758.md` | Независимый PM/QA-аудит HEAD `14d3758`: benchmark, E2E/CI, native onboarding, demo и Admin runtime (2026-08-18) | 📖 актуальный release verdict: NO-GO |
 | `doc/agents/remediation-plan-2026-08-18.md` | Детальный план исправлений: причины, change sets, тесты, зависимости и pilot gates (2026-08-18) | 📖 актуальный plan, код не менялся |
 | `doc/agents/product-readiness-audit-2026-08-16.md` | Независимый PM/технический аудит core, benchmark, E2E и интерфейсных контуров (2026-08-16) | 🗃️ архив: исторический снимок до MCP v2 merge |
 | `doc/FINAL_TASK.md` | План миграции к pre-final версии (исторический) | ✅ исполнен |
@@ -347,5 +348,6 @@ Last verified: 2026-08-10 (HEAD be9a991) — разделены живая до�
 2026-08-16 (HEAD 0dbc8af) — добавлен независимый PM/технический аудит `doc/agents/product-readiness-audit-2026-08-16.md`: benchmark, E2E, UI/API, CI и product fit. Повторно пройден compose E2E на пересобранных core images: 124 passed. Зафиксированы gap browser acceptance, необходимость fresh live benchmark на HEAD и риск равных ADMIN_TOKEN/VIEWER_TOKEN.
 2026-08-18 (HEAD ed421c9) — добавлен независимый аудит `doc/agents/product-readiness-audit-2026-08-18.md`: подтверждён single-tenant MCP naming regression, красный обязательный E2E CI, неактуальный live benchmark KPI, unsafe default demo config и browser evidence demo/admin. После повторной проверки исправлена интерпретация поля manifest: runtime `mcp_tools` для default содержит 5 инструментов; расхождение Admin UI — persisted config против runtime manifest. Добавлен `doc/agents/remediation-plan-2026-08-18.md` с change sets, тестами, зависимостями и pilot gates. Обновлены маршруты и каталог документации; code не изменялся.
 2026-08-18 (`fix/core-readiness-20260818`, локально, не закоммичено) — реализованы: single-tenant MCP prefix policy с unit/E2E regression; read-only default config и отдельные saved/runtime Admin indicators; demo tabs для `strategy`; native RAG parent path и embed `npm ci` bootstrap; native/CI E2E rate-limit profile; benchmark infra aggregation invariant; явный Admin dashboard status. Полный secure no-LLM E2E после product-flow additions: 131 passed, без skipped; test profile принудительно проверяет MCP bearer-auth и Origin policy. Go suites, Admin build, benchmark и docs check зелёные. Branch protection и fresh paid live benchmark остаются внешними действиями.
+2026-08-18 (HEAD 14d3758) — добавлен аудит `doc/agents/product-readiness-audit-2026-08-18-head-14d3758.md`: benchmark harness зелёный, но live KPI относится к c0f3d62; mandatory CI E2E остаётся красным (13 failed / 118 passed), native E2E блокирован SQLite tenant registration, runtime demo `autoparts` отсутствует в data-service. Обновлён testing guide: 131 collected E2E, актуальная module matrix и честный красный status.
 См. полный журнал: CHANGELOG.md
 ```

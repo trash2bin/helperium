@@ -254,7 +254,9 @@ services:
       - MCP_GATEWAY_URL=http://mcp-gateway:8083
       - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
       - MCP_API_KEY=${MCP_API_KEY:-}
+      - MCP_CLIENT_API_KEY=${MCP_CLIENT_API_KEY:-}
       - API_SERVICE_URL=http://api:8081
+      - ADMIN_DASHBOARD_URL=http://admin-dashboard:8085
       - DEMO_WEB_URL=http://web:8080
       - ADMIN_TOKEN=${ADMIN_TOKEN:-ci-secret-token}
       - VIEWER_TOKEN=${VIEWER_TOKEN:-ci-viewer-token}
@@ -280,7 +282,7 @@ services:
     # видел созданные тестами БД по тем же путям.
     command: >-
       sh -c "uv pip install --python /app/.venv/bin/python pytest &&
-             uv pip install --python /app/.venv/bin/python -e /workspace/services/agent-db &&
+             uv pip install --python /app/.venv/bin/python -e "/workspace/services/agent-db[dev]" &&
              cd /workspace &&
              PYTHONPATH=/workspace /app/.venv/bin/python -m pytest services/agent-db/tests/e2e/ -v --tb=short"
 

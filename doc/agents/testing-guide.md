@@ -40,7 +40,7 @@ go test ./services/mcp-gateway/...                               # ~80
 
 ---
 
-## E2E (services/agent-db/tests/e2e/) — 124 теста
+## E2E (services/agent-db/tests/e2e/) — 131 тест
 
 ```bash
 ./infra/scripts/dev.sh start
@@ -77,19 +77,21 @@ def test_x(tenant):
 
 ### Файлы
 | Файл | Тестов | Что проверяет |
-|---|---|---|
-| test_admin_lifecycle.py | 11 | CRUD тенантов |
-| test_agents.py | 10 | Agents CRUD, providers |
-| test_config_persistence.py | 4 | Атомарная запись `.data/tenants/{id}.json` |
-| test_data_isolation.py | 9 | Tenant A ≠ B |
-| test_mcp_composite.py | 5 | Composite mode (`X-Tenant-ID: a,b`) |
-| test_mcp_dynamic.py | 5 | v5 тулы через MCP |
-| test_mcp_validation.py | 28 | Required args, limits |
-| test_scripted_llm.py | 11 | **Полный пайплайн без LLM** ⭐ |
-| test_search_strategies.py | 31 | grep/filter/schema (auto-shop, clinic) |
-| test_sse_session.py | 4 | SSE, JSON-RPC |
-| test_v5_tool_surface.py | 6 | v5 surface (db_*, filter_*) |
-
+|---|---:|---|
+| `test_admin_lifecycle.py` | 11 | CRUD tenant и базовый onboarding |
+| `test_agents.py` | 10 | Agents CRUD и providers |
+| `test_config_persistence.py` | 4 | Атомарная запись `.data/tenants/{id}.json` |
+| `test_data_isolation.py` | 9 | Tenant A ≠ B, включая `db_get` и filter |
+| `test_mcp_composite.py` | 5 | Composite mode (`X-Tenant-ID: a,b`) |
+| `test_mcp_dynamic.py` | 5 | Dynamic/generated MCP tools |
+| `test_mcp_streamable_http.py` | 7 | Streamable HTTP, tenant scope, auth и Origin policy |
+| `test_mcp_validation.py` | 28 | Required args, limits и tool schemas |
+| `test_named_agent_composite_pipeline.py` | 1 | Persisted named-agent composite scope до prefixed MCP tool |
+| `test_product_readiness_paths.py` | 3 | Read-only default, canonical single-tenant names, dashboard health |
+| `test_scripted_llm.py` | 11 | **Полный pipeline без LLM**: SSE, tools, recovery и guards |
+| `test_search_strategies.py` | 31 | grep/filter/schema для auto-shop и clinic |
+| `test_tenant_fixture.py` | 3 | Tenant factory, rewrite и isolation fixture |
+| `test_v5_tool_surface.py` | 3 | `db_*` и entity filter surface |
 ### ScriptedLLMProvider — 11 тестов без LLM
 ```bash
 # Воспроизведение
@@ -124,6 +126,9 @@ ADMIN_TOKEN=ci-secret-token ./infra/scripts/compose.sh --profile test down -v
 
 **Логи:** `./infra/scripts/compose.sh --profile test logs -f e2e`
 **Дебаг:** `./infra/scripts/compose.sh --profile test run --rm e2e bash`
+
+CI-контейнер устанавливает `agent-db[dev]`, поэтому async Streamable HTTP сценарии получают `pytest-asyncio`. Внутри compose используются service DNS (`admin-dashboard:8085`), а CI-профиль прокидывает один test-only MCP token и в прямые MCP проверки, и в дочерний API процесса ScriptedLLM. Не запускайте эти проверки произвольным `docker run` без этих переменных: получится ложный `401` или generic SSE error.
+
 
 ---
 
@@ -184,4 +189,4 @@ uv run pytest ... -q --tb=line      # только упавшие
 
 ---
 
-**Last verified:** 2026-08-16 (HEAD `0dbc8af`) — native и compose E2E режимы разделены; compose full suite прошёл 124/124 на пересобранном core.
+**Last verified:** 2026-08-18 (HEAD `14d3758` + uncommitted E2E config fix) — полный изолированный compose CI-профиль прошёл **131/131** за 109.40 s. GitHub Actions требуется повторно запустить уже на коммите с этой правкой; historical run `32131005670` остаётся красным evidence для исходного HEAD.
