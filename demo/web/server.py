@@ -84,6 +84,10 @@ async def _get_proxy_headers(request: Request) -> dict[str, str]:
 
     # Пробрасываем correlation ID для трассировки запроса через все сервисы
     correlation_id = request.headers.get("x-correlation-id")
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        headers["x-forwarded-for"] = forwarded_for
+
     if correlation_id:
         headers["x-correlation-id"] = correlation_id
 
@@ -130,10 +134,17 @@ async def _proxy_to_api(
             response = await http_client.send(proxy_req, stream=True)
 
             if response.status_code != 200:
+                # ``send(..., stream=True)`` leaves the response body unread.
+                # Read it before forwarding an upstream SSE error (for example
+                # a 429 from the chat limiter), otherwise accessing
+                # ``response.content`` raises ``ResponseNotRead`` and masks the
+                # real response with a 500 from this proxy.
+                content = await response.aread()
                 return Response(
-                    content=response.content,
+                    content=content,
                     status_code=response.status_code,
                     headers=dict(response.headers),
+                    media_type=response.headers.get("content-type"),
                 )
 
             async def stream_gen():

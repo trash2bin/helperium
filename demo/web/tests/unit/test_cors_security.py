@@ -378,11 +378,12 @@ class TestRealCorsMiddleware:
 class TestSettingsDefaultOrigin:
     """settings.web_origin defaults to http://localhost:8080."""
 
-    def test_settings_default_is_localhost(self):
-        """Default web_origin is http://localhost:8080, not '*'."""
-        assert settings.web_origin == "http://localhost:8080", (
-            f"Expected http://localhost:8080, got {settings.web_origin!r}"
-        )
+    def test_settings_default_is_localhost(self, monkeypatch):
+        """Default web_origin is localhost when WEB_ORIGIN is unset."""
+        monkeypatch.delenv("WEB_ORIGIN", raising=False)
+        from helperium_sdk.settings import DemoSettings
+
+        assert DemoSettings().web_origin == "http://localhost:8080"
 
     def test_settings_can_be_overridden_by_env(self, monkeypatch):
         """Overriding WEB_ORIGIN env var changes settings value."""

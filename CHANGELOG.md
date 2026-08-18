@@ -1,6 +1,7 @@
 # CHANGELOG.md
 
 ## 2026-08-18
+- **fix(resilience):** web SSE-прокси теперь передаёт upstream 429 и `Retry-After` без ложного 500; api-service и anti-abuse используют исходный IP из `X-Forwarded-For`, а demo-web сохраняет его через private proxy chain. Добавлены регрессии для 429, forwarded IP и герметичного CORS default-теста; практический resilience-аудит задокументировал измеренный API restart (~5 с), отсутствие alerting/edge DDoS контура и pre-prod gates. **Проверка:** `make ci`.
 
 - **fix(mcp/security):** gateway получил production fail-fast `MCP_REQUIRE_AUTH=true`, shared `MCP_API_KEY`/`MCP_CLIENT_API_KEY` Compose wiring, strict `MCP_ALLOWED_ORIGINS` policy, header-only metadata access и bounds для composite scopes (8 unique tenant IDs by default). Registry больше не удерживает mutex во время manifest fetch.
 - **fix(tenant-authority):** public direct text/voice chat использует только server-configured `DEFAULT_TENANT_ID` и игнорирует browser `X-Tenant-ID`; composite scope может происходить только из persisted named-agent record.

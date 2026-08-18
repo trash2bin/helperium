@@ -5,6 +5,8 @@
 """
 
 from __future__ import annotations
+from starlette.requests import Request
+
 
 import importlib
 import os
@@ -74,3 +76,42 @@ class TestRateLimiterAppInit:
 
             assert rate_limit == "30/minute"
             assert hasattr(app.state, "limiter")
+
+
+def _request(*, headers: list[tuple[bytes, bytes]], client_ip: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api/chat/demo-agent",
+            "raw_path": b"/api/chat/demo-agent",
+            "query_string": b"",
+            "headers": headers,
+            "client": (client_ip, 12345),
+            "server": ("testserver", 80),
+        }
+    )
+
+
+class TestRateLimitClientIP:
+    """The limiter must distinguish visitors behind the internal proxy."""
+
+    def test_uses_first_forwarded_for_address(self):
+        from api_service.server.rate_limit import get_client_ip
+
+        request = _request(
+            headers=[(b"x-forwarded-for", b"198.51.100.10, 172.18.0.7")],
+            client_ip="172.18.0.7",
+        )
+
+        assert get_client_ip(request) == "198.51.100.10"
+
+    def test_falls_back_to_direct_peer_without_forwarded_header(self):
+        from api_service.server.rate_limit import get_client_ip
+
+        request = _request(headers=[], client_ip="172.18.0.7")
+
+        assert get_client_ip(request) == "172.18.0.7"

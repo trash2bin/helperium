@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import time
 
+from .rate_limit import get_client_ip
+
 from fastapi.responses import StreamingResponse
 
 from api_service.abuse_live import get_live_abuse_provider
@@ -31,7 +33,7 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
     checker, token_bucket = live.get_enforcers(agent_abuse_config)
 
     user_agent = request.headers.get("User-Agent", "") or ""
-    ip = request.client.host if request.client else "127.0.0.1"
+    ip = get_client_ip(request)
     safe_id = session_id or "unknown"
 
     allowed, ctx = token_bucket.allow(safe_id, ip, user_agent)
