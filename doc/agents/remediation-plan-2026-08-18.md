@@ -1,12 +1,12 @@
 # План исправления блокирующих дефектов Helperium — 2026-08-18
 
-> **Статус:** реализовано локально на ветке `fix/core-readiness-20260818`; изменения и артефакты остаются **незакоммиченными** для review.
+> **Статус:** 🗃️ исполненный historical remediation plan. Он фиксирует исходные причины и intended change sets на `ed421c9`, а не текущий release verdict.
 >
-> **Основание:** `main` на `ed421c9615381219671ede176c98135852a15ade`, локальная проверка полного стека, deterministic benchmark, E2E, browser inspection и GitHub Actions.
+> **Реализация после плана:** основной core-readiness набор вошёл в `14d3758`; затем `bd5adb5`, `c1a20a7`, `ccce086`, `f9df354` и `ff2d08b` закрыли SQLite onboarding, Docker isolation, backend/SSE resilience и API/MCP perimeter hardening. Последняя локальная deterministic проверка: `make ci` passed и clean Docker E2E 137 passed.
 >
-> **Цель:** восстановить доказуемый путь **single tenant → MCP tools → agent → data-service**, перевести default demo в безопасный режим и сделать `main` защищённым от повторного регресса.
+> **Что остаётся внешним/следующим:** GitHub branch protection, fresh budgeted live-model benchmark, browser acceptance на deployed domain, edge/alerting/rollback game day и расширенный RAG/prompt-injection security assessment.
 
-## Статус локальной реализации
+## Historical progress snapshot
 
 | Контур | Статус | Проверка |
 |---|---|---|
@@ -19,7 +19,7 @@
 | Product-flow E2E | **Готово** | Добавлены default→demo manifest/strategy preview, single-tenant Streamable MCP и authenticated Admin health regressions; focused test: 3 passed. |
 | Branch protection и fresh paid live benchmark | **Внешнее действие** | Нужны настройки GitHub repository и отдельный controlled model run; они не должны подменяться локальным кодовым изменением. |
 
-## Важная поправка к предыдущему аудиту
+## Historical correction to the previous audit
 
 Прежний аудит ошибочно интерпретировал поле `tools` вместо `mcp_tools` в live `/mcp/manifest`. Повторная проверка показала, что runtime `default` публикует **5 инструментов**: `db_map`, `db_describe`, `db_search`, `db_get`, `db_related`. Следовательно, **отсутствие runtime tools не является дефектом**.
 
