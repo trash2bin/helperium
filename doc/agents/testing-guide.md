@@ -2,7 +2,7 @@
 
 ## Порядок запуска
 1. **Unit/Integration** — без сервисов, через `make`
-2. **E2E без LLM** — 124 теста, нужны сервисы (`./infra/scripts/dev.sh start`)
+2. **E2E без LLM** — 131 тест, запускать через изолированный native-профиль `dev.sh e2e-up`
 3. **E2E с LLM** — только по требованию, денег много, в CI не гоняем
 
 ---
@@ -41,18 +41,20 @@ go test ./services/mcp-gateway/...                               # ~80
 ---
 
 ## E2E (services/agent-db/tests/e2e/) — 131 тест
-
 ```bash
-./infra/scripts/dev.sh start
-./infra/scripts/dev.sh status
-uv run pytest services/agent-db/tests/e2e/ -v
+./infra/scripts/dev.sh e2e-up
+./infra/scripts/dev.sh e2e -v
 ./infra/scripts/dev.sh stop
 ```
 
-**Compose-режим**: запускай тесты внутри compose, если сервисы работают в Docker. Host pytest нельзя направлять на Docker services: пути SQLite хоста и контейнера различаются.
+**Compose CI-режим**: запускай тесты внутри compose, если сервисы работают в Docker. Host pytest нельзя направлять на Docker services: пути SQLite хоста и контейнера различаются. Используй **оба** compose-файла: `docker-compose.ci.yml` включает test-only MCP/auth конфигурацию, а admin и viewer токены должны различаться.
 ```bash
-./infra/scripts/compose.sh --profile test up e2e --abort-on-container-exit --exit-code-from e2e
-./infra/scripts/compose.sh --profile test down -v
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
+  docker-compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml \
+  --profile test up --abort-on-container-exit --exit-code-from e2e
+
+docker-compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml \
+  --profile test down -v
 ```
 
 **Чек-лист:**
@@ -189,4 +191,4 @@ uv run pytest ... -q --tb=line      # только упавшие
 
 ---
 
-**Last verified:** 2026-08-18 (HEAD `14d3758` + uncommitted E2E config fix) — полный изолированный compose CI-профиль прошёл **131/131** за 109.40 s. GitHub Actions требуется повторно запустить уже на коммите с этой правкой; historical run `32131005670` остаётся красным evidence для исходного HEAD.
+**Last verified:** 2026-08-18 (HEAD `0a6aff5` + uncommitted native E2E and SQLite read-only fixes) — `make ci-test-go` прошёл; полный native E2E-профиль прошёл **131/131** за 91.28 s на macOS; точечный Linux Docker CI onboarding-набор прошёл **11/11**. Native-профиль поднимает сервисы на изолированных loopback-портах `18080–18085`, использует `/tmp` для временных SQLite tenant-баз и не пересекается с SSH-туннелями/обычным `dev.sh start` на `8080–8085`. Контейнерный E2E запускай с обоими compose-файлами и разными admin/viewer токенами, как в GitHub Actions.

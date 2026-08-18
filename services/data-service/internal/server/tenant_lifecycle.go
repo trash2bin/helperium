@@ -300,6 +300,10 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	// Read-only connection (если задан readonly_dsn — database-level изоляция)
 	var readonlyConn datasource.Conn
 	readonlyDSN := cfg.DataSource.ReadonlyDSN
+	if readonlyDSN == "" && cfg.DataSource.Driver == config.DriverSQLite && cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly {
+		readonlyDSN = sqliteReadOnlyDSN(dsn)
+		slog.Info("tenant: derived SQLite database-level read-only connection", "id", id, "readonly_dsn", readonlyDSN)
+	}
 	if readonlyDSN != "" {
 		readonlyDSN = resolveDataSourceDSN(readonlyDSN, configPath)
 		roConn, err := adapter.Connect(ctx, readonlyDSN)

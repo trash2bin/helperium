@@ -22,6 +22,21 @@ seed_database(db_path, seed_path, project_root)
 result = register_tenant("autoparts", config)
 ```
 
+## SQLite read-only connection contract
+
+> `data_source.read_only: true` одновременно запрещает write-методы в API и, для file-backed SQLite tenant, создаёт отдельное database-level read-only соединение. Основное соединение остаётся внутренним путём data-service для admin-операций и schema introspection.
+
+| Конфигурация | Admin / introspection connection | Runtime query connection |
+|---|---|---|
+| SQLite, `read_only` выключен или отсутствует | Resolved `dsn` | То же соединение под API write guard |
+| SQLite, `read_only: true`, без `readonly_dsn` | Resolved `dsn` | Derived `file:<resolved dsn>?mode=ro`, затем API write guard |
+| SQLite, явный `readonly_dsn` | Resolved `dsn` | Явный `readonly_dsn` имеет приоритет |
+| PostgreSQL | Resolved `dsn` | Явный `readonly_dsn`, если он задан; SQLite derivation не применяется |
+
+SQLite adapter распознаёт `mode=ro`/`immutable=1` и добавляет только безопасный `busy_timeout`; он **не добавляет `journal_mode=WAL`** на database-level read-only path. `:memory:` остаётся без изменения: для него не существует file-backed read-only URI.
+
+Regression `TestTenantAdmin_AddTenant_ReadOnlySQLite_AutoDatabaseLevelDSN` вызывает реальный `POST /admin/tenants` с обычным SQLite path и `read_only: true`, проверяет успешный query и доказывает, что прямой write через `ReadonlyConn` отвергается. Это закрывает gap прежнего unit coverage, где `file:?mode=ro` создавался вручную.
+
 ## Rewrite — Автогенерация конфига из БД
 
 ```bash

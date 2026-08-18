@@ -22,3 +22,24 @@ func resolveDataSourceDSN(dsn, configPath string) string {
 	}
 	return prefix + path + suffix
 }
+
+// sqliteReadOnlyDSN returns an SQLite URI that enforces database-level read-only
+// access. The original DSN remains available for admin operations and schema
+// introspection; all runtime data queries use the returned URI. In-memory
+// databases have no filesystem-backed read-only mode and are left unchanged.
+func sqliteReadOnlyDSN(dsn string) string {
+	if dsn == "" || dsn == ":memory:" || strings.HasPrefix(dsn, ":memory:?") {
+		return dsn
+	}
+	if strings.Contains(dsn, "mode=ro") || strings.Contains(dsn, "immutable=1") {
+		return dsn
+	}
+	if !strings.HasPrefix(dsn, "file:") {
+		dsn = "file:" + dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "mode=ro"
+}

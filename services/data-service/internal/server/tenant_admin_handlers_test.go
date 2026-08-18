@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -378,4 +379,53 @@ func TestTenantAdmin_DiscoverHandler_NoTenant(t *testing.T) {
 
 func TestTenantAdmin_DiscoverHandler_NilAdapter(t *testing.T) {
 	t.Skip("Discover handler requires a non-nil introspect adapter; needs test infrastructure")
+}
+func TestTenantAdmin_AddTenant_ReadOnlySQLite_AutoDatabaseLevelDSN(t *testing.T) {
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "customer.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open fixture db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, `CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create fixture table: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO products (name) VALUES ('Widget')`); err != nil {
+		t.Fatalf("seed fixture db: %v", err)
+	}
+
+	ts := NewTenantStore(datasource.NewDefaultRegistry(), "")
+	ts.TenantsDir = t.TempDir()
+	payload, err := json.Marshal(map[string]any{
+		"id": "read-only-sqlite",
+		"config": map[string]any{
+			"version": 1,
+			"data_source": map[string]any{
+				"driver": "sqlite", "dsn": dbPath, "read_only": true,
+			},
+			"entities": []any{}, "endpoints": []any{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal onboarding payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/admin/tenants", strings.NewReader(string(payload)))
+	rec := httptest.NewRecorder()
+	ts.adminAddTenantHandler(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 without explicit readonly_dsn, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	inst, ok := ts.GetTenant("read-only-sqlite")
+	if !ok || inst.ReadonlyConn == nil {
+		t.Fatal("read_only SQLite tenant must create a database-level readonly connection")
+	}
+	var count int
+	if err := inst.ReadonlyConn.QueryRowContext(ctx, `SELECT COUNT(*) FROM products`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("readonly query = (%d, %v), want (1, nil)", count, err)
+	}
+	if _, err := inst.ReadonlyConn.ExecContext(ctx, `INSERT INTO products (name) VALUES ('Forbidden')`); err == nil {
+		t.Fatal("database-level readonly connection accepted a write")
+	}
 }

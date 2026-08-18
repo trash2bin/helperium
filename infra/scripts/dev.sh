@@ -100,6 +100,17 @@ load_env() {
   fi
 }
 
+set_e2e_ports() {
+  # Native E2E uses a fixed, separate loopback range so a developer's tunnel
+  # or another project on default ports cannot satisfy a false healthcheck.
+  DATA_PORT="${E2E_DATA_PORT:-18084}"
+  RAG_PORT="${E2E_RAG_PORT:-18082}"
+  MCP_PORT="${E2E_MCP_PORT:-18083}"
+  API_PORT="${E2E_API_PORT:-18081}"
+  WEB_PORT="${E2E_WEB_PORT:-18080}"
+  ADMIN_PORT="${E2E_ADMIN_PORT:-18085}"
+  SERVICE_PORT=([data]=$DATA_PORT [rag]=$RAG_PORT [mcp]=$MCP_PORT [api]=$API_PORT [web]=$WEB_PORT [admin]=$ADMIN_PORT)
+}
 ensure_dirs() {
   mkdir -p "$LOG_DIR" "$PID_DIR" "$PROJECT_ROOT/.data/uploads"
 }
@@ -136,6 +147,8 @@ cmd_start() {
 
   load_env
   if [ "${MCP_E2E_PROFILE:-false}" = "true" ]; then
+    set_e2e_ports
+    echo "🧪 Isolated E2E ports — data=:$DATA_PORT, mcp=:$MCP_PORT, api=:$API_PORT"
     export MCP_RATE_LIMIT_RPS="${MCP_E2E_RATE_LIMIT_RPS:-1000}"
     export MCP_RATE_LIMIT_BURST="${MCP_E2E_RATE_LIMIT_BURST:-1000}"
     # Do not inherit credentials from .env here: the profile must be
@@ -144,6 +157,8 @@ cmd_start() {
     export MCP_API_KEY="$MCP_E2E_API_KEY"
     export MCP_CLIENT_API_KEY="$MCP_E2E_API_KEY"
     export MCP_ALLOWED_ORIGINS="$MCP_E2E_ALLOWED_ORIGINS"
+    export ADMIN_TOKEN="${MCP_E2E_ADMIN_TOKEN:-helperium-e2e-admin-token}"
+    export VIEWER_TOKEN="${MCP_E2E_VIEWER_TOKEN:-helperium-e2e-viewer-token}"
     echo "🧪 Secure E2E profile enabled — RPS=$MCP_RATE_LIMIT_RPS, burst=$MCP_RATE_LIMIT_BURST, auth and Origin policy on"
   fi
   ensure_dirs
@@ -241,17 +256,17 @@ cmd_start() {
         # The RAG project currently has a flat package layout at services/rag.
         # Add its parent only for this native process so `python -m rag.service`
         # resolves deterministically without a user-managed PYTHONPATH workaround.
-        extra_env="PYTHONPATH=$PROJECT_ROOT/services${PYTHONPATH:+:$PYTHONPATH}"
+        extra_env="RAG_PORT=$RAG_PORT PYTHONPATH=$PROJECT_ROOT/services${PYTHONPATH:+:$PYTHONPATH}"
         ;;
       data)
-        extra_env="TENANTS_DIR=$PROJECT_ROOT/.data/tenants"
+        extra_env="PORT=$DATA_PORT TENANTS_DIR=$PROJECT_ROOT/.data/tenants"
         # ADMIN_TOKEN — если задан в .env, прокидываем в data-service для /admin/* эндпоинтов
         if [ -n "${ADMIN_TOKEN:-}" ]; then
           extra_env="$extra_env ADMIN_TOKEN=$ADMIN_TOKEN"
         fi
         ;;
       mcp)
-        extra_env="DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT LOG_LEVEL=info"
+        extra_env="MCP_PORT=$MCP_PORT DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT LOG_LEVEL=info"
         if [ "$MCP_DEV" = "true" ]; then
           extra_env="MCP_DEV=true $extra_env"
         fi
@@ -269,12 +284,12 @@ cmd_start() {
         fi
         ;;
       api)
-        extra_env="MCP_GATEWAY_URL=http://127.0.0.1:$MCP_PORT MCP_STREAMABLE_HTTP_URL=http://127.0.0.1:$MCP_PORT/mcp${USE_SCRIPTED_LLM:+ USE_SCRIPTED_LLM=$USE_SCRIPTED_LLM}${SCRIPTED_LLM_PATH:+ SCRIPTED_LLM_PATH=$SCRIPTED_LLM_PATH}${SCRIPTED_LLM_RECORD:+ SCRIPTED_LLM_RECORD=$SCRIPTED_LLM_RECORD}"
+        extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT MCP_GATEWAY_URL=http://127.0.0.1:$MCP_PORT MCP_STREAMABLE_HTTP_URL=http://127.0.0.1:$MCP_PORT/mcp${USE_SCRIPTED_LLM:+ USE_SCRIPTED_LLM=$USE_SCRIPTED_LLM}${SCRIPTED_LLM_PATH:+ SCRIPTED_LLM_PATH=$SCRIPTED_LLM_PATH}${SCRIPTED_LLM_RECORD:+ SCRIPTED_LLM_RECORD=$SCRIPTED_LLM_RECORD}"
         if [ -n "${MCP_CLIENT_API_KEY:-}" ]; then
           extra_env="MCP_CLIENT_API_KEY=$MCP_CLIENT_API_KEY $extra_env"
         fi
         ;;
-      web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT" ;;
+      web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT DEMO_WEB_PORT=$WEB_PORT" ;;
       admin) extra_env="LISTEN_ADDR=:$ADMIN_PORT ADMIN_TOKEN=$ADMIN_TOKEN VIEWER_TOKEN=$VIEWER_TOKEN DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT API_SERVICE_URL=http://127.0.0.1:$API_PORT LOG_LEVEL=$LOG_LEVEL LOG_FORMAT=$LOG_FORMAT" ;;
     esac
 
@@ -826,6 +841,7 @@ case "${1:-help}" in
     ;;
   e2e)
     shift
+    set_e2e_ports
     echo "🧪 Running e2e tests (no LLM)"
     echo "   Start the dedicated local test profile first: $0 e2e-up"
     # With no positional test path (including flag-only invocations such as
@@ -833,9 +849,23 @@ case "${1:-help}" in
     if [ "$#" -eq 0 ] || [[ "$1" == -* ]]; then
       set -- services/agent-db/tests/e2e/ "$@"
     fi
+    # macOS file-provider directories can reject SQLite's WAL sidecar files.
+    # Keep native E2E tenant databases directly in `/tmp`. CI leaves
+    # E2E_DB_DIR unset, so its e2e container continues using /workspace/.data.
+    native_e2e_db_dir="${E2E_DB_DIR:-/tmp}"
+    echo "   Native SQLite workdir: $native_e2e_db_dir"
     MCP_API_KEY="$MCP_E2E_API_KEY" \
       MCP_CLIENT_API_KEY="$MCP_E2E_API_KEY" \
       MCP_ALLOWED_ORIGINS="$MCP_E2E_ALLOWED_ORIGINS" \
+      E2E_DB_DIR="$native_e2e_db_dir" \
+      ADMIN_TOKEN="${MCP_E2E_ADMIN_TOKEN:-helperium-e2e-admin-token}" \
+      VIEWER_TOKEN="${MCP_E2E_VIEWER_TOKEN:-helperium-e2e-viewer-token}" \
+      DATA_SERVICE_URL="http://127.0.0.1:$DATA_PORT" \
+      MCP_GATEWAY_URL="http://127.0.0.1:$MCP_PORT" \
+      MCP_STREAMABLE_HTTP_URL="http://127.0.0.1:$MCP_PORT/mcp" \
+      API_SERVICE_URL="http://127.0.0.1:$API_PORT" \
+      ADMIN_DASHBOARD_URL="http://127.0.0.1:$ADMIN_PORT" \
+      DEMO_WEB_URL="http://127.0.0.1:$WEB_PORT" \
       .venv/bin/python3 -m pytest "$@"
     ;;
   help|--help|-h)

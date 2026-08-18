@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import time
 import uuid
@@ -142,14 +143,24 @@ def cleanup_db(*db_paths: Path) -> None:
 
 
 def temp_db_path(prefix: str, project_root_dir: Path | None = None) -> Path:
-    """Return a unique temp DB path under ``.data/`` (not yet created).
+    """Return a unique temporary database path (not yet created).
 
-    Parent dir is created; caller should seed/register and cleanup with
+    Native ``dev.sh e2e`` can set ``E2E_DB_DIR`` to an OS-local temporary
+    directory. This keeps SQLite WAL/SHM sidecars outside a project folder
+    that can be backed by a macOS file provider. CI leaves it unset, so the
+    test database remains inside the shared workspace volume visible to every
+    compose service.
+
+    The parent is created; callers should seed/register and clean up with
     :func:`cleanup_db`.
     """
     root = project_root_dir or project_root()
     suffix = uuid.uuid4().hex[:8]
-    p = root / ".data" / f"e2e_{prefix}_{suffix}.db"
+    native_dir = os.environ.get("E2E_DB_DIR")
+    if native_dir:
+        p = Path(native_dir).expanduser() / f"e2e_{prefix}_{suffix}.db"
+    else:
+        p = root / ".data" / f"e2e_{prefix}_{suffix}.db"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -397,8 +408,13 @@ def make_tenant(
                 db_path = temp_db_path(prefix)
                 seed_database(db_path, scenario=scenario)
             else:
-                # create_db.py scenario (auto-shop, clinic, shop) — авто-регенерация
-                db_path = ensure_scenario_db(scenario)
+                # create_db.py scenario (auto-shop, clinic, shop): the scenario
+                # file is a shared fixture. Register a private copy so a
+                # tenant's WAL/SHM files never modify or lock the fixture and
+                # native runs can choose an OS-local E2E_DB_DIR.
+                source_db = ensure_scenario_db(scenario)
+                db_path = temp_db_path(prefix)
+                shutil.copy2(source_db, db_path)
         else:
             db_path = Path(config["data_source"]["dsn"]) if config else temp_db_path(prefix)
 
