@@ -87,8 +87,7 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 			rows, err := c.DB.QueryContext(qCtx, sqlStr, args...)
 			if err != nil {
 				slog.Error("DB error in strategy handler count", "err", err, "strategy", strategy.Name(), "entity", entityName)
-				RespondError(w, http.StatusInternalServerError, "db_error",
-					"Query execution failed. Check field names via schema tool.")
+				respondStrategyDatabaseError(w, err)
 				return
 			}
 			defer rows.Close() //nolint:errcheck
@@ -216,9 +215,9 @@ func NewStrategyHandler(c *Context, strategy search.Strategy, entityName string,
 		rows, err := c.DB.QueryContext(qCtx, sqlStr, args...)
 		if err != nil {
 			slog.Error("DB error in strategy handler", "err", err, "strategy", strategy.Name(), "entity", entityName)
-			RespondError(w, http.StatusInternalServerError, "db_error",
-				"Query execution failed. Check field names via schema tool.")
+			respondStrategyDatabaseError(w, err)
 			return
+
 		}
 		defer rows.Close() //nolint:errcheck
 

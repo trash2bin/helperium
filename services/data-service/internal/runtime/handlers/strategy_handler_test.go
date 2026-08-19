@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -294,4 +295,67 @@ func (a *testStrategyAdapter) QuoteIdentifier(name string) string {
 
 func (a *testStrategyAdapter) TranslatePlaceholder(index int) string {
 	return "?"
+}
+
+func TestNewStrategyHandler_DatabaseUnavailableReturnsRetryable503(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &testStrategyAdapter{db: db}
+	runtimeEntity := runtime.Entity{
+		Name:     "product",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []runtime.EntityField{
+			{Name: "id", Column: "id", Type: "int", PrimaryKey: true},
+			{Name: "name", Column: "name", Type: "string"},
+		},
+	}
+	resolver, err := runtime.NewEntityResolver([]runtime.Entity{runtimeEntity})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	primary := true
+	cfgEntity := config.Entity{
+		Name:     "product",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: &primary},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+		},
+	}
+	ctx := &Context{
+		DB:       adapter,
+		Adapter:  adapter,
+		Builder:  runtime.NewBuilder(adapter),
+		Resolver: resolver,
+		TenantIDFunc: func(*http.Request) string {
+			return "outage-tenant"
+		},
+		URLParam: func(*http.Request, string) string { return "" },
+	}
+	handler := NewStrategyHandler(ctx, search.NewFilterStrategy("id", "name"), "product", cfgEntity)
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/products/filter?name=Bosch", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for unavailable tenant DB, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "database_unavailable") ||
+		!strings.Contains(w.Body.String(), databaseUnavailableMessage) {
+		t.Fatalf("expected sanitised database_unavailable response, got %s", w.Body.String())
+	}
+	if strings.Contains(strings.ToLower(w.Body.String()), "database is closed") {
+		t.Fatalf("database driver detail leaked: %s", w.Body.String())
+	}
 }

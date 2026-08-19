@@ -88,7 +88,7 @@ func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 	// трактует '?' как начало query-строки, путь обрезается. Если файл содержит
 	// '?', используй file:-URI с %3F (file:reports%3F2024.db) или переименуй файл.
 
-	slog.Info("sqlite: opening connection", "dsn", dsn)
+	slog.Info("sqlite: opening connection")
 
 	// Прагмы через DSN-параметры (_pragma=...), а не только через ExecContext:
 	// ExecContext-PRAGMA применяется к ОДНОМУ коннекту пула (тому, что его выполнил),
@@ -98,7 +98,7 @@ func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: failed to open %q: %w", dsn, err)
+		return nil, fmt.Errorf("sqlite: failed to open connection: %w", err)
 	}
 
 	// Регистрируем regexp() для modernc (без неё grep regex=true падает).
@@ -112,7 +112,7 @@ func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 
 	if err := conn.PingContext(ctx); err != nil {
 		_ = conn.Close()
-		return nil, fmt.Errorf("sqlite: ping failed for %q: %w", dsn, err)
+		return nil, fmt.Errorf("sqlite: ping failed: %w", err)
 	}
 
 	// Дублируем прагмы через Exec для DSN, где _pragma не применился
@@ -136,7 +136,7 @@ func (SqliteAdapter) Connect(ctx context.Context, dsn string) (Conn, error) {
 		}
 	}
 
-	slog.Info("sqlite: connection opened", "dsn", dsn)
+	slog.Info("sqlite: connection opened")
 
 	return &SqliteConn{conn: conn}, nil
 }

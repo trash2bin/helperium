@@ -12,9 +12,35 @@
         format json
     }
 
-    @assistant path /api/* /embed/*
-    handle @assistant {
+    # Public Helperium surface for the storefront: static widget assets and
+    # browser-originated named-chat requests only. Agent management is local
+    # admin traffic and must not be made public by this reverse proxy.
+    @assistant_embed path /embed/*
+    handle @assistant_embed {
         reverse_proxy {$HELPERIUM_API_UPSTREAM:api:8081}
+    }
+
+    @assistant_chat {
+        method POST
+        path /api/chat /api/chat/*
+    }
+    handle @assistant_chat {
+        reverse_proxy {$HELPERIUM_API_UPSTREAM:api:8081}
+    }
+
+    # embed.js fetches this read-only UI configuration at startup. Do not expose
+    # any other /api/agents management route through the public storefront.
+    @assistant_widget_config {
+        method GET
+        path_regexp agent_widget_config ^/api/agents/[A-Za-z0-9][A-Za-z0-9_-]{0,127}/widget-config$
+    }
+    handle @assistant_widget_config {
+        reverse_proxy {$HELPERIUM_API_UPSTREAM:api:8081}
+    }
+
+    @assistant_private path /api/*
+    handle @assistant_private {
+        respond "not found" 404
     }
 
     handle {

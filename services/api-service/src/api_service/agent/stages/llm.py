@@ -53,7 +53,7 @@ class LLMStage:
         if ctx.should_stop:
             return
 
-        # ✋ Проверка token budget ДО вызова LLM (MEDIUM-5 fix)
+        # Проверка token budget ДО вызова LLM (MEDIUM-5 fix)
         # Предотвращает бесполезные LLM-вызовы когда контекст уже превысил лимит.
         # Считаем только system + contributions ЭТОГО turn'а (turn_messages),
         # а не всю историю диалога — она уже в кеше провайдера и заплачена.
@@ -191,7 +191,8 @@ class LLMStage:
         # Still does NOT stream content_tokens — they contain raw JSON.
         # ════════════════════════════════════════════════════════════════════
         parser = ToolCallParser()
-        parsed = parser.extract_tool_calls({"content": response.content})
+        normalized_content = _normalize_provider_tool_markup(response.content)
+        parsed = parser.extract_tool_calls({"content": normalized_content})
         if parsed:
             logger.info(
                 "[LLM_STAGE][TOOL_PARSER] Extracted %d tool calls from JSON text "
@@ -219,7 +220,7 @@ class LLMStage:
         # pattern matching. If yes, emit error instead of final.
         # content_tokens are NEVER emitted in this path.
         # ════════════════════════════════════════════════════════════════════
-        if _looks_like_raw_json_tool_calls(response.content):
+        if _looks_like_raw_json_tool_calls(normalized_content):
             logger.warning(
                 "[LLM_STAGE][SAFETY_NET] BLOCKED final: content looks like raw "
                 "JSON tool calls (LiteLLM+ToolParser both failed). "
@@ -367,6 +368,8 @@ def _looks_like_raw_json_tool_calls(content: str) -> bool:
 
     if "Tool Calls" in stripped or "tool_calls" in stripped:
         return True
+    if "<invoke" in stripped.lower() and "</invoke>" in stripped.lower():
+        return True
     if "name" in stripped and "arguments" in stripped:
         # ── Multi-line NDJSON: split by lines, check each separately ──
         # json.loads() raises JSONDecodeError('Extra data') on NDJSON.
@@ -465,3 +468,13 @@ def _format_tool_calls_for_message(tool_calls: list[dict]) -> list[dict]:
             }
         )
     return result
+
+
+
+def _normalize_provider_tool_markup(content: str) -> str:
+    """Strip MiniMax's Ollama stream delimiter before tool-call parsing.
+
+    MiniMax M3 may wrap every XML-like tool fragment in this literal marker when
+    routed through Ollama. The marker is transport framing, not user content.
+    """
+    return content.replace("]<]minimax[>[", "")

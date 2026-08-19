@@ -308,7 +308,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 	readonlyDSN := cfg.DataSource.ReadonlyDSN
 	if readonlyDSN == "" && cfg.DataSource.Driver == config.DriverSQLite && cfg.DataSource.ReadOnly != nil && *cfg.DataSource.ReadOnly {
 		readonlyDSN = sqliteReadOnlyDSN(dsn)
-		slog.Info("tenant: derived SQLite database-level read-only connection", "id", id, "readonly_dsn", readonlyDSN)
+		slog.Info("tenant: derived SQLite database-level read-only connection", "id", id)
 	}
 	if readonlyDSN != "" {
 		readonlyDSN = resolveDataSourceDSN(readonlyDSN, configPath)
@@ -318,8 +318,7 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 			return nil, fmt.Errorf("%w: connect to readonly database: %w", errTenantDatabaseUnavailable, err)
 		}
 		readonlyConn = roConn
-		slog.Info("tenant: read-only connection established",
-			"id", id, "readonly_dsn", readonlyDSN)
+		slog.Info("tenant: read-only connection established", "id", id)
 	}
 
 	// AdapterSub для хендлеров: если read-only коннект есть — используем его
@@ -342,18 +341,27 @@ func buildTenantInstance(ctx context.Context, ts *TenantStore, registry *datasou
 		return nil, fmt.Errorf("build router: %w", err)
 	}
 
+	// A successful rewrite persists the introspected schema alongside tenant
+	// config. Restore it on startup/reload so /mcp/schema remains available
+	// without requiring a second live database introspection.
+	cachedSchema, cacheErr := ts.LoadTenantSchema(id)
+	if cacheErr != nil {
+		slog.Warn("tenant: failed to load cached schema", "id", id, "error", cacheErr)
+	}
+
 	return &TenantInstance{
-		ID:           id,
-		Config:       cfg,
-		Conn:         conn,
-		ReadonlyConn: readonlyConn,
-		Adapter:      adapter,
-		AdapterSub:   adapterSub,
-		Router:       router,
-		ConfigPath:   configPath,
-		CreatedAt:    time.Now(),
-		Healthy:      true,
-		healthMu:     &sync.Mutex{},
-		schemaMu:     &sync.RWMutex{},
+		ID:                 id,
+		Config:             cfg,
+		Conn:               conn,
+		ReadonlyConn:       readonlyConn,
+		Adapter:            adapter,
+		AdapterSub:         adapterSub,
+		Router:             router,
+		ConfigPath:         configPath,
+		IntrospectedSchema: cachedSchema,
+		CreatedAt:          time.Now(),
+		Healthy:            true,
+		healthMu:           &sync.Mutex{},
+		schemaMu:           &sync.RWMutex{},
 	}, nil
 }

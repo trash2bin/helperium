@@ -36,12 +36,30 @@ type Context struct {
 	QueryTimeout time.Duration
 }
 
-// queryCtx возвращает контекст с таймаутом, если QueryTimeout > 0.
+// queryResponseTimeoutMargin reserves enough time for a query handler to map
+// a dependency timeout to a deterministic JSON response before the outer HTTP
+// timeout middleware writes its fallback response.
+const queryResponseTimeoutMargin = time.Second
+
+// queryCtx returns a context with a per-query timeout when QueryTimeout > 0.
+// If the request already has a nearer deadline, it reserves a small response
+// window to avoid racing the outer HTTP timeout handler.
 func (c *Context) queryCtx(r *http.Request) (context.Context, context.CancelFunc) {
-	if c.QueryTimeout > 0 {
-		return context.WithTimeout(r.Context(), c.QueryTimeout)
+	if c.QueryTimeout <= 0 {
+		return r.Context(), nil
 	}
-	return r.Context(), nil
+
+	timeout := c.QueryTimeout
+	if deadline, ok := r.Context().Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining > queryResponseTimeoutMargin {
+			maxQueryTimeout := remaining - queryResponseTimeoutMargin
+			if timeout > maxQueryTimeout {
+				timeout = maxQueryTimeout
+			}
+		}
+	}
+	return context.WithTimeout(r.Context(), timeout)
 }
 
 // tenantID извлекает tenant_id из request с помощью TenantIDFunc.

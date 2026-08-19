@@ -118,9 +118,9 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
     try:
         body = await request.json()
         chat_req = ChatRequest(**body)
-    except Exception as exc:
+    except Exception:
         return StreamingResponse(
-            _single_error(f"Invalid request body: {exc}", correlation_id),
+            _single_error("Invalid request body.", correlation_id),
             media_type="text/event-stream",
         )
 
@@ -314,9 +314,9 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     try:
         body = await request.json()
         chat_req = ChatRequest(**body)
-    except Exception as exc:
+    except Exception:
         return StreamingResponse(
-            _single_error(f"Invalid request body: {exc}", correlation_id),
+            _single_error("Invalid request body.", correlation_id),
             media_type="text/event-stream",
         )
 

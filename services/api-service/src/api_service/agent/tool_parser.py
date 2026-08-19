@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -35,6 +36,10 @@ class ToolCallParser:
         if not text_content:
             return []
 
+        invoke_calls = self._extract_invoke_tool_calls(text_content)
+        if invoke_calls:
+            logger.info("[TOOL_PARSER] Extracted %d XML-like invoke tool calls", len(invoke_calls))
+            return invoke_calls
         return self._extract_json_tool_calls(text_content)
 
     @staticmethod
@@ -59,6 +64,32 @@ class ToolCallParser:
                     id=item.get("id") or f"call_{name}_{uuid.uuid4().hex[:8]}",
                     name=name,
                     arguments=parsed_args,
+                )
+            )
+        return calls
+
+    @staticmethod
+    def _extract_invoke_tool_calls(text_content: str) -> list[ParsedToolCall]:
+        """Parse MiniMax/Ollama XML-like ``<invoke name=...>`` tool calls."""
+        calls: list[ParsedToolCall] = []
+        for match in re.finditer(
+            r'<invoke\s+name=["\'](?P<name>[A-Za-z0-9_.-]+)["\']\s*>(?P<body>.*?)</invoke>',
+            text_content,
+            flags=re.DOTALL,
+        ):
+            arguments = {
+                field.group("key"): field.group("value").strip()
+                for field in re.finditer(
+                    r"<(?P<key>[A-Za-z_][A-Za-z0-9_]*)>(?P<value>.*?)</(?P=key)>",
+                    match.group("body"),
+                    flags=re.DOTALL,
+                )
+            }
+            calls.append(
+                ParsedToolCall(
+                    id=f"call_{match.group('name')}_{uuid.uuid4().hex[:8]}",
+                    name=match.group("name"),
+                    arguments=arguments,
                 )
             )
         return calls

@@ -270,6 +270,23 @@ class TestToolParser:
         assert result[0]["name"] == "get_x"
 
 
+    def test_minimax_xml_invoke(self):
+        """MiniMax via Ollama XML-like invoke block is parsed as a tool call."""
+        content = (
+            '<tool_call>\n'
+            '<invoke name="db_search"><entity>catalog_product</entity>'
+            '<pattern>колодк</pattern></invoke>\n'
+            '</tool_call>'
+        )
+        result = self.parser.extract_tool_calls({"content": content})
+        assert len(result) == 1
+        assert result[0]["name"] == "db_search"
+        assert result[0]["arguments"] == {
+            "entity": "catalog_product",
+            "pattern": "колодк",
+        }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # _looks_like_raw_json_tool_calls — safety net
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -322,6 +339,12 @@ class TestSafetyNet:
         """{"tool_calls": [...]}"""
         assert self.check(
             '{"tool_calls": [{"name": "get_product", "arguments": {"id": 1}}]}'
+        )
+
+    def test_catches_xml_like_invoke_tool_call(self):
+        """Unparsed MiniMax invoke markup must never become a final answer."""
+        assert self.check(
+            '<invoke name="db_search"><entity>catalog_product</entity></invoke>'
         )
 
     # ── НЕ должен ловить ───────────────────────────────────────────

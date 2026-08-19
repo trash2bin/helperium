@@ -31,7 +31,7 @@ func boolPtrTrue() *bool { b := true; return &b }
 // fail-closed защиту (Validate внутри хелпера).
 func validTestConfig() *config.Config {
 	return &config.Config{
-		Version: 1,
+		Version:    1,
 		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "x.db", ReadOnly: boolPtrTrue()},
 		Entities: []config.Entity{{
 			Name: "products", Table: "products", IDColumn: "id",
@@ -212,9 +212,9 @@ func TestRegenerateAndPersistTenantConfig_RejectsInvalidConfig(t *testing.T) {
 
 	// Невалидный конфиг: entity без полей (Validate требует fields).
 	invalid := &config.Config{
-		Version: 1,
+		Version:    1,
 		DataSource: config.DataSourceConfig{Driver: config.DriverSQLite, DSN: "x.db"},
-		Entities: []config.Entity{{Name: "products"}}, // нет Fields
+		Entities:   []config.Entity{{Name: "products"}}, // нет Fields
 	}
 	path := ts.RegenerateAndPersistTenantConfig("t-invalid", invalid)
 	if path != "" {
@@ -228,5 +228,42 @@ func TestRegenerateAndPersistTenantConfig_RejectsInvalidConfig(t *testing.T) {
 	okPath := ts.RegenerateAndPersistTenantConfig("t-ok", validTestConfig())
 	if okPath == "" {
 		t.Fatal("valid config should be persisted")
+	}
+}
+
+func TestBuildTenantInstance_RestoresPersistedSchemaCache(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "restored-schema.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT)"); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ts := NewTenantStore(datasource.NewDefaultRegistry(), t.TempDir())
+	cached := &datasource.Schema{Tables: []datasource.Table{{
+		Name:       "products",
+		PrimaryKey: []string{"id"},
+		Columns: []datasource.Column{
+			{Name: "id", Type: "INTEGER"},
+			{Name: "name", Type: "TEXT"},
+		},
+	}}}
+	ts.SaveTenantSchema("restored", cached)
+
+	cfg := validTestConfig()
+	cfg.DataSource.DSN = dbPath
+	inst, err := buildTenantInstance(context.Background(), ts, ts.registry, "restored", cfg, ts.TenantConfigPath("restored"))
+	if err != nil {
+		t.Fatalf("buildTenantInstance: %v", err)
+	}
+	t.Cleanup(func() { closeTenantConns(inst) })
+	if inst.IntrospectedSchema == nil || len(inst.IntrospectedSchema.Tables) != 1 || inst.IntrospectedSchema.Tables[0].Name != "products" {
+		t.Fatalf("persisted schema cache was not restored: %+v", inst.IntrospectedSchema)
 	}
 }

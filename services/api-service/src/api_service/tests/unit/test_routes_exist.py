@@ -86,6 +86,23 @@ class TestChatRouteOrdering:
                 f"Status: {status}, body: {body[:200]}"
             )
 
+    def test_chat_validation_sse_is_sanitized(self):
+        """Public SSE errors must not expose Pydantic validation internals."""
+        app = _get_app()
+        with TestClient(app) as client:
+            for path in ("/api/chat", "/api/chat/default"):
+                status, body = _request(
+                    client,
+                    "POST",
+                    path,
+                    json={"message": "", "session_id": "sanitization-probe"},
+                )
+                body_str = body.decode("utf-8", errors="replace")
+                assert status == 200, f"{path} returned {status}: {body_str}"
+                assert "Invalid request body." in body_str
+                assert "pydantic.dev" not in body_str
+                assert "String should have at least" not in body_str
+
     def test_voice_not_captured_by_name_param(self):
         """/api/chat/voice не должен резолвиться как name='voice'.
 
