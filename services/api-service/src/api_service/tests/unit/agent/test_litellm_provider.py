@@ -64,6 +64,50 @@ async def test_litellm_adapter_passes_raw_model_and_explicit_provider() -> None:
 
 
 @pytest.mark.asyncio
+async def test_litellm_adapter_omits_continuation_schemas_when_unsupported() -> None:
+    """LiteLLM capability metadata controls only the provider wire request."""
+    completion = AsyncMock(return_value=_response(content="done"))
+    provider = LiteLLMProvider("model-without-continuation", provider="test")
+    request = CompletionRequest(
+        messages=[{"role": "tool", "tool_call_id": "call-1", "content": "{}"}],
+        tools=[{"type": "function", "function": {"name": "search"}}],
+    )
+
+    with (
+        patch(
+            "api_service.agent.litellm_provider.litellm.supports_function_calling",
+            return_value=False,
+        ),
+        patch("api_service.agent.litellm_provider.litellm.acompletion", completion),
+    ):
+        await provider.complete(request)
+
+    assert "tools" not in completion.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_litellm_adapter_keeps_continuation_schemas_when_supported() -> None:
+    completion = AsyncMock(return_value=_response(content="done"))
+    provider = LiteLLMProvider("model-with-continuation", provider="test")
+    tools = [{"type": "function", "function": {"name": "search"}}]
+    request = CompletionRequest(
+        messages=[{"role": "tool", "tool_call_id": "call-1", "content": "{}"}],
+        tools=tools,
+    )
+
+    with (
+        patch(
+            "api_service.agent.litellm_provider.litellm.supports_function_calling",
+            return_value=True,
+        ),
+        patch("api_service.agent.litellm_provider.litellm.acompletion", completion),
+    ):
+        await provider.complete(request)
+
+    assert completion.await_args.kwargs["tools"] == tools
+
+
+@pytest.mark.asyncio
 async def test_litellm_adapter_serializes_transcript_tool_arguments() -> None:
     """LiteLLM receives wire-format arguments while the canonical transcript stays typed."""
     messages = [

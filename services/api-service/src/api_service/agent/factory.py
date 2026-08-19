@@ -104,7 +104,6 @@ async def resolve_llm(
             max_tokens_thinking=llm_config.get("max_tokens")
             or settings.agent_max_tokens_thinking,
             enable_thinking=settings.think_mode,
-            tools_after_tool_result=llm_config.get("tools_after_tool_result", True),
         )
 
     if provider_priority:

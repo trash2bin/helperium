@@ -150,7 +150,7 @@ class AppendOnlyLoop:
                 response = await self._provider.complete(
                     CompletionRequest(
                         messages=run.transcript.messages,
-                        tools=self._tools_for_completion(run, tools),
+                        tools=tools,
                         tenant_ids=list(self._tenant_ids),
                     )
                 )
@@ -292,22 +292,6 @@ class AppendOnlyLoop:
                     ),
                 )
                 return
-
-    def _tools_for_completion(
-        self, run: LoopRun, tools: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Return schemas allowed for this provider at the current turn.
-
-        Some providers accept native calls for the initial request but emit
-        pseudo-tool text or fail when the full schema is resent after a tool
-        result. This is an explicit provider capability, never a text parser.
-        Existing providers default to the complete schema on every iteration.
-        """
-        if getattr(self._provider, "tools_after_tool_result", True):
-            return tools
-        if any(message.get("role") == "tool" for message in run.transcript.messages):
-            return []
-        return tools
 
     def _run_limit(self, run: LoopRun) -> LoopOutcome | None:
         if (

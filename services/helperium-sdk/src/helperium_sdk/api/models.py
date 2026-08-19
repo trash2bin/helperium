@@ -208,13 +208,6 @@ class LLMConfig(BaseModel):
     max_tokens: int | None = Field(
         default=None, ge=1, description="Maximum tokens in response"
     )
-    tools_after_tool_result: bool = Field(
-        default=True,
-        description=(
-            "Whether to include tool schemas in provider requests after a tool result. "
-            "Disable only for providers that cannot continue native tool calling with them."
-        ),
-    )
 
 
 # === Agent Management ===

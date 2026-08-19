@@ -185,30 +185,6 @@ async def test_tool_result_is_appended_before_the_next_provider_request() -> Non
 
 
 @pytest.mark.asyncio
-async def test_provider_can_omit_tools_after_a_tool_result() -> None:
-    """A declared provider capability suppresses only continuation schemas."""
-    provider = _Provider(
-        [
-            CompletionResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="call-search", name="search", arguments={"query": "Bosch"}
-                    )
-                ]
-            ),
-            CompletionResponse(content="Found Bosch"),
-        ]
-    )
-    provider.tools_after_tool_result = False
-    mcp = _MCP({"search": _Result('{"items":["Bosch"]}')})
-
-    await _events(_loop(provider, mcp), _run(provider, mcp))
-
-    assert provider.requests[0].tools
-    assert provider.requests[1].tools == []
-
-
-@pytest.mark.asyncio
 async def test_all_results_keep_their_ids_in_one_append_only_transcript() -> None:
     provider = _Provider(
         [

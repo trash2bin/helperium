@@ -32,7 +32,6 @@ class LiteLLMProvider:
         temperature: float = 0.2,
         max_tokens_thinking: int = 0,
         enable_thinking: bool = False,
-        tools_after_tool_result: bool = True,
     ) -> None:
         self.model = model
         self.provider = provider or None
@@ -42,7 +41,6 @@ class LiteLLMProvider:
         self.temperature = temperature
         self.max_tokens_thinking = max_tokens_thinking
         self.enable_thinking = enable_thinking
-        self.tools_after_tool_result = tools_after_tool_result
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         kwargs: dict[str, Any] = {
@@ -59,8 +57,8 @@ class LiteLLMProvider:
             kwargs["api_key"] = self.api_key
         if self.enable_thinking:
             kwargs["extra_body"] = {"think": True}
-        if request.tools:
-            kwargs["tools"] = request.tools
+        if tools := self._completion_tools(request):
+            kwargs["tools"] = tools
 
         response = await litellm.acompletion(**kwargs)
         if not isinstance(response, ModelResponse):
@@ -79,6 +77,27 @@ class LiteLLMProvider:
             usage=usage,
             cost=self._cost(response, getattr(response, "usage", None)),
         )
+
+    def _completion_tools(self, request: CompletionRequest) -> list[dict[str, Any]]:
+        """Return schemas LiteLLM advertises as valid for this completion.
+
+        LiteLLM owns provider/model capability metadata.  After tool results,
+        schemas are sent only when its native function-calling capability says
+        that the configured model supports them; the adapter otherwise asks for
+        a final response from the canonical transcript alone.  An unavailable
+        metadata lookup preserves the existing full-schema behavior.
+        """
+        if not request.tools or not any(
+            message.get("role") == "tool" for message in request.messages
+        ):
+            return request.tools
+        try:
+            supports_function_calling = litellm.supports_function_calling(
+                self.model, custom_llm_provider=self.provider
+            )
+        except Exception:
+            return request.tools
+        return request.tools if supports_function_calling else []
 
     @staticmethod
     def _serialize_transcript(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
