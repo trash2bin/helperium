@@ -367,6 +367,8 @@ class ProviderStore:
             }
             if cfg.api_base:
                 entry["litellm_params"]["api_base"] = cfg.api_base
+            if cfg.provider:
+                entry["litellm_params"]["custom_llm_provider"] = cfg.provider
             model_list.append(entry)
         return model_list
 

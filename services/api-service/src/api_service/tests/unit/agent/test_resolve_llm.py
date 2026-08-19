@@ -403,8 +403,8 @@ class TestLlmConfigDetails:
     """Test that llm_config parameters are correctly applied."""
 
     @pytest.mark.asyncio
-    async def test_mistral_clears_api_base(self):
-        """Mistral uses its own endpoint — api_base must be None."""
+    async def test_provider_config_preserves_api_base(self):
+        """Factory selects config without embedding provider transport policy."""
         with _patch_scripted(return_value=None):
             from api_service.agent.factory import resolve_llm
 
@@ -418,41 +418,27 @@ class TestLlmConfigDetails:
             )
 
         assert isinstance(result, LiteLLMProvider)
-        assert result.api_base is None
+        assert result.api_base == "https://custom.example.com"
+        assert result.provider == "mistral"
 
     @pytest.mark.asyncio
-    async def test_ollama_model_prefixing(self):
-        """Ollama with custom api_base gets ollama_chat/ prefix."""
+    async def test_factory_preserves_raw_model_and_provider(self):
+        """LiteLLM adapter, not factory, owns model/provider transport routing."""
         with _patch_scripted(return_value=None):
             from api_service.agent.factory import resolve_llm
 
             result = await resolve_llm(
                 llm_config={
-                    "model": "llama3",
+                    "model": "minimax-m3:cloud",
                     "provider": "ollama",
                     "api_base": "http://localhost:11434",
                 },
             )
 
         assert isinstance(result, LiteLLMProvider)
-        assert result.model == "ollama_chat/llama3"
-
-    @pytest.mark.asyncio
-    async def test_ollama_no_prefix_without_explicit_base(self):
-        """Ollama without explicit api_base: _prefix_model returns raw name,
-        but resolve_llm falls back to settings.ollama_url which adds prefix.
-
-        This tests _prefix_model behavior directly, not resolve_llm end-to-end.
-        """
-        from api_service.agent.factory import _prefix_model
-
-        # Without api_base → no prefix
-        assert _prefix_model("ollama", "llama3", None) == "llama3"
-        # With api_base → prefix added
-        assert (
-            _prefix_model("ollama", "llama3", "http://localhost:11434")
-            == "ollama_chat/llama3"
-        )
+        assert result.model == "minimax-m3:cloud"
+        assert result.provider == "ollama"
+        assert result.api_base == "http://localhost:11434"
 
     @pytest.mark.asyncio
     async def test_custom_temperature_and_max_tokens(self):

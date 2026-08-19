@@ -267,6 +267,23 @@ class TestProviderStoreCRUD:
         ollama = next(p for p in result if p["name"] == "ollama")
         assert ollama["has_api_key"] is False
 
+    async def test_router_config_keeps_model_and_provider_separate(
+        self, provider_store
+    ):
+        """Provider routing belongs to LiteLLM, not handwritten model rewriting."""
+        await provider_store.add_provider(
+            name="ollama",
+            model="minimax-m3:cloud",
+            provider="ollama",
+            api_base="http://localhost:11434",
+        )
+
+        params = provider_store.get_active_router_config()[0]["litellm_params"]
+
+        assert params["model"] == "minimax-m3:cloud"
+        assert params["custom_llm_provider"] == "ollama"
+        assert params["api_base"] == "http://localhost:11434"
+
 
 # ── HTTP endpoints: /admin/llm-providers ─────────────────────────────────
 

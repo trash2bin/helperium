@@ -132,6 +132,7 @@ class ProviderPool:
         self,
         name: str,
         model: str,
+        provider: str | None = None,
         api_base: str = "",
         api_key: str = "",
         timeout: float = 120.0,
@@ -143,8 +144,9 @@ class ProviderPool:
 
         Returns the created ``ProviderWorker``.
         """
-        provider = LiteLLMProvider(
+        provider_impl = LiteLLMProvider(
             model=model,
+            provider=provider,
             api_base=api_base or None,
             api_key=api_key or None,
             timeout=timeout,
@@ -156,7 +158,7 @@ class ProviderPool:
             name=name,
             model=model,
             api_base=api_base,
-            provider_impl=provider,
+            provider_impl=provider_impl,
         )
         self._workers[name] = worker
         logger.info("[POOL] Added worker: %s (%s)", name, model)

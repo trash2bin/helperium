@@ -25,6 +25,7 @@ class LiteLLMProvider:
     def __init__(
         self,
         model: str,
+        provider: str | None = None,
         api_base: str | None = None,
         api_key: str | None = None,
         timeout: float = 120.0,
@@ -34,6 +35,7 @@ class LiteLLMProvider:
         tools_after_tool_result: bool = True,
     ) -> None:
         self.model = model
+        self.provider = provider or None
         self.api_base = api_base
         self.api_key = api_key
         self.timeout = timeout
@@ -45,10 +47,12 @@ class LiteLLMProvider:
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": self._litellm_messages(request.messages),
+            "messages": self._serialize_transcript(request.messages),
             "temperature": self.temperature,
             "timeout": self.timeout,
         }
+        if self.provider:
+            kwargs["custom_llm_provider"] = self.provider
         if self.api_base:
             kwargs["api_base"] = self.api_base
         if self.api_key:
@@ -77,8 +81,8 @@ class LiteLLMProvider:
         )
 
     @staticmethod
-    def _litellm_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Adapt canonical transcript messages for LiteLLM's wire contract.
+    def _serialize_transcript(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Serialize the canonical transcript for LiteLLM's wire contract.
 
         The append-only loop intentionally keeps parsed tool arguments as dicts
         for validation and context accounting. LiteLLM expects the historical

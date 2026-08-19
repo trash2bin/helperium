@@ -80,6 +80,7 @@ async def _sync_pool_from_store() -> int:
             continue
         api_key = params.get("api_key", "") or ""
         api_base = params.get("api_base", "") or ""
+        provider = params.get("custom_llm_provider") or None
         temperature = float(params.get("temperature", 0.5))
         timeout = float(params.get("timeout", 120.0))
 
@@ -87,6 +88,7 @@ async def _sync_pool_from_store() -> int:
         _provider_pool.add_worker(
             name=name,
             model=model,
+            provider=provider,
             api_base=api_base,
             api_key=api_key,
             timeout=timeout,
