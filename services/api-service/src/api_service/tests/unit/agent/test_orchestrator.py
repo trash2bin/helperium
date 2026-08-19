@@ -83,10 +83,14 @@ class _Guard:
 
 
 class _Backlog:
+    def __init__(self) -> None:
+        self.errors = []
+
     def turn_start(self, *_args):
         return "turn"
 
-    def error(self, *_args, **_kwargs):
+    def error(self, *args, **kwargs):
+        self.errors.append((args, kwargs))
         return None
 
     def turn_end(self, *_args, **_kwargs):
@@ -153,4 +157,39 @@ async def test_orchestrator_uses_one_scoped_append_only_loop(monkeypatch) -> Non
         "assistant",
         "tool",
         "assistant",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_records_terminal_loop_error_in_backlog(monkeypatch) -> None:
+    import api_service.agent.adapters as adapters
+    import api_service.agent.orchestrator as orchestrator
+
+    fake_backlog = _Backlog()
+    monkeypatch.setattr(orchestrator, "backlog", fake_backlog)
+    monkeypatch.setattr(adapters, "backlog", fake_backlog)
+    monkeypatch.setattr(orchestrator, "get_guard_checker", lambda: _Guard())
+
+    provider = ScriptedLLMProvider(
+        [{"tool_calls": [{"id": "call-unknown", "name": "unknown", "arguments": {}}]}]
+    )
+    mcp = _MCP()
+    conversation = _Conversation()
+    agent = LLMAgent(
+        llm_client=provider, mcp_client=mcp, conversation_manager=conversation
+    )
+
+    events = [
+        event
+        async for event in agent.stream_events(
+            "find Bosch", session_id="s", tenant_ids=["tenant-a"]
+        )
+    ]
+
+    assert [event.type for event in events] == ["error"]
+    assert fake_backlog.errors == [
+        (
+            ("s", "turn", 1, "Запрошенный инструмент недоступен для этого агента."),
+            {"context": {"outcome": "tool_error", "retryable": False}},
+        )
     ]

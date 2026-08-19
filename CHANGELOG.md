@@ -1,5 +1,9 @@
 # CHANGELOG.md
 
+## 2026-08-20
+
+- **fix(runtime):** append-only agent loop корректно обрабатывает нулевой empty-response limit, считает полный native tool transcript и сохраняет assistant text; backlog надёжно показывает terminal errors и пустые session files; MCP v2 принудительно использует совместимый legacy initialize handshake с mcp-go. Dev launcher получил opt-in `--with-autoparts` и безопасные local fallbacks. **Проверка:** полный `make ci` прошёл; native runtime healthy, tenant-scoped MCP session/schema discovery подтверждены.
+
 ## 2026-08-19
 
 - **refactor(agent):** replaced the legacy stage pipeline, middleware chain, `TurnContext`, fallback prompt path, text tool parser, token-estimator helper, runtime-event adapter, and their implementation-oriented tests with one typed append-only execution loop. `AppendOnlyLoop` owns the only provider context: one linear `Transcript.messages` list. On every iteration it sends the full transcript and the complete tenant-scoped MCP tool schema; it appends the assistant tool-call message and every matching `role: tool` result before the next provider completion. This removes the class of failures where context, event flow, history, and the next LLM request diverge.

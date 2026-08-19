@@ -26,10 +26,22 @@ async def get_backlog_list():
     return BacklogListResponse(sessions=[BacklogSessionMetadata(**s) for s in sessions])
 
 
+def _backlog_event_record(session_id: str, record: dict) -> dict:
+    """Supply the common HTTP event envelope for mixed internal backlog records."""
+    normalized = dict(record)
+    normalized.setdefault("session_id", session_id)
+    normalized.setdefault("turn_id", "")
+    normalized.setdefault("iteration", 0)
+    normalized.setdefault("event", record.get("type", "record"))
+    normalized.setdefault("ts", record.get("timestamp", ""))
+    normalized.setdefault("data", {})
+    return normalized
+
+
 async def get_backlog_detail(session_id, limit=500, offset=0):
     records = backlog.read_session(session_id, limit=limit, offset=offset)
     return BacklogDetailResponse(
-        records=[BacklogEvent(**r) for r in records],
+        records=[BacklogEvent(**_backlog_event_record(session_id, r)) for r in records],
         session_id=session_id,
         count=len(records),
     )
@@ -48,6 +60,12 @@ async def backlog_list_endpoint():
     return await get_backlog_list()
 
 
+@router.get("/api/backlog/errors")
+async def backlog_errors_endpoint(limit: int = Query(50, ge=1, le=200)):
+    errors = backlog.get_recent_errors(limit=limit)
+    return {"errors": errors, "total": len(errors)}
+
+
 @router.get(
     "/api/backlog/{session_id}",
     response_model=BacklogDetailResponse,
@@ -62,12 +80,6 @@ async def backlog_detail_endpoint(
 async def backlog_stats_endpoint(session_id: str):
     stats = backlog.get_session_stats(session_id)
     return stats
-
-
-@router.get("/api/backlog/errors")
-async def backlog_errors_endpoint(limit: int = Query(50, ge=1, le=200)):
-    errors = backlog.get_recent_errors(limit=limit)
-    return {"errors": errors, "total": len(errors)}
 
 
 @router.get(

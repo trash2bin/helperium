@@ -143,7 +143,11 @@ class MCPClient:
             http_client=transport_http_client,
         )
 
-        session_ctx = Client(transport)
+        # mcp-go gateway implements the Streamable HTTP initialize handshake,
+        # but not the post-handshake `server/discover` negotiation introduced by
+        # the v2 Python SDK. Force the standards-compatible legacy handshake
+        # until both ends support a common modern discovery protocol.
+        session_ctx = Client(transport, mode="legacy")
         try:
             async with asyncio.timeout(settings.mcp_session_init_timeout):
                 session = await session_ctx.__aenter__()

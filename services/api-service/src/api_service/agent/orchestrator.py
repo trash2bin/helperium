@@ -103,6 +103,18 @@ class LLMAgent:
                     )
                     async for event in loop.run(run):
                         yield event
+                if run.outcome is not None and run.outcome.kind != "answer":
+                    error_message = run.outcome.message
+                    backlog.error(
+                        session_id,
+                        turn_id,
+                        run.metrics.model_calls,
+                        error_message,
+                        context={
+                            "outcome": run.outcome.kind,
+                            "retryable": run.outcome.retryable,
+                        },
+                    )
             except Exception as exc:
                 error_message = str(exc)
                 logger.exception("[AGENT] turn failed for session %s", session_id)

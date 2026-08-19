@@ -306,3 +306,106 @@ async def test_cancellation_has_one_terminal_error_and_no_recovery_call() -> Non
     assert [event.type for event in events] == ["error"]
     assert len(provider.requests) == 1
     assert run.outcome is not None and run.outcome.kind == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_zero_empty_response_limit_is_unlimited() -> None:
+    provider = _Provider([CompletionResponse(), CompletionResponse(content="ok")])
+    mcp = _MCP()
+    run = _run(provider, mcp)
+    limits = LoopLimits(
+        max_model_calls=4,
+        max_tool_calls=4,
+        max_context_tokens=10_000,
+        max_empty_responses=0,
+    )
+
+    events = await _events(_loop(provider, mcp, limits=limits), run)
+
+    assert [event.type for event in events] == ["token", "final"]
+    assert len(provider.requests) == 2
+    assert run.outcome is not None and run.outcome.kind == "answer"
+
+
+@pytest.mark.asyncio
+async def test_positive_empty_response_limit_stops_on_the_boundary() -> None:
+    provider = _Provider(
+        [CompletionResponse(), CompletionResponse(content="must not run")]
+    )
+    mcp = _MCP()
+    run = _run(provider, mcp)
+    limits = LoopLimits(
+        max_model_calls=4,
+        max_tool_calls=4,
+        max_context_tokens=10_000,
+        max_empty_responses=1,
+    )
+
+    events = await _events(_loop(provider, mcp, limits=limits), run)
+
+    assert [event.type for event in events] == ["error"]
+    assert len(provider.requests) == 1
+    assert run.outcome is not None and run.outcome.kind == "needs_clarification"
+
+
+@pytest.mark.asyncio
+async def test_context_limit_counts_native_tool_call_arguments() -> None:
+    provider = _Provider(
+        [
+            CompletionResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="call-search",
+                        name="search",
+                        arguments={"query": "x" * 400},
+                    )
+                ]
+            ),
+            CompletionResponse(content="must not run"),
+        ]
+    )
+    mcp = _MCP({"search": _Result('{"items":[]}')})
+    run = _run(provider, mcp)
+    limits = LoopLimits(
+        max_model_calls=4,
+        max_tool_calls=4,
+        max_context_tokens=60,
+        max_empty_responses=1,
+    )
+
+    events = await _events(_loop(provider, mcp, limits=limits), run)
+
+    assert [event.type for event in events] == ["tool_call", "tool_result", "error"]
+    assert len(provider.requests) == 1
+    assert run.outcome is not None and run.outcome.kind == "limit_reached"
+
+
+@pytest.mark.asyncio
+async def test_assistant_text_is_preserved_with_native_tool_calls() -> None:
+    provider = _Provider(
+        [
+            CompletionResponse(
+                content="Сначала выполню поиск.",
+                tool_calls=[
+                    ToolCall(
+                        id="call-search",
+                        name="search",
+                        arguments={"query": "Bosch"},
+                    )
+                ],
+            ),
+            CompletionResponse(content="Готово."),
+        ]
+    )
+    mcp = _MCP({"search": _Result('{"items":["Bosch"]}')})
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp), run)
+
+    assert [event.type for event in events] == [
+        "tool_call",
+        "tool_result",
+        "token",
+        "final",
+    ]
+    assert provider.requests[1].messages[-2]["content"] == "Сначала выполню поиск."

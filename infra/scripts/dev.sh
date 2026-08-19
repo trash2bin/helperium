@@ -3,8 +3,8 @@
 # dev.sh — нативный запуск всех сервисов (Mac / без Docker)
 # =============================================================================
 # Usage:
-#   ./scripts/dev.sh start         — поднять все сервисы (data + rag + mcp + admin + api + web)
-#   ./scripts/dev.sh stop          — погасить все
+#   ./scripts/dev.sh start [--with-autoparts] — поднять Helperium; флаг явно запускает внешний storefront
+#   ./scripts/dev.sh stop          — погасить только Helperium-сервисы
 #   ./scripts/dev.sh status        — healthcheck каждого
 #   ./scripts/dev.sh logs [svc]    — tail -f лога (svc: rag|mcp|api|web|data|all)
 #   ./scripts/dev.sh restart       — stop + start
@@ -36,6 +36,7 @@ MCP_E2E_API_KEY="helperium-e2e-mcp-token"
 MCP_E2E_ALLOWED_ORIGINS="http://127.0.0.1:8080,http://localhost:8080"
 
 SERVICES=("data" "rag" "mcp" "admin" "api" "web")
+AUTOPARTS_DIR="$PROJECT_ROOT/demo/autoparts-store"
 declare -A SERVICE_CMD=(
   [data]="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
   [rag]="uv run --package rag python -m rag.service"
@@ -141,11 +142,66 @@ health_url() {
 # Commands
 # =============================================================================
 
+start_autoparts_store() {
+  if [ ! -f "$AUTOPARTS_DIR/docker-compose.yml" ]; then
+    echo "❌ Autoparts storefront compose file not found: $AUTOPARTS_DIR/docker-compose.yml"
+    return 1
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "❌ Docker is required to start the external autoparts storefront."
+    return 1
+  fi
+
+  echo "🚗 Starting external autoparts storefront (explicit opt-in)..."
+  echo "   This runs its own Compose stack at http://localhost:8000."
+  echo "   It is not managed by './scripts/dev.sh stop'."
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    (cd "$AUTOPARTS_DIR" && docker-compose up -d)
+  elif docker compose version >/dev/null 2>&1; then
+    (cd "$AUTOPARTS_DIR" && docker compose up -d)
+  else
+    echo "❌ Docker Compose is required to start the external autoparts storefront."
+    return 1
+  fi
+
+  echo "  ✅ Autoparts storefront requested at http://localhost:8000"
+}
+
 cmd_start() {
+  local with_autoparts=false
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --with-autoparts) with_autoparts=true ;;
+      *)
+        echo "❌ Unknown start option: $1"
+        echo "   Usage: $0 start [--with-autoparts]"
+        return 2
+        ;;
+    esac
+    shift
+  done
+
   MCP_DEV=true
   echo "🧪 Dev mode enabled — gateway debug logging is active"
 
   load_env
+  # The native launcher is a local-development convenience. If a developer has
+  # enabled gateway bearer auth but omitted the internal client credential, use
+  # the supplied gateway key only for this local process tree. Deployment
+  # configuration must set MCP_CLIENT_API_KEY explicitly with a distinct secret.
+  if [ -n "${MCP_API_KEY:-}" ] && [ -z "${MCP_CLIENT_API_KEY:-}" ]; then
+    export MCP_CLIENT_API_KEY="$MCP_API_KEY"
+    echo "ℹ️  Native dev: MCP_CLIENT_API_KEY defaults to MCP_API_KEY for local service auth."
+  fi
+  # The dashboard rejects equal admin and viewer tokens. Keep the source .env
+  # untouched, but make the local process tree operable with a distinct viewer
+  # token. Deployment configuration must define distinct values explicitly.
+  if [ -n "${ADMIN_TOKEN:-}" ] && [ "${VIEWER_TOKEN:-}" = "$ADMIN_TOKEN" ]; then
+    export VIEWER_TOKEN="${ADMIN_TOKEN}-native-viewer"
+    echo "ℹ️  Native dev: generated a distinct ephemeral viewer token for admin-dashboard."
+  fi
   if [ "${MCP_E2E_PROFILE:-false}" = "true" ]; then
     set_e2e_ports
     echo "🧪 Isolated E2E ports — data=:$DATA_PORT, mcp=:$MCP_PORT, api=:$API_PORT"
@@ -308,6 +364,10 @@ cmd_start() {
     fi
   done
 
+  if [ "$with_autoparts" = "true" ]; then
+    start_autoparts_store
+  fi
+
   echo ""
   echo "🎉 All services launched!"
   echo ""
@@ -321,8 +381,8 @@ cmd_start() {
   echo "  Commands:"
   echo "    ./scripts/dev.sh status          — healthcheck"
   echo "    ./scripts/dev.sh logs api        — tail -f лога"
-  echo "    ./scripts/dev.sh stop            — остановить все"
-  echo "    ./scripts/dev.sh start          — dev-режим с gateway debug logging"
+  echo "    ./scripts/dev.sh stop            — остановить только Helperium-сервисы"
+  echo "    ./scripts/dev.sh start [--with-autoparts] — dev-режим; флаг запускает внешний storefront на :8000"
   if [ -n "${ADMIN_TOKEN:-}" ]; then
     echo ""
     echo "  🔐 ADMIN_TOKEN задан — open admin dashboard at http://127.0.0.1:$ADMIN_PORT"
@@ -872,8 +932,8 @@ case "${1:-help}" in
     echo "Usage: $0 <command> [args]"
     echo ""
     echo "Commands:"
-    echo "  start              — поднять все сервисы (data + rag + mcp + admin + api + web)"
-    echo "  stop               — погасить все"
+    echo "  start [--with-autoparts] — поднять Helperium; флаг отдельно запускает storefront на :8000"
+    echo "  stop               — погасить только Helperium-сервисы (не storefront)"
     echo "  restart            — перезапустить"
     echo "  status             — healthcheck"
     echo "  logs [svc]         — tail -f логов (rag|mcp|api|web|data|all)"

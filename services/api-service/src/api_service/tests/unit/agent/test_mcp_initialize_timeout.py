@@ -71,7 +71,9 @@ class TestMCPInitializeTimeout:
         client_ctx.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch("api_service.agent.mcp_client.Client", return_value=client_ctx),
+            patch(
+                "api_service.agent.mcp_client.Client", return_value=client_ctx
+            ) as mock_client,
             patch(
                 "api_service.agent.mcp_client.settings.mcp_gateway_url",
                 "http://localhost:9999",
@@ -88,3 +90,4 @@ class TestMCPInitializeTimeout:
         assert conn is not None
         assert conn.session is mock_session
         client_ctx.__aenter__.assert_awaited_once()
+        assert mock_client.call_args.kwargs["mode"] == "legacy"

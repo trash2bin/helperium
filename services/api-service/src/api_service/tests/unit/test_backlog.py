@@ -117,6 +117,25 @@ def test_list_sessions_empty(backlog_tmpdir):
     assert backlog_tmpdir.list_sessions() == []
 
 
+def test_list_sessions_tolerates_empty_session_file(backlog_tmpdir):
+    """An empty JSONL file must not make the backlog list endpoint fail."""
+    backlog_tmpdir._path("empty-session").touch()
+    backlog_tmpdir.turn_start("nonempty-session", "Hello")
+
+    sessions = backlog_tmpdir.list_sessions()
+
+    assert {session["session_id"] for session in sessions} == {
+        "empty-session",
+        "nonempty-session",
+    }
+    assert (
+        next(
+            session for session in sessions if session["session_id"] == "empty-session"
+        )["first_event"]
+        is None
+    )
+
+
 # --- Serialization ---
 
 
@@ -223,3 +242,32 @@ def test_tool_result_stores_full_content_in_backlog():
                 # backlog stores full content; truncation is in tool_handler.py
                 assert len(stored) == 15_000
                 assert records[0]["data"]["result_chars"] == 15_000
+
+
+def test_recent_errors_extracts_message_from_error_event(backlog_tmpdir):
+    """Recent errors exposes the nested public error text written by error()."""
+    backlog_tmpdir.error("session-1", "turn-1", 1, "Tool is unavailable")
+
+    errors = backlog_tmpdir.get_recent_errors()
+
+    assert len(errors) == 1
+    assert errors[0]["session_id"] == "session-1"
+    assert errors[0]["timestamp"]
+    assert errors[0]["error"] == "Tool is unavailable"
+    assert errors[0]["model"] == ""
+
+
+def test_successful_llm_calls_are_not_counted_as_errors(backlog_tmpdir):
+    """Backlog error aggregation excludes normal successful LLM completions."""
+    backlog_tmpdir.record_llm_call(
+        "session-1", model="scripted/test", provider="scripted", status="success"
+    )
+    backlog_tmpdir.error("session-1", "turn-1", 1, "Tool is unavailable")
+
+    stats = backlog_tmpdir.get_session_stats("session-1")
+    errors = backlog_tmpdir.get_recent_errors()
+
+    assert stats["total_llm_calls"] == 1
+    assert stats["total_errors"] == 1
+    assert len(errors) == 1
+    assert errors[0]["error"] == "Tool is unavailable"

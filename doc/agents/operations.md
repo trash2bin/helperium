@@ -3,13 +3,19 @@
 ## Нативный запуск: `infra/scripts/dev.sh`
 
 ```bash
-./infra/scripts/dev.sh start              # поднять весь стек
-./infra/scripts/dev.sh stop / restart     # управление
+./infra/scripts/dev.sh start              # поднять только Helperium-стек
+./infra/scripts/dev.sh start --with-autoparts  # + внешний storefront на :8000 (явный opt-in)
+./infra/scripts/dev.sh stop / restart     # управляют только Helperium
 ./infra/scripts/dev.sh logs {service|all} # логи из .data/logs/
 ./infra/scripts/dev.sh status             # статус
 ```
 
 Порядок старта: data → rag → mcp → admin → api → web
+
+`--with-autoparts` отдельно вызывает Compose-стек `demo/autoparts-store`. Этот
+storefront не входит в обычный native runtime, не останавливается `dev.sh stop`
+и не становится tenant автоматически; для рабочей интеграции нужен отдельный
+read-only onboarding его PostgreSQL и агента.
 
 ## Docker-запуск
 

@@ -24,3 +24,19 @@ demo/
   Интеграция — только через PostgreSQL (data-service подключается к его БД как tenant).
 - **Обновление:** перекопировать из исходного репозитория клиента,
   см. `demo/autoparts-store/README.foreign.md`.
+
+### Локальный запуск полного demo-контура
+
+Стандартный `./infra/scripts/dev.sh start` поднимает только Helperium и
+встроенный `demo/web` на `:8080`. Чтобы в рамках ручной демки дополнительно
+запустить независимый storefront на `:8000`, передай явный opt-in флаг:
+
+```bash
+./infra/scripts/dev.sh start --with-autoparts
+```
+
+Флаг вызывает `docker-compose up -d` только в `demo/autoparts-store`. Он не
+запускается по умолчанию, не включается в `./infra/scripts/dev.sh stop` и не
+получает автоматически tenant-конфигурацию или виджет. Для живой интеграции
+сначала выполни onboarding storefront PostgreSQL как read-only tenant и создай
+соответствующего агента.

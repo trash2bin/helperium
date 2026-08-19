@@ -161,7 +161,9 @@ class AppendOnlyLoop:
                     return
 
                 if response.tool_calls:
-                    run.transcript.append(_assistant_tool_message(response.tool_calls))
+                    run.transcript.append(
+                        _assistant_tool_message(response.tool_calls, response.content)
+                    )
                     async for event in self._run_tool_calls(
                         run, response.tool_calls, allowed
                     ):
@@ -300,11 +302,13 @@ class AppendOnlyLoop:
                 kind="limit_reached", message="Достигнут лимит шагов обработки запроса."
             )
         if self._limits.max_context_tokens > 0:
-            characters = sum(
-                len(str(message.get("content", "")))
-                for message in run.transcript.messages
+            transcript = json.dumps(
+                run.transcript.messages,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
             )
-            if characters // 4 >= self._limits.max_context_tokens:
+            if len(transcript) // 4 >= self._limits.max_context_tokens:
                 return LoopOutcome(
                     kind="limit_reached",
                     message="Достигнут лимит контекста для этого запроса.",
@@ -365,8 +369,8 @@ class AppendOnlyLoop:
 
     def _empty_limit_reached(self, metrics: LoopMetrics) -> bool:
         return (
-            self._limits.max_empty_responses >= 0
-            and metrics.empty_responses > self._limits.max_empty_responses
+            self._limits.max_empty_responses > 0
+            and metrics.empty_responses >= self._limits.max_empty_responses
         )
 
     @staticmethod
@@ -378,10 +382,10 @@ class AppendOnlyLoop:
         return AgentEvent("error", {"message": run.outcome.message})
 
 
-def _assistant_tool_message(calls: list[ToolCall]) -> dict[str, Any]:
+def _assistant_tool_message(calls: list[ToolCall], content: str = "") -> dict[str, Any]:
     return {
         "role": "assistant",
-        "content": "",
+        "content": content,
         "tool_calls": [
             {
                 "id": call.id,

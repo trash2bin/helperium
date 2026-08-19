@@ -163,6 +163,24 @@ Default LLM is Ollama at `http://127.0.0.1:11434` with `qwen2.5:0.5b`. Switch pr
 MISTRAL_API_KEY=<token> MISTRAL_MODEL=mistral-medium ./infra/scripts/dev.sh restart
 ```
 
+### Local full demo with the external auto-parts storefront
+
+The built-in `demo/web` proxy (`:8080`) and the Django storefront
+`demo/autoparts-store` (`:8000`) are separate applications. To start both for a
+manual local demo, use the explicit opt-in flag:
+
+```bash
+./infra/scripts/dev.sh start --with-autoparts
+open http://127.0.0.1:8080  # Helperium dev web
+open http://127.0.0.1:8000  # external auto-parts storefront
+```
+
+The flag starts the storefront through its own Compose stack. A regular
+`./infra/scripts/dev.sh start` does **not** start it, and
+`./infra/scripts/dev.sh stop` intentionally does **not** stop it. Starting the
+storefront does not register it as a Helperium tenant or inject a widget; follow
+the tenant and agent onboarding flow before exercising a live integration.
+
 ### CLI for data management and testing
 
 ```bash

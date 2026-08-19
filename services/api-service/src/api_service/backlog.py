@@ -24,6 +24,13 @@ RECORD_LLM_CALL = "llm_call"
 RECORD_ERROR = "error"
 
 
+def _is_error_record(record: dict[str, Any]) -> bool:
+    """Return whether a backlog record represents an actual failed operation."""
+    if record.get("type") == RECORD_ERROR or record.get("event") == "error":
+        return True
+    return str(record.get("status", "")).lower() in {"error", "failed", "failure"}
+
+
 class ModelBacklog:
     """Append-only trace of every model interaction, stored as pretty-printed JSON per session."""
 
@@ -276,12 +283,7 @@ class ModelBacklog:
         """Get aggregated stats for a session: total tokens, cost, call count."""
         records = self._read_records(session_id)
         llm_calls = [r for r in records if r.get("type") == RECORD_LLM_CALL]
-        errors = [
-            r
-            for r in records
-            if r.get("type") == RECORD_ERROR
-            or (r.get("status") and r["status"] != "ok")
-        ]
+        errors = [r for r in records if _is_error_record(r)]
 
         return {
             "session_id": session_id,
@@ -304,14 +306,14 @@ class ModelBacklog:
             session_id = path.stem
             records = self._read_records(session_id)
             for r in records:
-                if r.get("type") == RECORD_ERROR or (
-                    r.get("status") and r["status"] != "ok"
-                ):
+                if _is_error_record(r):
                     errors.append(
                         {
                             "session_id": session_id,
-                            "timestamp": r.get("timestamp"),
-                            "error": r.get("error_message", str(r.get("error", ""))),
+                            "timestamp": r.get("timestamp") or r.get("ts"),
+                            "error": r.get("error_message")
+                            or r.get("data", {}).get("error", "")
+                            or str(r.get("error", "")),
                             "model": r.get("model", ""),
                         }
                     )
@@ -339,7 +341,9 @@ class ModelBacklog:
                 }
             )
         return sorted(
-            result, key=lambda s: s.get("first_event", {}).get("ts", ""), reverse=True
+            result,
+            key=lambda session: (session.get("first_event") or {}).get("ts", ""),
+            reverse=True,
         )
 
     def read_session(

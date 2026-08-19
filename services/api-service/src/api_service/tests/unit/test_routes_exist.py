@@ -165,3 +165,33 @@ class TestChatRouteOrdering:
                 f"/api/voice-config (PUT) вернул 404. "
                 f"Status: {status}, body: {body[:200]}"
             )
+
+
+def test_backlog_errors_route_precedes_session_detail_route():
+    """Static recent-errors route must not be captured as session_id='errors'."""
+    from api_service.server.routes.backlog import router
+
+    paths = [route.path for route in router.routes]
+
+    assert paths.index("/api/backlog/errors") < paths.index("/api/backlog/{session_id}")
+
+
+def test_backlog_detail_normalizes_llm_call_record():
+    """LLM records use a different internal shape but remain valid HTTP events."""
+    from api_service.server.routes.backlog import _backlog_event_record
+
+    record = _backlog_event_record(
+        "direct:session-1",
+        {
+            "type": "llm_call",
+            "timestamp": "2026-08-19T21:07:25+00:00",
+            "model": "scripted/test",
+            "iteration": 2,
+        },
+    )
+
+    assert record["session_id"] == "direct:session-1"
+    assert record["turn_id"] == ""
+    assert record["event"] == "llm_call"
+    assert record["ts"] == "2026-08-19T21:07:25+00:00"
+    assert record["data"] == {}

@@ -22,6 +22,7 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+.pi-subagents/
 **/tests/
 conftest.py
 
