@@ -7,7 +7,7 @@
 #   ./scripts/dev.sh stop          — погасить только Helperium-сервисы
 #   ./scripts/dev.sh status        — healthcheck каждого
 #   ./scripts/dev.sh logs [svc]    — tail -f лога (svc: rag|mcp|api|web|data|all)
-#   ./scripts/dev.sh restart       — stop + start
+#   ./scripts/dev.sh restart [--with-autoparts] — stop + start (опционально с external storefront)
 #   ./scripts/dev.sh e2e [args]    — нативный прогон services/agent-db/tests/e2e/ (нужны поднятые сервисы)
 #
 # Сценарии data-service (фабрика тестовых БД):
@@ -880,9 +880,10 @@ case "${1:-help}" in
     cmd_stop
     ;;
   restart)
+    shift
     cmd_stop
     sleep 1
-    cmd_start
+    cmd_start "$@"
     ;;
   status)
     cmd_status
@@ -933,8 +934,8 @@ case "${1:-help}" in
     echo ""
     echo "Commands:"
     echo "  start [--with-autoparts] — поднять Helperium; флаг отдельно запускает storefront на :8000"
+    echo "  restart [--with-autoparts] — перезапустить Helperium с тем же opt-in storefront флагом"
     echo "  stop               — погасить только Helperium-сервисы (не storefront)"
-    echo "  restart            — перезапустить"
     echo "  status             — healthcheck"
     echo "  logs [svc]         — tail -f логов (rag|mcp|api|web|data|all)"
     echo "  e2e-up             — перезапустить secure test stack (high MCP rate limit, auth и Origin policy)"

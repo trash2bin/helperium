@@ -5,7 +5,8 @@
 ```bash
 ./infra/scripts/dev.sh start              # поднять только Helperium-стек
 ./infra/scripts/dev.sh start --with-autoparts  # + внешний storefront на :8000 (явный opt-in)
-./infra/scripts/dev.sh stop / restart     # управляют только Helperium
+./infra/scripts/dev.sh restart [--with-autoparts]  # restart передаёт тот же opt-in флаг
+./infra/scripts/dev.sh stop                # управляет только Helperium
 ./infra/scripts/dev.sh logs {service|all} # логи из .data/logs/
 ./infra/scripts/dev.sh status             # статус
 ```
@@ -16,6 +17,13 @@
 storefront не входит в обычный native runtime, не останавливается `dev.sh stop`
 и не становится tenant автоматически; для рабочей интеграции нужен отдельный
 read-only onboarding его PostgreSQL и агента.
+
+Если public storefront запускается через `docker-compose.public.yml` на
+`https://localhost`, а Helperium работает native на host, Caddy должен получать
+`HELPERIUM_API_UPSTREAM=host.docker.internal:8081`. Иначе `/embed/embed.js` и
+widget API будут проксироваться к несуществующему Docker hostname `api:8081` и
+вернут `502`. Это настройка public storefront; PostgreSQL и tenant data при
+пересоздании только Caddy не затрагиваются.
 
 ## Docker-запуск
 
