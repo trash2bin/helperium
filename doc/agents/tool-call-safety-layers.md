@@ -1,160 +1,95 @@
-# Tool Call Safety Layers — защита от утечки сырого JSON пользователю
+# Native Tool-Call Contract
 
-## Контекст
+## Purpose
 
-Некоторые LLM (MiniMax, локальные Ollama-модели, Llama) **не умеют возвращать структурированные tool_calls**. Они пишут JSON-тулы как обычный текст в `content`. Без защиты этот JSON улетает пользователю:
+The agent executes MCP tools only when the selected LLM provider returns a **native structured tool call**. A model response is never executed because ordinary assistant text merely resembles JSON, XML, Markdown, a code block, or a provider-specific delimiter.
 
-```
-{"name": "get_catalog_product", "arguments":{"id": 1059}}
-{"name": "get_catalog_product", "arguments":{"id": 1060}}
-```
+This is both a correctness and a security boundary. It eliminates heuristic text parsing, avoids false positives on domain JSON, and makes every executable action traceable through one typed provider response.
 
-Это **security issue**: модель показывает внутреннее состояние, пользователь видит сырые данные. Три уровня защиты предотвращают это.
-
-## Архитектура (3 слоя)
+## Execution model
 
 ```mermaid
 flowchart LR
-    subgraph MODEL[LLM Response]
-        A[response.tool_calls<br/>структурированные]
-        B[content с JSON-текстом<br/>тулов]
-    end
-
-    subgraph L1[LAYER 1 — LiteLLM]
-        C{msg.tool_calls<br/>не пуст?}
-        C -->|да| D[✅ Исполняем тулы<br/>content_tokens НЕ стримятся]
-    end
-
-    subgraph L2[LAYER 2 — ToolCallParser]
-        C -->|нет| E{extract_tool_calls<br/>нашёл?}
-        E -->|да| F[✅ Исполняем тулы<br/>content_tokens НЕ стримятся]
-    end
-
-    subgraph L3[LAYER 3 — Safety Net]
-        E -->|нет| G{_looks_like_raw_json<br/>tool_calls?}
-        G -->|да| H[❌ Error: JSON blocked<br/>content_tokens НЕ стримятся]
-        G -->|нет| I[✅ Final answer<br/>content_tokens СТРИМЯТСЯ]
-    end
-
-    MODEL --> L1
-    L1 --> L2
-    L2 --> L3
+    A[Provider completion] --> B{Native structured tool_calls?}
+    B -->|No| C[Append content as final assistant text]
+    B -->|Yes| D[Validate ToolCall id, name, object arguments]
+    D --> E[Validate immutable scoped MCP allow-list and JSON schema]
+    E --> F[Append assistant tool_calls to transcript]
+    F --> G[Execute MCP calls sequentially]
+    G --> H[Append matching role: tool results by tool_call_id]
+    H --> I[Next provider completion with same transcript and tools]
 ```
 
-### Layer 1 — LiteLLM `add_function_to_prompt`
+`AppendOnlyLoop` is the sole owner of this flow. Its `Transcript.messages` list is append-only and is the exact list passed to the provider on every model call.
 
-**Где:** `services/api-service/src/api_service/agent/litellm_provider.py`
+## Provider boundary
 
-**Что делает:** глобальный флаг `litellm.add_function_to_prompt = True` включает конвертацию `tools/{'function':{...}}` в текстовый промпт для моделей без нативной поддержки. LiteLLM сама инжектит описание тулов в system prompt и **парсит ответ обратно** в `msg.tool_calls`.
+`api_service.agent.models` defines the typed boundary:
 
-**Когда срабатывает:** для любых моделей где `litellm.supports_function_calling(model)` → `False`.
-
-**Лог:** `[LITELLM_PROVIDER] Model returned N tool_calls via native/add_function_to_prompt path`
-
-### Layer 2 — ToolCallParser (fallback)
-
-**Где:** `services/api-service/src/api_service/agent/tool_parser.py`, вызов в `stages.py`
-
-**Что делает:** если LiteLLM не распарсила тулы (вернула JSON текстом в `content`), `ToolCallParser.extract_tool_calls()` парсит его вручную. Поддержка форматов:
-
-| Формат | Пример |
+| Type | Contract |
 |---|---|
-| JSON-массив | `[{"name": "x", "arguments": {"id": 1}}]` |
-| NDJSON (построчно) | `{"name": "x"}\n{"name": "y"}` |
-| OpenAI-стиль | `[{"function": {"name": "x", "arguments": "{}"}}]` |
-| Markdown code block | `` ```json [{...}] ``` `` |
-| Tool Calls: префикс | `Tool Calls: [{...}]` |
-| <invoke> теги | `<invoke name="x">...</invoke>` |
-| Обёртка | `{"tool_calls": [{...}]}` |
+| `CompletionRequest` | Full linear transcript and all scoped MCP tool schemas on every call |
+| `CompletionResponse` | Final text or a list of native structured tool calls, plus optional usage/cost |
+| `ToolCall` | Pydantic `id`, `name`, and object-shaped `arguments` |
+| `LLMProvider` | `complete(CompletionRequest) -> CompletionResponse` |
 
-**Когда срабатывает:** когда `response.tool_calls` пуст, но `response.content` содержит JSON тула.
+`LiteLLMProvider` translates LiteLLM response fields into this shape. It rejects malformed native calls: missing IDs or names, invalid JSON argument strings, and non-object arguments are provider errors. It does not enable `add_function_to_prompt` and does not scan `content` for actions.
 
-**Лог:** `[LLM_STAGE][TOOL_PARSER] Extracted N tool calls from JSON text (LiteLLM didn't parse them, fallback parser caught them)`
+`ScriptedLLMProvider` implements the exact same contract for deterministic unit and E2E tests. Its JSONL fixtures model provider responses, not parser input formats.
 
-### Layer 3 — Safety Net (`_looks_like_raw_json_tool_calls`)
+## What is intentionally unsupported
 
-**Где:** `services/api-service/src/api_service/agent/stages.py`, функция `_looks_like_raw_json_tool_calls()`
+The following content is **final assistant text**, not an executable tool invocation:
 
-**Что делает:** эвристическая проверка контента на наличие `{"name": ... "arguments": ...}` или `[...{"name":...}]`. Если контент похож на JSON тула — **не пускаем `final`**, вместо этого шлём `error`. Это последняя линия.
-
-**Когда срабатывает:** когда LAYER 1 и LAYER 2 не справились, но контент содержит:
-- `{"name": "...", "arguments": {...}}` (NDJSON)
-- `[{...несколько тулов...}]` (массив)
-- `Tool Calls: [...]`
-- `{"tool_calls": [...]}`
-
-**Лог:** `[LLM_STAGE][SAFETY_NET] BLOCKED final: content looks like raw JSON tool calls (LiteLLM+ToolParser both failed).`
-
-**Что блокирует НЕ ЛОВИТ** (не должно): обычный текст, `{"status": "ok"}`, `curl -d '{"name":"test"}'`.
-
-### Token streaming guard
-
-**Где:** `stages.py`, весь outcome-блок в `LLMStage.run()`
-
-Критическое правило: `content_tokens` **стримятся ТОЛЬКО в ветке `final`** — после того как все три слоя подтвердили что это настоящий ответ, не JSON тула.
-
-```python
-# НЕПРАВИЛЬНО (было — стримилось ДО проверки):
-for token in response.content_tokens:
-    yield AgentEvent("token", {"data": token})
-
-# ПРАВИЛЬНО (стало — только после safe_final):
-if response.tool_calls:       # LAYER 1 → не стримим
-elif response.content:
-    if parsed:                # LAYER 2 → не стримим
-    if _looks_like...:        # LAYER 3 → не стримим, error
-    # ТОЛЬКО ТУТ:
-    for token in ...:         # true final → стримим
+```text
+{"name":"search","arguments":{"query":"Bosch"}}
+<invoke name="search"><query>Bosch</query></invoke>
+```json
+{"tool_calls":[...]}
+```
 ```
 
-### Iteration не расходуется на tool-round
+A provider that emits these encodings may still answer normal chat requests, but it cannot use MCP tools until its LiteLLM integration returns native structured `tool_calls`. This is an intentional trade-off: portability through text parsing is not worth ambiguous execution or a second compatibility runtime.
 
-**Где:** `services/api-service/src/api_service/agent/pipeline.py`
+## Transcript and result matching
 
-```python
-if not ctx.had_tool_calls_this_iteration:
-    ctx.turn.iteration += 1
-ctx.had_tool_calls_this_iteration = False
+Before dispatch, the loop appends one assistant message containing every native requested call. For each call it appends one `role: tool` result whose `tool_call_id` is the original `ToolCall.id`. Multiple calls execute sequentially, preserving the scoped MCP session order and an unambiguous provider transcript:
+
+```text
+user
+assistant(tool_calls: call-a, call-b)
+tool(tool_call_id: call-a)
+tool(tool_call_id: call-b)
+assistant(final text)
 ```
 
-Если в раунде были tool_calls (любой из 3 слоёв), iteration не инкрементируется. Это предотвращает ситуацию когда последние тулы срезаются лимитом и JSON остаётся непонятым.
+The next provider request receives this exact sequence. No `TurnContext`, middleware event mutation, parser result cache, fallback prompt, or second transcript exists.
 
-## Добавление нового слоя/формата
+## Validation and terminals
 
-1. **Новый формат в LAYER 2** — расширить `ToolCallParser._extract_json_tool_calls()`:
-   - Добавить regex/парсинг для нового формата
-   - Добавить тест в `test_tool_parser_extensive.py`
-   - Добавить фабрику в `llm_response` если формата нет
+The loop builds an immutable allow-list from `mcp_session.list_tools()` before the first provider call. Every requested name and argument object is checked against the scoped MCP JSON schema before `call_tool()` can run.
 
-2. **Новый эвристик в LAYER 3** — расширить `_looks_like_raw_json_tool_calls()`:
-   - Добавить проверку на новый паттерн
-   - Добавить unit-тест в `TestSafetyNet`
+| Condition | Terminal behavior |
+|---|---|
+| Input guard blocks user text | Sanitised `error`; no tool discovery or provider call |
+| Unknown tool or invalid arguments | Sanitised `error`; no MCP call and no recovery completion |
+| MCP tool error | Tool result event followed by one terminal error; no hidden retry completion |
+| Dependency-style tool error | Retryable sanitised dependency error |
+| Provider error | Retryable sanitised provider error |
+| Cancellation | One cancellation error; no recovery completion |
+| Model/tool/context/empty-response limit | One explicit terminal error |
+| Final provider text | Output guard, `token`, then `final` |
 
-3. **Напрямую через LiteLLM** — если модель научили писать тулы в другом формате, проверить
-   `litellm.supports_function_calling(model)` — может модель уже поддерживает нативно.
+The chat route emits its existing terminal `done` frame after the event stream ends.
 
-## Известные проблемы (wontfix / low prio)
+## Regression contracts
 
-- Модель может написать текст + JSON тула **в одном ответе**. Парсер найдёт тулы и выполнит их, текст будет добавлен в history но не показан пользователю. Wontfix — это ближе к правильному поведению чем JSON в чате.
-- Safety net может **ложно сработать** на `curl -d '{"name":"test"}'`. На практике не было — обёрни в тест если появится.
+The current focused contracts are intentionally behavioral rather than parser-implementation tests:
 
-## Тесты
+| Test | Guarantees |
+|---|---|
+| `test_loop.py` | Tool results enter the next provider request; IDs and order survive multiple calls; text is never parsed as a tool; invalid tools, failures, limits, and cancellation stop explicitly |
+| `test_orchestrator.py` | Public SSE order, server-resolved tenant scope, and persisted `user → assistant → tool → assistant` transcript |
+| `test_litellm_provider.py` | Native call normalization, malformed-native-call rejection, text finality, and cost propagation |
 
-Тесты в `test_tool_parser_extensive.py` (48 тестов) + `test_orchestrator_e2e.py`
-(`TestLLMAgentWithProtocolProvider`, 2 теста) покрывают:
-
-| Категория | Класс | Тестов | Что проверяет |
-|-----------|-------|--------|---------------|
-| Unit: ToolCallParser | `TestToolParser` | ~23 | NDJSON, JSON array, dict, OpenAI wrapper, _from_native_tool_calls, edge cases |
-| Unit: Safety Net | `TestSafetyNet` | 12 | catch/allows — false positive prevention |
-| Pipeline E2E | `TestE2EPipeline` | 6 | NDJSON/array/OpenAI → pipeline → tool executes → final |
-| Token leak | `TestTokenLeak` | 3 | content_tokens не утекают с сырым JSON |
-| Iteration budget | `TestIterationBudget` | 1 | tool-раунды не расходуют iteration |
-| Real-world formats | `TestRealWorldFormats` | 4 | NDJSON, mixed, OpenAI, wrapper object |
-
-**Ключевые регрессии:**
-- Double-encoding fix: `test_layer1_arguments_not_double_encoded`
-- Safety net pipeline: `test_safety_net_blocks_unparseable_json`
-- Full orchestrator LAYER 1/LAYER 2: `TestLLMAgentWithProtocolProvider` (`test_orchestrator_e2e.py`)
----
-**Last verified:** 2026-08-09 (HEAD `be9a991`) — слои защиты tool-вызовов сверены с кодом
+**Last verified:** 2026-08-19 (append-only Agent Runtime refactor) — native structured tool calls are the only executable provider protocol.

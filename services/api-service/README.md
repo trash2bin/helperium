@@ -374,175 +374,98 @@ MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
   uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 ```
 
-## Архитектура Agent Pipeline
+## Append-Only Agent Loop
 
-Все LLM-запросы проходят через Pipeline — циклический обработчик Stage'ов с Middleware-фильтрами.
+The agentic core is deliberately small. `LLMAgent` owns only request lifecycle: it resolves a provider, loads conversation history, opens an already tenant-scoped MCP session, persists the completed turn, and writes backlog metrics. `AppendOnlyLoop` in `api_service/agent/loop.py` owns execution.
 
-```
-Pipeline.run() ─► while loop ─► for stage in stages ─► for event in stage.run(ctx)
-                                  │                        │
-                                  │                        └──► Middleware chain
-                                  │                      SpendingMiddleware
-                                  │                      TokenBudgetMiddleware
-                                  └──► ctx.should_stop? ──► break
-                     ─► Фаза 2 (finalization): FallbackStage → GuardOutputStage → SaveHistoryStage
-```
+There is no pipeline, stage registry, middleware chain, fallback stage, secondary runtime package, catalog mode, text tool parser, or shadow `TurnContext`. The only provider context is `Transcript.messages`, an append-only list sent in full to the provider on every model call.
 
-### Два фазы выполнения
-
-**Фаза 1 — Основной цикл**
-
-Stage'ы выполняются последовательно в цикле `while not ctx.should_stop`. LLMStage и ToolExecutionStage чередуются: LLM отвечает → если есть tool_calls → ToolExecution выполняет их → LLM получает результаты и отвечает снова. GuardInputStage и ToolDiscoveryStage выполняются один раз (через `_done_flags`).
-
-Цикл завершается когда:
-- `ctx.should_stop = True` (лимит tool calls, max iterations)
-- `ctx.turn.final_content` установлен (LLM дал финальный ответ)
-- `ctx.turn.empty_rounds >= max_empty_rounds` (модель не отвечает)
-- `ctx.turn.iteration >= max_iterations - 1` (максимальное число итераций)
-
-**Фаза 2 — Финализация**
-
-После выхода из цикла выполняются finalizer-стейджи (FallbackStage → GuardOutputStage → SaveHistoryStage) — каждый ровно один раз.
-
-### PipelineContext
-
-`PipelineContext` — dataclass, хранящий всё runtime-состояние:
-- `turn: TurnContext` — сообщения, история, tenant_ids, итерация
-- `llm_provider: LLMProvider` — текущий LLM-провайдер
-- `mcp_session: MCPSession` — MCP-сессия для tool calls
-- `store/spending/backlog` — runtime-зависимости через протоколы
-- `max_iterations/max_empty_rounds/max_turn_tokens` — лимиты (из ENV)
-- `bench: dict` — аккумулятор метрик (токены, cost, tool_calls)
-- `_done_flags: set[str]` — флаги one-shot stage'ов
-
-### Протоколы Stage и Middleware
-
-```python
-# Stage — любой асинхронный генератор событий
-class Stage(Protocol):
-    def run(self, ctx: PipelineContext) -> AsyncIterator[AgentEvent]: ...
-
-# Middleware — фильтр событий (модифицирует или блокирует)
-class Middleware(Protocol):
-    async def process(self, ctx: PipelineContext, event: AgentEvent) -> AgentEvent | None: ...
+```text
+system prompt + persisted history + current user
+                    │
+                    ▼
+      provider.complete(messages, scoped MCP tools)
+                    │
+        ┌───────────┴────────────┐
+        ▼                        ▼
+native tool_calls            final text
+        │                        │
+append assistant tool-call       append assistant text
+message to Transcript             output guard → token/final SSE
+        │
+validate each call against the immutable scoped MCP tool set
+        │
+execute calls sequentially through the existing MCP session
+        │
+append every `{role: "tool", tool_call_id, content}` result to Transcript
+        │
+        └──────────────► next provider.complete(same Transcript, same tools)
 ```
 
-## Список Stage'ов
+### Tool-call protocol
 
-| Stage | Файл | Назначение |
-|---|---|---|
-| `GuardInputStage` | `stages/guard_input.py` | Проверка пользовательского ввода на prompt injection |
-| `ToolDiscoveryStage` | `stages/tool_discovery.py` | Формирование JSON-схемы MCP-инструментов для LLM |
-| `LLMStage` | `stages/llm.py` | Вызов LLM, парсинг ответа, определение outcome (tool_calls / final / empty) |
-| `ToolExecutionStage` | `stages/tool_execution.py` | Выполнение MCP tool calls, возврат результатов |
-| `GuardOutputStage` | `stages/guard_output.py` | Фильтрация чувствительных данных в ответе LLM |
-| `FallbackStage` | `stages/fallback.py` | Обработка пустых/безответных случаев |
-| `SaveHistoryStage` | `stages/save_history.py` | Сохранение истории диалога в ConversationStore |
+`models.py` defines the typed provider boundary. `CompletionRequest` always includes the full transcript and the complete scoped MCP tool schema. A provider returns a `CompletionResponse`; every tool call is a Pydantic `ToolCall(id, name, arguments)`.
 
-Все stage'и находятся в `api_service/agent/stages/`. Импортируются через `stages/__init__.py`.
+`LiteLLMProvider` accepts **only native structured function calls** from LiteLLM's response fields. JSON, XML, Markdown, MiniMax delimiters, or any other tool-looking text inside assistant `content` is final assistant text and is never executed. This is intentional: a provider without native structured tool calling can still provide ordinary chat, but cannot use MCP tools until its LiteLLM integration returns native `tool_calls`.
 
-## Как добавить свой Stage
+The deterministic `ScriptedLLMProvider` implements the same protocol for tests and E2E. Its JSONL fixtures contain typed `content` or `tool_calls`; they do not emulate provider-specific text parsing.
 
-1. **Создать файл** в `agent/stages/` (например `my_stage.py`)
-2. **Реализовать протокол `Stage`**:
+### Transcript, ordering, and persistence
 
-```python
-from collections.abc import AsyncIterator
-from api_service.agent.types import AgentEvent
-from api_service.agent.pipeline import PipelineContext, Stage
+A successful tool round is serialized exactly as `assistant(tool_calls) → tool(result) → … → assistant(final)`. The original `ToolCall.id` becomes `tool_call_id` on the corresponding result, so multiple calls remain unambiguous. Calls execute sequentially to keep MCP session ordering deterministic.
 
-class MyStage:
-    async def run(self, ctx: PipelineContext) -> AsyncIterator[AgentEvent]:
-        # Ваша логика
-        yield AgentEvent(type="status", data={"message": "done"})
-```
-3. **Добавить импорт** в `agent/stages/__init__.py`
-4. **Зарегистрировать** в `LLMAgent.__init__` (`orchestrator.py`):   - Добавить в список `stages=[...]` — выполняется в основном цикле   - ИЛИ в `finalizer_stages=[...]` — выполняется один раз после цикла
-5. **Определить тип**:   - Loop stage (выполняется на каждой итерации) → `stages=[...]`   - One-shot stage (выполняется один раз) → используйте `ctx._stage_ran("MyStage")` / `ctx._mark_done("MyStage")` для гейтинга   - Finalizer (выполняется после цикла) → `finalizer_stages=[...]`
-6. **Написать тесты** в `tests/unit/agent/`
+The next model request uses the same augmented transcript. After the run, the orchestrator persists exactly the messages appended after the current user message. There is no separate mutable context that can drift from the provider prompt or history store.
 
-Пример регистрации:
+### Limits, terminals, and events
 
-```python
-# agent/orchestrator.py
-self._pipeline = Pipeline(
-    stages=[
-        GuardInputStage(),
-        ToolDiscoveryStage(),
-        MyStage(),          # ← новый stage
-        LLMStage(),
-        ToolExecutionStage(),
-    ],
-    finalizer_stages=[
-        FallbackStage(),
-        GuardOutputStage(),
-        SaveHistoryStage(),
-    ],
-    middlewares=[SpendingMiddleware(), TokenBudgetMiddleware()],
-)
-```
+The loop applies explicit bounds before a model call or tool call: `AGENT_MAX_ITERATIONS`, `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_TURN_TOKENS`, and `AGENT_MAX_EMPTY_ROUNDS`. Input and output guards remain direct checks. Spending is recorded after each provider response; a single-tenant budget denial is terminal.
+
+A tool failure, provider failure, cancellation, dependency outage, limit, blocked input, clarification request, or final answer produces one explicit terminal outcome. The loop never creates a hidden fallback or recovery completion. Public SSE is emitted directly as existing `AgentEvent` values: `tool_call`, `tool_result`, `token`, `final`, or `error`; the chat route remains responsible for its terminal `done` frame.
+
+### Extending the agent safely
+
+Do not add stages, middleware, text parsers, or provider-specific execution branches. To add a tool, expose it through the scoped MCP schema and make its JSON schema accurate. To add a provider, implement the narrow `LLMProvider.complete(CompletionRequest) -> CompletionResponse` protocol and return native structured tool calls. Add a scripted-provider regression proving the complete transcript and SSE behavior.
 
 ## LLM Provider Resolution
 
-Провайдер LLM определяется функцией `resolve_llm()` в `agent/factory.py`. Приоритет (от высшего к низшему):
+`resolve_llm()` in `agent/factory.py` selects the provider in this order:
 
-| # | Источник | Когда используется | Пример |
-|---|---|---|---|
-| 1 | **Scripted** | `USE_SCRIPTED_LLM=1` — детерминированный режим для тестов | Возвращает фиксированные ответы |
-| 2 | **Explicit llm_client** | Вызывающий передаёт провайдер напрямую (тесты, priority routing) | `LLMStage(llm_client=mock)` |
-| 3 | **Per-agent llm_config** | Агент создан с `llm_config={model, provider, api_key, ...}` | `POST /api/agents` с `llm_config` |
-| 4 | **ProviderPriority** | У агента задан `provider_priority: ["openai", "mistral"]` | `ProviderPool` перебирает по порядку |
-| 5 | **Pool / env fallback** | По умолчанию — `ProviderPool` → env vars (`MISTRAL_API_KEY`) → Ollama | Автоматически |
+| Priority | Source | When used |
+|---:|---|---|
+| 1 | Explicit `llm_client` | Tests or a caller-injected provider |
+| 2 | Per-agent `llm_config` | Persisted model/provider configuration for a named agent |
+| 3 | Per-agent `provider_priority` | Ordered healthy provider selection from `ProviderPool` |
+| 4 | Pool or environment fallback | Provider store, then environment-backed LiteLLM provider |
 
-API-ключи передаются напрямую в `LiteLLMProvider(api_key=...)` — НЕ через `os.environ`, что безопасно при параллельных запросах.
+Provider resolution changes transport selection only. It does not change the append-only loop, MCP scope, tool protocol, or tenant authority.
 
-## Pipeline Configuration (ENV vars)
+## Agent Loop Configuration
 
-| Переменная | Дефолт | Описание |
-|---|---|---|
-| `AGENT_MAX_ITERATIONS` | `5` | Максимальное число итераций tool calls за ход |
-| `AGENT_MAX_EMPTY_ROUNDS` | `3` | Максимум пустых ответов LLM перед остановкой |
-| `AGENT_MAX_TURN_TOKENS` | `8000` | Максимум токенов в контексте за ход |
-| `AGENT_MAX_TOOL_CALLS` | `10` | Максимум вызовов тулов за ход |
-| `AGENT_FALLBACK_MAX_MESSAGES` | `7` | Макс. сообщений в контексте Fallback (с окружением) |
-| `AGENT_TEMPERATURE` | `0.5` | Температура генерации LLM |
-| `AGENT_MAX_TOKENS_THINKING` | `4096` | Максимум thinking-токенов |
-| `ENABLE_THINK` | `true` | Включить thinking mode |
+| Variable | Default | Meaning |
+|---|---:|---|
+| `AGENT_MAX_ITERATIONS` | `5` | Maximum provider completions in one run |
+| `AGENT_MAX_EMPTY_ROUNDS` | `3` | Maximum empty provider responses before a clarification terminal |
+| `AGENT_MAX_TURN_TOKENS` | `8000` | Approximate append-only transcript context bound |
+| `AGENT_MAX_TOOL_CALLS` | `10` | Maximum MCP calls in one run |
+| `AGENT_TEMPERATURE` | `0.5` | Provider sampling temperature |
+| `AGENT_MAX_TOKENS_THINKING` | `4096` | Provider-specific thinking limit where supported |
+| `ENABLE_THINK` | `true` | Enable provider-specific thinking mode where supported |
 
-## MCP Client Configuration (ENV vars)
+`AGENT_FALLBACK_MAX_MESSAGES` is no longer used: the runtime has no fallback context rewrite.
 
-| Переменная | Дефолт | Описание |
-|---|---|---|
-| `MCP_MAX_CONSECUTIVE_FAILURES` | `3` | Circuit breaker: порог отказов перед пропуском reconnect |
-| `MCP_CIRCUIT_BREAKER_TIMEOUT` | `30.0` | Время (сек) до half-open retry после размыкания circuit breaker |
-| `MCP_GC_INTERVAL` | `60.0` | Интервал (сек) фонового GC для неактивных Streamable HTTP connections |
-| `MCP_MAX_IDLE_SECONDS` | `600.0` | Время (сек) бездействия Streamable HTTP connection до закрытия |
-| `MCP_LOCK_ACQUIRE_TIMEOUT` | `10.0` | Таймаут (сек) захвата per-tenant блокировки tool call |
-| `MCP_TOOL_EXECUTION_TIMEOUT` | `15.0` | Таймаут (сек) выполнения одного tool call |
-| `MCP_HTTP_TIMEOUT` | `10.0` | Таймаут (сек) открытия Streamable HTTP соединения |
-| `MCP_HTTP_READ_TIMEOUT` | `1800.0` | Таймаут (сек) чтения Streamable HTTP ответа/стрима |
-| `MCP_SESSION_INIT_TIMEOUT` | `15.0` | Таймаут (сек) инициализации MCP сессии (session.initialize) |
+## MCP Client Configuration
 
-Заменяют предыдущие хардкоды в `mcp_client.py`, читаются из `helperium_sdk.settings` при каждом вызове.
-
-## Middleware
-
-
-Middleware обрабатывают каждый `AgentEvent` после stage'а. Могут модифицировать, блокировать или записывать побочные эффекты.
-
-| Middleware | Файл | Что делает |
-|---|---|---|
-| `SpendingMiddleware` | `middlewares.py` | Записывает cost в SpendingTracker для tenant'ов; проверяет лимиты — при превышении заменяет событие на `error` |
-| `TokenBudgetMiddleware` | `middlewares.py` | После `tool_result`/`final`/`error` проверяет суммарное число токенов; при превышении `max_turn_tokens` выставляет `ctx.should_stop = True` |
-
-Middleware добавляются при создании `Pipeline`:
-
-```python
-Pipeline(
-    stages=[...],
-    middlewares=[SpendingMiddleware(), TokenBudgetMiddleware()],
-)
-```
+| Variable | Default | Meaning |
+|---|---:|---|
+| `MCP_MAX_CONSECUTIVE_FAILURES` | `3` | Circuit-breaker failures before a reconnect pause |
+| `MCP_CIRCUIT_BREAKER_TIMEOUT` | `30.0` | Seconds before half-open retry |
+| `MCP_GC_INTERVAL` | `60.0` | Idle Streamable HTTP connection GC interval |
+| `MCP_MAX_IDLE_SECONDS` | `600.0` | Idle connection lifetime before close |
+| `MCP_LOCK_ACQUIRE_TIMEOUT` | `10.0` | Per-tenant tool-call lock acquisition timeout |
+| `MCP_TOOL_EXECUTION_TIMEOUT` | `15.0` | One MCP tool execution timeout |
+| `MCP_HTTP_TIMEOUT` | `10.0` | Streamable HTTP connection timeout |
+| `MCP_HTTP_READ_TIMEOUT` | `1800.0` | Streamable HTTP read timeout |
+| `MCP_SESSION_INIT_TIMEOUT` | `15.0` | MCP session initialization timeout |
 
 ---
-**Last verified:** 2026-08-18 (working tree after `3749daa`) — MCP SDK v2 lifecycle, production service auth, Origin allow-list, direct-chat authority and real persisted named-agent composite pipeline through api-service, gateway and two distinct data-service tenant databases verified locally.
+**Last verified:** 2026-08-19 (working tree after append-only Agent Runtime refactor) — focused typed-loop contracts pass, full API suite and isolated Docker E2E are run before commit; native structured tool calls are the only executable provider tool protocol.

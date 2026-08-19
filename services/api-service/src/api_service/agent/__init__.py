@@ -1,100 +1,44 @@
-"""Agent package for the LLM-based assistant.
-
-Modules
--------
-orchestrator       — Thin coordinator (LLMAgent, agent singleton)
-pipeline            — Pipeline orchestration (Pipeline, PipelineContext, Stage, Middleware)
-stages              — Pipeline stages (LLMStage, ToolExecutionStage, GuardInputStage, …)
-middlewares          — Pipeline middleware (SpendingMiddleware, TokenBudgetMiddleware, …)
-turn_context        — Turn-level state container
-prompts             — System prompt constants
-token_estimator     — Token estimation & fallback trimming
-event_stream        — SSE formatting utilities
-litellm_provider    — Clean LiteLLM adapter under LLMProvider protocol [NEW]
-provider_pool       — Health-checked LLM provider pool with failover [NEW]
-mcp_client          — Tenant-scoped MCP Streamable HTTP v2 client
-tool_parser         — Tool call extraction from LLM output
-conversation        — Conversation history manager
-types               — Shared type definitions
-models              — Pydantic domain models [NEW]
-protocols           — Structural subtyping contracts [NEW]
-"""
-
-from __future__ import annotations
+"""Minimal typed agent package."""
 
 from .conversation import ConversationManager
-from .litellm_provider import LiteLLMProvider
+from .litellm_provider import LiteLLMProvider, ProviderProtocolError
+from .loop import AppendOnlyLoop, LoopLimits, LoopOutcome, LoopRun, Transcript
 from .mcp_client import MCPClient, ToolResult
 from .models import (
     CompletionRequest,
     CompletionResponse,
     ProviderConfig,
+    ToolCall,
     UsageInfo,
 )
-from .middlewares import SpendingMiddleware, TokenBudgetMiddleware
 from .orchestrator import LLMAgent, agent
-from .pipeline import Pipeline, PipelineContext, Stage, Middleware
-from .provider_pool import ProviderPool, ProviderWorker
-from .stages import (
-    FallbackStage,
-    GuardInputStage,
-    GuardOutputStage,
-    LLMStage,
-    SaveHistoryStage,
-    ToolDiscoveryStage,
-    ToolExecutionStage,
-)
-from .protocols import (
-    BacklogWriter,
-    ConversationStore,
-    LLMProvider,
-    MCPToolProvider,
-    MCPSession,
-    SpendingTracker,
-)
-from .tool_parser import ToolCallParser
-from .types import AgentEvent, EventType, Message, ParsedToolCall, SessionId, TurnId
-from .turn_context import TurnContext
+from .protocols import LLMProvider, MCPToolSession
+from .scripted_provider import ScriptedLLMProvider
+from .types import AgentEvent, EventType, SessionId, TurnId
 
 __all__ = [
     "AgentEvent",
-    "BacklogWriter",
+    "AppendOnlyLoop",
     "CompletionRequest",
     "CompletionResponse",
     "ConversationManager",
-    "ConversationStore",
     "EventType",
-    "FallbackStage",
-    "GuardInputStage",
-    "GuardOutputStage",
     "LLMAgent",
     "LLMProvider",
-    "LLMStage",
     "LiteLLMProvider",
+    "LoopLimits",
+    "LoopOutcome",
+    "LoopRun",
     "MCPClient",
-    "MCPToolProvider",
-    "MCPSession",
-    "Middleware",
-    "Pipeline",
-    "PipelineContext",
+    "MCPToolSession",
     "ProviderConfig",
-    "ProviderPool",
-    "ProviderWorker",
-    "SaveHistoryStage",
-    "SpendingMiddleware",
-    "SpendingTracker",
-    "Stage",
-    "TokenBudgetMiddleware",
-    "ToolCallParser",
-    "ToolDiscoveryStage",
-    "ToolExecutionStage",
+    "ProviderProtocolError",
+    "ScriptedLLMProvider",
+    "SessionId",
+    "ToolCall",
     "ToolResult",
-    "TurnContext",
+    "Transcript",
+    "TurnId",
     "UsageInfo",
     "agent",
-    # Legacy types
-    "Message",
-    "ParsedToolCall",
-    "SessionId",
-    "TurnId",
 ]
