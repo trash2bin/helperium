@@ -13,12 +13,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import httpx
 
 from .litellm_provider import LiteLLMProvider
 from .models import CompletionRequest, CompletionResponse
+from .protocols import LLMProvider
 
 logger = logging.getLogger("api_service.agent.provider_pool")
 
@@ -101,6 +103,47 @@ def _monotonic() -> float:
     import time
 
     return time.monotonic()
+
+
+class FallbackProvider:
+    """Try ordered typed completion providers until one responds successfully.
+
+    The adapter owns execution-time failover only. Provider-specific model naming,
+    transport and request serialization remain inside each wrapped provider. Once
+    a fallback responds, it becomes the preferred provider for the rest of this
+    agent turn so continuation calls keep a coherent upstream model.
+    """
+
+    def __init__(self, providers: Sequence[LLMProvider]) -> None:
+        if not providers:
+            raise ValueError("FallbackProvider needs at least one provider")
+        self._providers = list(providers)
+        self._active_index = 0
+        self.model = providers[0].model
+
+    async def complete(self, req: CompletionRequest) -> CompletionResponse:
+        errors: list[Exception] = []
+        provider_count = len(self._providers)
+        for offset in range(provider_count):
+            index = (self._active_index + offset) % provider_count
+            provider = self._providers[index]
+            try:
+                response = await provider.complete(req)
+            except Exception as exc:
+                logger.warning(
+                    "[FALLBACK] Provider %s failed; trying next candidate: %s",
+                    provider.model,
+                    exc,
+                )
+                errors.append(exc)
+                continue
+
+            self._active_index = index
+            self.model = provider.model
+            return response
+
+        message = f"All {provider_count} LLM providers failed"
+        raise RuntimeError(message) from errors[-1]
 
 
 class ProviderPool:

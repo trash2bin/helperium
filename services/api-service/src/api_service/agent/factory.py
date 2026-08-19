@@ -14,7 +14,7 @@ from typing import Any
 from helperium_sdk.settings import settings
 
 from .litellm_provider import LiteLLMProvider
-from .provider_pool import ProviderPool
+from .provider_pool import FallbackProvider, ProviderPool
 
 
 # Module-level ProviderPool singleton for fallback + health checks.
@@ -69,6 +69,36 @@ async def _resolve_pool_or_env() -> LiteLLMProvider:
     return _create_env_provider()
 
 
+def _create_configured_provider(
+    config: dict, *, strip_api_base: bool = False
+) -> LiteLLMProvider:
+    """Build one LiteLLM transport from a persisted or per-agent config."""
+    model = config.get("model") or settings.ollama_model
+    api_base = config.get("api_base") or settings.ollama_url
+    return LiteLLMProvider(
+        model=model,
+        provider=config.get("provider"),
+        api_base=api_base.rstrip("/")
+        if strip_api_base and api_base
+        else api_base or None,
+        api_key=config.get("api_key"),
+        timeout=config.get("timeout") or settings.request_timeout,
+        temperature=config.get("temperature") or settings.agent_temperature,
+        max_tokens_thinking=config.get("max_tokens")
+        or settings.agent_max_tokens_thinking,
+        enable_thinking=settings.think_mode,
+    )
+
+
+def _provider_identity(config: dict) -> tuple[str, str, str]:
+    """Return a credential-free identity used to remove duplicate candidates."""
+    return (
+        config.get("provider") or "",
+        config.get("model") or settings.ollama_model,
+        (config.get("api_base") or settings.ollama_url or "").rstrip("/"),
+    )
+
+
 async def resolve_llm(
     *,
     llm_client: Any | None = None,
@@ -91,35 +121,33 @@ async def resolve_llm(
     if llm_client:
         return llm_client
 
-    if llm_config:
-        model = llm_config.get("model") or settings.ollama_model
-        api_base = llm_config.get("api_base") or settings.ollama_url
-        return LiteLLMProvider(
-            model=model,
-            provider=llm_config.get("provider"),
-            api_base=api_base.rstrip("/") if api_base else None,
-            api_key=llm_config.get("api_key"),
-            timeout=settings.request_timeout,
-            temperature=llm_config.get("temperature") or settings.agent_temperature,
-            max_tokens_thinking=llm_config.get("max_tokens")
-            or settings.agent_max_tokens_thinking,
-            enable_thinking=settings.think_mode,
-        )
+    candidates: list[LiteLLMProvider] = []
+    candidate_identities: set[tuple[str, str, str]] = set()
 
+    if llm_config:
+        candidates.append(_create_configured_provider(llm_config, strip_api_base=True))
+        candidate_identities.add(_provider_identity(llm_config))
+
+    fallback_enabled = True
     if provider_priority:
         from api_service.provider_store import get_provider_store
 
-        raw_providers = get_provider_store().all_providers_raw
+        store = get_provider_store()
+        fallback_enabled = store.get_fallback_enabled()
+        raw_providers = store.all_providers_raw
         for name in provider_priority:
             data = raw_providers.get(name)
             if not data or not data.get("enabled", True) or not data.get("model"):
                 continue
-            return LiteLLMProvider(
-                model=data["model"],
-                provider=data.get("provider") or None,
-                api_base=data.get("api_base") or None,
-                api_key=data.get("api_key") or None,
-                timeout=120.0,
-            )
+            identity = _provider_identity(data)
+            if identity in candidate_identities:
+                continue
+            candidates.append(_create_configured_provider(data))
+            candidate_identities.add(identity)
+
+    if candidates:
+        if fallback_enabled and len(candidates) > 1:
+            return FallbackProvider(candidates)
+        return candidates[0]
 
     return _test_llm_client or await _resolve_pool_or_env()

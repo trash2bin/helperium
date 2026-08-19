@@ -75,16 +75,19 @@
 ### Per-agent `provider_priority`
 
 Помимо `llm_config`, каждый агент может иметь поле `provider_priority: list[str]` — упорядоченный список имён провайдеров из `LlmProviderStore` (SQLite `.data/providers.json`).
-При запросе `ProviderPool` перебирает их по порядку и использует первого, кто прошёл health check.
+
+Это **execution-time failover**, а не одноразовый выбор по health check. Если есть `llm_config`, он всегда является первым кандидатом, а уникальные enabled entries из `provider_priority` дополняют его в заданном порядке. Если `llm_config` нет, первым кандидатом становится первый enabled provider из списка. При ошибке completion текущий кандидат сменяется следующим; успешно ответивший upstream сохраняется для оставшихся model calls того же agent turn, включая continuation после MCP tool result. Следующий пользовательский turn снова начинает с primary. Дубликат primary config в `provider_priority` пропускается. Global `fallback_enabled=false` оставляет только первый кандидат.
 
 ### Приоритет выбора LLM
 
-Реальный приоритет сложнее трёх пунктов:
+Реальный порядок разрешения следующий:
 
-1. **`provider_priority`** (из Agent Store) — если задан, `ProviderPool` перебирает провайдеров по порядку, первый здоровый используется
-2. **Per-agent `llm_config`** — если задан (и нет `provider_priority`), создаётся временный `LiteLLMProvider`
-3. **ProviderPool** — если не задано ни то, ни другое, используется `_provider_pool` (системный пул, инициализируется из ProviderStore при старте)
-4. **Env fallback** — если пул пуст, создаётся `LiteLLMProvider` из переменных окружения (`MISTRAL_API_KEY` → Ollama)
+1. **Scripted provider** — deterministic dev/test режим имеет абсолютный приоритет.
+2. **Явно переданный `llm_client`** — применяется для controlled dependency injection.
+3. **Per-agent `llm_config` + `provider_priority`** — `llm_config` остаётся primary; stored priority образует ordered runtime fallback chain.
+4. **Только `provider_priority`** — первый enabled stored provider является primary, следующие — fallback-кандидаты.
+5. **ProviderPool** — если agent config не задал кандидатов, используется системный пул (инициализируется из ProviderStore при старте).
+6. **Env fallback** — если пул пуст, создаётся `LiteLLMProvider` из переменных окружения (`MISTRAL_API_KEY` → Ollama).
 
 ### Примеры создания агента
 

@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
 
 from api_service.agent.litellm_provider import LiteLLMProvider
+from api_service.agent.provider_pool import FallbackProvider
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ def _patch_pool(worker=None):
     return patch("api_service.agent.factory._pool", mock_pool)
 
 
-def _patch_store(providers: dict):
+def _patch_store(providers: dict, *, fallback_enabled: bool = True):
     """Patch ProviderStore to return specific providers.
 
     The import inside resolve_llm() is lazy:
@@ -54,6 +55,7 @@ def _patch_store(providers: dict):
     """
     mock_store = MagicMock()
     mock_store.all_providers_raw = providers
+    mock_store.get_fallback_enabled.return_value = fallback_enabled
     return patch(
         "api_service.provider_store.get_provider_store",
         return_value=mock_store,
@@ -162,8 +164,8 @@ class TestExplicitLlmClient:
 # instead of llm_config when both were present.
 
 
-class TestLlmConfigWinsOverPriority:
-    """llm_config MUST win over provider_priority when both are provided.
+class TestLlmConfigIsFirstPriorityCandidate:
+    """llm_config MUST remain the first candidate when priority is also provided.
 
     This is the regression test for the bug where chat.py did:
         if provider_priority: kwargs["provider_priority"] = pp
@@ -172,9 +174,22 @@ class TestLlmConfigWinsOverPriority:
     """
 
     @pytest.mark.asyncio
-    async def test_llm_config_wins_when_both_provided(self):
-        """The core regression: llm_config must take precedence."""
-        with _patch_scripted(return_value=None), _patch_pool(None):
+    async def test_llm_config_is_primary_with_fallback_candidates(self):
+        """The configured model starts first, then named fallbacks are retained."""
+        providers = {
+            "ollama": {
+                "model": "minimax-m3:cloud",
+                "api_key": "",
+                "api_base": "http://localhost:11434",
+                "enabled": True,
+                "provider": "ollama",
+            }
+        }
+        with (
+            _patch_scripted(return_value=None),
+            _patch_store(providers),
+            _patch_pool(None),
+        ):
             from api_service.agent.factory import resolve_llm
 
             result = await resolve_llm(
@@ -187,15 +202,38 @@ class TestLlmConfigWinsOverPriority:
                 provider_priority=["ollama"],
             )
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, FallbackProvider)
         assert result.model == "openai/deepseek-v4-flash"
-        assert result.api_base == "https://polza.ai/api/v1"
-        assert result.api_key == "pza_test-key"
+        assert [provider.model for provider in result._providers] == [
+            "openai/deepseek-v4-flash",
+            "minimax-m3:cloud",
+        ]
 
     @pytest.mark.asyncio
-    async def test_llm_config_wins_over_multiple_priority(self):
-        """Even with multiple providers in priority, llm_config wins."""
-        with _patch_scripted(return_value=None), _patch_pool(None):
+    async def test_llm_config_is_first_of_multiple_priority_candidates(self):
+        """The configured model remains first even with several fallbacks."""
+        providers = {
+            "ollama": {
+                "model": "minimax-m3:cloud",
+                "enabled": True,
+                "provider": "ollama",
+            },
+            "openai": {
+                "model": "gpt-4o-mini",
+                "enabled": True,
+                "provider": "openai",
+            },
+            "mistral": {
+                "model": "mistral-small",
+                "enabled": True,
+                "provider": "mistral",
+            },
+        }
+        with (
+            _patch_scripted(return_value=None),
+            _patch_store(providers),
+            _patch_pool(None),
+        ):
             from api_service.agent.factory import resolve_llm
 
             result = await resolve_llm(
@@ -207,8 +245,14 @@ class TestLlmConfigWinsOverPriority:
                 provider_priority=["ollama", "openai", "mistral"],
             )
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, FallbackProvider)
         assert result.model == "anthropic/claude-3"
+        assert [provider.model for provider in result._providers] == [
+            "anthropic/claude-3",
+            "minimax-m3:cloud",
+            "gpt-4o-mini",
+            "mistral-small",
+        ]
 
     @pytest.mark.asyncio
     async def test_llm_config_empty_dict_falls_through(self):
@@ -259,8 +303,11 @@ class TestProviderPriority:
 
             result = await resolve_llm(provider_priority=["ollama", "openai"])
 
-        assert isinstance(result, LiteLLMProvider)
-        assert "ollama_chat/minimax-m3:cloud" in result.model
+        assert isinstance(result, FallbackProvider)
+        assert [provider.model for provider in result._providers] == [
+            "ollama_chat/minimax-m3:cloud",
+            "openai/gpt-4o-mini",
+        ]
 
     @pytest.mark.asyncio
     async def test_provider_priority_forwards_store_api_key(self):
@@ -285,6 +332,32 @@ class TestProviderPriority:
         assert isinstance(result, LiteLLMProvider)
         assert result.api_key == "nvapi-test-only"
         assert result.api_base == "https://integrate.api.nvidia.com/v1/"
+
+    @pytest.mark.asyncio
+    async def test_global_fallback_switch_keeps_only_the_primary_candidate(self):
+        providers = {
+            "ollama": {
+                "model": "minimax-m3:cloud",
+                "enabled": True,
+                "provider": "ollama",
+            },
+            "openai": {
+                "model": "gpt-4o-mini",
+                "enabled": True,
+                "provider": "openai",
+            },
+        }
+        with (
+            _patch_scripted(return_value=None),
+            _patch_store(providers, fallback_enabled=False),
+            _patch_pool(None),
+        ):
+            from api_service.agent.factory import resolve_llm
+
+            result = await resolve_llm(provider_priority=["ollama", "openai"])
+
+        assert isinstance(result, LiteLLMProvider)
+        assert result.model == "minimax-m3:cloud"
 
     @pytest.mark.asyncio
     async def test_provider_priority_skips_disabled(self):
@@ -498,9 +571,11 @@ class TestEndToEndResolution:
                 provider_priority=["ollama"],
             )
 
-        assert isinstance(result, LiteLLMProvider)
-        assert "deepseek" in result.model
-        assert "polza.ai" in result.api_base
+        assert isinstance(result, FallbackProvider)
+        assert [provider.model for provider in result._providers] == [
+            "openai/deepseek-v4-flash",
+            "ollama_chat/minimax-m3:cloud",
+        ]
 
     @pytest.mark.asyncio
     async def test_no_config_no_priority_uses_pool(self):
