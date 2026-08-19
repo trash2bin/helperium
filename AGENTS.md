@@ -103,7 +103,7 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token \
 
 | Группа | Документы |
 |---|---|
-| API и agent | `services/api-service/README.md`, `services/api-service/embed/README.md`, `doc/agents/anti-abuse.md`, `doc/agents/tool-call-safety-layers.md` |
+| API и agent | `services/api-service/README.md`, `services/api-service/embed/README.md`, `doc/agents/anti-abuse.md`, `doc/agents/tool-call-safety-layers.md`, `doc/agents/backlog-product-decision.md` |
 | Data и config | `services/data-service/README.md`, `services/data-service/internal/configgen/README.md`, `doc/agents/adapter-pattern.md`, `doc/agents/config-migration.md`, `doc/agents/search-strategies.md`, `specs/config.schema.md`, `specs/fixtures/README.md`, `specs/README.md` |
 | MCP и security | `services/mcp-gateway/README.md`, `doc/agents/mcp-session-lifecycle.md`, `doc/agents/security-isolation.md`, `doc/agents/http-clients.md`, `doc/agents/api-contracts.md` |
 | Admin, web и operations | `services/admin-dashboard/README.md`, `doc/agents/tenant-lifecycle.md`, `doc/agents/web-service.md`, `doc/agents/operations.md`, `doc/agents/ci-cd.md`, `doc/agents/testing-guide.md` |
@@ -114,4 +114,4 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token \
 
 ## Current verification baseline
 
-**Last verified:** 2026-08-20 (working tree atop `6c5dd90`). Full local `make ci` passed after append-only loop, backlog observability and MCP SDK negotiation regressions. A unified native runtime started all six services healthy; the `autoparts` read-only tenant completed a tenant-scoped Streamable HTTP MCP session, tool-display discovery and schema loading. This proves the deterministic local core and MCP transport path; it does **not** replace a live LLM quality run (the external completion providers returned temporary-unavailable errors during the manual probe), browser acceptance on the deployed domain, edge/WAF validation, alerting/rollback game day or a full RAG/prompt-injection assessment.
+**Last verified:** 2026-08-20 (working tree atop `3780ea4`). Full local `make ci` passed after MiniMax continuation, LiteLLM wire-serialization and OpenAPI regressions. A unified native runtime started all six services healthy; the seeded `autoparts` read-only tenant completed a tenant-scoped Streamable HTTP MCP session, `db_search` tool call/result and a final MiniMax answer with the public SSE sequence `tool_call → tool_result → token → final → done`. This proves the deterministic local core, MCP transport and one live MiniMax tool turn; it does **not** replace broader live LLM quality/benchmark coverage, browser acceptance on the deployed domain, edge/WAF validation, alerting/rollback game day or a full RAG/prompt-injection assessment.

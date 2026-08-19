@@ -110,9 +110,12 @@ def _prefix_model(provider: str | None, model_name: str, api_base: str | None) -
     """Add provider prefix to model name if needed."""
     if not provider:
         return model_name
-    # Ollama only gets prefix when using custom api_base (proxy mode)
+    # Ollama only gets the chat transport prefix when using a custom API base.
+    # ``ollama/...`` is already a canonical LiteLLM model identifier; adding
+    # ``ollama_chat/`` to it produces the invalid double prefix
+    # ``ollama_chat/ollama/...``.
     if provider == "ollama":
-        if api_base and not model_name.startswith(_KNOWN_PREFIXES):
+        if api_base and not model_name.startswith(("ollama/", "ollama_chat/")):
             return f"ollama_chat/{model_name}"
         return model_name
     prefix = _PROVIDER_PREFIXES.get(provider, "")
@@ -176,6 +179,7 @@ async def resolve_llm(
             max_tokens_thinking=llm_config.get("max_tokens")
             or settings.agent_max_tokens_thinking,
             enable_thinking=settings.think_mode,
+            tools_after_tool_result=llm_config.get("tools_after_tool_result", True),
         )
 
     # 4. Provider priority list

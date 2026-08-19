@@ -31,6 +31,7 @@ class LiteLLMProvider:
         temperature: float = 0.2,
         max_tokens_thinking: int = 0,
         enable_thinking: bool = False,
+        tools_after_tool_result: bool = True,
     ) -> None:
         self.model = model
         self.api_base = api_base
@@ -39,11 +40,12 @@ class LiteLLMProvider:
         self.temperature = temperature
         self.max_tokens_thinking = max_tokens_thinking
         self.enable_thinking = enable_thinking
+        self.tools_after_tool_result = tools_after_tool_result
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": request.messages,
+            "messages": self._litellm_messages(request.messages),
             "temperature": self.temperature,
             "timeout": self.timeout,
         }
@@ -73,6 +75,40 @@ class LiteLLMProvider:
             usage=usage,
             cost=self._cost(response, getattr(response, "usage", None)),
         )
+
+    @staticmethod
+    def _litellm_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Adapt canonical transcript messages for LiteLLM's wire contract.
+
+        The append-only loop intentionally keeps parsed tool arguments as dicts
+        for validation and context accounting. LiteLLM expects the historical
+        assistant ``tool_calls[].function.arguments`` field to be a JSON string
+        when it reconstructs a continuation request, including for Ollama.
+        """
+        normalized: list[dict[str, Any]] = []
+        for message in messages:
+            copy = dict(message)
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list):
+                normalized_calls: list[dict[str, Any]] = []
+                for raw_call in tool_calls:
+                    if not isinstance(raw_call, dict):
+                        normalized_calls.append(raw_call)
+                        continue
+                    call = dict(raw_call)
+                    function = raw_call.get("function")
+                    if isinstance(function, dict):
+                        normalized_function = dict(function)
+                        arguments = normalized_function.get("arguments")
+                        if isinstance(arguments, dict):
+                            normalized_function["arguments"] = json.dumps(
+                                arguments, ensure_ascii=False, separators=(",", ":")
+                            )
+                        call["function"] = normalized_function
+                    normalized_calls.append(call)
+                copy["tool_calls"] = normalized_calls
+            normalized.append(copy)
+        return normalized
 
     @staticmethod
     def _tool_call(raw: Any) -> ToolCall:

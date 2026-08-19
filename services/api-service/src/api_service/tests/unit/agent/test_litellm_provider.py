@@ -51,6 +51,33 @@ async def test_litellm_adapter_returns_only_native_structured_tool_calls() -> No
 
 
 @pytest.mark.asyncio
+async def test_litellm_adapter_serializes_transcript_tool_arguments() -> None:
+    """LiteLLM receives wire-format arguments while the canonical transcript stays typed."""
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "search", "arguments": {"query": "Bosch"}},
+                }
+            ],
+        }
+    ]
+    completion = AsyncMock(return_value=_response(content="done"))
+    provider = LiteLLMProvider("ollama/test")
+
+    with patch("api_service.agent.litellm_provider.litellm.acompletion", completion):
+        await provider.complete(CompletionRequest(messages=messages))
+
+    outgoing = completion.await_args.kwargs["messages"]
+    assert outgoing[0]["tool_calls"][0]["function"]["arguments"] == '{"query":"Bosch"}'
+    assert messages[0]["tool_calls"][0]["function"]["arguments"] == {"query": "Bosch"}
+
+
+@pytest.mark.asyncio
 async def test_litellm_adapter_rejects_malformed_native_arguments() -> None:
     raw = type(
         "Call",

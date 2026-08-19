@@ -17,6 +17,12 @@ class TestPrefixModel:
         result = _prefix_model("ollama", "llama3", None)
         assert result == "llama3"
 
+    def test_ollama_canonical_prefix_is_not_doubled(self):
+        result = _prefix_model(
+            "ollama", "ollama/minimax-m3:cloud", "http://127.0.0.1:11434"
+        )
+        assert result == "ollama/minimax-m3:cloud"
+
     def test_mistral(self):
         result = _prefix_model("mistral", "mistral-large", None)
         assert result == "mistral/mistral-large"
