@@ -409,7 +409,9 @@ append every `{role: "tool", tool_call_id, content}` result to Transcript
 
 `models.py` defines the typed provider boundary. `CompletionRequest` always includes the full transcript and the complete scoped MCP tool schema. A provider returns a `CompletionResponse`; every tool call is a Pydantic `ToolCall(id, name, arguments)`.
 
-`LiteLLMProvider` accepts **only native structured function calls** from LiteLLM's response fields. JSON, XML, Markdown, MiniMax delimiters, or any other tool-looking text inside assistant `content` is final assistant text and is never executed. This is intentional: a provider without native structured tool calling can still provide ordinary chat, but cannot use MCP tools until its LiteLLM integration returns native `tool_calls`.
+`LiteLLMProvider` accepts **only native structured function calls** from LiteLLM's response fields. JSON, XML, Markdown, MiniMax delimiters, or any other tool-looking text inside assistant `content` is never executed. This is intentional: a provider without native structured tool calling can still provide ordinary chat, but cannot use MCP tools until its LiteLLM integration returns native `tool_calls`.
+
+A fresh user turn always advertises the complete scoped MCP schema, even when persisted history contains completed `role: tool` messages from earlier turns. Only the immediate continuation after the current turn's unresolved tool call/result consults LiteLLM's function-calling capability before deciding whether schemas remain on the wire. The adapter logs the model, provider, schema count, current-turn continuation flag, and capability result for each completion without logging request or tool-result content.
 
 The deterministic `ScriptedLLMProvider` implements the same protocol for tests and E2E. Its JSONL fixtures contain typed `content` or `tool_calls`; they do not emulate provider-specific text parsing.
 

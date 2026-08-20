@@ -8,6 +8,7 @@
 - **refactor(litellm):** continuation tool schemas больше не управляются per-agent API/config: LiteLLM adapter сверяет опубликованную model/provider function-calling capability и формирует continuation wire request. Loop остаётся provider-agnostic; public OpenAPI snapshot синхронизирован. **Проверка:** Python/Go/frontend/docs checks прошли; live MiniMax SSE завершил native tool turn без agent-level flag.
 - **fix(dev):** `restart --with-autoparts` теперь сохраняет opt-in flag. Operations runbook документирует `host.docker.internal:8081` как Caddy upstream для public local storefront при native Helperium, устраняя `502` для `/embed/embed.js`. **Проверка:** HTTPS asset и widget config proxy вернули `200`.
 - **fix(agent):** `provider_priority` снова образует ordered execution-time fallback chain: per-agent LLM config остаётся primary, затем generic adapter пробует уникальные enabled stored providers и закрепляет успешный upstream на оставшиеся model calls turn. **Проверка:** Python suite прошёл; live `polza/deepseek-v4-flash` failure переключился на Ollama MiniMax и завершил tenant-scoped MCP turn.
+- **fix(agent):** LiteLLM continuation capability теперь применяется только сразу после current-turn tool cycle, а historical `role: tool` в session history не скрывает schemas для нового user turn. Добавлены structured policy logs и cross-turn regression. **Проверка:** полный `make ci` прошёл; live MiniMax `Bosch → характеристики Camry V40` завершил два native MCP tool turns без raw tool transcript.
 
 ## 2026-08-19
 

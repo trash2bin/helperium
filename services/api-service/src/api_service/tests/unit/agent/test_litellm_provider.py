@@ -167,3 +167,72 @@ async def test_litellm_adapter_never_interprets_text_as_a_tool_call() -> None:
 
     assert response.content == text
     assert response.tool_calls == []
+
+
+@pytest.mark.asyncio
+async def test_litellm_adapter_keeps_schemas_for_new_turn_after_historical_tool_result() -> (
+    None
+):
+    """Persisted tool history must not turn a fresh user message into continuation."""
+    completion = AsyncMock(return_value=_response(content="done"))
+    capability = patch(
+        "api_service.agent.litellm_provider.litellm.supports_function_calling",
+        return_value=False,
+    )
+    provider = LiteLLMProvider("minimax-m3:cloud", provider="ollama")
+    tools = [{"type": "function", "function": {"name": "db_get"}}]
+    request = CompletionRequest(
+        messages=[
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "find Bosch"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-search",
+                        "type": "function",
+                        "function": {"name": "db_search", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call-search", "content": "{}"},
+            {"role": "assistant", "content": "Found Bosch"},
+            {"role": "user", "content": "show Camry characteristics"},
+        ],
+        tools=tools,
+    )
+
+    with (
+        capability as supports_function_calling,
+        patch("api_service.agent.litellm_provider.litellm.acompletion", completion),
+    ):
+        await provider.complete(request)
+
+    assert completion.await_args.kwargs["tools"] == tools
+    supports_function_calling.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_litellm_adapter_logs_current_turn_tool_policy(caplog) -> None:
+    completion = AsyncMock(return_value=_response(content="done"))
+    provider = LiteLLMProvider("model-without-continuation", provider="test")
+    request = CompletionRequest(
+        messages=[{"role": "tool", "tool_call_id": "call-1", "content": "{}"}],
+        tools=[{"type": "function", "function": {"name": "search"}}],
+    )
+
+    with (
+        caplog.at_level("INFO", logger="api_service.agent.litellm_provider"),
+        patch(
+            "api_service.agent.litellm_provider.litellm.supports_function_calling",
+            return_value=False,
+        ),
+        patch("api_service.agent.litellm_provider.litellm.acompletion", completion),
+    ):
+        await provider.complete(request)
+
+    assert (
+        "tools_sent=False tool_count=0 current_tool_continuation=True "
+        "supports_function_calling=False"
+    ) in caplog.text

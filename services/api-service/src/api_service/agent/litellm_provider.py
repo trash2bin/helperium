@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import litellm
 from litellm.types.utils import ModelResponse
 
 from .models import CompletionRequest, CompletionResponse, ToolCall, UsageInfo
+
+
+logger = logging.getLogger("api_service.agent.litellm_provider")
 
 
 class ProviderProtocolError(ValueError):
@@ -57,8 +61,20 @@ class LiteLLMProvider:
             kwargs["api_key"] = self.api_key
         if self.enable_thinking:
             kwargs["extra_body"] = {"think": True}
-        if tools := self._completion_tools(request):
+        tools, continuation, supports_function_calling = self._completion_tools(request)
+        if tools:
             kwargs["tools"] = tools
+        logger.info(
+            "[LLM] completion policy model=%s provider=%s tools_sent=%s "
+            "tool_count=%d current_tool_continuation=%s "
+            "supports_function_calling=%s",
+            self.model,
+            self.provider or "(inferred)",
+            bool(tools),
+            len(tools),
+            continuation,
+            supports_function_calling,
+        )
 
         response = await litellm.acompletion(**kwargs)
         if not isinstance(response, ModelResponse):
@@ -78,26 +94,40 @@ class LiteLLMProvider:
             cost=self._cost(response, getattr(response, "usage", None)),
         )
 
-    def _completion_tools(self, request: CompletionRequest) -> list[dict[str, Any]]:
-        """Return schemas LiteLLM advertises as valid for this completion.
+    def _completion_tools(
+        self, request: CompletionRequest
+    ) -> tuple[list[dict[str, Any]], bool, bool | None]:
+        """Return schemas and the explicit current-turn policy decision.
 
-        LiteLLM owns provider/model capability metadata.  After tool results,
-        schemas are sent only when its native function-calling capability says
-        that the configured model supports them; the adapter otherwise asks for
-        a final response from the canonical transcript alone.  An unavailable
-        metadata lookup preserves the existing full-schema behavior.
+        LiteLLM owns provider/model capability metadata, but only the agent can
+        distinguish a fresh user turn from the immediate continuation of its own
+        tool cycle. Historical ``role: tool`` records are replayed for context
+        and must never suppress schemas for a new user request.
         """
-        if not request.tools or not any(
-            message.get("role") == "tool" for message in request.messages
-        ):
-            return request.tools
+        continuation = self._is_unresolved_tool_continuation(request.messages)
+        if not request.tools or not continuation:
+            return request.tools, continuation, None
         try:
             supports_function_calling = litellm.supports_function_calling(
                 self.model, custom_llm_provider=self.provider
             )
         except Exception:
-            return request.tools
-        return request.tools if supports_function_calling else []
+            return request.tools, continuation, None
+        return (
+            request.tools if supports_function_calling else [],
+            continuation,
+            supports_function_calling,
+        )
+
+    @staticmethod
+    def _is_unresolved_tool_continuation(messages: list[dict[str, Any]]) -> bool:
+        """Whether the current completion immediately follows an open tool cycle."""
+        if not messages:
+            return False
+        last = messages[-1]
+        if last.get("role") == "tool":
+            return True
+        return last.get("role") == "assistant" and bool(last.get("tool_calls"))
 
     @staticmethod
     def _serialize_transcript(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
