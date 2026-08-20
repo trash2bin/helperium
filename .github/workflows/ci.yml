@@ -211,16 +211,34 @@ jobs:
           SHOP_DB=services/data-service/testdata/scenarios/shop/data.db python3 services/data-service/testdata/scripts/create_shop_db.py
           # data-service needs write access for WAL mode (UID 1000 vs runner UID 1001)
           sudo chmod -R 777 services/data-service/testdata/scenarios
-      - name: Run e2e tests (container, profile=test)
+      - name: Start isolated E2E dependencies (container, profile=test)
         run: |
+          # ci-state-init intentionally exits 0 after preparing named volumes.
+          # Do not attach it to --abort-on-container-exit: that would stop the
+          # stack before the e2e pytest container starts.
           docker compose \
             -f infra/docker-compose.yml \
             -f infra/docker-compose.ci.yml \
             --profile test \
-            up --abort-on-container-exit --exit-code-from e2e
+            up -d data-service mcp-gateway api admin-dashboard web
         env:
           ADMIN_TOKEN: "ci-secret-token"
           VIEWER_TOKEN: "ci-viewer-token"
+          CORS_ALLOW_ORIGINS: "http://localhost:8080"
+      - name: Run e2e tests (container, profile=test)
+        run: |
+          # e2e is the only terminal process. Its exit code is the job result;
+          # Compose honours the declared service_healthy dependency graph without
+          # attaching to the completed ci-state-init container.
+          docker compose \
+            -f infra/docker-compose.yml \
+            -f infra/docker-compose.ci.yml \
+            --profile test \
+            run --rm e2e
+        env:
+          ADMIN_TOKEN: "ci-secret-token"
+          VIEWER_TOKEN: "ci-viewer-token"
+          CORS_ALLOW_ORIGINS: "http://localhost:8080"
       - name: Dump logs on failure
         if: failure()
         run: |

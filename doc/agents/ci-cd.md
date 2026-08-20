@@ -9,9 +9,22 @@
 | `test-python` | Все Python тесты | `pytest` по всем пакетам |
 | `lint-go` | golangci-lint v2 + govulncheck | `golangci-lint run ./...`, `govulncheck` |
 | `test-go` | Go тесты | `go test ./... -count=1 -timeout 180s` |
-| `test-e2e` | e2e без LLM (agent-db) | `./infra/scripts/compose.sh --profile test up e2e --abort-on-container-exit --exit-code-from e2e` |
+| `test-e2e` | e2e без LLM (agent-db) | two-stage Compose: `up -d` long-lived services, затем `run --rm e2e` |
 
 Pipeline зелёный = все **6 джоб** проходят (lint-python, lint-js, test-python, lint-go, test-go, test-e2e).
+
+## Docker E2E lifecycle
+
+`ci-state-init` намеренно завершается с кодом `0` после bootstrap named CI volumes. Поэтому он не может находиться в `docker compose up --abort-on-container-exit`: normal init exit остановит stack ещё до pytest. GitHub Actions и local reproduction запускают только long-lived dependencies detached, затем выполняют `e2e` как единственный terminal process. CORS default задаётся явно, чтобы runner/user `.env` с wildcard не ослабил fail-closed CORS regression.
+
+```bash
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test run --rm e2e
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test down -v
+```
 
 ## Pre-commit hooks (`.pre-commit-config.yaml`)
 
@@ -121,7 +134,7 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 
 1. [ ] `make ci` — зелёный
 2. [ ] Pre-commit hooks — все Passed
-3. [ ] e2e без LLM зелёные — `./infra/scripts/dev.sh e2e` (124 passed) или Docker: `./infra/scripts/compose.sh --profile test up e2e`
+3. [ ] e2e без LLM зелёные — native `./infra/scripts/dev.sh e2e` или documented two-stage Docker `up -d` + `run --rm e2e`
 4. [ ] Mutation score не упал (опционально)
 ---
-**Last verified:** 2026-08-09 (HEAD `be9a991`) — структура CI/CD и make-команды сверены с кодом
+**Last verified:** 2026-08-20 (working tree after `e839d6c`) — workflow запускает long-lived CI dependencies detached, then E2E as the sole terminal container; clean Docker profile passed 137 tests with explicit fail-closed CORS default.

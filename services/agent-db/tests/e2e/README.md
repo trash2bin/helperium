@@ -131,12 +131,18 @@ assert result.success
 ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
   ./infra/scripts/compose.sh --profile test build data-service mcp-gateway api admin-dashboard web
 
-# Поднять стек и прогнать e2e в контейнере
-ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
-  ./infra/scripts/compose.sh --profile test up e2e --abort-on-container-exit --exit-code-from e2e
+# Поднять только long-lived dependencies. ci-state-init ожидаемо завершится 0;
+# не используй --abort-on-container-exit вместе с ним.
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
 
-# Остановить и удалить volumes
-ADMIN_TOKEN=ci-secret-token ./infra/scripts/compose.sh --profile test down -v
+# e2e — единственный terminal process; его exit code является результатом прогона.
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test run --rm e2e
+
+# Остановить и удалить только CI volumes/containers.
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test down -v
 ```
 
 Как это устроено:
@@ -144,6 +150,7 @@ ADMIN_TOKEN=ci-secret-token ./infra/scripts/compose.sh --profile test down -v
   проект в `/workspace` (rw) — чтобы тесты видели и создавали БД по тем же
   путям, что и data-service.
 - В контейнер e2e доливается `pytest` + `agent-db` (seedgen) в `.venv`.
+- `ci-state-init` — одноразовый owner/permission bootstrap для named CI volumes; его normal exit не является результатом E2E. CORS default явно фиксируется на `http://localhost:8080`, чтобы local `.env` не превратил fail-closed regression в wildcard test run.
 - Сервисы доступны по внутренним именам compose-сети
   (`data-service:8084`, `mcp-gateway:8083`, `api:8081`, `web:8080`).
 - `ADMIN_TOKEN`/`VIEWER_TOKEN` обязательны и пробрасываются во все сервисы

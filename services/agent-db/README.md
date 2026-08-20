@@ -95,9 +95,14 @@ New modular pytest tests in `services/agent-db/tests/e2e/` — faster, self-docu
 # The pytest summary is the authoritative current test count and duration.
 ./infra/scripts/dev.sh e2e
 
-# Compose-режим: тесты выполняются внутри /workspace и видят те же SQLite-пути, что data-service
-./infra/scripts/compose.sh --profile test up e2e --abort-on-container-exit --exit-code-from e2e
-./infra/scripts/compose.sh --profile test down -v
+# Compose-режим: ci-state-init завершается 0 после volume bootstrap, поэтому
+# подними long-lived services отдельно, then run e2e as the sole terminal process.
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test run --rm e2e
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test down -v
 
 # Или напрямую в native-режиме (только после `./infra/scripts/dev.sh start`):
 uv run pytest services/agent-db/tests/e2e/ -v

@@ -74,19 +74,19 @@ make ci-admin                   # admin-dashboard tests
 Полный isolated Docker E2E:
 
 ```bash
-ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token \
-  docker-compose --project-directory infra \
-  -f infra/docker-compose.yml -f infra/docker-compose.ci.yml \
-  --profile test up --abort-on-container-exit --exit-code-from e2e
+# ci-state-init is a one-shot permission bootstrap; do not attach it to
+# --abort-on-container-exit. Start long-lived dependencies, then run e2e alone.
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test run --rm e2e
 ```
 
 После Docker run очисти только Helperium test resources:
 
 ```bash
-ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token \
-  docker-compose --project-directory infra \
-  -f infra/docker-compose.yml -f infra/docker-compose.ci.yml \
-  --profile test down -v
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test down -v
 ```
 
 Не трогай `autoparts-store-*`. Shared `infra_helperium-net` может остаться, если им пользуется заранее поднятый `infra-rag-1` или внешний storefront.
@@ -114,4 +114,4 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token \
 
 ## Current verification baseline
 
-**Last verified:** 2026-08-20 (working tree following `9e85526`). Full local `make ci` passed; the API suite passed **375 tests** with the same 38 pre-existing pytest marker warnings, and Pyright passed with no errors. The current security-critical session quota has one explicit public contract: `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS`. It counts durable accepted ingress user turns, not transcript messages, and it is the same accepted-at marker used by `min_interval_ms`; provider/tool failure never refunds it. The retired `max_messages_per_session` / `ABUSE_MAX_MESSAGES` names have no compatibility alias. Admin global/per-agent JSON decoding, direct agent DTO validation and persisted admin config loading reject stale unknown fields; a stale global policy fails startup/reload instead of silently falling back to weaker defaults. The typed SDK `AbuseConfigOverride` is `extra=forbid`, and API/admin OpenAPI plus dashboard bindings expose only the new field. `SessionStore` remains a domain facade over `SessionRepository`/`SQLiteSessionRepository`; legacy transcript history backfills before the first accepted turn. Native runtime restarted all six Helperium services healthy. Live admin `GET /api/abuse-settings` returned `max_user_turns_per_session=50` without the old key; legacy PUT returned `400`; acknowledged `POST /api/admin/abuse-config/reload` returned `status=applied`. The seeded `autoparts` read-only tenant completed a fresh MiniMax `db_search → tool_result → final` turn under the renamed runtime. The trusted-data invariant and `AppendOnlyLoop` context telemetry remain as verified in `9e85526`; their system-level declaration is defence-in-depth, not a hard prompt-injection boundary. This proves local core, MCP transport, live fallback, explicit user-turn quota contract, no-alias migration, admin apply and core regression coverage; it does **not** replace broader LLM quality/benchmark coverage, browser acceptance on a deployed domain, edge/WAF validation, alerting/rollback game day, multi-instance shared abuse state, a full RAG/prompt-injection assessment, behavioural anomaly detection after untrusted results, or a reserve/commit spending design bound to a named agent/account rather than tenant ID.
+**Last verified:** 2026-08-20 (working tree following `e839d6c`). Full local `make ci` passed; the API suite passed **375 tests** with the same 38 pre-existing pytest marker warnings, and Pyright passed with no errors. The current security-critical session quota has one explicit public contract: `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS`. It counts durable accepted ingress user turns, not transcript messages, and it is the same accepted-at marker used by `min_interval_ms`; provider/tool failure never refunds it. The retired `max_messages_per_session` / `ABUSE_MAX_MESSAGES` names have no compatibility alias. Admin global/per-agent JSON decoding, direct agent DTO validation and persisted admin config loading reject stale unknown fields; a stale global policy fails startup/reload instead of silently falling back to weaker defaults. The typed SDK `AbuseConfigOverride` is `extra=forbid`, and API/admin OpenAPI plus dashboard bindings expose only the new field. `SessionStore` remains a domain facade over `SessionRepository`/`SQLiteSessionRepository`; legacy transcript history backfills before the first accepted turn. Native runtime restarted all six Helperium services healthy. Live admin `GET /api/abuse-settings` returned `max_user_turns_per_session=50` without the old key; legacy PUT returned `400`; acknowledged `POST /api/admin/abuse-config/reload` returned `status=applied`. The seeded `autoparts` read-only tenant completed a fresh MiniMax `db_search → tool_result → final` turn under the renamed runtime. The trusted-data invariant and `AppendOnlyLoop` context telemetry remain as verified in `9e85526`; their system-level declaration is defence-in-depth, not a hard prompt-injection boundary. This proves local core, MCP transport, live fallback, explicit user-turn quota contract, no-alias migration, admin apply and core regression coverage; it does **not** replace broader LLM quality/benchmark coverage, browser acceptance on a deployed domain, edge/WAF validation, alerting/rollback game day, multi-instance shared abuse state, a full RAG/prompt-injection assessment, behavioural anomaly detection after untrusted results, or a reserve/commit spending design bound to a named agent/account rather than tenant ID. The CI E2E workflow now starts long-lived dependencies detached and runs `e2e` as the only terminal container: `ci-state-init` may exit successfully without aborting the stack. Explicit `CORS_ALLOW_ORIGINS=http://localhost:8080` prevents a runner `.env` wildcard from masking the fail-closed CORS regression. A clean Docker profile completed all 137 E2E tests under this lifecycle; only CI volumes/containers were removed, while the external storefront was untouched.

@@ -35,18 +35,17 @@ uv run pytest services/agent-db/tests/e2e/ --collect-only -q
 Это предпочтительный путь для service boundary, tenant DB, CORS, MCP auth/origin и SSE regressions. Контур создаёт named test volumes и не должен писать в обычные локальные `.data`.
 
 ```bash
-ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token \
-  docker-compose --project-directory infra \
-  -f infra/docker-compose.yml -f infra/docker-compose.ci.yml \
-  --profile test up --abort-on-container-exit --exit-code-from e2e
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
 
-ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token \
-  docker-compose --project-directory infra \
-  -f infra/docker-compose.yml -f infra/docker-compose.ci.yml \
-  --profile test down -v
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test run --rm e2e
+
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+  ./infra/scripts/compose.sh --profile test down -v
 ```
 
-The CI override enables distinct test-only admin/viewer credentials, MCP bearer authentication and an explicit MCP Origin allowlist. Never point host pytest at Docker services when a test relies on SQLite paths visible only inside the Compose volumes.
+The CI override enables distinct test-only admin/viewer credentials, MCP bearer authentication and an explicit MCP Origin allowlist. `ci-state-init` is a successful one-shot volume permission bootstrap, so do not use `--abort-on-container-exit` for this profile; only `e2e` is terminal. Explicit `CORS_ALLOW_ORIGINS` prevents a local/runner wildcard `.env` from invalidating the fail-closed CORS test. Never point host pytest at Docker services when a test relies on SQLite paths visible only inside the Compose volumes.
 
 ### Native isolated profile
 
@@ -109,4 +108,4 @@ uv run pytest path/to/test.py::test_name -v --tb=long -s
 
 External/live LLM and browser checks are intentionally outside deterministic CI. Keep their credentials, budgets and target domains explicit; do not target `demo/autoparts-store` without separate approval.
 
-**Last verified:** 2026-08-19 (working tree after `ff2d08b`). Full local `make ci` passed; clean Docker E2E passed 137 tests after API CORS and MCP tenant-scope hardening.
+**Last verified:** 2026-08-20 (working tree after `e839d6c`). Clean Docker E2E passed 137 tests with ci-state-init completing normally outside the terminal E2E lifecycle and explicit fail-closed CORS default.

@@ -2,6 +2,8 @@
 
 ## 2026-08-20
 
+- **fix(ci):** Docker E2E больше не attach-ится к successful `ci-state-init`; CI запускает long-lived stack отдельно и `e2e` как единственный terminal process, с explicit fail-closed CORS default. **Проверка:** clean Docker E2E, 137 passed.
+
 - **refactor(anti-abuse):** `max_messages_per_session` / `ABUSE_MAX_MESSAGES` полностью заменены на `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS` across runtime, admin UI/OpenAPI, typed agent override and docs; legacy keys fail-fast without alias. **Проверка:** полный `make ci`, API OpenAPI contract и live reload/E2E подтверждены.
 
 - **refactor(anti-abuse):** trusted tool-data rule moved from LiteLLM wire prefix to mandatory agent system policy; loop owns structured context telemetry; SQLite session repository records one accepted ingress user turn for quota/interval. **Проверка:** полный `make ci`, Pyright и live MiniMax MCP E2E прошли.
