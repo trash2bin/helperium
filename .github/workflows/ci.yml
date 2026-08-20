@@ -37,7 +37,7 @@ jobs:
         run: uv audit --preview-features audit-command || true
 
   docs-links:
-    name: Docs — мёртвые пути
+    name: Docs dead paths
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
