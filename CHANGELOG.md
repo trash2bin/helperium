@@ -2,6 +2,8 @@
 
 ## 2026-08-20
 
+- **fix(anti-abuse):** provider wire отделяет untrusted tool results structured boundary; session quota считает durable user turns; inactive `token_budget` удалён; Admin policy применяет синхронный acknowledge/rollback. **Проверка:** полный `make ci` и live admin `status=applied`/MiniMax cross-turn MCP E2E прошли.
+
 - **fix(runtime):** append-only agent loop корректно обрабатывает нулевой empty-response limit, считает полный native tool transcript и сохраняет assistant text; backlog надёжно показывает terminal errors и пустые session files; MCP v2 принудительно использует совместимый legacy initialize handshake с mcp-go. Dev launcher получил opt-in `--with-autoparts` и безопасные local fallbacks. **Проверка:** полный `make ci` прошёл; native runtime healthy, tenant-scoped MCP session/schema discovery подтверждены.
 - **fix(minimax):** canonical `ollama/...` model id больше не получает двойной prefix; typed LLM capability управляет schemas после tool result; LiteLLM сериализует internal dict tool arguments только на wire boundary. Это восстанавливает native MiniMax tool turn без text-tool parsing. Добавлен отложенный product decision о границах backlog/benchmark evidence и обновлён API OpenAPI snapshot. **Проверка:** полный `make ci` прошёл; live seeded autoparts dialogue завершил `tool_call → tool_result → token → final → done`.
 - **refactor(litellm):** factory и ProviderPool передают raw model ID и provider slug в LiteLLM adapter без собственных prefix tables или transport exceptions; adapter формирует provider wire request. Удалены implementation-specific prefix tests, добавлены provider-boundary регрессии. **Проверка:** полный `make ci` прошёл; live MiniMax raw model/provider SSE завершил native tool turn.

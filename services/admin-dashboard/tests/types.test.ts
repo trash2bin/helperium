@@ -267,7 +267,6 @@ describe('Types — type-level contracts', () => {
       max_message_length: 2000,
       min_interval_ms: 1000,
       max_messages_per_session: 50,
-      token_budget: 100000,
       block_empty_user_agent: true,
       blocked_user_agents: ['curl'],
       _ua_text: 'curl\nwget',
@@ -287,7 +286,6 @@ describe('Types — type-level contracts', () => {
     const s: EmergencyStatus = {
       rps: 5,
       burst: 10,
-      token_budget: null,
       max_messages: null,
       min_interval_ms: 2000,
       current_preset: 'cautious',

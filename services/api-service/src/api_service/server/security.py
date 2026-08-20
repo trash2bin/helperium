@@ -47,27 +47,22 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
             headers={"Retry-After": str(int(retry_after))},
         )
 
-    history = await asyncio.to_thread(session_store.history_messages, safe_id)
-    n_msg = len(history)
-    last_msg_time = None
-    if history:
-        last_msg = history[-1]
-        ts = last_msg.get("timestamp") or last_msg.get("created_at")
-        if ts:
-            try:
-                last_msg_time = (
-                    time.time() - float(ts) if isinstance(ts, (int, float)) else None
-                )
-            except (ValueError, TypeError):
-                pass
+    user_turn_count, last_user_turn_at = await asyncio.to_thread(
+        session_store.abuse_state, safe_id
+    )
+    last_user_turn_since = (
+        max(0.0, time.time() - last_user_turn_at)
+        if isinstance(last_user_turn_at, (int, float))
+        else None
+    )
 
     check_result = checker.check(
         session_id=safe_id,
         ip=ip,
         user_agent=user_agent,
         message=message,
-        n_msg=n_msg,
-        last_msg_time_since=last_msg_time,
+        n_msg=user_turn_count,
+        last_msg_time_since=last_user_turn_since,
     )
     if not check_result.allowed:
         lang = _get_lang_from_request(request)

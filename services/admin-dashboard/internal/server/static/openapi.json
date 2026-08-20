@@ -33,9 +33,6 @@
           "rps": {
             "description": "Requests per second",
             "type": "number"
-          },
-          "token_budget": {
-            "type": "integer"
           }
         },
         "type": "object"
@@ -328,9 +325,6 @@
           },
           "rps": {
             "type": "number"
-          },
-          "token_budget": {
-            "type": "integer"
           }
         },
         "type": "object"
@@ -653,7 +647,7 @@
             "type": "string"
           },
           "status": {
-            "example": "reload_triggered",
+            "example": "applied",
             "type": "string"
           }
         },

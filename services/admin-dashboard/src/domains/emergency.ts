@@ -4,7 +4,7 @@ const w = window as any;
 
 AppRegistry.register('emergency', {
   state: {
-    emergencyStatus: { rps: null, burst: null, token_budget: null, max_messages: null, min_interval_ms: null },
+    emergencyStatus: { rps: null, burst: null, max_messages: null, min_interval_ms: null },
     emergencyActive: false, emergencyCurrentPreset: 'normal',
     emergencyApplying: false, emergencyTimer: null, emergencyConflicting: false,
   },

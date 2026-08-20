@@ -1,9 +1,10 @@
 // Package server provides admin-dashboard HTTP server (abuse config management).
 //
 // HTTP routes called (to upstream services):
-//   proxyGetToApiService()  -> api-service:GET /api/agents/{name}    (get agent abuse config)
-//   proxyPutToApiService()  -> api-service:PUT /api/agents/{name}    (update agent abuse config)
-//   notifyApiServiceReload()-> api-service:POST /admin/abuse-config/reload (reload abuse)
+//
+//	proxyGetToApiService()  -> api-service:GET /api/agents/{name}    (get agent abuse config)
+//	proxyPutToApiService()  -> api-service:PUT /api/agents/{name}    (update agent abuse config)
+//	notifyApiServiceReload()-> api-service:POST /admin/abuse-config/reload (reload abuse)
 package server
 
 import (
@@ -14,9 +15,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -41,52 +43,50 @@ type AbuseConfig struct {
 	BlockEmptyUserAgent bool     `json:"block_empty_user_agent"`
 	BlockedUserAgents   []string `json:"blocked_user_agents"` // patterns to block
 
-	// Emergency / token saving
+	// Emergency controls
 	EmergencyMode   bool   `json:"emergency_mode"`   // global emergency toggle
-	TokenBudget     int    `json:"token_budget"`     // max tokens per session (0 = unlimited)
 	EmergencyPreset string `json:"emergency_preset"` // "normal", "cautious", "lockdown"
 
 	// Runtime settings (agent loop behaviour)
-	HistoryTurns         int `json:"history_turns"`          // max conversation turns in history (env: DEMO_HISTORY_TURNS)
-	HistoryContentChars  int `json:"history_content_chars"`  // max chars per history message (env: DEMO_HISTORY_CONTENT_CHARS)
-	MaxIterations        int `json:"max_iterations"`         // max agent loop iterations (env: AGENT_MAX_ITERATIONS)
-	MaxEmptyRounds       int `json:"max_empty_rounds"`       // max empty LLM rounds (env: AGENT_MAX_EMPTY_ROUNDS)
-	MaxTurnTokens        int `json:"max_turn_tokens"`        // max tokens per turn (env: AGENT_MAX_TURN_TOKENS)
-	SessionTTLHours      int `json:"session_ttl_hours"`      // session TTL in hours (0 = forever)
+	HistoryTurns        int `json:"history_turns"`         // max conversation turns in history (env: DEMO_HISTORY_TURNS)
+	HistoryContentChars int `json:"history_content_chars"` // max chars per history message (env: DEMO_HISTORY_CONTENT_CHARS)
+	MaxIterations       int `json:"max_iterations"`        // max agent loop iterations (env: AGENT_MAX_ITERATIONS)
+	MaxEmptyRounds      int `json:"max_empty_rounds"`      // max empty LLM rounds (env: AGENT_MAX_EMPTY_ROUNDS)
+	MaxTurnTokens       int `json:"max_turn_tokens"`       // max tokens per turn (env: AGENT_MAX_TURN_TOKENS)
+	SessionTTLHours     int `json:"session_ttl_hours"`     // session TTL in hours (0 = forever)
 }
 
 // DefaultAbuseConfig returns sensible defaults (matching api-service env defaults).
 // DefaultAbuseConfig returns sensible defaults loaded from environment variables when set.
 func DefaultAbuseConfig() AbuseConfig {
-return AbuseConfig{
-RPS:   getEnvFloat64("ABUSE_RPS", 1.0),
-Burst: getEnvInt("ABUSE_BURST", 5),
+	return AbuseConfig{
+		RPS:   getEnvFloat64("ABUSE_RPS", 1.0),
+		Burst: getEnvInt("ABUSE_BURST", 5),
 
-MaxMessageLength:      getEnvInt("ABUSE_MAX_MSG_LENGTH", 2000),
-MinIntervalMs:         getEnvInt("ABUSE_MIN_INTERVAL_MS", 1000),
-MaxMessagesPerSession: getEnvInt("ABUSE_MAX_MESSAGES", 50),
+		MaxMessageLength:      getEnvInt("ABUSE_MAX_MSG_LENGTH", 2000),
+		MinIntervalMs:         getEnvInt("ABUSE_MIN_INTERVAL_MS", 1000),
+		MaxMessagesPerSession: getEnvInt("ABUSE_MAX_MESSAGES", 50),
 
-BlockEmptyUserAgent: true,
-BlockedUserAgents: []string{
-"curl/*",
-"python-requests/*",
-"Go-http-client/*",
-"Wget/*",
-},
+		BlockEmptyUserAgent: true,
+		BlockedUserAgents: []string{
+			"curl/*",
+			"python-requests/*",
+			"Go-http-client/*",
+			"Wget/*",
+		},
 
-// Emergency defaults
-EmergencyMode:   getEnvBool("ABUSE_EMERGENCY_MODE", false),
-TokenBudget:     getEnvInt("ABUSE_TOKEN_BUDGET", 0), // 0 = unlimited
-EmergencyPreset: getEnvString("ABUSE_EMERGENCY_PRESET", "normal"),
+		// Emergency defaults
+		EmergencyMode:   getEnvBool("ABUSE_EMERGENCY_MODE", false),
+		EmergencyPreset: getEnvString("ABUSE_EMERGENCY_PRESET", "normal"),
 
-// Runtime defaults (matching DemoSettings env defaults)
-HistoryTurns:        getEnvInt("DEMO_HISTORY_TURNS", 8),
-HistoryContentChars: getEnvInt("DEMO_HISTORY_CONTENT_CHARS", 6000),
-MaxIterations:       getEnvInt("AGENT_MAX_ITERATIONS", 5),
-MaxEmptyRounds:      getEnvInt("AGENT_MAX_EMPTY_ROUNDS", 3),
-MaxTurnTokens:       getEnvInt("AGENT_MAX_TURN_TOKENS", 8000),
-SessionTTLHours:     getEnvInt("SESSION_TTL_HOURS", 0),
-}
+		// Runtime defaults (matching DemoSettings env defaults)
+		HistoryTurns:        getEnvInt("DEMO_HISTORY_TURNS", 8),
+		HistoryContentChars: getEnvInt("DEMO_HISTORY_CONTENT_CHARS", 6000),
+		MaxIterations:       getEnvInt("AGENT_MAX_ITERATIONS", 5),
+		MaxEmptyRounds:      getEnvInt("AGENT_MAX_EMPTY_ROUNDS", 3),
+		MaxTurnTokens:       getEnvInt("AGENT_MAX_TURN_TOKENS", 8000),
+		SessionTTLHours:     getEnvInt("SESSION_TTL_HOURS", 0),
+	}
 }
 
 // ── Per-Agent Abuse Override ──
@@ -211,18 +211,20 @@ func (s *Server) abuseSettingsPutHandler(w http.ResponseWriter, r *http.Request)
 		cfg.Burst = def.Burst
 	}
 
+	previous := s.abuseStore.Get()
 	if err := s.abuseStore.Set(cfg); err != nil {
 		respondError(w, http.StatusInternalServerError, "save_error", err.Error())
 		return
 	}
-
-	slog.Info("abuse settings updated", "rps", cfg.RPS, "burst", cfg.Burst)
-
-	// Notify api-service to reload its config
-	if s.opts.ApiSvcURL != "" {
-		s.notifyApiServiceReload()
+	if err := s.applyAbuseConfig(); err != nil {
+		if rollbackErr := s.abuseStore.Set(previous); rollbackErr != nil {
+			slog.Error("failed to roll back unapplied abuse settings", "error", rollbackErr)
+		}
+		respondError(w, http.StatusBadGateway, "config_not_applied", err.Error())
+		return
 	}
 
+	slog.Info("abuse settings applied", "rps", cfg.RPS, "burst", cfg.Burst)
 	respondJSON(w, http.StatusOK, cfg)
 }
 
@@ -322,43 +324,44 @@ func (s *Server) agentAbusePutHandler(w http.ResponseWriter, r *http.Request) {
 // abuseReloadHandler — UI-facing endpoint that triggers a reload of
 // anti-abuse config on the api-service (POST /api/admin/abuse-config/reload).
 func (s *Server) abuseReloadHandler(w http.ResponseWriter, r *http.Request) {
-	if s.opts.ApiSvcURL == "" {
-		respondError(w, http.StatusServiceUnavailable, "no_api_url", "api-service URL not configured")
+	if err := s.applyAbuseConfig(); err != nil {
+		respondError(w, http.StatusBadGateway, "config_not_applied", err.Error())
 		return
 	}
-	s.notifyApiServiceReload()
 	respondJSON(w, http.StatusOK, map[string]any{
-		"status":  "reload_triggered",
-		"message": "API service abuse config reload triggered",
+		"status":  "applied",
+		"message": "API service applied the current abuse config",
 	})
 }
 
-// notifyApiServiceReload sends a POST request to api-service to reload abuse config.
-func (s *Server) notifyApiServiceReload() {
+// applyAbuseConfig reloads api-service synchronously and returns only after it
+// acknowledges the same persisted policy. A dashboard success response therefore
+// means the effective runtime policy changed, not merely that a local file wrote.
+func (s *Server) applyAbuseConfig() error {
+	if s.opts.ApiSvcURL == "" {
+		return fmt.Errorf("api-service URL not configured")
+	}
 	apiURL := s.opts.ApiSvcURL + "/admin/abuse-config/reload"
-	go func() {
-		req, err := http.NewRequest(http.MethodPost, apiURL, nil)
-		if err != nil {
-			slog.Warn("failed to create reload request", "error", err)
-			return
-		}
-		if s.opts.AdminToken != "" {
-			req.Header.Set("Authorization", "Bearer "+s.opts.AdminToken)
-		}
-		req.Header.Set("Content-Type", "application/json")
+	req, err := http.NewRequest(http.MethodPost, apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("create reload request: %w", err)
+	}
+	if s.opts.AdminToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.opts.AdminToken)
+	}
+	req.Header.Set("Content-Type", "application/json")
 
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			slog.Warn("failed to notify api-service", "error", err)
-			return
-		}
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			slog.Info("api-service abuse config reloaded")
-		} else {
-			slog.Warn("api-service reload returned non-ok status", "status", resp.StatusCode)
-		}
-	}()
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("api-service reload request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("api-service reload returned status %d", resp.StatusCode)
+	}
+	slog.Info("api-service abuse config applied")
+	return nil
 }
 
 // ── API helpers for api-service ──
@@ -419,7 +422,6 @@ func EmergencyPresets() map[string]AbuseConfig {
 	cautious.MinIntervalMs = 2000
 	cautious.MaxMessagesPerSession = 30
 	cautious.BlockedUserAgents = append(cautious.BlockedUserAgents, "Mozilla/4.*", "MSIE.*")
-	cautious.TokenBudget = 10000
 	cautious.EmergencyPreset = "cautious"
 
 	lockdown := DefaultAbuseConfig()
@@ -434,7 +436,6 @@ func EmergencyPresets() map[string]AbuseConfig {
 		"Mozilla/4.*", "MSIE.*", "Java/*", "libwww/*", "scrapy/*",
 		"axios/*", "PostmanRuntime/*",
 	}
-	lockdown.TokenBudget = 2000
 	lockdown.EmergencyMode = true
 	lockdown.EmergencyPreset = "lockdown"
 
@@ -457,16 +458,21 @@ func (s *Server) abusePresetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.abuseStore != nil {
-		if err := s.abuseStore.Set(cfg); err != nil {
-			respondError(w, http.StatusInternalServerError, "save_error", err.Error())
-			return
-		}
+	if s.abuseStore == nil {
+		respondError(w, http.StatusInternalServerError, "store_unavailable", "abuse store not initialized")
+		return
 	}
-
-	// Notify api-service to reload its config
-	if s.opts.ApiSvcURL != "" {
-		s.notifyApiServiceReload()
+	previous := s.abuseStore.Get()
+	if err := s.abuseStore.Set(cfg); err != nil {
+		respondError(w, http.StatusInternalServerError, "save_error", err.Error())
+		return
+	}
+	if err := s.applyAbuseConfig(); err != nil {
+		if rollbackErr := s.abuseStore.Set(previous); rollbackErr != nil {
+			slog.Error("failed to roll back unapplied emergency preset", "error", rollbackErr)
+		}
+		respondError(w, http.StatusBadGateway, "config_not_applied", err.Error())
+		return
 	}
 
 	slog.Warn("emergency preset applied",
@@ -474,7 +480,6 @@ func (s *Server) abusePresetHandler(w http.ResponseWriter, r *http.Request) {
 		"emergency_mode", cfg.EmergencyMode,
 		"rps", cfg.RPS,
 		"burst", cfg.Burst,
-		"token_budget", cfg.TokenBudget,
 	)
 
 	respondJSON(w, http.StatusOK, cfg)
@@ -494,7 +499,6 @@ func (s *Server) emergencyStatusHandler(w http.ResponseWriter, r *http.Request) 
 		"emergency_preset": cfg.EmergencyPreset,
 		"rps":              cfg.RPS,
 		"burst":            cfg.Burst,
-		"token_budget":     cfg.TokenBudget,
 		"max_messages":     cfg.MaxMessagesPerSession,
 		"min_interval_ms":  cfg.MinIntervalMs,
 		"active":           cfg.EmergencyMode && cfg.EmergencyPreset == "lockdown",
@@ -503,32 +507,32 @@ func (s *Server) emergencyStatusHandler(w http.ResponseWriter, r *http.Request) 
 
 // getEnvFloat64 reads an environment variable as float64, falling back to defaultVal.
 func getEnvFloat64(key string, defaultVal float64) float64 {
-if value, err := strconv.ParseFloat(os.Getenv(key), 64); err == nil {
-return value
-}
-return defaultVal
+	if value, err := strconv.ParseFloat(os.Getenv(key), 64); err == nil {
+		return value
+	}
+	return defaultVal
 }
 
 // getEnvInt reads an environment variable as int, falling back to defaultVal.
 func getEnvInt(key string, defaultVal int) int {
-if value, err := strconv.Atoi(os.Getenv(key)); err == nil {
-return value
-}
-return defaultVal
+	if value, err := strconv.Atoi(os.Getenv(key)); err == nil {
+		return value
+	}
+	return defaultVal
 }
 
 // getEnvString reads an environment variable, falling back to defaultVal when empty.
 func getEnvString(key, defaultVal string) string {
-if value := os.Getenv(key); value != "" {
-return value
-}
-return defaultVal
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultVal
 }
 
 // getEnvBool reads an environment variable as bool, falling back to defaultVal.
 func getEnvBool(key string, defaultVal bool) bool {
-if value, err := strconv.ParseBool(os.Getenv(key)); err == nil {
-return value
-}
-return defaultVal
+	if value, err := strconv.ParseBool(os.Getenv(key)); err == nil {
+		return value
+	}
+	return defaultVal
 }

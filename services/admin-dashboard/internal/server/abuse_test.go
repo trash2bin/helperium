@@ -106,8 +106,24 @@ func TestAbuseStore_MissingFileDefaults(t *testing.T) {
 func newTestAbuseServer(t *testing.T) (chi.Router, func()) {
 	t.Helper()
 	dir := t.TempDir()
-	s := New(Options{Addr: ":0", DataDir: dir, AdminToken: "test-token"})
-	return s.Router(), func() { os.RemoveAll(dir) }
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/admin/abuse-config/reload" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	s := New(Options{
+		Addr: ":0", DataDir: dir, ApiSvcURL: api.URL, AdminToken: "test-token",
+	})
+	return s.Router(), func() {
+		api.Close()
+		os.RemoveAll(dir)
+	}
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -281,15 +297,16 @@ func TestEmergencyPreset_NormalHasMaxSettings(t *testing.T) {
 	}
 }
 
-func TestEmergencyPreset_CautiousHasTokenBudget(t *testing.T) {
+func TestEmergencyPreset_CautiousRestrictsActiveControls(t *testing.T) {
 	presets := EmergencyPresets()
 	cautious := presets["cautious"]
 
-	if cautious.TokenBudget == 0 {
-		t.Error("cautious preset should have TokenBudget > 0")
+	if cautious.RPS >= presets["normal"].RPS {
+		t.Error("cautious preset should lower sustained request rate")
 	}
-	// CheapModel removed — use provider_priority fallback via LiteLLM Router instead
-	_ = cautious // placeholder
+	if cautious.MinIntervalMs < 1500 {
+		t.Errorf("cautious min interval=%d, want >=1500", cautious.MinIntervalMs)
+	}
 }
 
 func TestAbusePreset_ApplyLockdown(t *testing.T) {
@@ -321,9 +338,6 @@ func TestAbusePreset_ApplyLockdown(t *testing.T) {
 	}
 	if cfg.RPS > 0.5 {
 		t.Errorf("lockdown rps=%f, want <=0.5", cfg.RPS)
-	}
-	if cfg.TokenBudget == 0 {
-		t.Error("lockdown should have TokenBudget > 0")
 	}
 }
 
@@ -428,10 +442,6 @@ func TestEmergencyPreset_CautiousReturnsCautiousSettings(t *testing.T) {
 	if cfg.RPS > 0.6 || cfg.RPS < 0.4 {
 		t.Errorf("cautious rps=%f, want ~0.5", cfg.RPS)
 	}
-	if cfg.TokenBudget != 10000 {
-		t.Errorf("cautious token_budget=%d, want 10000", cfg.TokenBudget)
-	}
-	// CheapModel field removed — use provider_priority fallback via LiteLLM Router
 	if cfg.MinIntervalMs < 1500 {
 		t.Errorf("cautious min_interval_ms=%d, want >=2000", cfg.MinIntervalMs)
 	}
@@ -440,5 +450,42 @@ func TestEmergencyPreset_CautiousReturnsCautiousSettings(t *testing.T) {
 	}
 	if cfg.EmergencyPreset != "cautious" {
 		t.Errorf("EmergencyPreset=%q, want cautious", cfg.EmergencyPreset)
+	}
+}
+
+func TestAbuseSettingsPut_RollsBackWhenApiServiceDoesNotApply(t *testing.T) {
+	dir := t.TempDir()
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer api.Close()
+
+	s := New(Options{
+		Addr: ":0", DataDir: dir, ApiSvcURL: api.URL, AdminToken: "test-token",
+	})
+	original := s.abuseStore.Get()
+	payload := AbuseConfig{
+		RPS:                   0.5,
+		Burst:                 2,
+		MaxMessageLength:      1000,
+		MinIntervalMs:         1000,
+		MaxMessagesPerSession: 20,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/abuse-settings", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test-token")
+	s.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("PUT with failed apply = %d, want %d; body=%s", w.Code, http.StatusBadGateway, w.Body.String())
+	}
+	current := s.abuseStore.Get()
+	if current.RPS != original.RPS || current.Burst != original.Burst {
+		t.Fatalf("unapplied config persisted: got rps=%v burst=%d, want rps=%v burst=%d", current.RPS, current.Burst, original.RPS, original.Burst)
 	}
 }

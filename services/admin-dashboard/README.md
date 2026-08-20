@@ -8,7 +8,7 @@
 
 ## Роль в системе
 
-`admin-dashboard` — единая точка входа для администратора платформы. Он не хранит состояние сам, а проксирует запросы к трём бэкенд-сервисам:
+`admin-dashboard` — единая точка входа для администратора платформы. Он проксирует tenant/RAG/agent operations к backend-сервисам и владеет persisted global anti-abuse policy, которую синхронно применяет в `api-service`:
 
 ```
 Admin Dashboard (:8085)
@@ -54,7 +54,7 @@ admin-dashboard/
 ├── internal/server/
 │   ├── server.go                — chi роутер, middleware, хендлеры, proxy
 │   ├── client.go                — HTTP-клиенты к data-service и RAG
-│   └── static/
+│   ├── static/
 │       ├── index.html           — SPA (сборка из partials/)
 │       ├── dist/app.js          — esbuild-бандл (TypeScript → IIFE)
 │       ├── styles.css           — общие стили
@@ -76,7 +76,7 @@ admin-dashboard/
 │   ├── core/                    — apiClient, auth, store, eventBus, notify, apiLogger
 │   └── domains/                 — 11 доменных модулей
 ├── build.sh                     — сборка (см. ниже)
-├── tests/                       — Vitest (58 тестов: api + contract scan)
+├── tests/                       — Vitest (API, contract, i18n and types)
 ├── go.mod / Dockerfile
 └── README.md
 ```
@@ -88,7 +88,8 @@ cd admin-dashboard && bash build.sh
 # 1. tsc --noEmit          — typecheck
 # 2. cat partials/* > static/index.html — HTML сборка
 # 3. npx html-validate ... — HTML линтинг (close-order, no-raw-characters)
-# 4. esbuild src/index.ts → static/dist/app.js
+# 4. Generate admin OpenAPI → static/openapi.json
+# 5. esbuild src/index.ts → static/dist/app.js
 ```
 
 Lint срабатывает на собранном HTML (partials — фрагменты). `close-order` ловит ту же ошибку, что была — страницы, оказавшиеся вне `.app`.
@@ -107,7 +108,7 @@ Lint срабатывает на собранном HTML (partials — фраг�
 ## Тестирование
 
 ```bash
-cd admin-dashboard/tests && npm test   # 58 тестов (~300ms)
+cd admin-dashboard/tests && npm test   # Vitest: API, contract, i18n and types
 cd admin-dashboard && bash build.sh     # 0 errors expected
 ```
 
@@ -137,11 +138,19 @@ cd admin-dashboard && bash build.sh     # 0 errors expected
 
 ## Emergency Presets
 
-| Preset | RPS | Burst | Session Budget | Интервал | Длина |
-|---|---|---|---|---|---|
+| Preset | RPS | Burst | User-turn quota | Интервал | Длина |
+|---|---:|---:|---:|---:|---:|
 | **Normal** | 1.0 | 5 | 50 | 1s | 2000 chars |
-| **Cautious** | 0.5 | 3 | 25 | 2s | 1000 chars |
-| **Lockdown** | 0.1 | 1 | 10 | 5s | 500 chars |
+| **Cautious** | 0.5 | 3 | 30 | 2s | 1000 chars |
+| **Lockdown** | 0.2 | 1 | 10 | 5s | 500 chars |
+
+`Session Budget` historical config field считается в `api-service` как число persisted user turns; assistant и tool messages quota не расходуют. Presets управляют только реально enforced request/loop controls и не обещают token quota или LLM fallback.
+
+## Anti-abuse apply contract
+
+Глобальный `PUT /api/abuse-settings` сначала persist-ит candidate policy, затем **синхронно** вызывает `api-service:POST /admin/abuse-config/reload`. Ответ `200` означает acknowledged apply. Если API service недоступен или возвращает non-200, dashboard возвращает `502 config_not_applied` и восстанавливает предыдущую persisted policy. Emergency preset использует тот же apply/rollback contract.
+
+Это отдельный request anti-abuse control plane. Provider spending/billing limits не настраиваются полем `token_budget` и требуют самостоятельной spending policy.
 
 ---
 
@@ -160,4 +169,4 @@ admin-dashboard:
 ```
 
 ---
-**Last verified:** 2026-08-16 (HEAD `0dbc8af`) — viewer policy сверена с auth middleware; явно зафиксировано требование разных `ADMIN_TOKEN` и `VIEWER_TOKEN`.
+**Last verified:** 2026-08-20 (working tree with acknowledged anti-abuse apply changes) — global policy save/preset rollback, OpenAPI/dashboard contracts and active emergency settings сверены с кодом; full repository CI/live verification marker обновляется после final validation.

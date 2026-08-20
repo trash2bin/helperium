@@ -100,15 +100,26 @@ class SessionStore:
 
         now = time.time()
         payload = json.dumps(turn, ensure_ascii=False, separators=(",", ":"))
+        user_turn_increment = int(
+            any(message.get("role") == "user" for message in turn)
+        )
+        last_user_turn_at = now if user_turn_increment else None
 
         with self._lock, self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO sessions(session_id, created_at, updated_at)
-                VALUES(?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET updated_at = excluded.updated_at
+                INSERT INTO sessions(
+                    session_id, created_at, updated_at, user_turn_count, last_user_turn_at
+                ) VALUES(?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    updated_at = excluded.updated_at,
+                    user_turn_count = sessions.user_turn_count + excluded.user_turn_count,
+                    last_user_turn_at = CASE
+                        WHEN excluded.last_user_turn_at IS NULL THEN sessions.last_user_turn_at
+                        ELSE excluded.last_user_turn_at
+                    END
                 """,
-                (session_id, now, now),
+                (session_id, now, now, user_turn_increment, last_user_turn_at),
             )
             conn.execute(
                 """
@@ -133,7 +144,9 @@ class SessionStore:
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
+                    updated_at REAL NOT NULL,
+                    user_turn_count INTEGER NOT NULL DEFAULT 0,
+                    last_user_turn_at REAL
                 );
 
                 CREATE TABLE IF NOT EXISTS session_turns (
@@ -148,6 +161,64 @@ class SessionStore:
                     ON session_turns(session_id, id);
                 """
             )
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            if "user_turn_count" not in columns:
+                conn.execute(
+                    "ALTER TABLE sessions ADD COLUMN user_turn_count INTEGER NOT NULL DEFAULT 0"
+                )
+            if "last_user_turn_at" not in columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN last_user_turn_at REAL")
+
+    def abuse_state(self, session_id: str) -> tuple[int, float | None]:
+        """Return durable prior user-turn quota state for request anti-abuse.
+
+        Transcript history is trimmed independently for LLM context, so it cannot
+        be used as a session quota counter. Assistant and tool messages never
+        consume this user-turn budget.
+        """
+        session_id = self.normalize_session_id(session_id)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT user_turn_count, last_user_turn_at FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                return 0, None
+            count = row["user_turn_count"]
+            last_user_turn_at = row["last_user_turn_at"]
+            if isinstance(count, int) and count > 0:
+                return count, last_user_turn_at
+
+            # Existing databases gain the columns through ALTER TABLE with
+            # zero/null defaults. Backfill on first anti-abuse access so active
+            # legacy sessions cannot temporarily bypass quota or interval checks.
+            rows = conn.execute(
+                "SELECT created_at, messages_json FROM session_turns WHERE session_id = ? ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+            user_turn_count = 0
+            latest_user_turn_at: float | None = None
+            for turn_row in rows:
+                try:
+                    messages = json.loads(turn_row["messages_json"])
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(messages, list) and any(
+                    isinstance(message, dict) and message.get("role") == "user"
+                    for message in messages
+                ):
+                    user_turn_count += 1
+                    created_at = turn_row["created_at"]
+                    if isinstance(created_at, (int, float)):
+                        latest_user_turn_at = float(created_at)
+            conn.execute(
+                "UPDATE sessions SET user_turn_count = ?, last_user_turn_at = ? WHERE session_id = ?",
+                (user_turn_count, latest_user_turn_at, session_id),
+            )
+        return user_turn_count, latest_user_turn_at
 
     def _prepare_turn(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         filtered: list[dict[str, Any]] = []

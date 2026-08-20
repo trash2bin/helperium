@@ -210,7 +210,6 @@ export interface AbuseGlobalSettings {
   max_message_length: number | null;
   min_interval_ms: number | null;
   max_messages_per_session: number | null;
-  token_budget: number | null;
   block_empty_user_agent: boolean | null;
   blocked_user_agents: string[];
   _ua_text: string;
@@ -232,7 +231,6 @@ export interface AbuseAgentSettings {
 export interface EmergencyStatus {
   rps?: number | null;
   burst?: number | null;
-  token_budget?: number | null;
   max_messages?: number | null;
   min_interval_ms?: number | null;
   current_preset?: string;

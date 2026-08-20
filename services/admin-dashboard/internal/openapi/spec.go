@@ -6,8 +6,9 @@
 //   - static/openapi.json (build-time копия для контрактных тестов фронта)
 //
 // Все эндпоинты, которые идут через прокси, аннотируются:
-//   x-proxy-to: "data-service" | "api-service" | "rag-service"
-//   x-route-group: "local" | "data-service" | "api-service" | "rag-service"
+//
+//	x-proxy-to: "data-service" | "api-service" | "rag-service"
+//	x-route-group: "local" | "data-service" | "api-service" | "rag-service"
 package openapi
 
 import (
@@ -336,7 +337,7 @@ func buildSchemas() map[string]any {
 			},
 		},
 		"OpenAPISpec": map[string]any{
-			"type":       "object",
+			"type": "object",
 			"properties": map[string]any{
 				"openapi": map[string]any{"type": "string"},
 				"info":    map[string]any{"type": "object"},
@@ -354,7 +355,7 @@ func buildSchemas() map[string]any {
 		"ReloadResponse": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"status":  map[string]any{"type": "string", "example": "reload_triggered"},
+				"status":  map[string]any{"type": "string", "example": "applied"},
 				"message": map[string]any{"type": "string"},
 			},
 		},
@@ -434,9 +435,9 @@ func buildSchemas() map[string]any {
 
 		// ── Config ──
 		"ConfigObject": map[string]any{
-			"type":       "object",
+			"type": "object",
 			"properties": map[string]any{
-				"version":   map[string]any{"type": "integer"},
+				"version": map[string]any{"type": "integer"},
 				"data_source": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -479,11 +480,11 @@ func buildSchemas() map[string]any {
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"timestamp": map[string]any{"type": "string", "format": "date-time"},
+							"timestamp":  map[string]any{"type": "string", "format": "date-time"},
 							"actor_role": map[string]any{"type": "string"},
-							"action":    map[string]any{"type": "string"},
-							"resource":  map[string]any{"type": "string"},
-							"details":   map[string]any{"type": "string"},
+							"action":     map[string]any{"type": "string"},
+							"resource":   map[string]any{"type": "string"},
+							"details":    map[string]any{"type": "string"},
 						},
 					},
 				},
@@ -503,7 +504,6 @@ func buildSchemas() map[string]any {
 				"block_empty_user_agent":   map[string]any{"type": "boolean"},
 				"blocked_user_agents":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 				"emergency_mode":           map[string]any{"type": "boolean"},
-				"token_budget":             map[string]any{"type": "integer"},
 				"emergency_preset":         map[string]any{"type": "string"},
 			},
 		},
@@ -514,10 +514,10 @@ func buildSchemas() map[string]any {
 				"emergency_preset": map[string]any{"type": "string"},
 				"rps":              map[string]any{"type": "number"},
 				"burst":            map[string]any{"type": "integer"},
-				"token_budget":     map[string]any{"type": "integer"},
 				"max_messages":     map[string]any{"type": "integer"},
-				"min_interval_ms":  map[string]any{"type": "integer"},
-				"active":           map[string]any{"type": "boolean"},
+
+				"min_interval_ms": map[string]any{"type": "integer"},
+				"active":          map[string]any{"type": "boolean"},
 			},
 		},
 		"AgentAbuseOverride": map[string]any{
@@ -535,7 +535,7 @@ func buildSchemas() map[string]any {
 		"AgentAbuseResponse": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"agent":       map[string]any{"type": "object"},
+				"agent":        map[string]any{"type": "object"},
 				"abuse_config": map[string]any{"$ref": "#/components/schemas/AgentAbuseOverride"},
 			},
 		},
@@ -545,7 +545,7 @@ func buildSchemas() map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"agents": map[string]any{
-					"type": "array",
+					"type":  "array",
 					"items": map[string]any{"$ref": "#/components/schemas/AgentResponse"},
 				},
 			},
@@ -554,21 +554,21 @@ func buildSchemas() map[string]any {
 			"type":     "object",
 			"required": []string{"name"},
 			"properties": map[string]any{
-				"name":             map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
-				"description":      map[string]any{"type": "string"},
-				"tenant_ids":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"name":              map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+				"description":       map[string]any{"type": "string"},
+				"tenant_ids":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 				"provider_priority": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				"system_prompt":    map[string]any{"type": "string"},
+				"system_prompt":     map[string]any{"type": "string"},
 			},
 		},
 		"UpdateAgentRequest": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"description":      map[string]any{"type": "string"},
-				"tenant_ids":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"description":       map[string]any{"type": "string"},
+				"tenant_ids":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 				"provider_priority": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				"system_prompt":    map[string]any{"type": "string"},
-				"voice_config":     map[string]any{"type": "object"},
+				"system_prompt":     map[string]any{"type": "string"},
+				"voice_config":      map[string]any{"type": "object"},
 			},
 		},
 		"AgentResponse": map[string]any{
@@ -608,7 +608,7 @@ func buildSchemas() map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"providers": map[string]any{
-					"type": "array",
+					"type":  "array",
 					"items": map[string]any{"$ref": "#/components/schemas/LlmProvider"},
 				},
 			},
@@ -617,12 +617,12 @@ func buildSchemas() map[string]any {
 			"type":     "object",
 			"required": []string{"name", "model"},
 			"properties": map[string]any{
-				"name":      map[string]any{"type": "string"},
-				"model":     map[string]any{"type": "string"},
-				"provider":  map[string]any{"type": "string"},
-				"api_key":   map[string]any{"type": "string"},
-				"api_base":  map[string]any{"type": "string"},
-				"enabled":   map[string]any{"type": "boolean", "default": true},
+				"name":     map[string]any{"type": "string"},
+				"model":    map[string]any{"type": "string"},
+				"provider": map[string]any{"type": "string"},
+				"api_key":  map[string]any{"type": "string"},
+				"api_base": map[string]any{"type": "string"},
+				"enabled":  map[string]any{"type": "boolean", "default": true},
 			},
 		},
 		"LlmProviderUpdateRequest": map[string]any{
@@ -667,7 +667,7 @@ func buildSchemas() map[string]any {
 		"VoiceConfig": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"enabled":                   map[string]any{"type": "boolean"},
+				"enabled":                    map[string]any{"type": "boolean"},
 				"stt_providers":              map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 				"stt_fallback_enabled":       map[string]any{"type": "boolean"},
 				"max_voice_message_size":     map[string]any{"type": "integer"},
@@ -935,7 +935,7 @@ func addSsePost(paths map[string]any, path, operationID, summary, tag string, op
 				"content": map[string]any{
 					"text/event-stream": map[string]any{
 						"schema": map[string]any{
-							"type": "string",
+							"type":        "string",
 							"description": "Server-Sent Events поток с событиями: token, tool_call, tool_result, final, done, error, audio",
 						},
 					},

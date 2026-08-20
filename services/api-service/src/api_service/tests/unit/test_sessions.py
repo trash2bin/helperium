@@ -269,3 +269,27 @@ def test_concurrent_writes(store):
     turns = store.get_turns("shared-session")
     # At most max_turns (5) turns should be stored
     assert len(turns) <= 5
+
+
+# --- Anti-abuse session state ---
+
+
+def test_abuse_state_counts_only_user_turns_and_returns_last_timestamp(store):
+    store.append_turn(
+        "session-1",
+        [
+            {"role": "user", "content": "Find Bosch"},
+            {"role": "assistant", "content": ""},
+            {"role": "tool", "tool_call_id": "call-1", "content": "{}"},
+            {"role": "assistant", "content": "Found Bosch"},
+        ],
+    )
+    store.append_turn(
+        "session-1",
+        [{"role": "assistant", "content": "orphaned assistant evidence"}],
+    )
+
+    user_turns, last_user_turn_at = store.abuse_state("session-1")
+
+    assert user_turns == 1
+    assert isinstance(last_user_turn_at, float)
