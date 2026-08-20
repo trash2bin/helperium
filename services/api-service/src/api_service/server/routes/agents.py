@@ -25,7 +25,11 @@ async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
             widget_config=req.widget_config.model_dump() if req.widget_config else None,
             llm_config=req.llm_config.model_dump() if req.llm_config else None,
             provider_priority=req.provider_priority or None,
-            abuse_config=req.abuse_config,
+            abuse_config=(
+                req.abuse_config.model_dump(exclude_none=True)
+                if req.abuse_config
+                else None
+            ),
             system_prompt=req.system_prompt,
             voice_config=req.voice_config.model_dump() if req.voice_config else None,
         )
@@ -58,7 +62,9 @@ async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResp
         widget_config=req.widget_config.model_dump() if req.widget_config else None,
         llm_config=req.llm_config.model_dump() if req.llm_config else None,
         provider_priority=req.provider_priority,
-        abuse_config=req.abuse_config,
+        abuse_config=(
+            req.abuse_config.model_dump(exclude_none=True) if req.abuse_config else None
+        ),
         system_prompt=req.system_prompt,
         voice_config=req.voice_config.model_dump() if req.voice_config else None,
     )

@@ -33,8 +33,8 @@ func TestAbuseStore_Defaults(t *testing.T) {
 	if cfg.MinIntervalMs != 1000 {
 		t.Errorf("default minIntervalMs = %d, want 1000", cfg.MinIntervalMs)
 	}
-	if cfg.MaxMessagesPerSession != 50 {
-		t.Errorf("default maxMessagesPerSession = %d, want 50", cfg.MaxMessagesPerSession)
+	if cfg.MaxUserTurnsPerSession != 50 {
+		t.Errorf("default maxUserTurnsPerSession = %d, want 50", cfg.MaxUserTurnsPerSession)
 	}
 	if !cfg.BlockEmptyUserAgent {
 		t.Error("default BlockEmptyUserAgent should be true")
@@ -84,6 +84,21 @@ func TestAbuseStore_Persists(t *testing.T) {
 	if len(cfg2.BlockedUserAgents) != 1 || cfg2.BlockedUserAgents[0] != "curl/*" {
 		t.Errorf("persisted BlockedUserAgents = %v, want [curl/*]", cfg2.BlockedUserAgents)
 	}
+}
+
+func TestAbuseStore_RejectsLegacyMessageQuotaField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "abuse_config.json")
+	if err := os.WriteFile(path, []byte(`{"max_messages_per_session":30}`), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewAbuseStore accepted legacy quota field")
+		}
+	}()
+	_ = NewAbuseStore(dir)
 }
 
 func TestAbuseStore_MissingFileDefaults(t *testing.T) {
@@ -161,13 +176,13 @@ func TestAbuseSettingsPut_UpdatesAndReturns(t *testing.T) {
 	defer cleanup()
 
 	payload := AbuseConfig{
-		RPS:                   2.5,
-		Burst:                 8,
-		MaxMessageLength:      1000,
-		MinIntervalMs:         500,
-		MaxMessagesPerSession: 30,
-		BlockEmptyUserAgent:   false,
-		BlockedUserAgents:     []string{"bot/*"},
+		RPS:                    2.5,
+		Burst:                  8,
+		MaxMessageLength:       1000,
+		MinIntervalMs:          500,
+		MaxUserTurnsPerSession: 30,
+		BlockEmptyUserAgent:    false,
+		BlockedUserAgents:      []string{"bot/*"},
 	}
 	body, _ := json.Marshal(payload)
 
@@ -194,6 +209,24 @@ func TestAbuseSettingsPut_UpdatesAndReturns(t *testing.T) {
 	}
 	if resp.MaxMessageLength != 1000 {
 		t.Errorf("maxMessageLength = %d, want 1000", resp.MaxMessageLength)
+	}
+}
+
+func TestAbuseSettingsPut_RejectsLegacyMessageQuotaField(t *testing.T) {
+	router, cleanup := newTestAbuseServer(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/abuse-settings",
+		bytes.NewBufferString(`{"max_messages_per_session":30}`),
+	)
+	req.Header.Set("Authorization", "Bearer test-token")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("legacy field PUT = %d, want 400; body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -291,9 +324,9 @@ func TestEmergencyPreset_NormalHasMaxSettings(t *testing.T) {
 	if normal.Burst <= lockdown.Burst {
 		t.Errorf("normal burst (%d) should be > lockdown burst (%d)", normal.Burst, lockdown.Burst)
 	}
-	if normal.MaxMessagesPerSession <= lockdown.MaxMessagesPerSession {
-		t.Errorf("normal maxMessages (%d) should be > lockdown maxMessages (%d)",
-			normal.MaxMessagesPerSession, lockdown.MaxMessagesPerSession)
+	if normal.MaxUserTurnsPerSession <= lockdown.MaxUserTurnsPerSession {
+		t.Errorf("normal maxUserTurns (%d) should be > lockdown maxUserTurns (%d)",
+			normal.MaxUserTurnsPerSession, lockdown.MaxUserTurnsPerSession)
 	}
 }
 
@@ -378,6 +411,12 @@ func TestEmergencyStatus_ReturnsCurrentState(t *testing.T) {
 	}
 	if resp["emergency_mode"] != false {
 		t.Errorf("emergency_mode=%v, want false", resp["emergency_mode"])
+	}
+	if _, ok := resp["max_user_turns"]; !ok {
+		t.Error("emergency status missing max_user_turns")
+	}
+	if _, ok := resp["max_messages"]; ok {
+		t.Error("emergency status must not expose legacy max_messages")
 	}
 }
 
@@ -465,11 +504,11 @@ func TestAbuseSettingsPut_RollsBackWhenApiServiceDoesNotApply(t *testing.T) {
 	})
 	original := s.abuseStore.Get()
 	payload := AbuseConfig{
-		RPS:                   0.5,
-		Burst:                 2,
-		MaxMessageLength:      1000,
-		MinIntervalMs:         1000,
-		MaxMessagesPerSession: 20,
+		RPS:                    0.5,
+		Burst:                  2,
+		MaxMessageLength:       1000,
+		MinIntervalMs:          1000,
+		MaxUserTurnsPerSession: 20,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

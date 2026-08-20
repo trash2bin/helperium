@@ -55,7 +55,7 @@ abuse_blocked_total = Counter(
     "Requests blocked by anti-abuse engine, by reason",
     [
         "reason"
-    ],  # rate_limit, user_agent, message_length, interval, session_budget, repeated_text
+    ],  # rate_limit, user_agent, message_length, interval, user_turn_quota, repeated_text
 )
 
 embed_widget_requests = Counter(

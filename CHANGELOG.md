@@ -2,6 +2,8 @@
 
 ## 2026-08-20
 
+- **refactor(anti-abuse):** `max_messages_per_session` / `ABUSE_MAX_MESSAGES` полностью заменены на `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS` across runtime, admin UI/OpenAPI, typed agent override and docs; legacy keys fail-fast without alias. **Проверка:** полный `make ci`, API OpenAPI contract и live reload/E2E подтверждены.
+
 - **refactor(anti-abuse):** trusted tool-data rule moved from LiteLLM wire prefix to mandatory agent system policy; loop owns structured context telemetry; SQLite session repository records one accepted ingress user turn for quota/interval. **Проверка:** полный `make ci`, Pyright и live MiniMax MCP E2E прошли.
 
 - **fix(anti-abuse):** provider wire отделяет untrusted tool results structured boundary; session quota считает durable user turns; inactive `token_budget` удалён; Admin policy применяет синхронный acknowledge/rollback. **Проверка:** полный `make ci` и live admin `status=applied`/MiniMax cross-turn MCP E2E прошли.

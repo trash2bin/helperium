@@ -302,10 +302,10 @@ curl -X POST http://localhost:8081/api/agents \
 | `LOG_LEVEL` | `info` | Уровень логирования: debug, info, warn, error |
 | `ABUSE_RPS` | `1.0` | Token bucket refill rate (requests/second) |
 | `ABUSE_BURST` | `5` | Token bucket burst capacity |
-| `ABUSE_MESSAGE_MAX_LENGTH` | `2000` | Макс. длина сообщения (символов) |
-| `ABUSE_MIN_INTERVAL` | `1.0` | Мин. интервал между сообщениями (сек) |
-| `ABUSE_SESSION_BUDGET` | `50` | Макс. сообщений за сессию |
-| `ABUSE_REPEATED_THRESHOLD` | `3` | Порог повторяющегося текста (раз) |
+| `ABUSE_MAX_MSG_LENGTH` | `2000` | Макс. длина пользовательского сообщения (символов) |
+| `ABUSE_MIN_INTERVAL_MS` | `1000` | Мин. интервал между принятыми user turns (миллисекунды) |
+| `ABUSE_MAX_USER_TURNS` | `50` | Макс. принятых user turns за сессию; provider/tool failure quota не возвращает |
+| `ABUSE_MAX_REPEATED` | `3` | Порог повторяющегося текста (раз) |
 | `EMBED_DIR` | `<project>/embed/dist/` | Путь к статике embed-виджета (absolute override) |
 | `ENABLE_METRICS` | `true` | Включить Prometheus-метрики |
 | `API_BEARER_TOKEN` | — | Bearer token для API (обязателен в production) |

@@ -220,6 +220,20 @@ class TestAgentCreateRequest:
         assert req.widget_config.greeting == "Hi"
         assert req.widget_config.accent_color == "#0f766e"  # default
 
+    def test_abuse_override_uses_explicit_user_turn_quota(self):
+        req = AgentCreateRequest(
+            name="test-agent",
+            abuse_config={"max_user_turns_per_session": 30},
+        )
+        assert req.abuse_config is not None
+        assert req.abuse_config.max_user_turns_per_session == 30
+
+        with pytest.raises(ValidationError):
+            AgentCreateRequest(
+                name="test-agent",
+                abuse_config={"max_messages_per_session": 30},
+            )
+
     def test_llm_config_as_dict(self):
         """llm_config можно передать как dict."""
         req = AgentCreateRequest(

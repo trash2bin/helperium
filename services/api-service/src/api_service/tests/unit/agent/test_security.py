@@ -121,6 +121,14 @@ async def test_rate_limit_state_persists_between_requests(tmp_path, monkeypatch)
     assert "Retry-After" in blocked.headers
 
 
+def test_live_provider_rejects_legacy_message_quota_key(tmp_path):
+    config_path = tmp_path / "abuse.json"
+    config_path.write_text(json.dumps({"max_messages_per_session": 30}))
+
+    with pytest.raises(ValueError, match="max_messages_per_session"):
+        LiveAbuseProvider(str(config_path))
+
+
 @pytest.mark.asyncio
 async def test_accepted_user_turn_is_stamped_before_the_next_interval_check(
     tmp_path, monkeypatch

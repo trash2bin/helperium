@@ -213,6 +213,20 @@ class LLMConfig(BaseModel):
 # === Agent Management ===
 
 
+class AbuseConfigOverride(BaseModel):
+    """Restrictive per-agent anti-abuse overrides with an explicit public contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rps: float | None = Field(default=None, gt=0)
+    burst: int | None = Field(default=None, ge=1)
+    max_message_length: int | None = Field(default=None, ge=1)
+    min_interval_ms: int | None = Field(default=None, ge=0)
+    max_user_turns_per_session: int | None = Field(default=None, ge=1)
+    block_empty_user_agent: bool | None = None
+    blocked_user_agents: list[str] | None = None
+
+
 class AgentCreateRequest(BaseModel):
     """Request to create a new agent."""
 
@@ -236,9 +250,9 @@ class AgentCreateRequest(BaseModel):
         default_factory=list,
         description="Provider names in priority order (from ProviderStore)",
     )
-    abuse_config: dict | None = Field(
+    abuse_config: AbuseConfigOverride | None = Field(
         default=None,
-        description="Per-agent abuse settings overrides (keys match AbuseConfig fields)",
+        description="Per-agent anti-abuse overrides; only explicit AbuseConfigOverride fields are accepted",
     )
     system_prompt: str | None = Field(
         default=None,
@@ -269,9 +283,9 @@ class AgentUpdateRequest(BaseModel):
         default=None,
         description="Provider names in priority order (from ProviderStore)",
     )
-    abuse_config: dict | None = Field(
+    abuse_config: AbuseConfigOverride | None = Field(
         default=None,
-        description="Per-agent abuse settings overrides",
+        description="Per-agent anti-abuse overrides; legacy message-based quota fields are rejected",
     )
     system_prompt: str | None = Field(
         default=None,
@@ -299,9 +313,9 @@ class AgentResponse(BaseModel):
         default_factory=list,
         description="Provider names in priority order (from ProviderStore)",
     )
-    abuse_config: dict | None = Field(
+    abuse_config: AbuseConfigOverride | None = Field(
         default=None,
-        description="Per-agent abuse settings overrides",
+        description="Per-agent anti-abuse overrides; legacy message-based quota fields are rejected",
     )
     system_prompt: str | None = Field(
         default=None,

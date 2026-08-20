@@ -88,17 +88,19 @@ class TestTokenBucket:
 
 class TestAntiAbuseChecker:
     def test_rejects_empty_user_agent(self, checker: AntiAbuseChecker):
-        result = checker.check("sess-1", "10.0.0.1", "", "hello", n_msg=1)
+        result = checker.check("sess-1", "10.0.0.1", "", "hello", user_turn_count=1)
         assert not result.allowed
         assert "User-Agent" in result.reason
 
     def test_rejects_curl_user_agent(self, checker: AntiAbuseChecker):
-        result = checker.check("sess-1", "10.0.0.1", "curl/8.0", "hello", n_msg=1)
+        result = checker.check(
+            "sess-1", "10.0.0.1", "curl/8.0", "hello", user_turn_count=1
+        )
         assert not result.allowed
 
     def test_rejects_python_requests(self, checker: AntiAbuseChecker):
         result = checker.check(
-            "sess-1", "10.0.0.1", "python-requests/2.31", "hello", n_msg=1
+            "sess-1", "10.0.0.1", "python-requests/2.31", "hello", user_turn_count=1
         )
         assert not result.allowed
 
@@ -108,12 +110,14 @@ class TestAntiAbuseChecker:
             "10.0.0.1",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36",
             "hello",
-            n_msg=1,
+            user_turn_count=1,
         )
         assert result.allowed
 
     def test_message_too_long(self, checker: AntiAbuseChecker):
-        result = checker.check("sess-1", "10.0.0.1", "Mozilla/5.0", "A" * 2001, n_msg=1)
+        result = checker.check(
+            "sess-1", "10.0.0.1", "Mozilla/5.0", "A" * 2001, user_turn_count=1
+        )
         assert not result.allowed
         assert "too long" in result.reason
 
@@ -121,36 +125,52 @@ class TestAntiAbuseChecker:
         # Call check 4 times with same message — 4th should be blocked
         for i in range(3):
             result = checker.check(
-                "sess-1", "10.0.0.1", "Mozilla/5.0", "hello", n_msg=1
+                "sess-1", "10.0.0.1", "Mozilla/5.0", "hello", user_turn_count=1
             )
             assert result.allowed, f"call {i + 1} should be allowed"
-        result = checker.check("sess-1", "10.0.0.1", "Mozilla/5.0", "hello", n_msg=1)
+        result = checker.check(
+            "sess-1", "10.0.0.1", "Mozilla/5.0", "hello", user_turn_count=1
+        )
         assert not result.allowed  # 4th same message blocked
         assert "Repeated" in result.reason
 
     def test_min_interval_enforced(self, checker: AntiAbuseChecker):
         result1 = checker.check(
-            "sess-1", "10.0.0.1", "Mozilla/5.0", "hi", n_msg=1, last_msg_time_since=0.5
+            "sess-1",
+            "10.0.0.1",
+            "Mozilla/5.0",
+            "hi",
+            user_turn_count=1,
+            last_msg_time_since=0.5,
         )
         assert not result1.allowed  # less than 1 second
         result2 = checker.check(
-            "sess-1", "10.0.0.1", "Mozilla/5.0", "hi", n_msg=1, last_msg_time_since=1.5
+            "sess-1",
+            "10.0.0.1",
+            "Mozilla/5.0",
+            "hi",
+            user_turn_count=1,
+            last_msg_time_since=1.5,
         )
         assert result2.allowed  # more than 1 second
 
-    def test_session_budget_exceeded(self, checker: AntiAbuseChecker):
-        result = checker.check("sess-1", "10.0.0.1", "Mozilla/5.0", "hello", n_msg=51)
+    def test_user_turn_quota_exceeded(self, checker: AntiAbuseChecker):
+        result = checker.check(
+            "sess-1", "10.0.0.1", "Mozilla/5.0", "hello", user_turn_count=51
+        )
         assert not result.allowed
-        assert "budget" in result.reason
+        assert "user-turn quota" in result.reason
 
     def test_checker_rejects_go_http_client(self, checker: AntiAbuseChecker):
         result = checker.check(
-            "sess-1", "10.0.0.1", "Go-http-client/2.0", "hello", n_msg=1
+            "sess-1", "10.0.0.1", "Go-http-client/2.0", "hello", user_turn_count=1
         )
         assert not result.allowed
 
     def test_checker_rejects_wget(self, checker: AntiAbuseChecker):
-        result = checker.check("sess-1", "10.0.0.1", "Wget/1.21.4", "hello", n_msg=1)
+        result = checker.check(
+            "sess-1", "10.0.0.1", "Wget/1.21.4", "hello", user_turn_count=1
+        )
         assert not result.allowed
 
 
@@ -164,7 +184,7 @@ class TestAbuseConfig:
         os.environ["ABUSE_BURST"] = "10"
         os.environ["ABUSE_RPS"] = "2"
         os.environ["ABUSE_MAX_MSG_LENGTH"] = "1000"
-        os.environ["ABUSE_MAX_MESSAGES"] = "30"
+        os.environ["ABUSE_MAX_USER_TURNS"] = "30"
         os.environ["ABUSE_MIN_INTERVAL_MS"] = "500"
         os.environ["ABUSE_MAX_REPEATED"] = "5"
         try:
@@ -172,7 +192,7 @@ class TestAbuseConfig:
             assert cfg.burst == 10
             assert cfg.rps == 2
             assert cfg.max_message_length == 1000
-            assert cfg.max_messages_per_session == 30
+            assert cfg.max_user_turns_per_session == 30
             assert cfg.min_interval_ms == 500
             assert cfg.max_repeated_count == 5
         finally:
@@ -180,7 +200,7 @@ class TestAbuseConfig:
                 "ABUSE_BURST",
                 "ABUSE_RPS",
                 "ABUSE_MAX_MSG_LENGTH",
-                "ABUSE_MAX_MESSAGES",
+                "ABUSE_MAX_USER_TURNS",
                 "ABUSE_MIN_INTERVAL_MS",
                 "ABUSE_MAX_REPEATED",
             ):
@@ -191,7 +211,7 @@ class TestAbuseConfig:
         assert cfg.rps == 1.0
         assert cfg.burst == 5
         assert cfg.max_message_length == 2000
-        assert cfg.max_messages_per_session == 50
+        assert cfg.max_user_turns_per_session == 50
         assert cfg.min_interval_ms == 1000
         assert cfg.max_repeated_count == 3
         assert cfg.block_empty_user_agent is True

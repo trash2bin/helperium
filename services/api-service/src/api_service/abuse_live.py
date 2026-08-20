@@ -56,8 +56,16 @@ class FullAbuseConfig:
         return self.base
 
 
-def _apply_json(cfg: FullAbuseConfig, data: dict) -> None:
-    """Merge JSON dict into config (only non-null values)."""
+def _apply_json(
+    cfg: FullAbuseConfig, data: dict, *, allow_runtime_settings: bool
+) -> None:
+    """Merge a validated JSON policy dict into config (only non-null values)."""
+    allowed = set(cfg.base.__dataclass_fields__)
+    if allow_runtime_settings:
+        allowed.update(_FAC_OWN_KEYS)
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise ValueError(f"unknown anti-abuse config fields: {', '.join(unknown)}")
     # Apply AbuseConfig fields to cfg.base
     for key in cfg.base.__dataclass_fields__:
         if key in data and data[key] is not None:
@@ -142,8 +150,11 @@ class LiveAbuseProvider:
         if path.exists():
             try:
                 data = json.loads(path.read_text())
-                _apply_json(cfg, data)
+                _apply_json(cfg, data, allow_runtime_settings=True)
                 logger.info("Loaded abuse config from %s", path)
+            except ValueError:
+                logger.exception("Invalid anti-abuse config at %s", path)
+                raise
             except Exception as exc:
                 logger.warning("Failed to load abuse config from %s: %s", path, exc)
 
@@ -210,7 +221,7 @@ class LiveAbuseProvider:
             return cfg
 
         merged = deepcopy(cfg)
-        _apply_json(merged, agent_abuse_config)
+        _apply_json(merged, agent_abuse_config, allow_runtime_settings=False)
 
         return merged
 
@@ -241,7 +252,7 @@ class LiveAbuseProvider:
         Used when config is changed through api-service's own admin API.
         """
         cfg = self.get_config()
-        _apply_json(cfg, data)
+        _apply_json(cfg, data, allow_runtime_settings=True)
         # Write to file
         path = Path(self._config_path)
         path.parent.mkdir(parents=True, exist_ok=True)

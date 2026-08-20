@@ -717,6 +717,55 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    AbuseConfigOverride:
+      properties:
+        rps:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Rps
+        burst:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Burst
+        max_message_length:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Max Message Length
+        min_interval_ms:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Min Interval Ms
+        max_user_turns_per_session:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Max User Turns Per Session
+        block_empty_user_agent:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Block Empty User Agent
+        blocked_user_agents:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Blocked User Agents
+      additionalProperties: false
+      type: object
+      title: AbuseConfigOverride
+      description: Restrictive per-agent anti-abuse overrides with an explicit public
+        contract.
     AgentCreateRequest:
       properties:
         name:
@@ -754,12 +803,10 @@ components:
           description: Provider names in priority order (from ProviderStore)
         abuse_config:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - $ref: '#/components/schemas/AbuseConfigOverride'
           - type: 'null'
-          title: Abuse Config
-          description: Per-agent abuse settings overrides (keys match AbuseConfig
-            fields)
+          description: Per-agent anti-abuse overrides; only explicit AbuseConfigOverride
+            fields are accepted
         system_prompt:
           anyOf:
           - type: string
@@ -824,11 +871,10 @@ components:
           description: Provider names in priority order (from ProviderStore)
         abuse_config:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - $ref: '#/components/schemas/AbuseConfigOverride'
           - type: 'null'
-          title: Abuse Config
-          description: Per-agent abuse settings overrides
+          description: Per-agent anti-abuse overrides; legacy message-based quota
+            fields are rejected
         system_prompt:
           anyOf:
           - type: string
@@ -891,11 +937,10 @@ components:
           description: Provider names in priority order (from ProviderStore)
         abuse_config:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - $ref: '#/components/schemas/AbuseConfigOverride'
           - type: 'null'
-          title: Abuse Config
-          description: Per-agent abuse settings overrides
+          description: Per-agent anti-abuse overrides; legacy message-based quota
+            fields are rejected
         system_prompt:
           anyOf:
           - type: string

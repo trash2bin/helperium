@@ -63,7 +63,7 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
         ip=ip,
         user_agent=user_agent,
         message=message,
-        n_msg=state.user_turn_count,
+        user_turn_count=state.user_turn_count,
         last_msg_time_since=last_user_turn_since,
     )
     if not check_result.allowed:

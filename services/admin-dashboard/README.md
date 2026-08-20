@@ -144,7 +144,7 @@ cd admin-dashboard && bash build.sh     # 0 errors expected
 | **Cautious** | 0.5 | 3 | 30 | 2s | 1000 chars |
 | **Lockdown** | 0.2 | 1 | 10 | 5s | 500 chars |
 
-`Session Budget` historical config field считается в `api-service` как число persisted user turns; assistant и tool messages quota не расходуют. Presets управляют только реально enforced request/loop controls и не обещают token quota или LLM fallback.
+`max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS` ограничивает число принятых user turns; assistant и tool messages quota не расходуют. `max_messages_per_session` не имеет compatibility alias: старый JSON key отклоняется, чтобы policy нельзя было silently weaken. Presets управляют только реально enforced request/loop controls и не обещают token quota или LLM fallback.
 
 ## Anti-abuse apply contract
 

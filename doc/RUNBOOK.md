@@ -117,8 +117,8 @@ Admin dashboard: `http://localhost:8085`
 3. **Tools** — verify MCP tools from manifest
 4. **Agents** — create agent, set system prompt
 5. **RAG** — upload documents, test search
-6. **Anti-Abuse** — tune RPS, burst, session budget
-7. **Anti-Abuse presets** — в коде только stub-поле `emergency_preset: str = "normal"`, реализаций Normal/Cautious/Lockdown нет (настраивается через RPS/burst/бюджет напрямую)
+6. **Anti-Abuse** — tune RPS, burst and `max_user_turns_per_session`
+7. **Anti-Abuse presets** — Normal/Cautious/Lockdown являются active controls и синхронно применяются в `api-service`; проверяй acknowledged apply/rollback contract.
 
 ---
 
@@ -331,8 +331,8 @@ uv run agent-rag-ingest import /path/to/doc.pdf -d client-name
 3. **Tools** — проверить MCP-тулы из манифеста
 4. **Agents** — создать агента, system prompt
 5. **RAG** — загрузить документы, проверить поиск
-6. **Anti-Abuse** — RPS, burst, session budget
-7. **Anti-Abuse presets** — в коде только stub-поле `emergency_preset: str = "normal"`, реализаций Normal/Cautious/Lockdown нет (настраивается через RPS/burst/бюджет напрямую)
+6. **Anti-Abuse** — RPS, burst, user-turn quota
+7. **Anti-Abuse presets** — Normal/Cautious/Lockdown являются active controls и синхронно применяются в `api-service`; проверяй acknowledged apply/rollback contract.
 
 ---
 

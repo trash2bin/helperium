@@ -96,7 +96,10 @@ async def reload_abuse_config():
     Applies runtime settings (history, loops) to the live settings object.
     """
     provider = get_live_abuse_provider()
-    cfg = provider.reload()
+    try:
+        cfg = provider.reload()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     provider.apply_runtime_settings()
     from api_service.abuse_live import _serialize_config
 
@@ -107,7 +110,10 @@ async def reload_abuse_config():
 async def save_abuse_config(data: dict):
     """Save new abuse config directly (admin dashboard alternative endpoint)."""
     provider = get_live_abuse_provider()
-    cfg = provider.save_config(data)
+    try:
+        cfg = provider.save_config(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     provider.apply_runtime_settings()
     from api_service.abuse_live import _serialize_config
 

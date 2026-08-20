@@ -24,7 +24,8 @@
           "max_message_length": {
             "type": "integer"
           },
-          "max_messages_per_session": {
+          "max_user_turns_per_session": {
+            "description": "Accepted user turns per session",
             "type": "integer"
           },
           "min_interval_ms": {
@@ -54,7 +55,8 @@
           "max_message_length": {
             "type": "integer"
           },
-          "max_messages_per_session": {
+          "max_user_turns_per_session": {
+            "description": "Accepted user turns per session",
             "type": "integer"
           },
           "min_interval_ms": {
@@ -317,7 +319,7 @@
           "emergency_preset": {
             "type": "string"
           },
-          "max_messages": {
+          "max_user_turns": {
             "type": "integer"
           },
           "min_interval_ms": {

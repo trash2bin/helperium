@@ -38,7 +38,7 @@ class AbuseConfig:
     # Anti-abuse checks
     max_message_length: int = 2000  # max chars per message
     min_interval_ms: int = 1000  # min ms between messages in session
-    max_messages_per_session: int = 50  # max messages in a session
+    max_user_turns_per_session: int = 50  # accepted user turns in a session
     max_repeated_count: int = 3  # repeated identical message threshold
 
     # User-Agent filtering
@@ -91,7 +91,7 @@ def load_abuse_config() -> AbuseConfig:
         burst=_int_env("ABUSE_BURST", 5),
         max_message_length=_int_env("ABUSE_MAX_MSG_LENGTH", 2000),
         min_interval_ms=_int_env("ABUSE_MIN_INTERVAL_MS", 1000),
-        max_messages_per_session=_int_env("ABUSE_MAX_MESSAGES", 50),
+        max_user_turns_per_session=_int_env("ABUSE_MAX_USER_TURNS", 50),
         max_repeated_count=_int_env("ABUSE_MAX_REPEATED", 3),
     )
 
@@ -231,7 +231,7 @@ class AntiAbuseChecker:
         ip: str,
         user_agent: str,
         message: str,
-        n_msg: int = 0,
+        user_turn_count: int = 0,
         last_msg_time_since: float | None = None,
     ) -> CheckResult:
         """Run all checks against this request.
@@ -241,7 +241,7 @@ class AntiAbuseChecker:
             ip: Client IP address.
             user_agent: User-Agent header value.
             message: The message text from the user.
-            n_msg: Current message count in this session.
+            user_turn_count: Accepted user turns already consumed in this session.
             last_msg_time_since: Seconds since the last message in this session.
 
         Returns:
@@ -271,12 +271,15 @@ class AntiAbuseChecker:
                 retry_after=remaining,
             )
 
-        # 4. Session message budget
-        if n_msg >= self.config.max_messages_per_session:
-            abuse_blocked_total.labels(reason="session_budget").inc()
+        # 4. Session user-turn quota
+        if user_turn_count >= self.config.max_user_turns_per_session:
+            abuse_blocked_total.labels(reason="user_turn_quota").inc()
             return CheckResult(
                 allowed=False,
-                reason=f"Session message budget exceeded ({n_msg} >= {self.config.max_messages_per_session})",
+                reason=(
+                    "Session user-turn quota exceeded "
+                    f"({user_turn_count} >= {self.config.max_user_turns_per_session})"
+                ),
             )
 
         # 5. Repeated text detection

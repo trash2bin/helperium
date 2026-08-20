@@ -27,9 +27,11 @@ Chat routes применяют coarse per-IP limit (`CHAT_RATE_LIMIT`, по ум
 | User-Agent | `block_empty_user_agent`, blocked patterns | enabled | Пустой и configured automation UA отклоняются до LLM. |
 | Повтор текста | `max_repeated_count` | 3 | Четвёртый identical input в rolling window блокируется. |
 | Интервал | `min_interval_ms` | 1000 ms | Считается от timestamp **принятого ingress user turn**, а не от завершения LLM/SSE или flattened transcript. |
-| Session quota | `max_messages_per_session` | 50 | Историческое имя config сохранено для compatibility; фактически это число принятых **user turns**. Assistant и tool messages quota не расходуют. |
+| Session user-turn quota | `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS` | 50 | Число принятых **user turns**. Assistant и tool messages quota не расходуют. |
 
-После прохождения request policy сервис атомарно записывает accepted user-turn marker **до** LLM/MCP work. Он является единственным source of truth для quota, min-interval и будущих user-turn-based session metrics. Provider/tool failure, cancellation или отсутствие final answer marker не возвращают: иначе их можно было бы использовать для quota bypass. Transcript evidence сохраняется позднее и не влияет на этот счётчик. При migration существующей SQLite session DB state лениво backfill-ится из stored turns до первого accepted marker; старые активные сессии не получают временный quota bypass.
+После прохождения request policy сервис атомарно записывает accepted user-turn marker **до** LLM/MCP work. Он является единственным source of truth для `max_user_turns_per_session`, `min_interval_ms` и будущих user-turn-based session metrics. Provider/tool failure, cancellation или отсутствие final answer marker не возвращают: иначе их можно было бы использовать для quota bypass. Transcript evidence сохраняется позднее и не влияет на этот счётчик. При migration существующей SQLite session DB state лениво backfill-ится из stored turns до первого accepted marker; старые активные сессии не получают временный quota bypass.
+
+`max_messages_per_session` и `ABUSE_MAX_MESSAGES` удалены без compatibility alias. Старый JSON key отклоняется dashboard и direct agent API validation, а stale global config file fail-fast при reload/startup: иначе security setting мог бы быть незаметно проигнорирован и привести к weaker runtime policy. Обнови persisted admin/agent config до нового имени перед deployment.
 
 `token_budget` / `ABUSE_TOKEN_BUDGET` не являются anti-abuse control и не публикуются в Admin UI или admin OpenAPI. Лимиты расходов принадлежат отдельному tenant spending subsystem; нельзя интерпретировать request anti-abuse settings как hard cost budget.
 
@@ -89,4 +91,4 @@ Token buckets, repeat counters и live enforcers process-local. Текущая t
 
 Базовые regression suites: Python `test_anti_abuse.py`, `test_sessions.py`, Agent prompt/loop/LiteLLM adapter tests; Go admin abuse tests; dashboard API/OpenAPI/type contract tests. Service-boundary change дополнительно требует full `make ci` и live tenant-scoped MCP turn.
 
-**Last verified:** 2026-08-20 (working tree after Agent v2 trust-boundary ownership, accepted user-turn accounting and acknowledged admin apply changes). Full CI/live evidence is recorded only after the implementation verification phase completes.
+**Last verified:** 2026-08-20 (working tree after strict `max_user_turns_per_session` rename). Full `make ci` passed; API suite passed 375 tests with 38 pre-existing marker warnings; Pyright passed. Live admin exposed only the new key, rejected legacy JSON with `400`, acknowledged reload with `status=applied`, and a fresh tenant-scoped MiniMax `db_search → tool_result → final` turn completed.

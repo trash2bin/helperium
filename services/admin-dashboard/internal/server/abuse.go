@@ -8,6 +8,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,9 +36,9 @@ type AbuseConfig struct {
 	Burst int     `json:"burst"` // burst size (env: ABUSE_BURST)
 
 	// Message restrictions
-	MaxMessageLength      int `json:"max_message_length"`       // max chars per message
-	MinIntervalMs         int `json:"min_interval_ms"`          // min ms between messages in a session
-	MaxMessagesPerSession int `json:"max_messages_per_session"` // max messages per session
+	MaxMessageLength       int `json:"max_message_length"`         // max chars per message
+	MinIntervalMs          int `json:"min_interval_ms"`            // min ms between messages in a session
+	MaxUserTurnsPerSession int `json:"max_user_turns_per_session"` // accepted user turns per session
 
 	// User-Agent filtering
 	BlockEmptyUserAgent bool     `json:"block_empty_user_agent"`
@@ -63,9 +64,9 @@ func DefaultAbuseConfig() AbuseConfig {
 		RPS:   getEnvFloat64("ABUSE_RPS", 1.0),
 		Burst: getEnvInt("ABUSE_BURST", 5),
 
-		MaxMessageLength:      getEnvInt("ABUSE_MAX_MSG_LENGTH", 2000),
-		MinIntervalMs:         getEnvInt("ABUSE_MIN_INTERVAL_MS", 1000),
-		MaxMessagesPerSession: getEnvInt("ABUSE_MAX_MESSAGES", 50),
+		MaxMessageLength:       getEnvInt("ABUSE_MAX_MSG_LENGTH", 2000),
+		MinIntervalMs:          getEnvInt("ABUSE_MIN_INTERVAL_MS", 1000),
+		MaxUserTurnsPerSession: getEnvInt("ABUSE_MAX_USER_TURNS", 50),
 
 		BlockEmptyUserAgent: true,
 		BlockedUserAgents: []string{
@@ -94,13 +95,13 @@ func DefaultAbuseConfig() AbuseConfig {
 // AgentAbuseOverride represents per-agent overrides for abuse settings.
 // Empty/null fields mean "use global default".
 type AgentAbuseOverride struct {
-	RPS                   *float64 `json:"rps,omitempty"`
-	Burst                 *int     `json:"burst,omitempty"`
-	MaxMessageLength      *int     `json:"max_message_length,omitempty"`
-	MinIntervalMs         *int     `json:"min_interval_ms,omitempty"`
-	MaxMessagesPerSession *int     `json:"max_messages_per_session,omitempty"`
-	BlockEmptyUserAgent   *bool    `json:"block_empty_user_agent,omitempty"`
-	BlockedUserAgents     []string `json:"blocked_user_agents,omitempty"`
+	RPS                    *float64 `json:"rps,omitempty"`
+	Burst                  *int     `json:"burst,omitempty"`
+	MaxMessageLength       *int     `json:"max_message_length,omitempty"`
+	MinIntervalMs          *int     `json:"min_interval_ms,omitempty"`
+	MaxUserTurnsPerSession *int     `json:"max_user_turns_per_session,omitempty"`
+	BlockEmptyUserAgent    *bool    `json:"block_empty_user_agent,omitempty"`
+	BlockedUserAgents      []string `json:"blocked_user_agents,omitempty"`
 }
 
 // ── File-based global store ──
@@ -129,9 +130,8 @@ func (s *AbuseStore) load() {
 		return
 	}
 	var cfg AbuseConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		slog.Warn("failed to parse abuse_config.json, using defaults", "error", err)
-		return
+	if err := decodeStrictJSON(bytes.NewReader(data), &cfg); err != nil {
+		panic(fmt.Sprintf("invalid persisted anti-abuse config %s: %v", s.filePath, err))
 	}
 	s.config = cfg
 }
@@ -188,7 +188,7 @@ func (s *Server) abuseSettingsPutHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	var cfg AbuseConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := decodeStrictJSON(r.Body, &cfg); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
@@ -201,8 +201,8 @@ func (s *Server) abuseSettingsPutHandler(w http.ResponseWriter, r *http.Request)
 	if cfg.MinIntervalMs <= 0 {
 		cfg.MinIntervalMs = def.MinIntervalMs
 	}
-	if cfg.MaxMessagesPerSession <= 0 {
-		cfg.MaxMessagesPerSession = def.MaxMessagesPerSession
+	if cfg.MaxUserTurnsPerSession <= 0 {
+		cfg.MaxUserTurnsPerSession = def.MaxUserTurnsPerSession
 	}
 	if cfg.RPS <= 0 {
 		cfg.RPS = def.RPS
@@ -282,7 +282,7 @@ func (s *Server) agentAbusePutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var override AgentAbuseOverride
-	if err := json.NewDecoder(r.Body).Decode(&override); err != nil {
+	if err := decodeStrictJSON(r.Body, &override); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
@@ -420,7 +420,7 @@ func EmergencyPresets() map[string]AbuseConfig {
 	cautious.Burst = 3
 	cautious.MaxMessageLength = 1000
 	cautious.MinIntervalMs = 2000
-	cautious.MaxMessagesPerSession = 30
+	cautious.MaxUserTurnsPerSession = 30
 	cautious.BlockedUserAgents = append(cautious.BlockedUserAgents, "Mozilla/4.*", "MSIE.*")
 	cautious.EmergencyPreset = "cautious"
 
@@ -429,7 +429,7 @@ func EmergencyPresets() map[string]AbuseConfig {
 	lockdown.Burst = 1
 	lockdown.MaxMessageLength = 500
 	lockdown.MinIntervalMs = 5000
-	lockdown.MaxMessagesPerSession = 10
+	lockdown.MaxUserTurnsPerSession = 10
 	lockdown.BlockEmptyUserAgent = true
 	lockdown.BlockedUserAgents = []string{
 		"curl/*", "python-requests/*", "Go-http-client/*", "Wget/*",
@@ -499,10 +499,17 @@ func (s *Server) emergencyStatusHandler(w http.ResponseWriter, r *http.Request) 
 		"emergency_preset": cfg.EmergencyPreset,
 		"rps":              cfg.RPS,
 		"burst":            cfg.Burst,
-		"max_messages":     cfg.MaxMessagesPerSession,
+		"max_user_turns":   cfg.MaxUserTurnsPerSession,
 		"min_interval_ms":  cfg.MinIntervalMs,
 		"active":           cfg.EmergencyMode && cfg.EmergencyPreset == "lockdown",
 	})
+}
+
+// decodeStrictJSON rejects unknown fields so renamed policy controls cannot be ignored.
+func decodeStrictJSON(body io.Reader, target any) error {
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
 }
 
 // getEnvFloat64 reads an environment variable as float64, falling back to defaultVal.
