@@ -115,7 +115,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 
 **MCP Protocol flow:**
 1. `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` creates the standard v2 transport.
-2. `Client(transport)` initializes the MCP session through the same `/mcp` endpoint.
+2. `Client(transport, mode="legacy")` initializes the MCP session through the same `/mcp` endpoint. The explicit mode preserves the standard `initialize` handshake while mcp-go lacks the Python SDK v2 auto-mode `server/discover` negotiation; it does not re-enable legacy SSE transport.
 3. `list_tools()` and `call_tool()` issue protocol requests through the transport; the SDK owns response delivery and any stream/session identifiers.
 4. `Client` context exit or idle cleanup closes the connection through the supported transport lifecycle.
 
@@ -247,4 +247,4 @@ LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 100
 
 > **Прим.:** admin-dashboard использует общие `DATA_SERVICE_URL` / `API_SERVICE_URL` / `RAG_SERVICE_URL` (`cmd/server/main.go:36-38`), а не отдельные `ADMIN_DASHBOARD_*`.
 ---
-**Last verified:** 2026-08-17 (working tree, modern-only MCP experiment) — маршруты, порты и Streamable HTTP lifecycle сверены с кодом; full deterministic E2E повторяется перед merge.
+**Last verified:** 2026-08-20 (commit `0337712`) — маршруты, порты, Streamable HTTP lifecycle и explicit Python SDK `initialize`-compatible negotiation сверены с кодом; full local CI и live tenant-scoped MCP E2E прошли перед push readiness check.

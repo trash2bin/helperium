@@ -62,7 +62,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | Capacity bound | Новый tenant scope свыше `MCP_MAX_STREAMABLE_TENANT_SCOPES` получает `503`, существующий cached scope остаётся доступным |
 | Abuse control | Rate limiter применяется ко всем Streamable HTTP methods на `/mcp`; превышение возвращает `429` |
 
-> Gateway не принимает raw session ID от application-кода. Используй официальный MCP SDK v2; он согласует initialization, request/response и `DELETE` cleanup через `/mcp`.
+> Gateway не принимает raw session ID от application-кода. Используй официальный MCP SDK v2; он согласует initialization, request/response и `DELETE` cleanup через `/mcp`. Пока mcp-go не поддерживает SDK v2 `server/discover` negotiation, api-service фиксирует SDK client в `mode="legacy"` для standard `initialize` handshake; подробности и removal condition описаны в [MCP session lifecycle](../../doc/agents/mcp-session-lifecycle.md#python-sdk-negotiation-compatibility).
 
 ## Как работают инструменты
 
@@ -230,4 +230,4 @@ MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
 | 503 too many active Streamable HTTP tenant scopes | Churn tenant sets заполнил bounded cache | Стабилизировать scopes или оценить безопасное увеличение `MCP_MAX_STREAMABLE_TENANT_SCOPES` |
 
 ---
-**Last verified:** 2026-08-18 (working tree after `6cdb51f`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, required-production auth, Origin allow-list, header-only tenant scope, bounded composite scopes, lifecycle-backed session metrics, session isolation и native Python SDK v2 E2E сверены локально.
+**Last verified:** 2026-08-20 (commit `0337712`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, required-production auth, Origin allow-list, header-only tenant scope, bounded composite scopes, lifecycle-backed session metrics, session isolation и native Python SDK v2 `initialize`-compatible E2E сверены локально.

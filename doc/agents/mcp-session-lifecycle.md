@@ -23,6 +23,10 @@ POST /mcp (api-service v2 Client, authorized X-Tenant-ID + required production b
 
 Legacy GET-SSE/POST JSON-RPC transport intentionally removed. Rollback этой migration выполняется deploy предыдущего tested image, а не runtime transport switch.
 
+### Python SDK negotiation compatibility
+
+`mcp_client.py` creates `Client(transport, mode="legacy")`. This is **not** a legacy MCP transport: the connection remains Streamable HTTP `/mcp` and uses the normal `initialize` handshake. It is a bounded interoperability workaround because the installed Python MCP SDK v2 automatic mode attempts post-handshake `server/discover`, while the current mcp-go gateway does not implement that negotiation method and returns an MCP error. Remove the explicit mode only after mcp-go supports `server/discover` or the SDK reliably falls back to `initialize`; do not replace it with SSE routes or a provider-specific client.
+
 **Ключевые файлы:** `services/mcp-gateway/cmd/main.go` — `streamableTenantRegistry`, `createCompositeServer()`; `services/api-service/src/api_service/agent/mcp_client.py` — Streamable HTTP client и per-tenant connection lifecycle.
 
 ## Tool Registry
@@ -156,4 +160,4 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 
 Подробнее о стратегиях поиска: [search-strategies.md](search-strategies.md)
 ---
-**Last verified:** 2026-08-18 (working tree after `267974c`) — единственный Streamable HTTP `/mcp`, Python SDK v2, required-production auth, Origin policy, fixed direct-chat authority, tenant-scoped handlers, composite tools и cross-scope session rejection проверены deterministic E2E.
+**Last verified:** 2026-08-20 (commit `0337712`) — единственный Streamable HTTP `/mcp`, Python SDK v2 forced to the `initialize`-compatible `mode="legacy"` negotiation, required-production auth, Origin policy, fixed direct-chat authority, tenant-scoped handlers, composite tools и cross-scope session rejection сверены deterministic E2E и live native MCP turns.

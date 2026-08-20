@@ -17,7 +17,7 @@ flowchart LR
     E --> F[Append assistant tool_calls to transcript]
     F --> G[Execute MCP calls sequentially]
     G --> H[Append matching role: tool results by tool_call_id]
-    H --> I[Next provider completion with same transcript and tools]
+    H --> I[Next provider completion with same transcript; current-turn schema policy]
 ```
 
 `AppendOnlyLoop` is the sole owner of this flow. Its `Transcript.messages` list is append-only and is the exact list passed to the provider on every model call.
@@ -28,7 +28,7 @@ flowchart LR
 
 | Type | Contract |
 |---|---|
-| `CompletionRequest` | Full linear transcript and all scoped MCP tool schemas on every call |
+| `CompletionRequest` | Full linear transcript and complete scoped MCP tool schemas; adapter may suppress only immediate current-turn continuation schemas on the provider wire |
 | `CompletionResponse` | Final text or a list of native structured tool calls, plus optional usage/cost |
 | `ToolCall` | Pydantic `id`, `name`, and object-shaped `arguments` |
 | `LLMProvider` | `complete(CompletionRequest) -> CompletionResponse` |
@@ -63,7 +63,7 @@ tool(tool_call_id: call-b)
 assistant(final text)
 ```
 
-The next provider request receives this exact sequence. No `TurnContext`, middleware event mutation, parser result cache, fallback prompt, or second transcript exists.
+The next provider request receives this exact sequence. A fresh later user turn also replays it as history, but historical `role: tool` messages never suppress its scoped schemas. Only the immediate completion after the current turn's unresolved tool result may apply the LiteLLM capability decision on the provider wire. No `TurnContext`, middleware event mutation, parser result cache, fallback prompt, or second transcript exists.
 
 ## Validation and terminals
 
@@ -90,6 +90,6 @@ The current focused contracts are intentionally behavioral rather than parser-im
 |---|---|
 | `test_loop.py` | Tool results enter the next provider request; IDs and order survive multiple calls; text is never parsed as a tool; invalid tools, failures, limits, and cancellation stop explicitly |
 | `test_orchestrator.py` | Public SSE order, server-resolved tenant scope, and persisted `user → assistant → tool → assistant` transcript |
-| `test_litellm_provider.py` | Native call normalization, malformed-native-call rejection, text finality, and cost propagation |
+| `test_litellm_provider.py` | Native call normalization, malformed-native-call rejection, text finality, current-turn continuation policy, historical-tool cross-turn schemas, and cost propagation |
 
-**Last verified:** 2026-08-19 (append-only Agent Runtime refactor) — native structured tool calls are the only executable provider protocol.
+**Last verified:** 2026-08-20 (commit `0337712`) — native structured tool calls remain the only executable provider protocol; live MiniMax `Bosch → Camry V40 characteristics` completed two tenant-scoped MCP tool turns without emitting a raw tool transcript.

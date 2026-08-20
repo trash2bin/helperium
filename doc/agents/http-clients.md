@@ -24,7 +24,7 @@
 
 `services/api-service/src/api_service/agent/mcp_client.py`:
 - Один persistent Streamable HTTP v2 connection на tenant scope через единый endpoint `POST/GET/DELETE /mcp`
-- `mcp.client.streamable_http.streamable_http_client()` и `Client(transport)` из официального Python MCP SDK v2
+- `mcp.client.streamable_http.streamable_http_client()` и `Client(transport, mode="legacy")` из официального Python MCP SDK v2; mode сохраняет standard `initialize` handshake, пока mcp-go не поддерживает auto-mode `server/discover` negotiation
 - `asyncio.Lock` на connection, `MCP_LOCK_ACQUIRE_TIMEOUT = 10s`, `MCP_TOOL_EXECUTION_TIMEOUT = 15s`, `MCP_HTTP_READ_TIMEOUT = 30 min`
 - При ошибке — переоткрытие Streamable HTTP connection; idle connections закрываются фоновой очисткой
 
@@ -41,4 +41,4 @@
 Основной клиент — embed-виджет, который ходит напрямую в api-service (:8081).
 Админка (admin-dashboard) ходит напрямую в свои бэкенды, минуя demo-web.
 ---
-**Last verified:** 2026-08-17 (working tree, modern-only MCP experiment) — структура клиентов, Streamable HTTP lifecycle и таймауты сверены с кодом.
+**Last verified:** 2026-08-20 (commit `0337712`) — структура клиентов, Streamable HTTP lifecycle, explicit SDK negotiation mode и таймауты сверены с кодом и live native MCP turns.

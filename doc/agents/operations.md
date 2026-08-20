@@ -64,4 +64,4 @@ curl -X POST http://127.0.0.1:8084/admin/tenants -H "Authorization: Bearer secre
 
 **agent-db CLI (legacy):** `uv run agent-db register <tenant_id> <scenario>`, `uv run agent-db tenants`, `uv run agent-db drop <scenario>`
 ---
-**Last verified:** 2026-08-09 (commit `3aa1cdbc172fd7b95140a36577eee78f87ec218d`) — Docker launcher проверен из корня и из произвольной директории
+**Last verified:** 2026-08-20 (commit `0337712`) — native `dev.sh restart` поднял data → rag → mcp → admin → api → web; `restart --with-autoparts` сохраняет opt-in flag. Для public Caddy поверх native Helperium проверены `https://localhost/embed/embed.js` и widget config через `host.docker.internal:8081`.

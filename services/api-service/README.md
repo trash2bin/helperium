@@ -329,7 +329,7 @@ curl -X POST http://localhost:8081/api/agents \
 
 | Аспект | Поведение |
 |---|---|
-| Transport | `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` и `Client(transport)` из SDK v2; application не собирает JSON-RPC и не управляет session IDs вручную |
+| Transport | `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` и `Client(transport, mode="legacy")` из SDK v2; application не собирает JSON-RPC и не управляет session IDs вручную. Mode сохраняет standard `initialize` handshake, пока mcp-go не поддерживает auto-mode `server/discover` negotiation. |
 | Tenant authority | Direct public chat всегда передаёт `[DEFAULT_TENANT_ID]`; только named-agent route может передать persisted `tenant_ids`. Browser `X-Tenant-ID` не читается API routes |
 | Tenant scope | Resolved `tenant_ids` передаётся на каждое transport request как `X-Tenant-ID`; query parameter не используется и не принимается gateway |
 | Composite agent | Несколько persisted IDs передаются как `tenant-a,tenant-b`; gateway возвращает только prefixed tools (`tenant-a__db_map`) и отклоняет duplicate/oversized scopes |
