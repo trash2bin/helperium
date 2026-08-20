@@ -87,8 +87,11 @@ class _Spending:
 
 
 class _Backlog:
-    def record_llm_call(self, *_args, **_kwargs):
-        return None
+    def __init__(self) -> None:
+        self.llm_calls: list[dict[str, Any]] = []
+
+    def record_llm_call(self, *_args, **kwargs):
+        self.llm_calls.append(kwargs)
 
     def tool_call(self, *_args, **_kwargs):
         return None
@@ -110,7 +113,13 @@ def _run(
     return LoopRun(transcript)
 
 
-def _loop(provider: _Provider, mcp: _MCP, *, limits: LoopLimits | None = None):
+def _loop(
+    provider: _Provider,
+    mcp: _MCP,
+    *,
+    limits: LoopLimits | None = None,
+    backlog: _Backlog | None = None,
+):
     return AppendOnlyLoop(
         provider=provider,
         mcp=mcp,
@@ -123,7 +132,7 @@ def _loop(provider: _Provider, mcp: _MCP, *, limits: LoopLimits | None = None):
         ),
         guard_checker=_Guard(),
         spending=_Spending(),
-        backlog=_Backlog(),
+        backlog=backlog or _Backlog(),
         session_id="session",
         turn_id="turn",
         tenant_ids=("tenant-a",),
@@ -182,6 +191,33 @@ async def test_tool_result_is_appended_before_the_next_provider_request() -> Non
         },
     ]
     assert run.outcome is not None and run.outcome.kind == "answer"
+
+
+@pytest.mark.asyncio
+async def test_tool_result_telemetry_is_recorded_at_the_loop_boundary() -> None:
+    provider = _Provider(
+        [
+            CompletionResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="call-search", name="search", arguments={"query": "Bosch"}
+                    )
+                ]
+            ),
+            CompletionResponse(content="Found Bosch"),
+        ]
+    )
+    mcp = _MCP({"search": _Result('{"items":["Bosch"]}')})
+    backlog = _Backlog()
+
+    await _events(_loop(provider, mcp, backlog=backlog), _run(provider, mcp))
+
+    assert [
+        call["untrusted_tool_results_in_context"] for call in backlog.llm_calls
+    ] == [
+        0,
+        1,
+    ]
 
 
 @pytest.mark.asyncio

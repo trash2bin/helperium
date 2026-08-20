@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from api_service.session_repository import SQLiteSessionRepository
 from api_service.sessions import SessionStore
 
 
@@ -34,8 +35,7 @@ def connection_factory(session_db_path):
 def store(connection_factory):
     """SessionStore with temp SQLite DB."""
     return SessionStore(
-        connection_factory=connection_factory,
-        max_turns=5,
+        repository=SQLiteSessionRepository(connection_factory, max_turns=5),
         max_content_chars=200,
     )
 
@@ -120,11 +120,10 @@ def test_trim_exceeds_max_turns(store):
     assert "Turn 9" in contents
 
 
-def test_trim_to_one_turn(store):
+def test_trim_to_one_turn(store, connection_factory):
     """Store with max_turns=1 only keeps the last turn."""
     tiny_store = SessionStore(
-        connection_factory=store._connection_factory,
-        max_turns=1,
+        repository=SQLiteSessionRepository(connection_factory, max_turns=1),
         max_content_chars=200,
     )
     for i in range(3):
@@ -274,7 +273,9 @@ def test_concurrent_writes(store):
 # --- Anti-abuse session state ---
 
 
-def test_abuse_state_counts_only_user_turns_and_returns_last_timestamp(store):
+def test_accepted_user_turn_is_the_durable_source_of_quota_and_interval(store):
+    accepted_at = 1_725_000_000.25
+    accepted = store.accept_user_turn("session-1", accepted_at)
     store.append_turn(
         "session-1",
         [
@@ -286,10 +287,41 @@ def test_abuse_state_counts_only_user_turns_and_returns_last_timestamp(store):
     )
     store.append_turn(
         "session-1",
+        [{"role": "assistant", "content": "provider failure evidence"}],
+    )
+
+    state = store.abuse_state("session-1")
+
+    assert accepted.user_turn_count == 1
+    assert accepted.last_user_turn_at == accepted_at
+    assert state == accepted
+
+
+def test_legacy_transcript_backfill_counts_only_user_turns(store):
+    store.append_turn(
+        "legacy-session",
+        [
+            {"role": "user", "content": "Find Bosch"},
+            {"role": "tool", "tool_call_id": "call-1", "content": "{}"},
+            {"role": "assistant", "content": "Found Bosch"},
+        ],
+    )
+    store.append_turn(
+        "legacy-session",
         [{"role": "assistant", "content": "orphaned assistant evidence"}],
     )
 
-    user_turns, last_user_turn_at = store.abuse_state("session-1")
+    state = store.abuse_state("legacy-session")
 
-    assert user_turns == 1
-    assert isinstance(last_user_turn_at, float)
+    assert state.user_turn_count == 1
+    assert isinstance(state.last_user_turn_at, float)
+
+
+def test_accepted_turn_preserves_legacy_quota_before_increment(store):
+    store.append_turn("legacy-session", [{"role": "user", "content": "First"}])
+    store.append_turn("legacy-session", [{"role": "user", "content": "Second"}])
+
+    state = store.accept_user_turn("legacy-session", 1_725_000_123.0)
+
+    assert state.user_turn_count == 3
+    assert state.last_user_turn_at == 1_725_000_123.0

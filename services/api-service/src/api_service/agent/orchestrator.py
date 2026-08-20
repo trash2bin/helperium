@@ -18,7 +18,7 @@ from .conversation import ConversationManager
 from .factory import _create_env_provider, _pool, resolve_llm
 from .loop import AppendOnlyLoop, LoopLimits, LoopRun, Transcript
 from .mcp_client import MCPClient
-from .prompts import SYSTEM_PROMPT
+from .prompts import compose_system_prompt
 from .types import AgentEvent, SessionId, TurnMessages
 
 logger = logging.getLogger("api_service.agent.orchestrator")
@@ -75,7 +75,7 @@ class LLMAgent:
                     session_id
                 )
                 messages = [
-                    {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
+                    {"role": "system", "content": compose_system_prompt(system_prompt)},
                     *history,
                     {"role": "user", "content": user_message},
                 ]

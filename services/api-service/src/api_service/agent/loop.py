@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -14,6 +15,9 @@ from pydantic import BaseModel, ConfigDict
 from .models import CompletionRequest, CompletionResponse, ToolCall
 from .protocols import LLMProvider, MCPToolSession
 from .types import AgentEvent
+
+
+logger = logging.getLogger("api_service.agent.loop")
 
 
 class LoopLimits(BaseModel):
@@ -147,6 +151,15 @@ class AppendOnlyLoop:
                     return
 
                 run.metrics.model_calls += 1
+                untrusted_tool_results_in_context = (
+                    self._untrusted_tool_results_in_context(run.transcript.messages)
+                )
+                logger.info(
+                    "[AGENT] completion security iteration=%d "
+                    "untrusted_tool_results_in_context=%d",
+                    run.metrics.model_calls,
+                    untrusted_tool_results_in_context,
+                )
                 response = await self._provider.complete(
                     CompletionRequest(
                         messages=run.transcript.messages,
@@ -154,7 +167,9 @@ class AppendOnlyLoop:
                         tenant_ids=list(self._tenant_ids),
                     )
                 )
-                self._record_provider_response(run.metrics, response)
+                self._record_provider_response(
+                    run.metrics, response, untrusted_tool_results_in_context
+                )
                 spending = await self._check_spending(response.cost)
                 if spending is not None:
                     yield self._finish(run, spending)
@@ -316,7 +331,10 @@ class AppendOnlyLoop:
         return None
 
     def _record_provider_response(
-        self, metrics: LoopMetrics, response: CompletionResponse
+        self,
+        metrics: LoopMetrics,
+        response: CompletionResponse,
+        untrusted_tool_results_in_context: int,
     ) -> None:
         usage = response.usage
         metrics.prompt_tokens += usage.prompt_tokens if usage else 0
@@ -335,7 +353,13 @@ class AppendOnlyLoop:
             tenant_ids=list(self._tenant_ids),
             turn_id=self._turn_id,
             iteration=metrics.model_calls,
+            untrusted_tool_results_in_context=untrusted_tool_results_in_context,
         )
+
+    @staticmethod
+    def _untrusted_tool_results_in_context(messages: list[dict[str, Any]]) -> int:
+        """Count tool-result data structurally, independent of provider wire format."""
+        return sum(message.get("role") == "tool" for message in messages)
 
     async def _check_spending(self, cost: float) -> LoopOutcome | None:
         if cost <= 0:

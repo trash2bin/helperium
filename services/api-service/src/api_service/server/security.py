@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from .rate_limit import get_client_ip
@@ -12,6 +13,9 @@ from fastapi.responses import StreamingResponse
 from api_service.abuse_live import get_live_abuse_provider
 from api_service.sessions import session_store
 from .sse import _single_error
+
+
+logger = logging.getLogger("api_service.server.security")
 
 
 def _get_lang_from_request(request) -> str:
@@ -47,12 +51,10 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
             headers={"Retry-After": str(int(retry_after))},
         )
 
-    user_turn_count, last_user_turn_at = await asyncio.to_thread(
-        session_store.abuse_state, safe_id
-    )
+    state = await asyncio.to_thread(session_store.abuse_state, safe_id)
     last_user_turn_since = (
-        max(0.0, time.time() - last_user_turn_at)
-        if isinstance(last_user_turn_at, (int, float))
+        max(0.0, time.time() - state.last_user_turn_at)
+        if isinstance(state.last_user_turn_at, (int, float))
         else None
     )
 
@@ -61,7 +63,7 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
         ip=ip,
         user_agent=user_agent,
         message=message,
-        n_msg=user_turn_count,
+        n_msg=state.user_turn_count,
         last_msg_time_since=last_user_turn_since,
     )
     if not check_result.allowed:
@@ -74,5 +76,17 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
         return StreamingResponse(
             _single_error(msg),
             media_type="text/event-stream",
+        )
+    accepted_at = time.time()
+    try:
+        await asyncio.to_thread(session_store.accept_user_turn, safe_id, accepted_at)
+    except Exception:
+        logger.exception("Failed to persist accepted user turn for session %s", safe_id)
+        return StreamingResponse(
+            _single_error(
+                "Сервис сессий временно недоступен. Попробуйте ещё раз позже."
+            ),
+            media_type="text/event-stream",
+            status_code=503,
         )
     return None

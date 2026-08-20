@@ -2,6 +2,8 @@
 
 ## 2026-08-20
 
+- **refactor(anti-abuse):** trusted tool-data rule moved from LiteLLM wire prefix to mandatory agent system policy; loop owns structured context telemetry; SQLite session repository records one accepted ingress user turn for quota/interval. **Проверка:** полный `make ci`, Pyright и live MiniMax MCP E2E прошли.
+
 - **fix(anti-abuse):** provider wire отделяет untrusted tool results structured boundary; session quota считает durable user turns; inactive `token_budget` удалён; Admin policy применяет синхронный acknowledge/rollback. **Проверка:** полный `make ci` и live admin `status=applied`/MiniMax cross-turn MCP E2E прошли.
 
 - **fix(runtime):** append-only agent loop корректно обрабатывает нулевой empty-response limit, считает полный native tool transcript и сохраняет assistant text; backlog надёжно показывает terminal errors и пустые session files; MCP v2 принудительно использует совместимый legacy initialize handshake с mcp-go. Dev launcher получил opt-in `--with-autoparts` и безопасные local fallbacks. **Проверка:** полный `make ci` прошёл; native runtime healthy, tenant-scoped MCP session/schema discovery подтверждены.
