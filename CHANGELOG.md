@@ -2,6 +2,8 @@
 
 ## 2026-08-20
 
+- **docs(decisions):** добавлены карта отложенных product/security решений и OpenSpec assessment: public demo не блокируется OpenSpec; перед любым adoption нужен один post-demo high-risk pilot с явными ownership и exit criteria.
+
 - **fix(ci):** Docker E2E больше не attach-ится к successful `ci-state-init`; CI запускает long-lived stack отдельно и `e2e` как единственный terminal process, с explicit fail-closed CORS default. **Проверка:** clean Docker E2E, 137 passed.
 
 - **refactor(anti-abuse):** `max_messages_per_session` / `ABUSE_MAX_MESSAGES` полностью заменены на `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS` across runtime, admin UI/OpenAPI, typed agent override and docs; legacy keys fail-fast without alias. **Проверка:** полный `make ci`, API OpenAPI contract и live reload/E2E подтверждены.
