@@ -570,18 +570,6 @@ async def proxy_embed(request: Request, embed_path: str):
     return await _proxy_to_api(request, f"/embed/{embed_path}", stream=False)
 
 
-# Catch-all for any other /api/* path
-@app.api_route(
-    "/api/{path:path}",
-    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    response_model=None,
-)
-async def proxy_api_any(request: Request, path: str):
-    """Catch-all proxy for any undefined /api/* route."""
-    is_sse = path == "chat" and request.method == "POST"
-    return await _proxy_to_api(request, f"/api/{path}", stream=is_sse)
-
-
 def main() -> None:
     """Run the web server."""
     import uvicorn

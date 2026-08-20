@@ -378,3 +378,13 @@ class TestStaticServing:
             b"<html" in response.content.lower()
             or b"<!doctype" in response.content.lower()
         )
+
+
+class TestNoApiCatchAll:
+    """demo-web must not proxy arbitrary API paths with its service credential."""
+
+    def test_unknown_api_path_is_not_forwarded_when_bearer_is_configured(self, client):
+        with patch.object(settings, "api_bearer_token", "secret-token-xyz"):
+            response = client.get("/api/agents")
+
+        assert response.status_code == 404

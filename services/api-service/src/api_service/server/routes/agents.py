@@ -12,9 +12,14 @@ from api_service.http_models import (
 from ..deps import get_agent_store
 
 router = APIRouter()
+public_router = APIRouter()
 
 
-@router.post("/api/agents", response_model=AgentResponse, status_code=201)
+@router.post(
+    "/api/agents",
+    response_model=AgentResponse,
+    status_code=201,
+)
 async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
     try:
         result = await asyncio.to_thread(
@@ -38,13 +43,19 @@ async def create_agent_endpoint(req: AgentCreateRequest) -> AgentResponse:
         raise HTTPException(status_code=409, detail=str(exc))
 
 
-@router.get("/api/agents", response_model=AgentListResponse)
+@router.get(
+    "/api/agents",
+    response_model=AgentListResponse,
+)
 async def list_agents_endpoint() -> AgentListResponse:
     agents = await asyncio.to_thread(get_agent_store().list_agents)
     return AgentListResponse(agents=[AgentResponse(**a) for a in agents])
 
 
-@router.get("/api/agents/{name}", response_model=AgentResponse)
+@router.get(
+    "/api/agents/{name}",
+    response_model=AgentResponse,
+)
 async def get_agent_endpoint(name: str) -> AgentResponse:
     agent = await asyncio.to_thread(get_agent_store().get_agent, name)
     if not agent:
@@ -52,7 +63,10 @@ async def get_agent_endpoint(name: str) -> AgentResponse:
     return AgentResponse(**agent)
 
 
-@router.put("/api/agents/{name}", response_model=AgentResponse)
+@router.put(
+    "/api/agents/{name}",
+    response_model=AgentResponse,
+)
 async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResponse:
     result = await asyncio.to_thread(
         get_agent_store().update_agent,
@@ -73,7 +87,10 @@ async def update_agent_endpoint(name: str, req: AgentUpdateRequest) -> AgentResp
     return AgentResponse(**result)
 
 
-@router.delete("/api/agents/{name}", status_code=204)
+@router.delete(
+    "/api/agents/{name}",
+    status_code=204,
+)
 async def delete_agent_endpoint(name: str):
     deleted = await asyncio.to_thread(get_agent_store().delete_agent, name)
     if not deleted:
@@ -81,7 +98,7 @@ async def delete_agent_endpoint(name: str):
     return None
 
 
-@router.get("/api/agents/{name}/widget-config")
+@public_router.get("/api/agents/{name}/widget-config")
 async def agent_widget_config_endpoint(name: str) -> dict:
     agent = await asyncio.to_thread(get_agent_store().get_agent, name)
     if not agent:

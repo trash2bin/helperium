@@ -295,6 +295,7 @@ def api_client(provider_store, monkeypatch):
     import api_service.provider_store as ps_module
 
     monkeypatch.setattr(ps_module, "get_provider_store", lambda: provider_store)
+    monkeypatch.setenv("API_BEARER_TOKEN", "provider-test-token")
 
     # Reload server/app module to pick up the patched store.
     # NOTE: `from api_service.server import app` would give the FastAPI *object*
@@ -303,7 +304,10 @@ def api_client(provider_store, monkeypatch):
 
     importlib.reload(app_mod)
 
-    with TestClient(app_mod.app) as client:
+    with TestClient(
+        app_mod.app,
+        headers={"Authorization": "Bearer provider-test-token"},
+    ) as client:
         yield client
 
 

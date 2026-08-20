@@ -60,25 +60,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/agents:
-    get:
-      summary: List Agents Endpoint
-      operationId: list_agents_endpoint_api_agents_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentListResponse'
     post:
       summary: Create Agent Endpoint
       operationId: create_agent_endpoint_api_agents_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AgentCreateRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -86,6 +85,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Agents Endpoint
+      operationId: list_agents_endpoint_api_agents_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentListResponse'
         '422':
           description: Validation Error
           content:
@@ -103,6 +127,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -126,6 +158,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -155,6 +195,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '204':
           description: Successful Response
@@ -196,24 +244,48 @@ paths:
       summary: Get Guardrails
       description: Get current guard config.
       operationId: get_guardrails_admin_guardrails_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     post:
       summary: Update Guardrails
       description: 'Update guard config. Accepts: enabled, block_on_match.'
       operationId: update_guardrails_admin_guardrails_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              additionalProperties: true
               type: object
+              additionalProperties: true
               title: Config
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -231,12 +303,27 @@ paths:
       summary: Get All Spending
       description: Get spending overview.
       operationId: get_all_spending_admin_spending_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/spending/{tenant_id}:
     get:
       summary: Get Tenant Spending
@@ -249,6 +336,14 @@ paths:
         schema:
           type: string
           title: Tenant Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -275,6 +370,14 @@ paths:
         schema:
           type: string
           title: Tenant Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -300,24 +403,48 @@ paths:
       summary: Get Abuse Config
       description: Get the current effective abuse configuration (from file + env).
       operationId: get_abuse_config_admin_abuse_config_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     post:
       summary: Save Abuse Config
       description: Save new abuse config directly (admin dashboard alternative endpoint).
       operationId: save_abuse_config_admin_abuse_config_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              additionalProperties: true
               type: object
+              additionalProperties: true
               title: Data
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -340,23 +467,53 @@ paths:
 
         Applies runtime settings (history, loops) to the live settings object.'
       operationId: reload_abuse_config_admin_abuse_config_reload_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/llm-providers:
     get:
       summary: List Llm Providers
       description: List all LLM providers with masked API keys.
       operationId: list_llm_providers_admin_llm_providers_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     post:
       summary: Add Llm Provider
       description: "Add a new LLM provider.\n\nBody:\n    name (required): unique\
@@ -366,14 +523,23 @@ paths:
         \ in full)\n    api_base: custom API base URL\n    enabled: whether the provider\
         \ is active (default: true)"
       operationId: add_llm_provider_admin_llm_providers_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              additionalProperties: true
               type: object
+              additionalProperties: true
               title: Body
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -391,12 +557,27 @@ paths:
       summary: List Litellm Providers
       description: List all available providers from LiteLLM (live, no hardcode).
       operationId: list_litellm_providers_admin_llm_provider_list_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/llm-providers/{name}:
     get:
       summary: Get Llm Provider
@@ -409,6 +590,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -439,6 +628,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -470,6 +667,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -494,6 +699,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -511,16 +724,40 @@ paths:
       summary: Get Llm Config
       description: Get current LLM provider fallback configuration.
       operationId: get_llm_config_admin_llm_config_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/backlog:
     get:
       summary: Backlog List Endpoint
       operationId: backlog_list_endpoint_api_backlog_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -528,6 +765,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BacklogListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/backlog/errors:
     get:
       summary: Backlog Errors Endpoint
@@ -542,6 +785,14 @@ paths:
           minimum: 1
           default: 50
           title: Limit
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -581,6 +832,14 @@ paths:
           minimum: 0
           default: 0
           title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -605,6 +864,14 @@ paths:
         schema:
           type: string
           title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -628,6 +895,14 @@ paths:
         schema:
           type: string
           title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -655,6 +930,14 @@ paths:
         schema:
           type: string
           title: Agent Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -683,31 +966,55 @@ paths:
     get:
       summary: Get Voice Config
       operationId: get_voice_config_api_voice_config_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     put:
       summary: Update Voice Config
       operationId: update_voice_config_api_voice_config_put
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              additionalProperties: true
               type: object
+              additionalProperties: true
               title: Body
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Update Voice Config Api Voice Config Put
         '422':
           description: Validation Error

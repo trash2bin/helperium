@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
@@ -19,6 +19,7 @@ from starlette.staticfiles import StaticFiles
 
 from api_service.prometheus_metrics import init_metrics
 from api_service.log_config import configure_logging
+from .auth import require_api_bearer
 from .rate_limit import limiter
 
 try:
@@ -119,6 +120,9 @@ app = FastAPI(
     description="LLM agent orchestration service",
     version="1.1.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 # Prometheus metrics
@@ -181,18 +185,26 @@ if embed_path.is_dir():
     app.mount("/embed", StaticFiles(directory=str(embed_path)), name="embed")
     logger.info("Embed widget mounted at /embed from %s", embed_path)
 
-# Include route routers
+# Public allowlist: browser-facing chat, widget bootstrap/assets and liveness only.
 app.include_router(chat.router)
-app.include_router(agents.router)
-app.include_router(admin.router)
-app.include_router(backlog.router)
+app.include_router(agents.public_router)
 app.include_router(health.router)
-app.include_router(voice.router)
+
+# Every other API route is private by construction. New control-plane routers
+# must be included here, so they cannot become public by omitted per-route auth.
+private_router = APIRouter(dependencies=[Depends(require_api_bearer)])
+private_router.include_router(agents.router)
+private_router.include_router(admin.router)
+private_router.include_router(backlog.router)
+private_router.include_router(voice.router)
 
 
-@app.get("/metrics", include_in_schema=False)
+@private_router.get("/metrics", include_in_schema=False)
 async def metrics_endpoint():
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+app.include_router(private_router)
 
 
 def main() -> None:

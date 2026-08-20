@@ -88,6 +88,7 @@ def _get_app(monkeypatch, tmp_path):
 
     # Set AGENT_DB_PATH explicitly so voice_config finds it
     monkeypatch.setenv("AGENT_DB_PATH", str(agents_db))
+    monkeypatch.setenv("API_BEARER_TOKEN", "voice-test-token")
 
     # Reset voice config repo singleton so it re-creates from temp path
     import api_service.audio.voice_config as vc_mod
@@ -104,7 +105,9 @@ class TestVoiceConfigKeyPreservation:
     def test_put_empty_api_key_does_not_erase_stt_key(self, monkeypatch, tmp_path):
         """PUT с пустым api_key не удаляет STT ключ."""
         app = _get_app(monkeypatch, tmp_path)
-        with TestClient(app) as client:
+        with TestClient(
+            app, headers={"Authorization": "Bearer voice-test-token"}
+        ) as client:
             # PUT с пустым api_key (фронт присылает маскированное поле)
             put_resp = client.put(
                 "/api/voice-config",
@@ -147,7 +150,9 @@ class TestVoiceConfigKeyPreservation:
     def test_put_new_api_key_can_override(self, monkeypatch, tmp_path):
         """PUT с НОВЫМ api_key должен обновлять ключ (это intentional update)."""
         app = _get_app(monkeypatch, tmp_path)
-        with TestClient(app) as client:
+        with TestClient(
+            app, headers={"Authorization": "Bearer voice-test-token"}
+        ) as client:
             put_resp = client.put(
                 "/api/voice-config",
                 json={
@@ -179,7 +184,9 @@ class TestVoiceConfigKeyPreservation:
     def test_persistence_across_calls(self, monkeypatch, tmp_path):
         """Изменения voice config сохраняются между GET/PUT запросами."""
         app = _get_app(monkeypatch, tmp_path)
-        with TestClient(app) as client:
+        with TestClient(
+            app, headers={"Authorization": "Bearer voice-test-token"}
+        ) as client:
             # 1. Устанавливаем ключ
             client.put(
                 "/api/voice-config",
