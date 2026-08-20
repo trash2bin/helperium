@@ -1,5 +1,9 @@
 # CHANGELOG.md
 
+## 2026-08-21
+
+- **fix(ci/e2e):** agent update E2E использует typed restrictive per-agent anti-abuse override вместо удалённых global-only полей; добавлена проверка persisted `max_user_turns_per_session`. **Проверка:** Docker E2E 137 passed.
+
 ## 2026-08-20
 
 - **docs(decisions):** добавлены карта отложенных product/security решений и OpenSpec assessment: public demo не блокируется OpenSpec; перед любым adoption нужен один post-demo high-risk pilot с явными ownership и exit criteria.

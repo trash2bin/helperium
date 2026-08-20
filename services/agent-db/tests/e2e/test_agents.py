@@ -111,7 +111,7 @@ def test_get_agent_details():
 
 
 def test_update_agent():
-    """Update agent's LLM config and provider priority."""
+    """Update agent config with a restrictive per-agent abuse override."""
     payload = {
         "llm_config": {
             "model": "updated-model",
@@ -120,10 +120,11 @@ def test_update_agent():
         },
         "provider_priority": ["mistral", "openai"],
         "abuse_config": {
-            "enabled": True,
-            "rps": 5,
-            "burst": 10,
-            "emergency_preset": "normal",
+            "rps": 0.5,
+            "burst": 2,
+            "max_message_length": 1000,
+            "min_interval_ms": 2000,
+            "max_user_turns_per_session": 25,
         },
     }
     r = requests.put(
@@ -133,6 +134,12 @@ def test_update_agent():
         timeout=10,
     )
     assert r.status_code == 200, f"Update agent: {r.status_code} body={r.text[:200]}"
+    abuse_config = r.json()["abuse_config"]
+    assert abuse_config["rps"] == 0.5
+    assert abuse_config["burst"] == 2
+    assert abuse_config["max_message_length"] == 1000
+    assert abuse_config["min_interval_ms"] == 2000
+    assert abuse_config["max_user_turns_per_session"] == 25
 
 
 def test_agent_widget_config():
