@@ -314,11 +314,16 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 	return composite, nil
 }
 
-// validateStartupConfiguration protects production-style deployments from
-// accidentally exposing a gateway with auth disabled. Local development remains
-// explicit through MCP_REQUIRE_AUTH=false (the default).
+// validateStartupConfiguration protects every non-development deployment from
+// accidentally exposing the gateway with auth disabled. Local development must
+// opt out explicitly through MCP_DEV=true; MCP_REQUIRE_AUTH=true always requires
+// a non-empty key, including in development.
 func validateStartupConfiguration() error {
-	if os.Getenv("MCP_REQUIRE_AUTH") == "true" && strings.TrimSpace(os.Getenv("MCP_API_KEY")) == "" {
+	authRequired := os.Getenv("MCP_REQUIRE_AUTH") == "true"
+	if !authRequired && os.Getenv("MCP_DEV") != "true" {
+		return errors.New("MCP_REQUIRE_AUTH=true is required unless MCP_DEV=true")
+	}
+	if authRequired && strings.TrimSpace(os.Getenv("MCP_API_KEY")) == "" {
 		return errors.New("MCP_REQUIRE_AUTH=true requires a non-empty MCP_API_KEY")
 	}
 	return nil
@@ -391,13 +396,14 @@ func requiredSingleTenant(w http.ResponseWriter, r *http.Request) (string, bool)
 }
 
 // authMiddleware проверяет Authorization: Bearer <token> на всех маршрутах,
-// кроме /health. Если переменная окружения MCP_API_KEY не установлена,
-// middleware пропускает все запросы only when MCP_REQUIRE_AUTH is false.
+// кроме /health. Пустой MCP_API_KEY может пройти сюда только после явного
+// MCP_DEV=true opt-out: validateStartupConfiguration запрещает такой запуск вне
+// local development и запрещает пустой ключ при MCP_REQUIRE_AUTH=true.
 func authMiddleware(next http.Handler) http.Handler {
 	apiKey := os.Getenv("MCP_API_KEY")
 	if apiKey == "" {
-		// Local development may deliberately opt out. Production launch paths set
-		// MCP_REQUIRE_AUTH=true and fail before router construction if no key exists.
+		// Only explicit MCP_DEV=true can reach this branch. Any non-development
+		// launch fails before router construction unless auth has a non-empty key.
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -441,7 +447,7 @@ func buildRouter() *chi.Mux {
 	r.Use(originMiddleware)
 
 	// Auth middleware — check Authorization: Bearer <token> on all routes
-	// except /health. MCP_REQUIRE_AUTH prevents an accidental empty-key deploy.
+	// except /health. Startup validation makes auth mandatory outside explicit dev.
 	r.Use(authMiddleware)
 
 	// Global request logger to debug routing issues

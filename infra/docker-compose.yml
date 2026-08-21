@@ -109,6 +109,8 @@ services:
     environment:
       - DATA_SERVICE_URL=http://data-service:8084
       - RAG_SERVICE_URL=http://rag:8082
+      # Only the native dev launcher or an explicit local override may set true.
+      - MCP_DEV=${MCP_DEV:-false}
       - MCP_REQUIRE_AUTH=${MCP_REQUIRE_AUTH:-false}
       - MCP_API_KEY=${MCP_API_KEY:-}
       - MCP_ALLOWED_ORIGINS=${MCP_ALLOWED_ORIGINS:-}

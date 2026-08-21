@@ -2,6 +2,8 @@
 
 ## 2026-08-21
 
+- **fix(mcp/security):** non-development gateway startup now fails unless `MCP_REQUIRE_AUTH=true` with a non-empty key; `MCP_DEV=true` is the sole deliberate auth opt-out. Compose, the dev launcher, environment template and MCP guide now carry this contract. **Verification:** startup regression matrix, real binary probes, full MCP tests without runtime panic and full `make ci` passed.
+
 - **fix(security):** api-service rejects wildcard CORS at startup and CI pins a safe test origin; the public storefront documents exact core CORS/MCP credentials while exposing only Caddy. MCP auth tests now initialize their downstream manifest client and require a valid `200` config response, preventing recovered handler panics from passing as authentication success. **Verification:** full MCP gateway tests without runtime panic and full `make ci` passed.
 
 - **fix(api/security):** default-deny API control plane now requires constant-time fail-closed bearer auth; only chat/SSE, widget bootstrap/assets and health remain public. Removed the demo-web generic API proxy and disabled implicit API docs. **Verification:** 380 API tests, 75 demo tests and full `make ci` passed.

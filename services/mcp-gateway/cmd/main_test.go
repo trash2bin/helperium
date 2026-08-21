@@ -303,7 +303,29 @@ func TestAuthMiddleware_InvalidAuthScheme_Returns401(t *testing.T) {
 	}
 }
 
+func TestValidateStartupConfigurationNonDevelopmentRequiresAuth(t *testing.T) {
+	unsetEnv(t, "MCP_DEV")
+	unsetEnv(t, "MCP_REQUIRE_AUTH")
+	unsetEnv(t, "MCP_API_KEY")
+
+	err := validateStartupConfiguration()
+	if err == nil || !strings.Contains(err.Error(), "MCP_REQUIRE_AUTH=true is required") {
+		t.Fatalf("non-development without MCP_REQUIRE_AUTH=true = %v, want auth-required error", err)
+	}
+}
+
+func TestValidateStartupConfigurationExplicitDevelopmentAllowsAuthOptOut(t *testing.T) {
+	t.Setenv("MCP_DEV", "true")
+	unsetEnv(t, "MCP_REQUIRE_AUTH")
+	unsetEnv(t, "MCP_API_KEY")
+
+	if err := validateStartupConfiguration(); err != nil {
+		t.Fatalf("MCP_DEV=true without auth configuration: %v", err)
+	}
+}
+
 func TestValidateStartupConfigurationRequiresKeyWhenEnabled(t *testing.T) {
+	unsetEnv(t, "MCP_DEV")
 	t.Setenv("MCP_REQUIRE_AUTH", "true")
 	t.Setenv("MCP_API_KEY", "")
 	if err := validateStartupConfiguration(); err == nil {
@@ -313,6 +335,16 @@ func TestValidateStartupConfigurationRequiresKeyWhenEnabled(t *testing.T) {
 	t.Setenv("MCP_API_KEY", "test-secret-123")
 	if err := validateStartupConfiguration(); err != nil {
 		t.Fatalf("MCP_REQUIRE_AUTH=true with key: %v", err)
+	}
+}
+
+func TestValidateStartupConfigurationDevelopmentStillRequiresEnabledKey(t *testing.T) {
+	t.Setenv("MCP_DEV", "true")
+	t.Setenv("MCP_REQUIRE_AUTH", "true")
+	t.Setenv("MCP_API_KEY", "")
+
+	if err := validateStartupConfiguration(); err == nil {
+		t.Fatal("MCP_DEV=true with MCP_REQUIRE_AUTH=true and no key should fail validation")
 	}
 }
 

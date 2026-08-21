@@ -47,7 +47,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 
 `/mcp` — **единственный стандартный Streamable HTTP MCP endpoint** на `mcp-go v0.58`. Он поддерживает standard single-endpoint request/response flow и transport-managed MCP sessions. Для каждого уже разрешённого набора `X-Tenant-ID` gateway создаёт отдельный stateful handler: manifest и tool closures остаются tenant-scoped, а `data-service` получает primary tenant через request context.
 
-Не публикуй этот endpoint без `MCP_API_KEY`: `X-Tenant-ID` определяет scope tools, но сам по себе не является криптографическим доказательством права клиента на tenant. Production ставит `MCP_REQUIRE_AUTH=true`; gateway fail-fast завершится, если ключ пуст. Legacy GET-SSE/POST JSON-RPC compatibility path удалён; rollback выполняется deploy предыдущего tested image.
+Не публикуй этот endpoint без `MCP_API_KEY`: `X-Tenant-ID` определяет scope tools, но сам по себе не является криптографическим доказательством права клиента на tenant. Любой non-development запуск обязан поставить `MCP_REQUIRE_AUTH=true`; gateway fail-fast завершится без него или с пустым ключом. Единственный explicit opt-out — `MCP_DEV=true` для local development. Legacy GET-SSE/POST JSON-RPC compatibility path удалён; rollback выполняется deploy предыдущего tested image.
 
 ### Transport и security contract
 
@@ -134,7 +134,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | `/docs` | GET | Swagger UI | MCP_API_KEY |
 | `/openapi.json` | GET | OpenAPI spec | MCP_API_KEY |
 
-**Auth:** development может оставить `MCP_REQUIRE_AUTH=false`. Production обязан установить `MCP_REQUIRE_AUTH=true` и тот же сильный secret в gateway `MCP_API_KEY` и api-service `MCP_CLIENT_API_KEY`; `/health` и `/metrics` всегда открыты.
+**Auth:** только явный local development с `MCP_DEV=true` может оставить `MCP_REQUIRE_AUTH=false`. Любой non-development запуск обязан установить `MCP_REQUIRE_AUTH=true` и тот же сильный secret в gateway `MCP_API_KEY` и api-service `MCP_CLIENT_API_KEY`; иначе gateway не стартует. `/health` и `/metrics` всегда открыты.
 
 ## 📚 Ссылки
 
@@ -148,7 +148,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | Переменная | Дефолт | Описание |
 |---|---|---|
 | `MCP_PORT` | `8083` | Порт HTTP |
-| `MCP_REQUIRE_AUTH` | `false` | `true` запрещает старт gateway с пустым `MCP_API_KEY`; production setting |
+| `MCP_REQUIRE_AUTH` | `false` only with `MCP_DEV=true` | Non-development требует `true`; пустой `MCP_API_KEY` запрещает старт |
 | `MCP_API_KEY` | — | Gateway Bearer-токен; должен совпадать с `MCP_CLIENT_API_KEY` api-service |
 | `MCP_ALLOWED_ORIGINS` | — | Comma-separated exact browser Origin allow-list; absent Origin разрешён service clients |
 | `MCP_MAX_TENANTS_PER_SCOPE` | `8` | Maximum unique tenant IDs в composite scope; duplicate/oversize получают `400` |
@@ -161,7 +161,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | `MCP_SESSION_IDLE_TIMEOUT` | `5m` | Idle TTL transport-managed Streamable HTTP sessions |
 | `MCP_READ_HEADER_TIMEOUT` | `10` | Read header timeout (сек, slowloris защита) |
 | `MCP_IDLE_TIMEOUT` | `120` | Idle timeout HTTP (сек) |
-| `MCP_DEV` | — | Debug log level для gateway |
+| `MCP_DEV` | `false` | Единственный explicit local-development opt-out для `MCP_REQUIRE_AUTH=false`; также включает debug log level |
 | `MCP_RATE_LIMIT_RPS` | `10` | Requests per second (rate limiter) |
 | `MCP_RATE_LIMIT_BURST` | `20` | Burst size (rate limiter) |
 
@@ -185,7 +185,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 MCP_DEV=true DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 ```
 
-`MCP_DEV` включает debug log level; ручной SSE playground намеренно удалён вместе с устаревшим transport.
+`MCP_DEV=true` — единственный explicit local-development opt-out для auth и включает debug log level; ручной SSE playground намеренно удалён вместе с устаревшим transport.
 
 ## Запуск
 

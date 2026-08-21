@@ -183,10 +183,11 @@ cmd_start() {
     shift
   done
 
+  load_env
+  # This command is the explicit local-development opt-out for the gateway.
+  # Set it after loading .env so a production value cannot disable the intent.
   MCP_DEV=true
   echo "🧪 Dev mode enabled — gateway debug logging is active"
-
-  load_env
   # The native launcher is a local-development convenience. If a developer has
   # enabled gateway bearer auth but omitted the internal client credential, use
   # the supplied gateway key only for this local process tree. Deployment
