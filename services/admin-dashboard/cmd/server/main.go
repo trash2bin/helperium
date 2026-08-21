@@ -36,6 +36,7 @@ func main() {
 	dataSvcURL := flag.String("data-service", envOrDefault("DATA_SERVICE_URL", "http://127.0.0.1:8084"), "Data service base URL")
 	ragSvcURL := flag.String("rag-service", envOrDefault("RAG_SERVICE_URL", "http://127.0.0.1:8082"), "RAG service base URL")
 	apiSvcURL := flag.String("api-service", envOrDefault("API_SERVICE_URL", "http://127.0.0.1:8081"), "API service base URL")
+	apiBearerToken := flag.String("api-bearer-token", os.Getenv("API_BEARER_TOKEN"), "API control-plane bearer token")
 	adminToken := flag.String("admin-token", os.Getenv("ADMIN_TOKEN"), "Admin auth token (full access)")
 	viewerToken := flag.String("viewer-token", os.Getenv("VIEWER_TOKEN"), "Viewer auth token (read-only)")
 	flag.Parse()
@@ -49,13 +50,14 @@ func main() {
 	}
 
 	srv := server.New(server.Options{
-		Addr:        *addr,
-		DataSvcURL:  *dataSvcURL,
-		RagSvcURL:   *ragSvcURL,
-		ApiSvcURL:   *apiSvcURL,
-		AdminToken:  *adminToken,
-		ViewerToken: *viewerToken,
-		DataDir:     envOrDefault("DATA_DIR", ".data/uploads"),
+		Addr:           *addr,
+		DataSvcURL:     *dataSvcURL,
+		RagSvcURL:      *ragSvcURL,
+		ApiSvcURL:      *apiSvcURL,
+		ApiBearerToken: *apiBearerToken,
+		AdminToken:     *adminToken,
+		ViewerToken:    *viewerToken,
+		DataDir:        envOrDefault("DATA_DIR", ".data/uploads"),
 	})
 
 	slog.Info("starting admin dashboard", "addr", *addr, "data_service", *dataSvcURL)

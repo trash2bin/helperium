@@ -16,7 +16,7 @@
 `--with-autoparts` отдельно вызывает Compose-стек `demo/autoparts-store`. Перед
 первым запуском скопируй `demo/autoparts-store/.env.dev.example` в
 `demo/autoparts-store/.env` и задай два локальных database passwords; root `.env`
-содержит только core `ADMIN_TOKEN`. Этот storefront не входит в обычный native
+содержит core `ADMIN_TOKEN` и distinct `API_BEARER_TOKEN` для private api-service control plane. Этот storefront не входит в обычный native
 runtime и не останавливается `dev.sh stop`. В explicit opt-in path bootstrap
 автоматически provision'ит PostgreSQL `SELECT`-only роль и регистрирует/rewrite'ит
 tenant `autoparts` до старта MCP/API; named agent/widget onboarding остаётся

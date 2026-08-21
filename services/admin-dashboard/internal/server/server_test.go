@@ -507,3 +507,50 @@ func TestAuditAuthFailureLogged(t *testing.T) {
 		t.Errorf("audit log should contain auth.failed for tenant:test, got: %v", entries)
 	}
 }
+
+func TestAgentProxyUsesConfiguredAPIControlPlaneBearer(t *testing.T) {
+	var upstreamAuthorization string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer api.Close()
+
+	s := New(Options{
+		Addr:           ":0",
+		ApiSvcURL:      api.URL,
+		ApiBearerToken: "api-control-secret",
+		AdminToken:     "dashboard-admin-secret",
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/agents", nil)
+	req.Header.Set("Authorization", "Bearer dashboard-admin-secret")
+	s.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("proxy status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if upstreamAuthorization != "Bearer api-control-secret" {
+		t.Fatalf("upstream Authorization = %q, want configured API bearer", upstreamAuthorization)
+	}
+}
+
+func TestAgentProxyFailsClosedWithoutAPIControlPlaneBearer(t *testing.T) {
+	s := New(Options{
+		Addr:       ":0",
+		ApiSvcURL:  "http://127.0.0.1:1",
+		AdminToken: "dashboard-admin-secret",
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/agents", nil)
+	req.Header.Set("Authorization", "Bearer dashboard-admin-secret")
+	s.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("proxy status = %d, want 503; body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "api_auth_unconfigured") {
+		t.Fatalf("missing api_auth_unconfigured error: %s", w.Body.String())
+	}
+}

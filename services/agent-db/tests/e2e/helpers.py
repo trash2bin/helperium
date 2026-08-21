@@ -93,12 +93,27 @@ def admin_token() -> str | None:
 
 
 def admin_headers() -> dict[str, str]:
-    """Build auth headers for admin API. Raises if missing."""
+    """Build auth headers for data-service admin API. Raises if missing."""
     token = admin_token()
     if not token:
         raise ValueError(
-            "ADMIN_TOKEN not set — admin API calls require it.\n"
+            "ADMIN_TOKEN not set — data-service admin API calls require it.\n"
             "     Set:  export ADMIN_TOKEN=secret\n"
+        )
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def api_bearer_token() -> str | None:
+    return os.environ.get("API_BEARER_TOKEN")
+
+
+def api_headers() -> dict[str, str]:
+    """Build auth headers for api-service private control-plane endpoints."""
+    token = api_bearer_token()
+    if not token:
+        raise ValueError(
+            "API_BEARER_TOKEN not set — api-service control-plane calls require it.\n"
+            "     Set:  export API_BEARER_TOKEN=secret\n"
         )
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 

@@ -18,11 +18,11 @@ Pipeline зелёный = все **6 джоб** проходят (lint-python, l
 `ci-state-init` намеренно завершается с кодом `0` после bootstrap named CI volumes. Поэтому он не может находиться в `docker compose up --abort-on-container-exit`: normal init exit остановит stack ещё до pytest. GitHub Actions и local reproduction запускают только long-lived dependencies detached, затем выполняют `e2e` как единственный terminal process. CORS default задаётся явно, чтобы runner/user `.env` с wildcard не ослабил fail-closed CORS regression.
 
 ```bash
-ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token API_BEARER_TOKEN=ci-api-control-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
-ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token API_BEARER_TOKEN=ci-api-control-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test run --rm e2e
-ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token API_BEARER_TOKEN=ci-api-control-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test down -v
 ```
 

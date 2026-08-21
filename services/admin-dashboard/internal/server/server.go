@@ -42,13 +42,14 @@ import (
 
 // Options для создания сервера.
 type Options struct {
-	Addr        string
-	DataSvcURL  string
-	RagSvcURL   string
-	ApiSvcURL   string
-	AdminToken  string
-	ViewerToken string
-	DataDir     string
+	Addr           string
+	DataSvcURL     string
+	RagSvcURL      string
+	ApiSvcURL      string
+	ApiBearerToken string
+	AdminToken     string
+	ViewerToken    string
+	DataDir        string
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
@@ -1111,9 +1112,11 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 		return
 	}
 
-	if token := r.Header.Get("Authorization"); token != "" {
-		req.Header.Set("Authorization", token)
+	if s.opts.ApiBearerToken == "" {
+		respondError(w, http.StatusServiceUnavailable, "api_auth_unconfigured", "API control-plane bearer is not configured")
+		return
 	}
+	req.Header.Set("Authorization", "Bearer "+s.opts.ApiBearerToken)
 	// Сохраняем оригинальный Content-Type (может быть multipart/form-data с boundary для voice)
 	ct := r.Header.Get("Content-Type")
 	if ct == "" {

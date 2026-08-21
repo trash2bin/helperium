@@ -20,7 +20,7 @@ import uuid
 import requests
 
 from tests.e2e.helpers import (
-    admin_headers,
+    api_headers,
     api_service_url,
 )
 
@@ -41,11 +41,7 @@ def setup_module(module):
 
 
 def _api_headers() -> dict:
-    h = {"Content-Type": "application/json"}
-    token = admin_headers().get("Authorization", "")
-    if token:
-        h["Authorization"] = token
-    return h
+    return api_headers()
 
 
 # ── Agent CRUD Tests ───────────────────────────────────────────────────────

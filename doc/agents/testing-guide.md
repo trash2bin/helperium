@@ -35,17 +35,17 @@ uv run pytest services/agent-db/tests/e2e/ --collect-only -q
 Это предпочтительный путь для service boundary, tenant DB, CORS, MCP auth/origin и SSE regressions. Контур создаёт named test volumes и не должен писать в обычные локальные `.data`.
 
 ```bash
-ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token API_BEARER_TOKEN=ci-api-control-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
 
-ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token API_BEARER_TOKEN=ci-api-control-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test run --rm e2e
 
-ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
+ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token API_BEARER_TOKEN=ci-api-control-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test down -v
 ```
 
-The CI override enables distinct test-only admin/viewer credentials, MCP bearer authentication and an explicit MCP Origin allowlist. `ci-state-init` is a successful one-shot volume permission bootstrap, so do not use `--abort-on-container-exit` for this profile; only `e2e` is terminal. Explicit `CORS_ALLOW_ORIGINS` prevents a local/runner wildcard `.env` from invalidating the fail-closed CORS test. Never point host pytest at Docker services when a test relies on SQLite paths visible only inside the Compose volumes.
+The CI override enables distinct test-only data-service admin/viewer credentials and an API control-plane bearer, plus MCP bearer authentication and an explicit MCP Origin allowlist. `ci-state-init` is a successful one-shot volume permission bootstrap, so do not use `--abort-on-container-exit` for this profile; only `e2e` is terminal. Explicit `CORS_ALLOW_ORIGINS` prevents a local/runner wildcard `.env` from invalidating the fail-closed CORS test. Never point host pytest at Docker services when a test relies on SQLite paths visible only inside the Compose volumes.
 
 ### Native isolated profile
 

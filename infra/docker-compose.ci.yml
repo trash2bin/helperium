@@ -53,6 +53,7 @@ services:
       - ci_app_data:/data/app
     environment:
       MCP_CLIENT_API_KEY: "helperium-e2e-mcp-token"
+      API_BEARER_TOKEN: "${API_BEARER_TOKEN:-helperium-e2e-api-control-token}"
     depends_on:
       ci-state-init:
         condition: service_completed_successfully
@@ -61,6 +62,8 @@ services:
     user: "1000:1000"
     volumes:
       - ci_uploads:/data/uploads
+    environment:
+      API_BEARER_TOKEN: "${API_BEARER_TOKEN:-helperium-e2e-api-control-token}"
 
   web:
     user: "1000:1000"
@@ -74,6 +77,8 @@ services:
       MCP_API_KEY: "helperium-e2e-mcp-token"
       MCP_CLIENT_API_KEY: "helperium-e2e-mcp-token"
       MCP_ALLOWED_ORIGINS: "http://web:8080,http://127.0.0.1:8080,http://localhost:8080"
+      API_BEARER_TOKEN: "${API_BEARER_TOKEN:-helperium-e2e-api-control-token}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8080}"
       E2E_TENANTS_DIR: /e2e/tenants
       E2E_DB_DIR: /e2e/db
 

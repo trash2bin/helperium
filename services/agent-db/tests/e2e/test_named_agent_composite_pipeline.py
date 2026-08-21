@@ -90,6 +90,7 @@ def named_composite_scripted_api(tmp_path):
             "USE_SCRIPTED_LLM": "1",
             "SCRIPTED_LLM_PATH": str(script_path),
             "ADMIN_TOKEN": os.environ.get("ADMIN_TOKEN", "secret"),
+            "API_BEARER_TOKEN": os.environ.get("API_BEARER_TOKEN", "api-secret"),
             "MCP_GATEWAY_URL": os.environ.get(
                 "MCP_GATEWAY_URL", "http://127.0.0.1:8083"
             ),
@@ -143,7 +144,7 @@ def named_composite_scripted_api(tmp_path):
                     "api_key": "test-key",
                 },
             },
-            headers={"Authorization": f"Bearer {env['ADMIN_TOKEN']}"},
+            headers={"Authorization": f"Bearer {env['API_BEARER_TOKEN']}"},
             timeout=10,
         )
         assert response.status_code in (200, 201), response.text

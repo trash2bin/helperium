@@ -25,6 +25,8 @@ Admin Dashboard (:8085)
 
 > **Обязательная конфигурация:** `ADMIN_TOKEN` и `VIEWER_TOKEN` должны быть заданы и различаться. Если значения совпадают, middleware выбирает admin-ветку первым, и bearer token viewer фактически получает полный доступ.
 
+`ADMIN_TOKEN`/`VIEWER_TOKEN` аутентифицируют browser-to-dashboard access и используются для data-service admin API. Private management routes на api-service получают отдельный internal `API_BEARER_TOKEN`; dashboard не пересылает browser bearer в api-service. В production эти credentials должны быть различны. При отсутствии `API_BEARER_TOKEN` dashboard fail-closed возвращает `503 api_auth_unconfigured` для private api-service proxy routes.
+
 Роль определяется автоматически по токену и возвращается в `/api/dashboard`.
 
 ---
@@ -164,6 +166,7 @@ admin-dashboard:
     - DATA_SERVICE_URL=http://data-service:8084
     - RAG_SERVICE_URL=http://rag:8082
     - API_SERVICE_URL=http://api:8081
+    - API_BEARER_TOKEN=${API_BEARER_TOKEN}
     - ADMIN_TOKEN=${ADMIN_TOKEN}
   volumes: [tenant_uploads:/data/tenant-dbs]
 ```

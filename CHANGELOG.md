@@ -2,6 +2,8 @@
 
 ## 2026-08-21
 
+- **fix(release/security):** admin-dashboard now authenticates private api-service management proxies with a distinct configured `API_BEARER_TOKEN` instead of forwarding browser or data-service admin credentials. CI/E2E pass an explicit test-only API bearer, E2E callers use the matching private-control-plane header, and operational guides document the three-token contract. **Verification:** dashboard proxy regressions, isolated Docker E2E, full `make ci`, and docs path checks passed.
+
 - **fix(demo/security):** autoparts bootstrap now revokes PostgreSQL `TEMPORARY` from `PUBLIC` on its dedicated database, preventing the Helperium read-only login from inheriting session-local write capability. Added a captured-SQL regression and clean-bootstrap privilege probe. **Verification:** focused tests, isolated no-cache Compose role matrix, DML and temporary-table denial, storefront health and full `make ci` passed.
 
 - **fix(demo/security):** autoparts dev and public Compose now provision an idempotent PostgreSQL `SELECT`-only Helperium role after migration/seed, then register and rewrite the tenant through authenticated data-service admin APIs. Native `--with-autoparts` waits for this bootstrap before MCP/API startup; templates no longer model a writer credential as the Helperium tenant DSN. **Verification:** clean isolated Docker deployment, role privilege matrix, real PostgreSQL write denial, tenant `db_search`/MCP manifest read path and full `make ci` passed.

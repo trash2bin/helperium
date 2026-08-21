@@ -133,7 +133,7 @@ func newTestAbuseServer(t *testing.T) (chi.Router, func()) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	s := New(Options{
-		Addr: ":0", DataDir: dir, ApiSvcURL: api.URL, AdminToken: "test-token",
+		Addr: ":0", DataDir: dir, ApiSvcURL: api.URL, ApiBearerToken: "test-token", AdminToken: "test-token",
 	})
 	return s.Router(), func() {
 		api.Close()
@@ -500,7 +500,7 @@ func TestAbuseSettingsPut_RollsBackWhenApiServiceDoesNotApply(t *testing.T) {
 	defer api.Close()
 
 	s := New(Options{
-		Addr: ":0", DataDir: dir, ApiSvcURL: api.URL, AdminToken: "test-token",
+		Addr: ":0", DataDir: dir, ApiSvcURL: api.URL, ApiBearerToken: "test-token", AdminToken: "test-token",
 	})
 	original := s.abuseStore.Get()
 	payload := AbuseConfig{

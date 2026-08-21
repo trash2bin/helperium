@@ -341,14 +341,15 @@ func (s *Server) applyAbuseConfig() error {
 	if s.opts.ApiSvcURL == "" {
 		return fmt.Errorf("api-service URL not configured")
 	}
+	if s.opts.ApiBearerToken == "" {
+		return fmt.Errorf("API control-plane bearer is not configured")
+	}
 	apiURL := s.opts.ApiSvcURL + "/admin/abuse-config/reload"
 	req, err := http.NewRequest(http.MethodPost, apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("create reload request: %w", err)
 	}
-	if s.opts.AdminToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.opts.AdminToken)
-	}
+	req.Header.Set("Authorization", "Bearer "+s.opts.ApiBearerToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -372,9 +373,7 @@ func (s *Server) proxyGetToApiService(path string) ([]byte, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("create request: %w", err)
 	}
-	if s.opts.AdminToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.opts.AdminToken)
-	}
+	req.Header.Set("Authorization", "Bearer "+s.opts.ApiBearerToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -394,9 +393,7 @@ func (s *Server) proxyPutToApiService(path string, payload any) ([]byte, int, er
 	if err != nil {
 		return nil, 0, fmt.Errorf("create request: %w", err)
 	}
-	if s.opts.AdminToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.opts.AdminToken)
-	}
+	req.Header.Set("Authorization", "Bearer "+s.opts.ApiBearerToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
