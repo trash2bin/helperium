@@ -14,7 +14,7 @@ services:
       retries: 10
       start_period: 10s
     restart: unless-stopped
-    networks: [storefront_internal]
+    networks: [storefront_internal, helperium_bridge]
 
   storefront-init:
     build: .
@@ -33,6 +33,26 @@ services:
       storefront-db:
         condition: service_healthy
     networks: [storefront_internal]
+
+  helperium-readonly-bootstrap:
+    build: .
+    command: ["python", "helperium_readonly_bootstrap.py"]
+    environment:
+      STORE_DB_HOST: storefront-db
+      STORE_DB_PORT: "5432"
+      STORE_DB_NAME: ${STORE_DB_NAME:-autoparts}
+      STORE_DB_USER: ${STORE_DB_USER:-autoparts}
+      STORE_DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env.public}
+      HELPERIUM_AUTOPARTS_RO_USER: ${HELPERIUM_AUTOPARTS_RO_USER:-helperium_autoparts_ro}
+      HELPERIUM_AUTOPARTS_RO_PASSWORD: ${HELPERIUM_AUTOPARTS_RO_PASSWORD:?set HELPERIUM_AUTOPARTS_RO_PASSWORD in .env.public}
+      HELPERIUM_AUTOPARTS_REGISTER_TENANT: "true"
+      HELPERIUM_DATA_SERVICE_URL: ${HELPERIUM_DATA_SERVICE_URL:-http://data-service:8084}
+      HELPERIUM_DATA_ADMIN_TOKEN: ${HELPERIUM_DATA_ADMIN_TOKEN:?set HELPERIUM_DATA_ADMIN_TOKEN in .env.public}
+      HELPERIUM_AUTOPARTS_TENANT_ID: ${HELPERIUM_AUTOPARTS_TENANT_ID:-autoparts}
+    depends_on:
+      storefront-init:
+        condition: service_completed_successfully
+    networks: [storefront_internal, helperium_bridge]
 
   storefront:
     build: .
@@ -54,7 +74,7 @@ services:
       DJANGO_SECURE_SSL_REDIRECT: "false"
       DJANGO_HSTS_SECONDS: ${DJANGO_HSTS_SECONDS:-0}
     depends_on:
-      storefront-init:
+      helperium-readonly-bootstrap:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/healthz/\")"]

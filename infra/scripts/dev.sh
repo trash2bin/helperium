@@ -142,6 +142,28 @@ health_url() {
 # Commands
 # =============================================================================
 
+load_autoparts_env() {
+  local env_file="$AUTOPARTS_DIR/.env"
+  if [ ! -f "$env_file" ]; then
+    echo "❌ --with-autoparts requires $env_file. Copy demo/autoparts-store/.env.dev.example to demo/autoparts-store/.env and set its passwords."
+    return 1
+  fi
+
+  set -a
+  # shellcheck source=/dev/null
+  source "$env_file"
+  set +a
+
+  if [ -z "${STORE_DB_PASSWORD:-}" ] || [[ "$STORE_DB_PASSWORD" == replace-with-* ]]; then
+    echo "❌ demo/autoparts-store/.env must set a real STORE_DB_PASSWORD."
+    return 1
+  fi
+  if [ -z "${HELPERIUM_AUTOPARTS_RO_PASSWORD:-}" ] || [[ "$HELPERIUM_AUTOPARTS_RO_PASSWORD" == replace-with-* ]]; then
+    echo "❌ demo/autoparts-store/.env must set a real HELPERIUM_AUTOPARTS_RO_PASSWORD."
+    return 1
+  fi
+}
+
 start_autoparts_store() {
   if [ ! -f "$AUTOPARTS_DIR/docker-compose.yml" ]; then
     echo "❌ Autoparts storefront compose file not found: $AUTOPARTS_DIR/docker-compose.yml"
@@ -153,14 +175,34 @@ start_autoparts_store() {
     return 1
   fi
 
-  echo "🚗 Starting external autoparts storefront (explicit opt-in)..."
+  load_autoparts_env || return 1
+
+  if [ -z "${ADMIN_TOKEN:-}" ]; then
+    echo "❌ --with-autoparts requires root ADMIN_TOKEN so the bootstrap can register the read-only tenant."
+    return 1
+  fi
+
+  echo "🚗 Starting external autoparts storefront with PostgreSQL read-only tenant bootstrap..."
+  echo "   The demo role receives only SELECT grants; the storefront writer credential is not sent to Helperium."
   echo "   This runs its own Compose stack at http://localhost:8000."
   echo "   It is not managed by './scripts/dev.sh stop'."
 
   if command -v docker-compose >/dev/null 2>&1; then
-    (cd "$AUTOPARTS_DIR" && docker-compose up -d)
+    (
+      cd "$AUTOPARTS_DIR" &&
+        HELPERIUM_AUTOPARTS_REGISTER_TENANT=true \
+        HELPERIUM_DATA_SERVICE_URL="http://host.docker.internal:$DATA_PORT" \
+        HELPERIUM_DATA_ADMIN_TOKEN="$ADMIN_TOKEN" \
+        docker-compose up -d
+    )
   elif docker compose version >/dev/null 2>&1; then
-    (cd "$AUTOPARTS_DIR" && docker compose up -d)
+    (
+      cd "$AUTOPARTS_DIR" &&
+        HELPERIUM_AUTOPARTS_REGISTER_TENANT=true \
+        HELPERIUM_DATA_SERVICE_URL="http://host.docker.internal:$DATA_PORT" \
+        HELPERIUM_DATA_ADMIN_TOKEN="$ADMIN_TOKEN" \
+        docker compose up -d
+    )
   else
     echo "❌ Docker Compose is required to start the external autoparts storefront."
     return 1
@@ -342,6 +384,9 @@ cmd_start() {
         ;;
       api)
         extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT MCP_GATEWAY_URL=http://127.0.0.1:$MCP_PORT MCP_STREAMABLE_HTTP_URL=http://127.0.0.1:$MCP_PORT/mcp${USE_SCRIPTED_LLM:+ USE_SCRIPTED_LLM=$USE_SCRIPTED_LLM}${SCRIPTED_LLM_PATH:+ SCRIPTED_LLM_PATH=$SCRIPTED_LLM_PATH}${SCRIPTED_LLM_RECORD:+ SCRIPTED_LLM_RECORD=$SCRIPTED_LLM_RECORD}"
+        if [ "$with_autoparts" = "true" ]; then
+          extra_env="DEFAULT_TENANT_ID=autoparts $extra_env"
+        fi
         if [ -n "${MCP_CLIENT_API_KEY:-}" ]; then
           extra_env="MCP_CLIENT_API_KEY=$MCP_CLIENT_API_KEY $extra_env"
         fi
@@ -363,11 +408,14 @@ cmd_start() {
     else
       echo "  ⚠️  $svc started but not healthy yet (check logs: tail -f $(logfile "$svc"))"
     fi
-  done
 
-  if [ "$with_autoparts" = "true" ]; then
-    start_autoparts_store
-  fi
+    # Complete the external storefront's role and tenant bootstrap while only
+    # data-service is available. MCP/API then start against the persisted
+    # database-enforced read-only tenant configuration.
+    if [ "$svc" = "data" ] && [ "$with_autoparts" = "true" ]; then
+      start_autoparts_store || exit 1
+    fi
+  done
 
   echo ""
   echo "🎉 All services launched!"

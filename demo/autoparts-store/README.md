@@ -96,17 +96,38 @@ http://localhost:8000/admin/
 
 ## 🚀 Быстрый старт
 
-Если нужно запустить с нуля:
+Storefront всегда работает своей writer-ролью, но Helperium получает отдельный
+PostgreSQL login с `SELECT`-only grants. Перед первым запуском задай пароль этой
+отдельной роли; это **не** `STORE_DB_PASSWORD`:
 
 ```bash
-# Зайти в папку проекта
+# Зайти в папку storefront и создать его отдельное development environment.
 cd /path/to/auto-parts-store
+cp .env.dev.example .env
+# Замени оба placeholder password значения в .env на уникальные локальные secrets.
 
-# Запустить (если не запущено)
+# Миграции и seed выполняются, затем one-shot bootstrap создаёт или обновляет
+# helperium_autoparts_ro и только после этого стартует storefront.
 docker-compose up -d
 ```
 
-Сайт сразу появится на http://localhost:8000 с уже наполненной базой.
+Сайт появится на http://localhost:8000. Bootstrap не запускает Helperium core в
+standalone режиме, но уже гарантирует, что отдельная роль данных не имеет прав
+`INSERT`, `UPDATE` или `DELETE`.
+
+Для native Helperium + storefront используй один явный запуск из корня проекта:
+
+```bash
+# Один раз: создай demo/autoparts-store/.env из .env.dev.example и задай
+# STORE_DB_PASSWORD и HELPERIUM_AUTOPARTS_RO_PASSWORD.
+# В root .env должен быть задан ADMIN_TOKEN для authenticated data-service API.
+./scripts/dev.sh start --with-autoparts
+```
+
+Этот путь запускает data-service первым, затем idempotent bootstrap создаёт роль,
+регистрирует tenant `autoparts` через authenticated admin API, генерирует его
+manifest и только потом поднимает MCP/API. Direct chat получает
+`DEFAULT_TENANT_ID=autoparts` только в этом explicit opt-in режиме.
 
 Если нужно перезаполнить базу (сбросить всё и заново):
 
@@ -140,11 +161,19 @@ docker-compose exec -T web python manage.py seed_massive --products 300000 --ord
 `helperium_bridge` network; it does not start, publish, or manage `mcp-gateway`
 or `data-service`.
 
-Before enabling the widget on a public domain, copy
-`helperium-core.public.env.example` into the **Helperium core** deployment
-environment and replace every placeholder. In particular, set
-`CORS_ALLOW_ORIGINS` to the exact `https://<DEMO_DOMAIN>` origin, keep
+Before enabling the widget on a public domain, copy both
+`.env.public.example` and `helperium-core.public.env.example` into their
+respective deployment environments and replace every placeholder. In particular,
+set `CORS_ALLOW_ORIGINS` to the exact `https://<DEMO_DOMAIN>` origin, keep
 `MCP_REQUIRE_AUTH=true` with matching non-empty `MCP_API_KEY` and
 `MCP_CLIENT_API_KEY`, and do not expose ports `8083` or `8084` through a proxy
-or host mapping. The storefront's `.env.public` remains separate and contains
-only storefront configuration.
+or host mapping.
+
+The public Compose bootstrap is mandatory: after migrations and seed, it creates
+or rotates `helperium_autoparts_ro`, grants only `CONNECT`, schema `USAGE` and
+`SELECT` on the seven catalog tables, and registers/re-writes tenant `autoparts`
+through the private `helperium_bridge` network. Set
+`HELPERIUM_AUTOPARTS_RO_PASSWORD`, `HELPERIUM_DATA_SERVICE_URL` and
+`HELPERIUM_DATA_ADMIN_TOKEN` in `.env.public`; the latter must equal the core
+`ADMIN_TOKEN`. The storefront does not start unless this one-shot bootstrap
+succeeds. PostgreSQL remains unpublished in public Compose.

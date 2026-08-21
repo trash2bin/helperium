@@ -13,10 +13,14 @@
 
 Порядок старта: data → rag → mcp → admin → api → web
 
-`--with-autoparts` отдельно вызывает Compose-стек `demo/autoparts-store`. Этот
-storefront не входит в обычный native runtime, не останавливается `dev.sh stop`
-и не становится tenant автоматически; для рабочей интеграции нужен отдельный
-read-only onboarding его PostgreSQL и агента.
+`--with-autoparts` отдельно вызывает Compose-стек `demo/autoparts-store`. Перед
+первым запуском скопируй `demo/autoparts-store/.env.dev.example` в
+`demo/autoparts-store/.env` и задай два локальных database passwords; root `.env`
+содержит только core `ADMIN_TOKEN`. Этот storefront не входит в обычный native
+runtime и не останавливается `dev.sh stop`. В explicit opt-in path bootstrap
+автоматически provision'ит PostgreSQL `SELECT`-only роль и регистрирует/rewrite'ит
+tenant `autoparts` до старта MCP/API; named agent/widget onboarding остаётся
+отдельным продуктовым шагом.
 
 Если public storefront запускается через `docker-compose.public.yml` на
 `https://localhost`, а Helperium работает native на host, Caddy должен получать

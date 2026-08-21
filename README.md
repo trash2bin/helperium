@@ -170,16 +170,19 @@ The built-in `demo/web` proxy (`:8080`) and the Django storefront
 manual local demo, use the explicit opt-in flag:
 
 ```bash
+cp demo/autoparts-store/.env.dev.example demo/autoparts-store/.env
+# Replace both password placeholders in demo/autoparts-store/.env.
 ./infra/scripts/dev.sh start --with-autoparts
 open http://127.0.0.1:8080  # Helperium dev web
 open http://127.0.0.1:8000  # external auto-parts storefront
 ```
 
-The flag starts the storefront through its own Compose stack. A regular
-`./infra/scripts/dev.sh start` does **not** start it, and
-`./infra/scripts/dev.sh stop` intentionally does **not** stop it. Starting the
-storefront does not register it as a Helperium tenant or inject a widget; follow
-the tenant and agent onboarding flow before exercising a live integration.
+The flag starts the storefront through its own Compose stack. Its two database
+credentials live only in `demo/autoparts-store/.env`; root `.env` retains the
+core `ADMIN_TOKEN`. A regular `./infra/scripts/dev.sh start` does **not** start
+it, and `./infra/scripts/dev.sh stop` intentionally does **not** stop it. In
+this explicit opt-in path, the bootstrap provisions the PostgreSQL `SELECT`-only
+role and registers/rewrites tenant `autoparts` before MCP/API start.
 
 ### CLI for data management and testing
 
