@@ -85,6 +85,47 @@ func newTestRouterFromConfig(t *testing.T, cfgJSON string) *chi.Mux {
 	return buildRouter()
 }
 
+// configureManifestClient provides the same initialized downstream dependency
+// that production main() installs before building the router. Auth tests that
+// expect an accepted request to reach /config must prove the handler succeeds,
+// not merely that auth did not return 401 before a recovered panic.
+func configureManifestClient(t *testing.T) {
+	t.Helper()
+	previousClient := globalClient
+	t.Cleanup(func() { globalClient = previousClient })
+
+	manifestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/mcp/manifest" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, defaultTestConfig())
+	}))
+	t.Cleanup(manifestServer.Close)
+
+	t.Setenv("DATA_SERVICE_URL", manifestServer.URL)
+	globalClient = httpclient.New()
+}
+
+// unsetEnv removes a variable for the duration of one test and restores its
+// previous literal presence or absence afterwards. Use this when the test
+// contract distinguishes an unset variable from an explicitly empty value.
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	previous, wasSet := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if wasSet {
+			_ = os.Setenv(key, previous)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
+}
+
 // ════════════════════════════════════════════════════════════════
 // Health endpoint tests
 // ════════════════════════════════════════════════════════════════
@@ -174,9 +215,9 @@ func TestAuthMiddleware_HealthEndpointExcluded(t *testing.T) {
 	}
 }
 
-func TestAuthMiddleware_CorrectToken_Returns200(t *testing.T) {
+func TestAuthMiddleware_CorrectToken_ReachesWorkingConfigHandler(t *testing.T) {
 	t.Setenv("MCP_API_KEY", "test-secret-123")
-	defer os.Unsetenv("MCP_API_KEY")
+	configureManifestClient(t)
 
 	r := newTestRouterFromConfig(t, defaultTestConfig())
 
@@ -185,8 +226,17 @@ func TestAuthMiddleware_CorrectToken_Returns200(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
-	if rec.Code == http.StatusUnauthorized {
-		t.Fatal("correct token got 401, want non-401")
+	t.Logf("correct token GET /config status=%d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("correct token GET /config = %d, want 200\nbody: %s", rec.Code, rec.Body.String())
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("unmarshal config response: %v (body: %s)", err, rec.Body.String())
+	}
+	if cfg["version"] == nil {
+		t.Fatalf("config response missing version: %v", cfg)
 	}
 }
 
@@ -206,7 +256,8 @@ func TestAuthMiddleware_WrongToken_Returns401(t *testing.T) {
 }
 
 func TestAuthMiddleware_NoKeyEnv_SkipsAuth(t *testing.T) {
-	os.Unsetenv("MCP_API_KEY")
+	unsetEnv(t, "MCP_API_KEY")
+	configureManifestClient(t)
 
 	r := newTestRouterFromConfig(t, defaultTestConfig())
 
@@ -214,9 +265,26 @@ func TestAuthMiddleware_NoKeyEnv_SkipsAuth(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
-	// Without MCP_API_KEY, auth is skipped — should get 200 (config generates response)
-	if rec.Code == http.StatusUnauthorized {
-		t.Fatal("auth bypass with empty MCP_API_KEY got 401, want non-401")
+	t.Logf("absent MCP_API_KEY GET /config status=%d body=%s", rec.Code, rec.Body.String())
+	// Development opt-out still has to reach a working downstream handler.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("absent MCP_API_KEY GET /config = %d, want 200\nbody: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthMiddleware_EmptyKeyEnv_SkipsAuth(t *testing.T) {
+	t.Setenv("MCP_API_KEY", "")
+	configureManifestClient(t)
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-a")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	t.Logf("empty MCP_API_KEY GET /config status=%d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("empty MCP_API_KEY GET /config = %d, want 200\nbody: %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -15,7 +15,7 @@ ci-audit:
 	cd services/mcp-gateway && $$(go env GOPATH)/bin/govulncheck ./... 2>&1 | grep -E '(No vulnerabilities|Your code is affected|error)' || true
 
 ci-test-py:
-	PYTHONPATH=$(PWD) uv run -- python -m pytest services/api-service/src/api_service/tests/ -v --tb=short
+	CORS_ALLOW_ORIGINS=http://localhost:8080 PYTHONPATH=$(PWD) uv run -- python -m pytest services/api-service/src/api_service/tests/ -v --tb=short
 	PYTHONPATH=$(PWD) uv run -- python -m pytest demo/web/tests/ demo/tests/ -v --tb=short
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/rag/tests/unit/ -v --tb=short
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/helperium-sdk/tests/ -v --tb=short

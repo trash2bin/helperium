@@ -159,11 +159,17 @@ def _helperium_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> R
 app.add_exception_handler(RateLimitExceeded, _helperium_rate_limit_handler)  # pyright: ignore[reportArgumentType]
 app.add_middleware(SlowAPIMiddleware)
 
-# CORS
+# CORS. Browser-facing deployments must enumerate trusted origins.
+# A wildcard would let an arbitrary website drive the public chat endpoint and
+# consume the tenant's LLM budget, so reject it before the service starts.
 cors_origins_raw = os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:8080")
 cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()] or [
     "http://localhost:8080"
 ]
+if "*" in cors_origins:
+    raise RuntimeError(
+        "CORS_ALLOW_ORIGINS must list explicit origins; wildcard '*' is not allowed."
+    )
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

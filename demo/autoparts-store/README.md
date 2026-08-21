@@ -129,3 +129,22 @@ docker-compose exec -T web python manage.py seed_massive --products 300000 --ord
 ## 🧪 Для чего это всё
 
 Этот проект сделан для тестирования — чтобы было на чём гонять свои инструменты, не трогая реальные боевые базы. База специально набита большим объёмом данных (почти 3 ГБ), чтобы было на чём проверять производительность.
+
+
+---
+
+## Public HTTPS demo
+
+`docker-compose.public.yml` intentionally publishes only Caddy on ports `80` and
+`443`. It connects to the existing Helperium core through the external
+`helperium_bridge` network; it does not start, publish, or manage `mcp-gateway`
+or `data-service`.
+
+Before enabling the widget on a public domain, copy
+`helperium-core.public.env.example` into the **Helperium core** deployment
+environment and replace every placeholder. In particular, set
+`CORS_ALLOW_ORIGINS` to the exact `https://<DEMO_DOMAIN>` origin, keep
+`MCP_REQUIRE_AUTH=true` with matching non-empty `MCP_API_KEY` and
+`MCP_CLIENT_API_KEY`, and do not expose ports `8083` or `8084` through a proxy
+or host mapping. The storefront's `.env.public` remains separate and contains
+only storefront configuration.

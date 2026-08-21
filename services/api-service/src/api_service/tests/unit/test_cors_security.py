@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -20,7 +21,9 @@ def _reload_app(monkeypatch, cors_origins: str | None = None):
     reload that module after setting the env var.
     """
     if cors_origins is None:
-        monkeypatch.delenv("CORS_ALLOW_ORIGINS", raising=False)
+        # An explicit empty value exercises the same secure localhost fallback
+        # without depending on an inherited runner environment.
+        monkeypatch.setenv("CORS_ALLOW_ORIGINS", "")
     else:
         monkeypatch.setenv("CORS_ALLOW_ORIGINS", cors_origins)
 
@@ -140,22 +143,13 @@ class TestCorsWithExplicitOrigin:
         assert resp3.headers.get("access-control-allow-origin") != "http://app1.com"
 
 
-class TestCorsEnvVarOverride:
-    """Explicit CORS_ALLOW_ORIGINS=* should still work (for embed/production)."""
+class TestCorsWildcardRejection:
+    """A browser-wide origin policy is never valid for the API service."""
 
-    def test_wildcard_still_works_when_explicit(self, monkeypatch):
-        """Setting CORS_ALLOW_ORIGINS=* explicitly should allow all."""
-        app = _reload_app(monkeypatch, cors_origins="*")
-        with TestClient(app) as client:
-            resp = client.options(
-                "/api/agents",
-                headers={
-                    "Origin": "http://any-origin.com",
-                    "Access-Control-Request-Method": "GET",
-                },
-            )
-        allow = resp.headers.get("access-control-allow-origin", "")
-        assert allow == "*"
+    def test_wildcard_fails_fast(self, monkeypatch):
+        """Setting CORS_ALLOW_ORIGINS=* must prevent application startup."""
+        with pytest.raises(RuntimeError, match="wildcard '\\*' is not allowed"):
+            _reload_app(monkeypatch, cors_origins="*")
 
     def test_empty_cors_env_falls_to_secure_default(self, monkeypatch):
         """CORS_ALLOW_ORIGINS='' should be equivalent to not set (fail-secure)."""
