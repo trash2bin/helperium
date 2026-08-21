@@ -2,6 +2,8 @@
 
 ## 2026-08-21
 
+- **fix(demo/security):** autoparts bootstrap now revokes PostgreSQL `TEMPORARY` from `PUBLIC` on its dedicated database, preventing the Helperium read-only login from inheriting session-local write capability. Added a captured-SQL regression and clean-bootstrap privilege probe. **Verification:** focused tests, isolated no-cache Compose role matrix, DML and temporary-table denial, storefront health and full `make ci` passed.
+
 - **fix(demo/security):** autoparts dev and public Compose now provision an idempotent PostgreSQL `SELECT`-only Helperium role after migration/seed, then register and rewrite the tenant through authenticated data-service admin APIs. Native `--with-autoparts` waits for this bootstrap before MCP/API startup; templates no longer model a writer credential as the Helperium tenant DSN. **Verification:** clean isolated Docker deployment, role privilege matrix, real PostgreSQL write denial, tenant `db_search`/MCP manifest read path and full `make ci` passed.
 
 - **fix(mcp/security):** non-development gateway startup now fails unless `MCP_REQUIRE_AUTH=true` with a non-empty key; `MCP_DEV=true` is the sole deliberate auth opt-out. Compose, the dev launcher, environment template and MCP guide now carry this contract. **Verification:** startup regression matrix, real binary probes, full MCP tests without runtime panic and full `make ci` passed.

@@ -117,3 +117,50 @@ def test_development_credentials_are_scoped_to_autoparts_demo_env():
     assert "autoparts_secret_2024" not in local_compose
     assert "${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env}" in local_compose
     assert 'env_file="$AUTOPARTS_DIR/.env"' in launcher
+
+
+def test_role_provisioning_revokes_public_temporary_database_privilege(monkeypatch):
+    module = load_module(monkeypatch)
+    statements = []
+
+    class Cursor:
+        def execute(self, statement, parameters=None):
+            statements.append((statement, parameters))
+
+        def fetchall(self):
+            return [(table,) for table in module.CATALOG_TABLES]
+
+        def fetchone(self):
+            return (1,)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+            self.closed = False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def close(self):
+            self.closed = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    connection = Connection()
+    monkeypatch.setattr(module.psycopg2, "connect", lambda **_kwargs: connection)
+
+    assert module.provision_readonly_role(settings(module)) is True
+    assert connection.closed is True
+    assert "REVOKE TEMPORARY ON DATABASE autoparts FROM PUBLIC" in [
+        statement for statement, _ in statements
+    ]

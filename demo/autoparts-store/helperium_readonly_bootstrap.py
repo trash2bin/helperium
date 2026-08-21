@@ -132,6 +132,10 @@ def provision_readonly_role(settings: BootstrapSettings) -> bool:
                     )
 
                 cursor.execute(sql.SQL("REVOKE ALL PRIVILEGES ON DATABASE {} FROM {}").format(database, role))
+                # PostgreSQL grants TEMPORARY to PUBLIC by default. Revoke it on
+                # the dedicated demo database so the Helperium login has only
+                # the explicit CONNECT, schema USAGE and table SELECT grants.
+                cursor.execute(sql.SQL("REVOKE TEMPORARY ON DATABASE {} FROM PUBLIC").format(database))
                 cursor.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(database, role))
                 cursor.execute(sql.SQL("REVOKE ALL ON SCHEMA public FROM {}").format(role))
                 cursor.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(role))
