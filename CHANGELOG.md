@@ -2,6 +2,8 @@
 
 ## 2026-08-21
 
+- **fix(docs/ci):** documentation path validation now uses English-only source comments and diagnostics, and bare filename references can resolve only to non-ignored repository content. The OpenSpec decision now names a design artifact rather than implying that a fixed repository file must exist. Four regression tests cover the fresh-checkout failure mode, valid bare filename resolution, English failure output, and the English-only checker source contract. **Verification:** `make ci-docs` and a sanitized full `make ci` passed.
+
 - **fix(release/security):** admin-dashboard now authenticates private api-service management proxies with a distinct configured `API_BEARER_TOKEN` instead of forwarding browser or data-service admin credentials. CI/E2E pass an explicit test-only API bearer, E2E callers use the matching private-control-plane header, and operational guides document the three-token contract. **Verification:** dashboard proxy regressions, isolated Docker E2E, full `make ci`, and docs path checks passed.
 
 - **fix(demo/security):** autoparts bootstrap now revokes PostgreSQL `TEMPORARY` from `PUBLIC` on its dedicated database, preventing the Helperium read-only login from inheriting session-local write capability. Added a captured-SQL regression and clean-bootstrap privilege probe. **Verification:** focused tests, isolated no-cache Compose role matrix, DML and temporary-table denial, storefront health and full `make ci` passed.

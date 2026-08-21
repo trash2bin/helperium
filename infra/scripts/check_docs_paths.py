@@ -1,32 +1,28 @@
 #!/usr/bin/env python3
-"""
-Проверка мёртвых путей и сирот в документации Helperium.
+"""Check Helperium documentation for dead file paths and AGENTS.md coverage.
 
-Что делает:
-  — проходит по реальным докам: AGENTS.md, CHANGELOG.md, doc/**/*.md,
-    services/**/README.md, specs/**/*.md, demo/**/*.md
-  — извлекает markdown-ссылки [text](path) и бэктик-пути `path.md`
-  — проверяет, что каждый путь существует на диске
-    (как есть / с .md / без .md; от корня репо И от директории файла-источника)
-  — игнорирует: внешние URL, якоря (#...), глобы (*...), пути с пробелами
-  — проверяет, что каждый реальный док (doc/agents/, specs/, doc/benchmark/,
-    services/*/README, demo/*/README) упомянут в AGENTS.md — иначе «сирота»
-    (агент добавил док и забыл вписать в карту §5)
+The checker scans project documentation, validates Markdown links and inline
+file-like references, and ensures that live documentation is discoverable from
+AGENTS.md. Paths may resolve from either repository root or the source document.
+External URLs, anchors, glob/template patterns, and candidates containing spaces
+are ignored.
 
-Exit code 0 = чисто, 1 = найдены проблемы (для CI).
+Exit code 0 means no issues were found. Exit code 1 means CI-relevant issues
+were found.
 
-Запуск:
+Usage:
   python3 infra/scripts/check_docs_paths.py
 """
 
-import os
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Какие .md считаются "реальной документацией" (не vendor/.pi/.agents/...)
+# Documentation files considered live project documentation.
 DOC_GLOBS = [
     "AGENTS.md",
     "CHANGELOG.md",
@@ -38,8 +34,8 @@ DOC_GLOBS = [
     "demo/**/*.md",
 ]
 
-# Директории, которые не проверяем (в .gitignore или не наша документация).
-# Пара "префикс, начинающийся с" -> True означает: исключить весь поддерево.
+# Directories excluded because they are dependencies, generated artifacts, or
+# agent-local state rather than repository documentation.
 IGNORED_DIRS = {
     "node_modules",
     ".pi",
@@ -56,8 +52,7 @@ IGNORED_DIRS = {
     ".data",
 }
 
-# Файлы-исключения (глобы в .gitignore):
-# plan-refactor-*.md, DEEP_DIVE_*.md, ARCHITECTURE_REPORT.md, *.bak, etc.
+# Files excluded by repository ignore conventions or generated artifact names.
 IGNORED_PATTERNS = [
     re.compile(r"plan-refactor-.*\.md$"),
     re.compile(r"DEEP_DIVE_.*\.md$"),
@@ -70,177 +65,187 @@ IGNORED_PATTERNS = [
 
 
 def is_ignored(path: Path) -> bool:
-    """True, если файл в игнорируемой директории или под паттерном."""
-    parts = path.parts
-    for i, part in enumerate(parts):
-        if part in IGNORED_DIRS:
+    """Return whether a path is under an ignored directory or pattern."""
+    if any(part in IGNORED_DIRS for part in path.parts):
+        return True
+    return any(pattern.search(str(path)) for pattern in IGNORED_PATTERNS)
+
+
+def collect_docs(root: Path) -> list[Path]:
+    """Collect deduplicated live documentation files under root."""
+    docs: list[Path] = []
+    for glob_pattern in DOC_GLOBS:
+        for document in root.glob(glob_pattern):
+            if document.is_file() and not is_ignored(document.relative_to(root)):
+                docs.append(document)
+
+    seen: set[str] = set()
+    result: list[Path] = []
+    for document in docs:
+        key = str(document.resolve())
+        if key not in seen:
+            seen.add(key)
+            result.append(document)
+    return sorted(result, key=lambda path: str(path).lower())
+
+
+def extract_paths(text: str) -> list[str]:
+    """Extract local paths from Markdown links and inline file-like references."""
+    paths: list[str] = []
+
+    for match in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", text):
+        target = match.group(1).strip()
+        if target.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        target = target.split("#", maxsplit=1)[0].strip()
+        if target and not target.startswith(("<", ">")):
+            paths.append(target)
+
+    for match in re.finditer(r"`([^`]+\.md(?:\.j2)?)`", text):
+        paths.append(match.group(1).strip())
+
+    return paths
+
+
+def resolve_candidates(raw: str, source_dir: Path) -> list[Path]:
+    """Build repository-root and source-relative candidates for a local path."""
+    candidates: list[Path] = []
+    for base in (REPO_ROOT, source_dir):
+        candidate = base / raw
+        candidates.append(candidate)
+        if not raw.endswith(".md"):
+            candidates.append(base / f"{raw}.md")
+        else:
+            candidates.append(base / raw[:-3])
+
+    # Service paths in inline code sometimes omit the services/ prefix.
+    if "/" in raw and not raw.startswith(("services/", "../")):
+        service_name = raw.split("/", maxsplit=1)[0]
+        service_roots = {
+            "data-service",
+            "api-service",
+            "mcp-gateway",
+            "admin-dashboard",
+            "rag",
+            "agent-db",
+            "helperium-go",
+            "helperium-sdk",
+        }
+        if service_name in service_roots:
+            candidates.append(REPO_ROOT / "services" / raw)
+            if raw.endswith(".md"):
+                candidates.append(REPO_ROOT / "services" / raw[:-3])
+            else:
+                candidates.append(REPO_ROOT / "services" / f"{raw}.md")
+
+    return candidates
+
+
+def exists(raw: str, source_dir: Path) -> bool:
+    """Return whether raw resolves to a non-ignored file or directory."""
+    expects_directory = raw.endswith("/")
+    for candidate in resolve_candidates(raw, source_dir):
+        try:
+            relative = candidate.relative_to(REPO_ROOT)
+        except ValueError:
+            continue
+        if is_ignored(relative):
+            continue
+        if expects_directory and candidate.is_dir():
             return True
-    for pat in IGNORED_PATTERNS:
-        if pat.search(str(path)):
+        if not expects_directory and candidate.is_file():
             return True
     return False
 
 
-def collect_docs(root: Path) -> list[Path]:
-    """Собрать все реальные доки по глобам, пропуская игнорируемые."""
-    docs = []
-    for g in DOC_GLOBS:
-        for d in root.glob(g):
-            if d.is_file() and not is_ignored(d):
-                docs.append(d)
-    # убрать дубли
-    seen = set()
-    out = []
-    for d in docs:
-        key = str(d.resolve())
-        if key not in seen:
-            seen.add(key)
-            out.append(d)
-    return sorted(out, key=lambda p: str(p).lower())
-
-
-def extract_paths(text: str) -> list[str]:
-    """Извлечь пути из markdown-ссылок и бэктик-путей."""
-    paths = []
-    # markdown-ссылки [text](path) — path без якорей/URL
-    for m in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", text):
-        target = m.group(1).strip()
-        if target.startswith(("http://", "https://", "mailto:", "#")):
+def has_non_ignored_basename(name: str) -> bool:
+    """Return whether a bare filename exists outside ignored repository paths."""
+    for hit in REPO_ROOT.rglob(name):
+        try:
+            relative = hit.relative_to(REPO_ROOT)
+        except ValueError:
             continue
-        # срезать якорь внутри пути: doc/x.md#section
-        target = target.split("#")[0].strip()
-        if target and not target.startswith(("<", ">")):
-            paths.append(target)
-    # бэктик-пути `path.md` — только те, что похожи на путь к файлу
-    for m in re.finditer(r"`([^`]+\.md(?:\.j2)?)`", text):
-        paths.append(m.group(1).strip())
-    return paths
-
-
-def resolve_candidates(raw: str, src_dir: Path) -> list[Path]:
-    """Варианты, где может лежать файл: от корня репо и от директории источника."""
-    cands = []
-    for base in (REPO_ROOT, src_dir):
-        p = base / raw
-        cands.append(p)
-        if not raw.endswith(".md"):
-            cands.append(base / (raw + ".md"))
-        elif raw.endswith(".md"):
-            cands.append(base / raw[:-3])  # без .md
-    # сервисные пути в бэктиках часто пишут без `services/` (data-service/README.md → services/data-service/README.md)
-    if "/" in raw and not raw.startswith("services/") and not raw.startswith("../"):
-        first = raw.split("/")[0]
-        if first in {"data-service", "api-service", "mcp-gateway", "admin-dashboard", "rag", "agent-db", "helperium-go", "helperium-sdk"}:
-            cands.append(REPO_ROOT / "services" / raw)
-            if raw.endswith(".md"):
-                cands.append(REPO_ROOT / "services" / raw[:-3])
-            else:
-                cands.append(REPO_ROOT / "services" / (raw + ".md"))
-    return cands
-
-
-def exists(raw: str, src_dir: Path) -> bool:
-    """True, если путь существует: от корня репо ИЛИ от директории источника.
-    Поддерживает файлы и директории (путь с завершающим /)."""
-    is_dir = raw.endswith("/")
-    for c in resolve_candidates(raw, src_dir):
-        if is_dir:
-            if c.is_dir():
-                return True
-        elif c.is_file():
+        if hit.is_file() and not is_ignored(relative):
             return True
     return False
 
 
 def check_agents_coverage(docs: list[Path], agents_md: Path) -> list[str]:
-    """Проверка: каждый реальный док должен упоминаться в AGENTS.md (basename).
-    Ловит «агент добавил док и забыл вписать в карту»."""
+    """Return live documentation that is not discoverable from AGENTS.md."""
     try:
         agents_text = agents_md.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return [f"{agents_md}: не могу прочитать"]
+        return [f"{agents_md}: cannot read file"]
 
-    # какие доки должны быть в AGENTS.md: doc/agents/*.md, specs/*.md,
-    # services/*/README.md, doc/benchmark/*.md, demo/*/README.md
-    required = []
-    for d in docs:
-        rel = d.relative_to(REPO_ROOT).as_posix()
+    required: list[Path] = []
+    for document in docs:
+        relative = document.relative_to(REPO_ROOT).as_posix()
         if (
-            rel.startswith("doc/agents/")
-            or rel.startswith("specs/")
-            or rel.startswith("doc/benchmark/")
-            or (rel.startswith("services/") and rel.endswith("/README.md"))
-            or (rel.startswith("demo/") and rel.endswith("/README.md"))
+            relative.startswith("doc/agents/")
+            or relative.startswith("specs/")
+            or relative.startswith("doc/benchmark/")
+            or (relative.startswith("services/") and relative.endswith("/README.md"))
+            or (relative.startswith("demo/") and relative.endswith("/README.md"))
         ):
-            required.append(d)
+            required.append(document)
 
-    missing = []
-    for d in required:
-        name = d.name  # basename, напр. search-strategies.md
-        if name not in agents_text:
-            rel = d.relative_to(REPO_ROOT)
-            missing.append(f"{rel}: не упомянут в AGENTS.md (забыл вписать в карту §5)")
+    missing: list[str] = []
+    for document in required:
+        if document.name not in agents_text:
+            relative = document.relative_to(REPO_ROOT)
+            missing.append(f"{relative}: not listed in AGENTS.md")
     return missing
 
 
 def main() -> int:
     docs = collect_docs(REPO_ROOT)
-    errors = []
+    errors: list[str] = []
     checked = 0
     ignored = 0
 
-    # Проверка «каждый док упомянут в AGENTS.md»
     agents_md = REPO_ROOT / "AGENTS.md"
     missing = check_agents_coverage(docs, agents_md)
-    if missing:
-        errors.extend(missing)
+    errors.extend(missing)
 
-    for doc in docs:
-        rel = doc.relative_to(REPO_ROOT)
+    for document in docs:
+        relative = document.relative_to(REPO_ROOT)
         try:
-            text = doc.read_text(encoding="utf-8", errors="replace")
-        except OSError as e:
-            errors.append(f"{rel}: не могу прочитать ({e})")
+            text = document.read_text(encoding="utf-8", errors="replace")
+        except OSError as error:
+            errors.append(f"{relative}: cannot read file ({error})")
             continue
 
         for raw in extract_paths(text):
-            # игнор: глобы, brace-паттерны, шаблоны с пробелами, пустое
-            if any(ch in raw for ch in "*{}?") or " " in raw or not raw:
+            if any(character in raw for character in "*{}?") or " " in raw or not raw:
                 ignored += 1
                 continue
-            # голые имена без слэша: ищем по basename во всех доках
+
             if "/" not in raw:
-                # try relative to source first, then repo root, then basename search
-                if exists(raw, doc.parent):
+                if exists(raw, document.parent) or has_non_ignored_basename(raw):
                     checked += 1
                     continue
-                # basename search: search whole repo for the file
-                hits = list(REPO_ROOT.rglob(raw))
-                if hits:
-                    checked += 1
-                    continue
-                errors.append(f"{rel}: путь `{raw}` не найден (голое имя)")
+                errors.append(f"{relative}: path `{raw}` not found (bare filename)")
                 continue
 
-            if exists(raw, doc.parent):
+            if exists(raw, document.parent):
                 checked += 1
             else:
-                errors.append(f"{rel}: путь `{raw}` не существует")
+                errors.append(f"{relative}: path `{raw}` does not exist")
 
-    # Отчёт
-    print(f"Доков проверено: {len(docs)}")
-    print(f"Путей проверено: {checked}")
-    print(f"Проигнорировано (глобы/URL/якоря): {ignored}")
+    print(f"Documents checked: {len(docs)}")
+    print(f"Paths checked: {checked}")
+    print(f"Ignored candidates: {ignored}")
     if missing:
-        print(f"\n❌ Сирот (не упомянуты в AGENTS.md): {len(missing)}")
-        for e in sorted(set(missing)):
-            print(f"  {e}")
+        print(f"\nERROR: {len(missing)} documentation file(s) are not listed in AGENTS.md:")
+        for error in sorted(set(missing)):
+            print(f"  {error}")
     if errors:
-        print(f"\n❌ Найдено {len(errors)} проблем:")
-        for e in sorted(set(errors)):
-            print(f"  {e}")
+        print(f"\nERROR: Found {len(errors)} issue(s):")
+        for error in sorted(set(errors)):
+            print(f"  {error}")
         return 1
-    print("\n✅ Все пути существуют, сирот нет.")
+
+    print("\nSUCCESS: All paths exist and all required documentation is listed in AGENTS.md.")
     return 0
 
 

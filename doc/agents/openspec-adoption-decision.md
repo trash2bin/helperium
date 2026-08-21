@@ -116,7 +116,7 @@ Use a precise, stable name such as `reserve-commit-spending` rather than `billin
 
 - `proposal` artifact: product intent, scope, non-goals, alternatives and approval owner;
 - delta `specs/`: observable requirements and Given/When/Then scenarios;
-- `design.md`: principal model, state machine, storage, idempotency/failure semantics and migration;
+- a design artifact: principal model, state machine, storage, idempotency/failure semantics and migration;
 - `task list` artifact: independently testable work items and verification steps.
 
 ### Step 3 — human review before code

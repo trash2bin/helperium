@@ -49,9 +49,10 @@ ci-test-embed:
 	@echo "✅ Embed widget OK"
 
 ci-docs:
-	@echo "=== Docs: мёртвые пути ==="
+	@echo "=== Documentation path validation ==="
 	python3 infra/scripts/check_docs_paths.py
-	@echo "✅ Docs paths OK"
+	python3 infra/scripts/test_check_docs_paths.py
+	@echo "✅ Documentation paths OK"
 
 build-embed:
 	cd services/api-service/embed && bash build.sh
