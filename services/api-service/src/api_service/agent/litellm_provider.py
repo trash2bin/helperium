@@ -9,6 +9,16 @@ from typing import Any
 import litellm
 from litellm.types.utils import ModelResponse
 
+from helperium_sdk.settings import settings
+from api_service.prometheus_metrics import (
+    llm_completion_attempts_total,
+    llm_retries_total,
+    llm_retry_delay_seconds,
+    llm_retry_exhausted_total,
+    llm_retry_suppressed_total,
+)
+
+from .completion_retry import CompletionRetryExecutor, CompletionRetryPolicy
 from .models import CompletionRequest, CompletionResponse, ToolCall, UsageInfo
 from .provider_compatibility import find_provider_model_policy
 
@@ -37,6 +47,7 @@ class LiteLLMProvider:
         temperature: float = 0.2,
         max_tokens_thinking: int = 0,
         enable_thinking: bool = False,
+        retry_executor: CompletionRetryExecutor | None = None,
     ) -> None:
         self.model = model
         self.provider = provider or None
@@ -47,6 +58,15 @@ class LiteLLMProvider:
         self.max_tokens_thinking = max_tokens_thinking
         self.enable_thinking = enable_thinking
         self._policy = find_provider_model_policy(self.provider, self.model)
+        self._retry_executor = retry_executor or CompletionRetryExecutor(
+            CompletionRetryPolicy(
+                max_attempts=settings.llm_max_attempts,
+                max_elapsed_seconds=settings.llm_retry_max_elapsed_seconds,
+                transient_base_seconds=settings.llm_retry_transient_base_seconds,
+                throttled_base_seconds=settings.llm_retry_throttled_base_seconds,
+                max_backoff_seconds=settings.llm_retry_max_backoff_seconds,
+            )
+        )
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         messages = self._serialize_transcript(request.messages)
@@ -80,7 +100,28 @@ class LiteLLMProvider:
             supports_function_calling,
         )
 
-        response = await litellm.acompletion(**kwargs)
+        provider_label = self.provider or "inferred"
+
+        async def completion_attempt(attempt_timeout: float) -> Any:
+            attempt_kwargs = {**kwargs, "timeout": attempt_timeout}
+            return await litellm.acompletion(**attempt_kwargs)
+
+        response = await self._retry_executor.run(
+            completion_attempt,
+            provider_timeout=self.timeout,
+            model=self.model,
+            provider=self.provider,
+            on_attempt=lambda: self._record_retry_attempt(provider_label),
+            on_retry=lambda category, delay: self._record_retry_delay(
+                provider_label, category, delay
+            ),
+            on_exhausted=lambda category, reason: self._record_retry_exhausted(
+                provider_label, category, reason
+            ),
+            on_suppressed=lambda reason: self._record_retry_suppressed(
+                provider_label, reason
+            ),
+        )
         if not isinstance(response, ModelResponse):
             raise ProviderProtocolError(
                 f"LiteLLM returned {type(response).__name__}, expected ModelResponse"
@@ -97,6 +138,21 @@ class LiteLLMProvider:
             usage=usage,
             cost=self._cost(response, getattr(response, "usage", None)),
         )
+
+    def _record_retry_attempt(self, provider: str) -> None:
+        llm_completion_attempts_total.labels(self.model, provider).inc()
+
+    def _record_retry_suppressed(self, provider: str, reason: str) -> None:
+        llm_retry_suppressed_total.labels(self.model, provider, reason).inc()
+
+    def _record_retry_delay(self, provider: str, category: str, delay: float) -> None:
+        llm_retries_total.labels(self.model, provider, category).inc()
+        llm_retry_delay_seconds.labels(self.model, provider, category).observe(delay)
+
+    def _record_retry_exhausted(
+        self, provider: str, category: str, reason: str
+    ) -> None:
+        llm_retry_exhausted_total.labels(self.model, provider, category, reason).inc()
 
     def _thinking_extra_body(self) -> dict[str, Any] | None:
         """Return verified model-specific reasoning controls when available."""

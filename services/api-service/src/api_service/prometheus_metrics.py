@@ -38,6 +38,37 @@ llm_duration_ms = Histogram(
     buckets=(500, 1000, 2000, 5000, 10000, 30000, 60000, 120000),
 )
 
+llm_completion_attempts_total = Counter(
+    "llm_completion_attempts_total",
+    "Physical outbound LLM completion attempts",
+    ["model", "provider"],
+)
+
+llm_retries_total = Counter(
+    "llm_retries_total",
+    "Scheduled internal LLM retries by classified failure category",
+    ["model", "provider", "category"],
+)
+
+llm_retry_exhausted_total = Counter(
+    "llm_retry_exhausted_total",
+    "Logical LLM completions whose internal retry policy was exhausted",
+    ["model", "provider", "category", "reason"],
+)
+
+llm_retry_suppressed_total = Counter(
+    "llm_retry_suppressed_total",
+    "LLM failures that were intentionally not retried",
+    ["model", "provider", "reason"],
+)
+
+llm_retry_delay_seconds = Histogram(
+    "llm_retry_delay_seconds",
+    "Chosen delay before an internal LLM retry",
+    ["model", "provider", "category"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8, 20),
+)
+
 llm_token_usage = Counter(
     "llm_token_usage",
     "Token usage by type (prompt, completion, total)",

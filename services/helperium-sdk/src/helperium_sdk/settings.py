@@ -120,6 +120,22 @@ class DemoSettings:
             os.environ.get("AGENT_FALLBACK_MAX_MESSAGES", "7")
         )
 
+        # Internal LLM completion retry policy. This stays process-wide because
+        # retry is a transport reliability policy, not public per-agent config.
+        self.llm_max_attempts: int = int(os.environ.get("LLM_MAX_ATTEMPTS", "3"))
+        self.llm_retry_max_elapsed_seconds: float = float(
+            os.environ.get("LLM_RETRY_MAX_ELAPSED_SECONDS", "8.0")
+        )
+        self.llm_retry_transient_base_seconds: float = float(
+            os.environ.get("LLM_RETRY_TRANSIENT_BASE_SECONDS", "0.25")
+        )
+        self.llm_retry_throttled_base_seconds: float = float(
+            os.environ.get("LLM_RETRY_THROTTLED_BASE_SECONDS", "1.0")
+        )
+        self.llm_retry_max_backoff_seconds: float = float(
+            os.environ.get("LLM_RETRY_MAX_BACKOFF_SECONDS", "4.0")
+        )
+
         # ── Guardrails ──────────────────────────────────────────────────
         self.guardrail_enabled: bool = os.environ.get(
             "GUARDRAIL_ENABLED", "true"
@@ -139,9 +155,7 @@ class DemoSettings:
         self.mcp_circuit_breaker_timeout: float = float(
             os.environ.get("MCP_CIRCUIT_BREAKER_TIMEOUT", "30.0")
         )
-        self.mcp_gc_interval: float = float(
-            os.environ.get("MCP_GC_INTERVAL", "60.0")
-        )
+        self.mcp_gc_interval: float = float(os.environ.get("MCP_GC_INTERVAL", "60.0"))
         self.mcp_max_idle_seconds: float = float(
             os.environ.get("MCP_MAX_IDLE_SECONDS", "600.0")
         )
@@ -151,9 +165,7 @@ class DemoSettings:
         self.mcp_tool_execution_timeout: float = float(
             os.environ.get("MCP_TOOL_EXECUTION_TIMEOUT", "15.0")
         )
-        self.mcp_http_timeout: float = float(
-            os.environ.get("MCP_HTTP_TIMEOUT", "10.0")
-        )
+        self.mcp_http_timeout: float = float(os.environ.get("MCP_HTTP_TIMEOUT", "10.0"))
         self.mcp_http_read_timeout: float = float(
             os.environ.get("MCP_HTTP_READ_TIMEOUT", "1800.0")
         )

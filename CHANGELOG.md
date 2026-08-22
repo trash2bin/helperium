@@ -2,6 +2,8 @@
 
 ## 2026-08-21
 
+- **fix(agent/reliability):** added bounded internal retries around one physical LiteLLM completion request, with classified transient failures, full-jitter backoff, `Retry-After`, deadline and cancellation preservation. Retries exhaust before the existing provider fallback and never repeat transcript mutation or MCP tool execution; the policy is process-wide rather than public per-agent configuration. **Verification:** deterministic retry, adapter and fallback regressions, clean Docker E2E (137 passed), and full `make ci` passed.
+
 - **refactor(agent/provider):** extracted verified NVIDIA NIM Step-3.7 wire compatibility into an internal declarative provider/model registry. The generic LiteLLM adapter no longer contains model-name branches or a public per-agent continuation-schema override. **Verification:** provider registry and adapter regressions plus `make ci-test-py` passed.
 
 - **fix(docs/ci):** documentation path validation now uses English-only source comments and diagnostics, and bare filename references can resolve only to non-ignored repository content. The OpenSpec decision now names a design artifact rather than implying that a fixed repository file must exist. Four regression tests cover the fresh-checkout failure mode, valid bare filename resolution, English failure output, and the English-only checker source contract. **Verification:** `make ci-docs` and a sanitized full `make ci` passed.

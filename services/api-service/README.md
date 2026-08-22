@@ -455,6 +455,13 @@ Provider resolution changes transport selection only. It does not change the app
 | `AGENT_TEMPERATURE` | `0.5` | Provider sampling temperature |
 | `AGENT_MAX_TOKENS_THINKING` | `4096` | Provider-specific thinking limit where supported |
 | `ENABLE_THINK` | `true` | Enable provider-specific thinking mode where supported |
+| `LLM_MAX_ATTEMPTS` | `3` | Total physical attempts for one logical model completion; `1` disables retries |
+| `LLM_RETRY_MAX_ELAPSED_SECONDS` | `8.0` | Total monotonic budget for attempts and backoff of one logical completion |
+| `LLM_RETRY_TRANSIENT_BASE_SECONDS` | `0.25` | Full-jitter base delay for temporary transport and upstream failures |
+| `LLM_RETRY_THROTTLED_BASE_SECONDS` | `1.0` | Full-jitter base delay for `429` throttling |
+| `LLM_RETRY_MAX_BACKOFF_SECONDS` | `4.0` | Maximum selected retry delay before deadline clipping |
+
+Retries are internal to the physical LiteLLM completion call. They repeat no transcript mutation or MCP tool execution, preserve cancellation, honour valid `Retry-After` values within the deadline, and exhaust before `FallbackProvider` tries the next provider. These process-wide controls are intentionally not fields of public per-agent `LLMConfig` or OpenAPI.
 
 `AGENT_FALLBACK_MAX_MESSAGES` is no longer used: the runtime has no fallback context rewrite.
 
