@@ -10,6 +10,7 @@ import litellm
 from litellm.types.utils import ModelResponse
 
 from .models import CompletionRequest, CompletionResponse, ToolCall, UsageInfo
+from .provider_compatibility import find_provider_model_policy
 
 
 logger = logging.getLogger("api_service.agent.litellm_provider")
@@ -45,6 +46,7 @@ class LiteLLMProvider:
         self.temperature = temperature
         self.max_tokens_thinking = max_tokens_thinking
         self.enable_thinking = enable_thinking
+        self._policy = find_provider_model_policy(self.provider, self.model)
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         messages = self._serialize_transcript(request.messages)
@@ -60,8 +62,9 @@ class LiteLLMProvider:
             kwargs["api_base"] = self.api_base
         if self.api_key:
             kwargs["api_key"] = self.api_key
-        if self.enable_thinking:
-            kwargs["extra_body"] = {"think": True}
+        extra_body = self._thinking_extra_body()
+        if extra_body:
+            kwargs["extra_body"] = extra_body
         tools, continuation, supports_function_calling = self._completion_tools(request)
         if tools:
             kwargs["tools"] = tools
@@ -95,6 +98,14 @@ class LiteLLMProvider:
             cost=self._cost(response, getattr(response, "usage", None)),
         )
 
+    def _thinking_extra_body(self) -> dict[str, Any] | None:
+        """Return verified model-specific reasoning controls when available."""
+        if self._policy is not None and self._policy.reasoning_body is not None:
+            return self._policy.reasoning_body(self.enable_thinking)
+        if self.provider != "nvidia_nim":
+            return {"think": True} if self.enable_thinking else None
+        return None
+
     def _completion_tools(
         self, request: CompletionRequest
     ) -> tuple[list[dict[str, Any]], bool, bool | None]:
@@ -107,6 +118,8 @@ class LiteLLMProvider:
         """
         continuation = self._is_unresolved_tool_continuation(request.messages)
         if not request.tools or not continuation:
+            return request.tools, continuation, None
+        if self._policy is not None and self._policy.keep_tool_schemas_on_continuation:
             return request.tools, continuation, None
         try:
             supports_function_calling = litellm.supports_function_calling(

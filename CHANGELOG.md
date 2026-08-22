@@ -2,6 +2,8 @@
 
 ## 2026-08-21
 
+- **refactor(agent/provider):** extracted verified NVIDIA NIM Step-3.7 wire compatibility into an internal declarative provider/model registry. The generic LiteLLM adapter no longer contains model-name branches or a public per-agent continuation-schema override. **Verification:** provider registry and adapter regressions plus `make ci-test-py` passed.
+
 - **fix(docs/ci):** documentation path validation now uses English-only source comments and diagnostics, and bare filename references can resolve only to non-ignored repository content. The OpenSpec decision now names a design artifact rather than implying that a fixed repository file must exist. Four regression tests cover the fresh-checkout failure mode, valid bare filename resolution, English failure output, and the English-only checker source contract. **Verification:** `make ci-docs` and a sanitized full `make ci` passed.
 
 - **fix(release/security):** admin-dashboard now authenticates private api-service management proxies with a distinct configured `API_BEARER_TOKEN` instead of forwarding browser or data-service admin credentials. CI/E2E pass an explicit test-only API bearer, E2E callers use the matching private-control-plane header, and operational guides document the three-token contract. **Verification:** dashboard proxy regressions, isolated Docker E2E, full `make ci`, and docs path checks passed.

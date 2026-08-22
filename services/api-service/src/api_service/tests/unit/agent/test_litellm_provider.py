@@ -276,3 +276,61 @@ async def test_litellm_adapter_leaves_non_tool_messages_unchanged_on_wire() -> N
         await provider.complete(CompletionRequest(messages=messages))
 
     assert completion.await_args.kwargs["messages"] == messages
+
+
+@pytest.mark.asyncio
+async def test_litellm_adapter_uses_registered_step37_nim_reasoning_policy() -> None:
+    completion = AsyncMock(return_value=_response(content="done"))
+    provider = LiteLLMProvider(
+        "nvidia_nim/stepfun-ai/step-3.7-flash",
+        provider="nvidia_nim",
+        enable_thinking=False,
+    )
+
+    with patch("api_service.agent.litellm_provider.litellm.acompletion", completion):
+        await provider.complete(CompletionRequest(messages=[]))
+
+    assert completion.await_args.kwargs["extra_body"] == {
+        "chat_template_kwargs": {"thinking": False}
+    }
+
+
+@pytest.mark.asyncio
+async def test_litellm_adapter_does_not_guess_unknown_nim_reasoning_policy() -> None:
+    completion = AsyncMock(return_value=_response(content="done"))
+    provider = LiteLLMProvider(
+        "nvidia_nim/new-vendor/new-model",
+        provider="nvidia_nim",
+        enable_thinking=True,
+    )
+
+    with patch("api_service.agent.litellm_provider.litellm.acompletion", completion):
+        await provider.complete(CompletionRequest(messages=[]))
+
+    assert "extra_body" not in completion.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_litellm_adapter_registered_policy_keeps_continuation_schemas() -> None:
+    completion = AsyncMock(return_value=_response(content="done"))
+    provider = LiteLLMProvider(
+        "nvidia_nim/stepfun-ai/step-3.7-flash",
+        provider="nvidia_nim",
+    )
+    tools = [{"type": "function", "function": {"name": "db_search"}}]
+    request = CompletionRequest(
+        messages=[{"role": "tool", "tool_call_id": "call-1", "content": "{}"}],
+        tools=tools,
+    )
+
+    with (
+        patch(
+            "api_service.agent.litellm_provider.litellm.supports_function_calling",
+            return_value=False,
+        ) as supports_function_calling,
+        patch("api_service.agent.litellm_provider.litellm.acompletion", completion),
+    ):
+        await provider.complete(request)
+
+    assert completion.await_args.kwargs["tools"] == tools
+    supports_function_calling.assert_not_called()
