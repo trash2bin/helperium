@@ -12,6 +12,10 @@ from .backlog_parser import find_backlog_file, parse_backlog_data, read_all_reco
 from .models import BacklogData, RunResult
 
 
+class BenchmarkPreflightError(RuntimeError):
+    """Raised before case execution when the benchmark target is unusable."""
+
+
 def _sse_parse_events(response: Any) -> dict[str, Any]:
     """Parse an SSE stream into structured result dict.
 
@@ -359,6 +363,61 @@ class BenchmarkRunner:
         if self.admin_token:
             h["Authorization"] = f"Bearer {self.admin_token}"
         return h
+
+    def preflight(self) -> dict[str, Any]:
+        """Verify that the API and requested agent are reachable before case 1.
+
+        A benchmark against a stopped API is not a benchmark run.  Fail fast so
+        one local configuration mistake cannot produce dozens of misleading
+        ``ERROR`` cases and waste provider/rate-limit budget.
+        """
+        try:
+            import httpx
+
+            with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
+                try:
+                    health = client.get(f"{self.api_url}/health")
+                except httpx.RequestError as exc:
+                    raise BenchmarkPreflightError(
+                        f"API недоступен: {self.api_url}/health — {exc}. "
+                        "Проверьте, что Helperium запущен (dev.sh start) и порт 8081 свободен."
+                    ) from exc
+                if health.status_code != 200:
+                    raise BenchmarkPreflightError(
+                        f"API health-check вернул HTTP {health.status_code}: "
+                        f"{health.text[:300]}"
+                    )
+                try:
+                    health_payload = health.json()
+                except ValueError:
+                    health_payload = {}
+
+                try:
+                    agent = client.get(
+                        f"{self.api_url}/api/agents/{self.agent_name}/widget-config",
+                        headers=self._headers(),
+                    )
+                except httpx.RequestError as exc:
+                    raise BenchmarkPreflightError(
+                        f"API health healthy, но agent config недоступен: {exc}"
+                    ) from exc
+                if agent.status_code != 200:
+                    raise BenchmarkPreflightError(
+                        f"Agent '{self.agent_name}' недоступен: "
+                        f"HTTP {agent.status_code}: {agent.text[:300]}"
+                    )
+        except ImportError as exc:
+            raise BenchmarkPreflightError(
+                "Не найден httpx — benchmark не может выполнить preflight. "
+                "Запускайте через uv run --package agent-db."
+            ) from exc
+
+        return {
+            "api_url": self.api_url,
+            "api_health": health_payload,
+            "agent_name": self.agent_name,
+            "agent_status": agent.status_code,
+        }
 
     def run_case(self, question: str, session_id: str | None = None) -> RunResult:
         """Run one question against the agent and return a RunResult.

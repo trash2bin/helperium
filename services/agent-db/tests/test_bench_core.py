@@ -16,7 +16,9 @@ from pathlib import Path
 import httpx
 import pytest
 import requests
+from typer.testing import CliRunner
 
+from agent_db.bench import cli as bench_cli
 from agent_db.bench.evaluator import DeterministicEvaluator
 from agent_db.bench.models import (
     BacklogData,
@@ -39,7 +41,12 @@ from agent_db.bench.backlog_parser import (
     parse_backlog_data,
     read_all_records,
 )
-from agent_db.bench.runner import BenchmarkRunner, _sse_parse_events
+from agent_db.bench.run_guard import BenchmarkRunGuard, BenchmarkRunInProgressError
+from agent_db.bench.runner import (
+    BenchmarkPreflightError,
+    BenchmarkRunner,
+    _sse_parse_events,
+)
 from agent_db.bench.agent_policy import (
     AUTOPARTS_BENCHMARK_SYSTEM_PROMPT,
     sync_autoparts_benchmark_agent_policy,
@@ -99,7 +106,10 @@ class TestCaseFixture:
 
         assert len(active_cases) == 49
         assert len(all_cases) == 51
-        assert {"product-count-price-discount-001", "product-count-promo-label-001"} <= active_ids
+        assert {
+            "product-count-price-discount-001",
+            "product-count-promo-label-001",
+        } <= active_ids
         for case_id in ("product-count-discount-001", "product-filter-discount-001"):
             assert case_id not in active_ids
             assert all_by_id[case_id].deprecated
@@ -195,7 +205,10 @@ class TestEvaluator:
             final_text=f"Всего {total}.",
             tool_calls=[{"name": "filter_catalog_product", "arguments": arguments}],
             tool_results=[
-                {"name": "filter_catalog_product", "result": json.dumps({"total": total})}
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps({"total": total}),
+                }
             ],
         )
         res = DeterministicEvaluator().evaluate(case, run)
@@ -372,15 +385,11 @@ class TestEvaluator:
             ("Заказ оплачен картой.", False),
         ],
     )
-    def test_exact_value_uses_fixture_scoped_value_aliases(
-        self, final_text, answer_ok
-    ):
+    def test_exact_value_uses_fixture_scoped_value_aliases(self, final_text, answer_ok):
         case = make_case(
             expected={"payment": "online"},
             ground_truth_kw={
-                "value_aliases": {
-                    "payment": {"online": ["онлайн", "онлайн-оплата"]}
-                }
+                "value_aliases": {"payment": {"online": ["онлайн", "онлайн-оплата"]}}
             },
         )
         run = make_run(
@@ -1173,6 +1182,33 @@ class TestEvaluator:
         )
         assert DeterministicEvaluator._detect_tool_errors(run) == []
 
+    def test_structured_agent_dispatch_errors_are_not_infra(self):
+        run = make_run(
+            tool_results=[
+                {
+                    "name": "invented_tool",
+                    "result": json.dumps(
+                        {
+                            "ok": False,
+                            "error": "Запрошенный инструмент недоступен для этого агента.",
+                            "error_code": "TOOL_NOT_FOUND",
+                        }
+                    ),
+                },
+                {
+                    "name": "filter_catalog_product",
+                    "result": json.dumps(
+                        {
+                            "ok": False,
+                            "error": "invalid tool arguments",
+                            "error_code": "ARGUMENT_VALIDATION_FAILED",
+                        }
+                    ),
+                },
+            ]
+        )
+        assert DeterministicEvaluator._detect_tool_errors(run) == []
+
     def test_server_tool_error_is_infra(self):
         run = make_run(
             tool_results=[
@@ -1573,6 +1609,20 @@ class TestReport:
         assert "Verdict pass rate" in text
         assert "Total cases" in text
 
+    def test_print_report_places_model_answer_under_question(self):
+        case = make_case(cid="answer-visible", expected={"price": 1})
+        run = make_run(final_text="Цена 1 рубль.", question="Сколько стоит товар?")
+        ev = EvalResult(
+            case_id=case.id,
+            tool_ok=False,
+            retrieval_ok=False,
+            answer_ok=False,
+            verdict=Verdict.ERROR,
+        )
+        text = print_report(aggregate_report([case], [run], [ev]))
+        assert "Вопрос: q" in text
+        assert "Ответ:  Цена 1 рубль." in text
+
     def test_recovery_rate_metric(self):
         """Recovery rate = errors_but_final / errors_total."""
         # Кейс 1: была ошибка тула, но агент дошёл до final (recovery)
@@ -1863,6 +1913,73 @@ class TestSseParse:
 
 
 class TestBenchmarkRunner:
+    def test_preflight_checks_api_and_agent_before_cases(self, monkeypatch, tmp_path):
+        class Response:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+                self.text = json.dumps(payload)
+
+            def json(self):
+                return self._payload
+
+        class Client:
+            def __init__(self, *args, **kwargs):
+                self.urls = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, **kwargs):
+                self.urls.append(url)
+                if url.endswith("/health"):
+                    return Response(200, {"api": "ok"})
+                return Response(200, {"name": "agent"})
+
+        monkeypatch.setattr(httpx, "Client", Client)
+        runner = BenchmarkRunner(
+            api_url="http://unused",
+            agent_name="agent",
+            tenant_id="tenant",
+            backlog_dir=tmp_path,
+            bench_log_dir=tmp_path,
+        )
+
+        result = runner.preflight()
+
+        assert result["agent_name"] == "agent"
+
+    def test_preflight_fails_before_case_when_api_is_unavailable(
+        self, monkeypatch, tmp_path
+    ):
+        class OfflineClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, *args, **kwargs):
+                raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(httpx, "Client", OfflineClient)
+        runner = BenchmarkRunner(
+            api_url="http://127.0.0.1:8081",
+            agent_name="agent",
+            tenant_id="tenant",
+            backlog_dir=tmp_path,
+            bench_log_dir=tmp_path,
+        )
+
+        with pytest.raises(BenchmarkPreflightError, match="API недоступен"):
+            runner.preflight()
+
     def test_request_failure_writes_isolated_bench_log(self, tmp_path, monkeypatch):
         class RaisingClient:
             def __init__(self, *args, **kwargs):
@@ -1919,6 +2036,268 @@ class TestBenchmarkRunner:
         assert json.loads(records[0])["errors"] == ["Request failed: offline"]
 
 
+class TestBenchmarkRunGuard:
+    def test_acquire_creates_uuid_scoped_evidence_and_running_manifest(self, tmp_path):
+        guard = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28181/",
+            lock_root=tmp_path / "backlog",
+            artifact_root=tmp_path / "bench-artifacts",
+        )
+
+        context = guard.acquire()
+
+        assert len(context.run_uuid) == 32
+        assert (
+            context.run_dir == tmp_path / "bench-artifacts" / "runs" / context.run_uuid
+        )
+        assert context.lock_path.exists()
+        manifest = json.loads(context.manifest_path.read_text(encoding="utf-8"))
+        assert manifest["status"] == "running"
+        assert manifest["api_url"] == "http://127.0.0.1:28181"
+        assert manifest["run_uuid"] == context.run_uuid
+        assert manifest["bench_log_dir"] == str(context.run_dir)
+        assert manifest["started_at"] == context.started_at
+
+        guard.finalize(
+            status="completed", report_path=context.run_dir / "benchmark_report.json"
+        )
+
+        assert not context.lock_path.exists()
+        manifest = json.loads(context.manifest_path.read_text(encoding="utf-8"))
+        assert manifest["status"] == "completed"
+        assert manifest["started_at"] == context.started_at
+        assert manifest["completed_at"]
+        assert manifest["report_path"] == str(context.run_dir / "benchmark_report.json")
+
+    def test_second_run_cannot_bypass_lock_with_different_artifact_root(self, tmp_path):
+        first = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28181",
+            lock_root=tmp_path / "backlog",
+            artifact_root=tmp_path / "artifacts-a",
+        )
+        context = first.acquire()
+        second = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28181",
+            lock_root=tmp_path / "backlog",
+            artifact_root=tmp_path / "artifacts-b",
+        )
+
+        with pytest.raises(BenchmarkRunInProgressError, match="run_uuid=.*pid="):
+            second.acquire()
+
+        assert not (tmp_path / "artifacts-b" / "runs").exists()
+        first.finalize(status="failed")
+
+        replacement = second.acquire()
+        assert replacement.run_uuid != context.run_uuid
+        assert replacement.run_dir.parent == tmp_path / "artifacts-b" / "runs"
+        second.finalize(status="completed")
+
+    def test_cli_creates_uuid_evidence_and_releases_lock(self, tmp_path, monkeypatch):
+        cases_path = tmp_path / "cases.json"
+        cases_path.write_text(
+            json.dumps(
+                {
+                    "cases": [
+                        {
+                            "id": "one",
+                            "question": "q",
+                            "category": "lookup",
+                            "ground_truth": {
+                                "type": "exact_value",
+                                "expected": {"price": 1},
+                            },
+                            "expected_tool": {"must_call_any": ["db_get"]},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        runner_kwargs = {}
+
+        class FakeRunner:
+            def __init__(self, **kwargs):
+                runner_kwargs.update(kwargs)
+                self.bench_log_dir = Path(kwargs["bench_log_dir"])
+
+            def preflight(self):
+                return {"agent_name": "autoparts-assistant"}
+
+            def run_case(self, question):
+                return RunResult(
+                    session_id="session",
+                    question=question,
+                    final_text="Цена 1",
+                    tool_calls=[{"name": "db_get"}],
+                    tool_results=[{"name": "db_get", "result": '{"price": 1}'}],
+                )
+
+        monkeypatch.setattr(bench_cli, "BenchmarkRunner", FakeRunner)
+        artifact_root = tmp_path / "artifacts"
+        backlog_root = tmp_path / "backlog"
+        additional_report = tmp_path / "additional.json"
+
+        result = CliRunner().invoke(
+            bench_cli.app,
+            [
+                "run",
+                str(cases_path),
+                "--api-url",
+                "http://127.0.0.1:28181",
+                "--backlog-dir",
+                str(backlog_root),
+                "--bench-log-dir",
+                str(artifact_root),
+                "--output",
+                str(additional_report),
+                "--quiet",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        run_dirs = list((artifact_root / "runs").iterdir())
+        assert len(run_dirs) == 1
+        manifest = json.loads((run_dirs[0] / "run-manifest.json").read_text())
+        report = json.loads((run_dirs[0] / "benchmark_report.json").read_text())
+        assert manifest["status"] == "completed"
+        assert report["run_metadata"]["run_uuid"] == manifest["run_uuid"]
+        assert report["run_metadata"]["artifact_dir"] == str(run_dirs[0])
+        assert runner_kwargs["timeout"] == 300.0
+        assert additional_report.exists()
+        assert not list((backlog_root / ".benchmark-locks").glob("*.lock"))
+
+    def test_cli_quality_failure_releases_lock_after_writing_evidence(
+        self, tmp_path, monkeypatch
+    ):
+        cases_path = tmp_path / "cases.json"
+        cases_path.write_text(
+            json.dumps(
+                {
+                    "cases": [
+                        {
+                            "id": "one",
+                            "question": "q",
+                            "category": "lookup",
+                            "ground_truth": {
+                                "type": "exact_value",
+                                "expected": {"price": 1},
+                            },
+                            "expected_tool": {"must_call_any": ["db_get"]},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class FailingRunner:
+            def __init__(self, **kwargs):
+                self.bench_log_dir = Path(kwargs["bench_log_dir"])
+
+            def preflight(self):
+                return {"agent_name": "autoparts-assistant"}
+
+            def run_case(self, question):
+                return RunResult(session_id="session", question=question)
+
+        monkeypatch.setattr(bench_cli, "BenchmarkRunner", FailingRunner)
+        artifact_root = tmp_path / "artifacts"
+        backlog_root = tmp_path / "backlog"
+        result = CliRunner().invoke(
+            bench_cli.app,
+            [
+                "run",
+                str(cases_path),
+                "--api-url",
+                "http://127.0.0.1:28181",
+                "--backlog-dir",
+                str(backlog_root),
+                "--bench-log-dir",
+                str(artifact_root),
+                "--quiet",
+            ],
+        )
+
+        assert result.exit_code == 1, result.output
+        run_dirs = list((artifact_root / "runs").iterdir())
+        assert len(run_dirs) == 1
+        manifest = json.loads((run_dirs[0] / "run-manifest.json").read_text())
+        assert manifest["status"] == "completed"
+        assert (run_dirs[0] / "benchmark_report.json").exists()
+        assert not list((backlog_root / ".benchmark-locks").glob("*.lock"))
+
+    def test_cli_refuses_active_api_lock_before_creating_artifacts(self, tmp_path):
+        cases_path = tmp_path / "cases.json"
+        cases_path.write_text(
+            json.dumps(
+                {
+                    "cases": [
+                        {
+                            "id": "one",
+                            "question": "q",
+                            "category": "lookup",
+                            "ground_truth": {
+                                "type": "exact_value",
+                                "expected": {"price": 1},
+                            },
+                            "expected_tool": {"must_call_any": ["db_get"]},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        backlog_root = tmp_path / "backlog"
+        artifact_root = tmp_path / "artifacts"
+        holder = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28181",
+            lock_root=backlog_root,
+            artifact_root=tmp_path / "holder-artifacts",
+        )
+        holder.acquire()
+
+        result = CliRunner().invoke(
+            bench_cli.app,
+            [
+                "run",
+                str(cases_path),
+                "--api-url",
+                "http://127.0.0.1:28181",
+                "--backlog-dir",
+                str(backlog_root),
+                "--bench-log-dir",
+                str(artifact_root),
+            ],
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "Benchmark already running for API" in result.output
+        assert not (artifact_root / "runs").exists()
+        holder.finalize(status="completed")
+
+    def test_different_api_urls_receive_independent_locks(self, tmp_path):
+        first = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28181",
+            lock_root=tmp_path / "backlog",
+            artifact_root=tmp_path / "artifacts",
+        )
+        second = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28182",
+            lock_root=tmp_path / "backlog",
+            artifact_root=tmp_path / "artifacts",
+        )
+
+        first_context = first.acquire()
+        second_context = second.acquire()
+
+        assert first_context.lock_path != second_context.lock_path
+        assert first_context.run_dir != second_context.run_dir
+        first.finalize(status="completed")
+        second.finalize(status="completed")
+
+
 class TestAggregateContract:
     def test_rejects_mismatched_case_run_and_eval_lengths(self):
         cases = [make_case("case-1"), make_case("case-2")]
@@ -1928,14 +2307,26 @@ class TestAggregateContract:
         with pytest.raises(ValueError, match="must have the same length"):
             aggregate_report(cases, runs, evals)
 
+
 class TestAutopartsBenchmarkAgentPolicy:
     def test_policy_requires_catalog_grounding_and_stop_after_sufficient_result(self):
-        assert "сначала получи подтверждение через\nMCP-инструменты" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
-        assert "поле total для вопроса о количестве" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
-        assert "Сохраняй пользовательские идентификаторы буквально" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        assert (
+            "сначала получи подтверждение через\nMCP-инструменты"
+            in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        )
+        assert (
+            "поле total для вопроса о количестве" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        )
+        assert (
+            "Сохраняй пользовательские идентификаторы буквально"
+            in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        )
         assert "Не выводи внутренние рассуждения" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
         assert "`__gt_field` / `__lt_field`" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
-        assert "общий вопрос, не требующий данных каталога" in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        assert (
+            "общий вопрос, не требующий данных каталога"
+            in AUTOPARTS_BENCHMARK_SYSTEM_PROMPT
+        )
 
     def test_sync_updates_only_system_prompt(self, monkeypatch):
         calls = []
@@ -1973,9 +2364,7 @@ class TestAutopartsBenchmarkAgentPolicy:
 
     def test_sync_rejects_missing_admin_token(self):
         with pytest.raises(ValueError, match="admin_token"):
-            sync_autoparts_benchmark_agent_policy(
-                "http://api.test", "bench-agent", ""
-            )
+            sync_autoparts_benchmark_agent_policy("http://api.test", "bench-agent", "")
 
 
 class TestAutopartsDeterministicFixtureRegressions:
@@ -2015,14 +2404,15 @@ class TestAutopartsDeterministicFixtureRegressions:
         assert "hit" not in raw_case["tags"]
         assert "article" in raw_case["tags"]
 
-
     def test_denso_fixture_accepts_grounded_describe_path(self):
         raw_case = self._raw_case("brand-lookup-002")
         assert "db_describe" in raw_case["expected_tool"]["must_call_any"]
         case = TestCase.from_dict(raw_case)
         run = make_run(
             final_text="Denso из Японии.",
-            tool_calls=[{"name": "db_describe", "arguments": {"entity": "catalog_brand"}}],
+            tool_calls=[
+                {"name": "db_describe", "arguments": {"entity": "catalog_brand"}}
+            ],
             tool_results=[
                 {
                     "name": "db_describe",
@@ -2030,9 +2420,7 @@ class TestAutopartsDeterministicFixtureRegressions:
                         {
                             "fields": {
                                 "country": {"distinct": ["Япония"]},
-                                "description": {
-                                    "distinct": ["Denso OEM из Япония."]
-                                },
+                                "description": {"distinct": ["Denso OEM из Япония."]},
                             }
                         }
                     ),

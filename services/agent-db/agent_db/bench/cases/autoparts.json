@@ -19,7 +19,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ],
         "must_not_call": [
           "db_describe"
@@ -47,7 +48,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -75,7 +77,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -104,7 +107,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -131,7 +135,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -156,7 +161,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -184,7 +190,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -212,7 +219,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -240,7 +248,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -268,7 +277,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -296,7 +306,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -321,7 +332,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -343,7 +355,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -366,7 +379,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_product",
-          "db_search"
+          "db_search",
+          "db_filter"
         ]
       },
       "expect_refusal": true,
@@ -394,7 +408,8 @@
         "must_call_any": [
           "filter_catalog_order",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "status_synonyms": {
@@ -452,7 +467,8 @@
         "must_call_any": [
           "filter_catalog_order",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "status_synonyms": {
@@ -510,7 +526,8 @@
         "must_call_any": [
           "filter_catalog_order",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -534,7 +551,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_order"
+          "filter_catalog_order",
+          "db_filter"
         ]
       },
       "status_synonyms": {
@@ -569,7 +587,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_order"
+          "filter_catalog_order",
+          "db_filter"
         ]
       },
       "status_synonyms": {
@@ -613,7 +632,8 @@
         "must_call_any": [
           "filter_catalog_order",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -648,7 +668,8 @@
         "must_call_any": [
           "filter_catalog_order",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -670,7 +691,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_order",
-          "db_search"
+          "db_search",
+          "db_filter"
         ]
       },
       "expect_refusal": true,
@@ -694,7 +716,8 @@
         "must_call_any": [
           "filter_catalog_brand",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -718,7 +741,8 @@
           "filter_catalog_brand",
           "db_search",
           "db_get",
-          "db_describe"
+          "db_describe",
+          "db_filter"
         ]
       },
       "tags": [
@@ -744,7 +768,8 @@
         "must_call_any": [
           "filter_catalog_brand",
           "db_search",
-          "db_describe"
+          "db_describe",
+          "db_filter"
         ]
       },
       "tags": [
@@ -821,7 +846,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -843,7 +869,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -865,7 +892,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -887,7 +915,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -910,7 +939,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -958,7 +988,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -986,7 +1017,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1016,7 +1048,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_describe"
+          "db_describe",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1047,7 +1080,8 @@
           "filter_catalog_order",
           "db_search",
           "db_describe",
-          "stats"
+          "stats",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1073,7 +1107,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_product",
-          "db_search"
+          "db_search",
+          "db_filter"
         ]
       },
       "expect_refusal": true,
@@ -1097,7 +1132,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "filter_catalog_brand"
+          "filter_catalog_brand",
+          "db_filter"
         ]
       },
       "expect_refusal": true,
@@ -1121,7 +1157,8 @@
         "must_call_any": [
           "filter_catalog_brand",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1148,7 +1185,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1170,7 +1208,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1200,7 +1239,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1228,7 +1268,8 @@
         "must_call_any": [
           "filter_catalog_product",
           "db_search",
-          "db_get"
+          "db_get",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1250,7 +1291,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1275,7 +1317,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1303,7 +1346,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1332,7 +1376,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_product",
-          "db_search"
+          "db_search",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1362,7 +1407,8 @@
       "expected_tool": {
         "must_call_any": [
           "filter_catalog_product",
-          "db_search"
+          "db_search",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1391,7 +1437,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [
@@ -1421,7 +1468,8 @@
       },
       "expected_tool": {
         "must_call_any": [
-          "filter_catalog_product"
+          "filter_catalog_product",
+          "db_filter"
         ]
       },
       "tags": [

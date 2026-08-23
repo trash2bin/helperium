@@ -271,22 +271,25 @@ def print_report(report: BenchmarkReport) -> str:
     )
     lines.append(f"Total cost: ${report.total_cost_usd:.4f}")
     lines.append("")
-    lines.append("Failed cases:")
+    lines.append("Cases — question → model answer:")
     if not report.case_results:
         lines.append("  (no cases)")
     for case in report.case_results:
         ev = case.eval_result
-        if ev and ev.verdict.value == "CORRECT":
-            continue
         reason = "; ".join(ev.reasons[:3]) if ev else "no eval"
-        lines.append(f"  - {case.case_id}: {case.question}")
+        answer = " ".join((case.final_text or "").split()) or "<пустой ответ>"
         lines.append(
-            f"      verdict={ev.verdict.value if ev else '-'} "
-            f"tool={ev.tool_ok if ev else '-'} "
+            f"  [{ev.verdict.value if ev else '-'}] {case.case_id}"
+        )
+        lines.append(f"      Вопрос: {case.question}")
+        lines.append(f"      Ответ:  {answer[:1000]}")
+        if ev and ev.verdict.value != "CORRECT":
+            lines.append(f"      Причина: {reason}")
+        lines.append(
+            f"      Метрики: tool={ev.tool_ok if ev else '-'} "
             f"retrieval={ev.retrieval_ok if ev else '-'} "
             f"answer={ev.answer_ok if ev else '-'} "
-            f"halluc={ev.hallucination if ev else '-'} "
-            f"| {reason}"
+            f"halluc={ev.hallucination if ev else '-'}"
         )
     return "\n".join(lines)
 
@@ -384,7 +387,10 @@ def report_to_dict(report: BenchmarkReport) -> dict[str, Any]:
                     "db_get_count": c.eval_result.db_get_count if c.eval_result else 0,
                 },
                 "outcome": c.outcome,
-                "final_text": c.final_text[:500],
+                # Keep the complete model answer next to the question. The
+                # human-readable report shortens only its console line; the
+                # JSON/evidence artifact must remain lossless.
+                "final_text": c.final_text,
             }
             for c in report.case_results
         ],

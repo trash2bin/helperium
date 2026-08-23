@@ -101,6 +101,12 @@ _SKU_RE = re.compile(r"\b(?:[A-Za-zА-Яа-яЁё]{2,4}-\d{3,6})\b")
 
 # keys in a tool_result payload that indicate an error (not data).
 _ERROR_KEYS = ("error", "error_code", "error_message", "exception", "stack")
+# These are deterministic agent-side dispatch/argument failures. They are
+# useful evidence in the trace, but are not infrastructure failures and must
+# not turn a later recovered final answer into ERROR.
+_AGENT_TOOL_ERROR_CODES = frozenset(
+    {"ARGUMENT_VALIDATION_FAILED", "INVALID_RELATION", "TOOL_NOT_FOUND"}
+)
 # keys in a tool_result payload that indicate data (rows/preview/total).
 _DATA_KEYS = (
     "preview",
@@ -314,6 +320,8 @@ class DeterministicEvaluator:
             else:
                 obj = raw
             if isinstance(obj, dict) and any(k in obj for k in _ERROR_KEYS):
+                if obj.get("error_code") in _AGENT_TOOL_ERROR_CODES:
+                    continue
                 detail = str(obj.get("error", "")).lower()
                 if obj.get("ok") is False and (
                     "returned status 400" in detail or "returned status 422" in detail
@@ -1513,6 +1521,11 @@ class DeterministicEvaluator:
         normalising ordinary, non-breaking and narrow non-breaking thousand separators (``14 500`` → ``14500``).
         """
         s = str(text)
+        # Типографские дефисы/тире (U+2010–U+2015, non-breaking hyphen U+2011,
+        # минус U+2212, soft hyphen U+00AD): модели часто пишут «АП‑100004» с ними,
+        # а tool_results содержит обычный дефис. Без нормализации код вырезается
+        # в одном месте и остаётся числом в другом → ложная галлюцинация.
+        s = re.sub(r"[\u2010-\u2015\u2212\u00ad]", "-", s)
         # Remove alphanumeric codes: token with letters+digits, incl. hyphens
         s = re.sub(
             r"\b[A-Za-zА-Яа-яЁё]+[A-Za-zА-Яа-яЁё0-9-]*[0-9][A-Za-zА-Яа-яЁё0-9-]*\b",

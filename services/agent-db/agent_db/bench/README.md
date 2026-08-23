@@ -54,8 +54,18 @@ uv run --package agent-db python -m agent_db.bench run \
     --admin-token secret \
     --backlog-dir ./backlog \
     --bench-log-dir ./bench-backlog \
-    --output benchmark_report.json \
     --delay 2.5          # пауза между кейсами (rate limit api-service: 30/мин)
+
+# Per-question timeout defaults to 300s. Pass --timeout explicitly only when a
+# controlled experiment needs a different client-side wait budget.
+
+# Before case 1 the CLI runs a preflight: API `/health` and the named agent's
+# widget config must both be reachable. If either check fails, no cases are
+# sent and the run exits with a clear diagnostic instead of producing 49
+# misleading connection-error cases.
+
+# Необязательная совместимая копия итогового report за пределами run directory:
+# --output ./latest-benchmark-report.json
 ```
 
 ### Смоук без LLM (ScriptedLLMProvider)
@@ -84,7 +94,7 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
   "question": "Сколько стоит артикул EXT-01392?",
   "category": "lookup",
   "ground_truth": {"type": "exact_value", "query": "SELECT ...", "expected": {"price": 3064}},
-  "expected_tool": {"must_call_any": ["filter_catalog_product", "db_get"], "must_not_call": ["db_map"]},
+  "expected_tool": {"must_call_any": ["db_filter", "filter_catalog_product", "db_search", "db_get"], "must_not_call": ["db_map"]},
   "tags": ["product", "price"],
   "expect_refusal": false,
   "status_synonyms": {"shipped": ["отправлен", "в пути"]},
@@ -151,14 +161,39 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
 | avg_* / p50 / p95 | из backlog turn_end (tokens, duration, cost, tool_calls, llm_calls) |
 | avg_repeated_tool_calls / avg_unique_tool_calls / avg_db_get | fanout/перебор |
 
-## Отдельное логгирование бенча
+## Exclusive run и отдельное логгирование
 
-Каждый прогон пишется в **отдельный каталог** `bench-backlog/` (не смешивается с общим `backlog/` api-service):
+`run` получает **exclusive local lock** для нормализованного `--api-url`. Lock лежит под `--backlog-dir/.benchmark-locks/`, поэтому смена `--bench-log-dir`, agent или tenant не может параллельно нагрузить тот же isolated API и его upstream credential. Второй процесс завершается с exit code `2`, выводит holder `run_uuid` и PID и не создаёт никаких artifact files.
 
-- `{session_id}.bench.jsonl` — **полный trace**: question, final_text (полный!), все SSE-события (tool_call/tool_result), метрики backlog. Один прогон = одна строка.
-- `agent_{agent}_{session}.jsonl` — копия исходного backlog-файла api-service.
+Каждый успешный захват создаёт новый UUID-scoped directory:
 
-Каталог задаётся `--bench-log-dir` (default: `./bench-backlog`). В `final_text` добавлен в backlog `turn_end` (api-service) — теперь ретро-анализ без SSE возможен (обрезается до 2000 символов).
+```text
+<bench-log-dir>/runs/<run_uuid>/
+├── run-manifest.json
+├── benchmark_report.json
+├── {session_id}.bench.jsonl
+└── agent_{agent}_{session}.jsonl
+```
+
+`run-manifest.json` фиксирует run UUID, API URL, host, PID, timestamps, lock path, status и primary report path. Primary report **всегда** остаётся внутри этого UUID directory. `--output` теперь только необязательная дополнительная копия для automation, например `./latest-report.json`.
+
+Нормальное завершение, включая verdict с exit code `1`, записывает terminal manifest и освобождает lock. Не удаляйте lock автоматически. Если процесс был аварийно остановлен и lock остался, сначала проверьте PID/manifest и убедитесь, что владелец действительно не активен; только затем вручную удалите конкретный stale `.lock`. Это предотвращает повтор ситуации с двумя full runs против одного NIM credential.
+
+### Платформенные фиксы, поднявшие па Vancouver 30% → 83.7% (NIM Nemotron-3.5-lightning-30b)
+
+Ключевые изменения вне самого LLM:
+
+1. **`db_filter` consolidated tool** — единый 1.8KB tool с `entity` (required) + `limit` params и field-reference operator syntax (`field__op=value`, `field__gt_field=other_field`). Заменил fat per-entity `filter_*` schemas (57 params, 10KB), которые росли в контекст и роняли `CONTEXT_LIMIT` на корпусных прогонах. При `strategy=schema` per-entity `filter_*` не генерируются; cases `must_call_any` принимают `db_filter` как валидный способ.
+2. **Display-name normalization** — `filter.go:fieldMap` маппит и `snake_case` и display names (`is active`, `brand ID`); невалидные поля → parse_error с списком валидных filterable полей (data, не prompt injection).
+3. **JSON array/object unwrap** — модель шлёт `filters=[{"field":"category ID","operator":"=","value":90}]` или `{"filter":...}` → `unwrapFilterObject` парсит оба варианта и маппит operators (`=`→eq, `!=`→neq, `>`→gt, `<`→lt, `>=`/`<=`, `in`, `not in`, `like`, `ilike`, `is null`, `is not null`, `between`) в query conditions с deterministic sorted key iteration.
+4. **Gateway numeric-string validation** — `tools.go:validateArgs` принимает parseable numeric strings (например `limit="1"`) вместо `ARGUMENT_VALIDATION_FAILED`. Не влияет на сильные модели — тихо покрывает слабые.
+5. **Evaluator hyphen normalisation** — `extract_numbers` нормализует типографские дефисы U+2010–U+2015, U+2011, U+2212, U+00AD в обычный `-` перед regex-извлечением артикулов; предотвращает ложную галлюцинацию при кириллических hyphen в `order_number` (e.g. `АП‑100004`).
+6. **DB reseeded seed=42** — fixture была пере-сидирована другим seed (139→144, 74→83); reseed canonical устранил mismatch между fixture и ground truth. На текущем canonical DB: 30 brands / 117 categories / 407 products / 6 orders.
+7. **`is_promo` rejected from filterable fields** — в live DB все продукты `is_promo=false`; добавление в filterable fields дало бы 0-result ответы в promo cases (ground truth использует `label IN ('sale','promo')` → 49). Revertнутo; error message явно указывает на `label`.
+
+Current plateau: **83.7%** за два последовательных live NIM прогона. Оставшиеся gap без model-specific hardcode: transliteration AP↔АП (order_number exact match), `is_promo=true` vs `label`, и 3 in-flight per-case ошибки. Платформенные фиксы выше — универсальны и останутся для следующих моделей.
+
+В `{session_id}.bench.jsonl` сохраняется **полный trace**: question, final_text, SSE-события (`tool_call`/`tool_result`), метрики backlog. `agent_{agent}_{session}.jsonl` является копией исходного backlog-файла api-service. В `final_text` добавлен в backlog `turn_end`, поэтому ретро-анализ без SSE возможен (обрезается до 2000 символов).
 
 ## Явные сигналы скидки и active scoring
 
