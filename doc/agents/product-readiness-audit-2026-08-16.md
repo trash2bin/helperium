@@ -86,7 +86,7 @@ RAG-качество и semantic search намеренно не входят в 
 [1]: ../benchmark/README.md "Benchmark design"
 [2]: ../benchmark/core-benchmark.md "Core benchmark"
 [3]: ../benchmark/runs/README.md "Canonical run registry"
-[4]: ../benchmark/runs/2026-08-16-nvidia-nim-rebuilt-final-full-run-analysis.md "Case-level NIM analysis"
+[4]: ../benchmark/runs/README.md "Benchmark run registry (canonical run metadata, no raw artifacts)"
 [5]: ../../services/agent-db/tests/e2e/README.md "E2E suite"
 [6]: ../../.github/workflows/ci.yml "CI workflow"
 

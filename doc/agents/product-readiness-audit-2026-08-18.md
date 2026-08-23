@@ -146,7 +146,7 @@ Documented local path `uv sync` → `./infra/scripts/dev.sh start` не прох
 [7]: ../../services/mcp-gateway/internal/tools/tools.go "Registry prefix implementation"
 [8]: ../benchmark/core-benchmark.md "Core benchmark design and metrics"
 [9]: ../benchmark/runs/README.md "Canonical benchmark run registry"
-[10]: ../benchmark/runs/2026-08-16-nvidia-nim-rebuilt-final-full-run-raw-report.json "Canonical raw live report"
+[10]: ../benchmark/runs/README.md "Benchmark run registry (canonical run metadata, no raw artifacts)"
 [11]: ../../demo/web/static/app.js "Manifest-to-tabs frontend contract"
 [12]: ../../services/rag/pyproject.toml "RAG package configuration"
 [13]: ../../services/api-service/embed/build.sh "Embed widget build script"

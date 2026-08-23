@@ -9,10 +9,14 @@
 retrieval, answer delivery, галлюцинации, отказ, стоимость/скорость, чтение схемы,
 устойчивость к ошибкам модели.
 
-**Статус:** реализован и проверен end-to-end на живом стеке (2026-08-05):
+**Статус:** реализован, стабилен и проверен end-to-end на живом стеке (2026-08-05 → 2026-08-24):
 - смоук без LLM (ScriptedLLMProvider) — 3 кейса, детерминированно
 - реальные прогоны: polza/deepseek-v4-flash (3 кейса PASS, cost ≈ $0.18/кейс)
-- полный прогон 49 кейсов на ollama/minimax-m3:cloud — упёрся в лимит модели (45 error)
+- полный прогон 49 кейсов на NIM Nemotron-3.5-lightning-30b: **plateau 83.7%**
+  (40 CORRECT / 1 PARTIAL / 2 WRONG / 6 ERROR, два последовательных прогона)
+- tool surface: 6 db_* tools (~4.8KB manifest), per-entity filter_* не используется
+  при `strategy=schema`; `db_filter` покрывает все 35 filter-кейсов через field-reference
+  operator syntax (`field__op=value`, `field__gt_field=other_field`)
 
 ## Быстрый старт
 
@@ -52,6 +56,25 @@ uv run --package agent-db python -m agent_db.bench run \
 
 ## Что мерить и как
 
+### Preflight и читаемый вывод
+
+Перед первым кейсом CLI проверяет `GET /health` и конфигурацию указанного
+агента. Если API остановлен, порт закрыт или агент не найден, benchmark
+завершается до отправки кейсов с явной причиной и exit code `2`; это не
+считается результатом качества модели.
+
+В консольном отчёте каждый кейс печатается в формате:
+
+```text
+[CORRECT] case-id
+    Вопрос: ...
+    Ответ:  ...
+    Метрики: ...
+```
+
+Для `PARTIAL`/`WRONG`/`ERROR` дополнительно печатается причина. Полный ответ
+также сохраняется в `benchmark_report.json` и в отдельном `.bench.jsonl` trace.
+
 ### Уровень 1 — архитектурные метрики (из backlog `turn_end`)
 Уже в backlog: `duration_ms, total_tokens, total_cost, llm_calls, tool_calls,
 tool_errors, empty_results, empty_rounds, iterations, outcome`. Бенч агрегирует
@@ -69,27 +92,50 @@ Ground-truth `{question, expected}` против tool_results + final_text:
 ### Уровень 3 — LLM-судья (v2, вне скоупа)
 Только для свободных/открытых вопросов. Не основа — дополнение.
 
-## Что реально вскрыл бенч (2026-08-05)
+## Что реально вскрыл бенч
 
+### Модель/транспорт (2026-08-05)
 1. **minimax-m3:cloud — сессионный лимит** → 45/49 кейсов `error` с
-   `RateLimitError: you have reached your session usage limit`. Модель облачная,
-   для прогонов нужна без лимита.
-2. **deepseek-v4-flash игнорирует `total` в filter-результате** — на count-кейсе
-   «Сколько Bosch» сделал 9× `db_get` (перебор) вместо того, чтобы поверить
-   `total: 74`. 11 tool_calls, 26.5s, $0.19 вместо ~2 тулов.
-3. **minimax шлёт мусорные аргументы** — `{"article=EXT-01392]<]minimax[":...}` →
-   400. Агент корректно восстанавливается (recovery работает).
-4. **`order_number` не фильтровался** — добавлен в `DefaultFilterableFieldRules`
-   (продуктовый фикс): теперь `filter_catalog_order({order_number})` работает.
-5. **Проценты-скидки** («~20%») — вычисляются моделью, изначально ловились как
-   «галлюцинация» → исключены из проверки.
+   `RateLimitError`. Не подходит для полных прогонов; перешли на NIM.
+2. **deepseek-v4-flash игнорирует `total`** — на count-кейсе «Сколько Bosch» сделал
+   9× `db_get` (fan-out) вместо доверия `total: 74`. 11 tool_calls, 26.5s.
+3. **minimax шлёт мусорные аргументы** → 400, recovery срабатывает, но расходует turn.
+
+### Структурные фиксы, поднявшие па Vancouver 30% → 83.7%
+4. **Пер-entity `filter_{entity}` не existed** → модель не могла фильтровать по цене.
+   Добавлен консолидированный `db_filter` (1831B, params: `entity` + `limit`),
+   description объясняет `field__op` operators и "do NOT wrap fields".
+   All 35 filter-кейсов переведены на `db_filter` в `must_call_any`.
+5. **Display-name mismatch** → модель копировала имена из `db_map` (`is active`,
+   `brand ID`) → `filter.go` теперь маппит и snake_case и display names.
+   Невалидные поля → parse_error с списком валидных filterable полей.
+6. **JSON-wrapped filter args** → слабые модели шлют `filters=[{"field":...,"operator":...}]`
+   или `{"filter":{"field":...}}`. `filter.go:unwrapFilterObject` разворачивает оба
+   варианта в query conditions; operator mapping `=`→eq, `!=`→neq, `>`→gt и т.д.
+7. **Numeric string validation** → `limit="1"` (string) отклонялся gateway'ом.
+   `tools.go` теперь принимает parseable numeric strings для всех numeric params.
+8. **Hyphen normalisation** → evaluator `extract_numbers` не видел `АП‑100004` (U+2011)
+   как артикул (другой hyphen в question vs tool_result). Added regex normalization
+   для U+2010–U+2015, U+2011, U+2212, U+00AD.
+9. **Stale DB reseed** → fixture была пере-сидирована с другим seed (139→144,
+   74→83). Reseeded back to `seed=42`; ground truth matches fixture.
+10. **`is_promo` rejected** → в live DB все продукты `is_promo=false`; promo ground truth
+    использует `label IN ('sale','promo')`. Добавление `is_promo` в filterable fields
+    дало бы ложные 0-result ответы — revertнутo; error message явно указывает на `label`.
+
+### Remaining ceiling (plateau 83.7%)
+- **AP↔АП transliteration** (`filter_catalog_order({order_number:"AP-100005"})`):
+  модель систематически переводит кириллицу `АП` в латиницу `AP` → exact miss.
+- **`is_promo=true`** вместо `label IN ('sale','promo')` в 2 promo-кейсах.
+- **Волатильные per-case ошибки** (oil filter wrong category, Bosch pads over-search,
+  ZZ-000-NOPE missing refusal marker, EXT-01401 FALSE_UNCERTAINTY).
 
 ## Кейсы: 49 active / 51 с историей
 
 | Категория | Кол-во | Что проверяет |
 |---|---|---|
 | lookup | 17 | цена/бренд/страна/гарантия/наличие по артикулу, включая статусы заказов |
-| filter | 9 | список товаров по категории/цене/бренду/наличию/метке, комбинированный фильтр |
+| filter | 9 | список товаров по категории/цене/бренду/наличию/метке, комбинированный фильтр. Вместо per-entity `filter_catalog_product` используется универсальный `db_filter` с field-reference operators (`price__gt`, `category ID`, `old_price__gt_field=price`); cases `must_call_any` принимают любой из трёх filter-способов. |
 | aggregation | 17 | количество по бренду/категории/цене/статусу, включая два явных сигнала скидки |
 | count | 1 | отдельный count-сценарий |
 | absence | 4 | несуществующий артикул/заказ/бренд → отказ |
@@ -97,7 +143,7 @@ Ground-truth `{question, expected}` против tool_results + final_text:
 
 Статусы заказов проверяются как теги и expected fields lookup-кейсов, а не как отдельная category. Распределение выше соответствует фактическому `cases/autoparts.json` и суммируется до 49 active cases. В fixture также сохранены два deprecated historical cases (всего 51), которые загрузчик исключает из scoring по умолчанию. Вместо неоднозначного «товар со скидкой» active set различает `old_price > price` (72 товаров) и `label IN ('sale', 'promo')` (49 товаров).
 
-## Детерминированная база (seed=42)
+## Детерминированная база (seed=42, canonical)
 
 Foreign `seed_data.py` не фиксирует random → данные меняются при каждом seed, ломая
 ground truth. Решение — helperium-owned `demo/autoparts-store/seed_fixture.py`
@@ -182,4 +228,11 @@ verdict = PARTIAL
 - [agent_db/bench/README.md](../../services/agent-db/agent_db/bench/README.md) — код, метрики, тесты
 
 ---
-**Last verified:** 2026-08-16 (рабочая ветка) — runner-level `run.errors`, включая request timeout, классифицируется как `ERROR`/`INFRA_ERROR` и входит в `infra_error_rate`; обновлены fixture allowances. Generic FilterStrategy поддерживает безопасный field-reference comparison, например `old_price__gt_field=price`; benchmark policy — `autoparts-benchmark-v2` с guard against leaked thinking in final. Сверено детерминированными Go/Python regression tests; новый NIM benchmark не выполнялся.
+**Last verified:** 2026-08-24 (рабочая ветка e839d6c) — plateau 83.7%
+подтверждён двумя последовательными live NIM прогонами (711d07ec, 59cd878f)
+на Nemotron-3.5-lightning-30b; seed=42 canonical, `db_filter` + JSON unwrap +
+numeric-string validation + hyphen normalisation активны. Оставшиеся ошибки —
+transliteration AP↔АП, `is_promo` vs `label`, волатильные per-case; устранение
+требует либо дополнительных fixed tool/data схем, либо смены модели.
+Deteministic Go+Python regression tests pass; preflight + exclusive run lock
+в `cli.py`/`run_guard.py` активны.

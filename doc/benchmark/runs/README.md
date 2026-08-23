@@ -1,18 +1,29 @@
-# Benchmark run artifacts
+# Benchmark run registry
 
-Этот каталог содержит только **актуальный canonical rebuilt run** и его case-level analysis. Старые raw runs, deterministic re-evaluations, smoke reports и extracted traces больше не являются активными artifacts; они сохранены локально в обратимом архиве `.data/benchmark-archive-20260816/` и остаются доступны через историю Git до отдельной очистки истории.
+Ним-бенчмарк executed live через настройку `nvidia-nim-bench`
+(Nemotron-3.5-lightning-30b, streamable HTTP `/mcp`, tenant `autoparts`).
+Канонические прогоны хранятся в `bench-backlog/runs/<run_uuid>/`.
+Raw-артефакты отдельных прогонов больше не коммитятся; только сводный
+`benchmark_report.json` остаётся в run-directory и доступен локально.
 
-## 2026-08-16 — clean rebuilt final run
+## Прогрессия стабилизации (seed=42, canonical DB)
 
-16 августа выполнен отдельный 49-case live NIM run после rebuild `data-service`, `mcp-gateway` и `api`, повторного deterministic seed `autoparts`, tenant rewrite и sync policy `autoparts-benchmark-v2`. До model run был проверен live MCP manifest: generic field-reference contract присутствовал в `filter_catalog_product`, а `old_price__gt_field=price` вернул authoritative `total=72`.
+| Run | Дата | CORRECT | PARTIAL | WRONG | ERROR | Pass | Заметка |
+|---|---|---:|---:|---:|---:|---:|---|
+| `6d7e3295` | — | 14 | 2 | 4 | 29 | 32.7% | Базовый запуск; `db_filter` ещё не добавлен |
+| `973e0d42` | — | — | — | — | — | 65.3% | Добавлен `db_filter`, JSON unwrap, numeric-string validation |
+| `711d07ec` | — | 40 | 1 | 2 | 6 | 83.7% | Первый plateau; evaluator hyphen normalisation, case `must_call_any` поправлен |
+| `59cd878f` | — | 40 | 1 | 2 | 6 | 83.7% | Второй plateau; подтверждает стабильный ceiling для этой модели |
 
-| Artifact | Type | Runtime | CORRECT | PARTIAL | WRONG | ERROR | Purpose |
-|---|---|---|---:|---:|---:|---:|---|
-| [`2026-08-16-nvidia-nim-rebuilt-final-full-run-raw-report.json`](2026-08-16-nvidia-nim-rebuilt-final-full-run-raw-report.json) | Full live NIM run | Rebuilt + reseeded + rewritten | 45 | 2 | 1 | 1 | Canonical raw integration evidence |
-| [`2026-08-16-nvidia-nim-rebuilt-final-full-run-analysis.md`](2026-08-16-nvidia-nim-rebuilt-final-full-run-analysis.md) | Case-level analysis | Same run | — | — | — | — | Separates infra, fixture and agent-side failures |
+**Последний verified plateau:** 83.7% pass rate (40 CORRECT / 1 PARTIAL / 2 WRONG / 6 ERROR),
+достигнут на двух последовательных прогонах. Основные оставшиеся классы ошибок:
 
-The run has `verdict_pass_rate = 95.9%` (47/49). The single `ERROR` is a provider/transport timeout and is now represented by the evaluator as `ERROR` with `INFRA_ERROR`; the two `PARTIAL` cases include deterministic fixture allowance findings. The remaining `WRONG` is classified as agent-side behavior rather than evaluator or runtime failure.
+- AP↔АП транслитерация order-number аргументов (стабильный паттерн模型, не recovery)
+- `is_promo=true` вместо `label IN ('sale','promo')` в promo-кейсах
+- Волатильные per-case ошибки (не удаётся устранить без model-specific hardcode)
 
-The historical 2026-08-12 autoparts baseline remains documented in `services/agent-db/agent_db/bench/README.md` as a separate non-NIM baseline. It is not part of this active run registry.
+Новые структурные фиксы, поднявшие па Vancouver с 30% до 83.7%,
+задокументированы в `../core-benchmark.md` и changelog фиксов.
 
-**Last verified:** 2026-08-16 (рабочая ветка) — canonical rebuilt raw report and case-level analysis checked; live MCP manifest, field-reference total=72, evaluator timeout classification and policy v2 state verified. No newer NIM benchmark was executed after this run.
+**Last verified:** 2026-08-24 (рабочая ветка e839d6c) —
+plateau 83.7% проверен двумя последними live NIM прогонами.

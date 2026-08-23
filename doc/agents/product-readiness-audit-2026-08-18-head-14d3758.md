@@ -4,7 +4,7 @@
 
 ## Резюме для решения
 
-**Продуктовая гипотеза правильная:** Helperium строит управляемый read-only путь от вопроса в виджете к живой клиентской SQL-базе через конфиг, MCP-инструменты и агент, а не подменяет этот путь RAG. Архитектура и значительная детерминированная тестова**Продуктовая гипотеза правильная:** Helperium строит �й `main` нельзя считать кандидатом на pilot или продажную демонстрацию**. Воспроизведены два независимых P0-сбоя product-flow: native runtime не регистрирует новый SQLite tenant, а запущенное demo выбирает tenant `autoparts`, отсутствующий в data-service. Поэтому цепочка «подключить БД → получить manifest → показать таблицу → спросить агента» сейчас не доказана. Красный обязательный E2E job в GitHub Actions подтверждает, что это не только локальная эстетическая проблема.[3]
+**Продуктовая гипотеза правильная:** Helperium строит управляемый read-only путь от вопроса в виджете к живой клиентской SQL-базе через конфиг, MCP-инструменты и агент, а не подменяет этот путь RAG. Архитектура и значительная детерминированная тестова**Продуктовая гипотеза правильная:** Helperium строит �й `main` нельзя считать кандидатом на pilot или продажную демонстрацию**. Воспроизведены два независимых P0-сбоя product-flow: native runtime не регистрирует новый SQLite tenant, а запущенное demo выбирает tenant `autoparts`, отсутствующий в data-service. Поэтому цепочка «подключить БД → получить manifest → показать таблицу → спросить агента» сейчас не доказана. Красный обязательный E2E job в GitHub Actions подтверждает, что это не только локальная эстетическая проблема.[3]
 
 | Контур | Оценка на `14d3758` | Решение PM |
 |---|---|---|
@@ -120,7 +120,7 @@ Helperium соответствует цели **на уровне дизайна
 [6]: [Demo web server: tenant discovery и proxy contracts](../../demo/web/server.py)
 [7]: [Demo frontend: tenant selection и manifest loading](../../demo/web/static/app.js)
 [8]: [Core benchmark tests и implementation](../../services/agent-db/tests/test_bench_core.py)
-[9]: [Canonical raw live benchmark run 2026-08-16](../benchmark/runs/2026-08-16-nvidia-nim-rebuilt-final-full-run-raw-report.json)
+[9]: [Canonical benchmark run registry (83.7% plateau)](../benchmark/runs/README.md)
 [10]: [История изменений после live benchmark](../../CHANGELOG.md)
 [11]: [Руководство и структура E2E](testing-guide.md)
 

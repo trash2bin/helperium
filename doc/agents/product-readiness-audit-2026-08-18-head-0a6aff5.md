@@ -108,7 +108,7 @@ Harness и его регрессии находятся в хорошем сос
 [6]: [Demo web proxy](../../demo/web/server.py)
 [7]: [Demo frontend tenant/manifest flow](../../demo/web/static/app.js)
 [8]: [Core benchmark tests](../../services/agent-db/tests/test_bench_core.py)
-[9]: [Canonical live benchmark raw report](../benchmark/runs/2026-08-16-nvidia-nim-rebuilt-final-full-run-raw-report.json)
+[9]: [Canonical live benchmark run registry (no raw artifacts)](../benchmark/runs/README.md)
 [10]: [Benchmark run registry](../benchmark/runs/README.md)
 [11]: [Testing guide](testing-guide.md)
 

@@ -23,7 +23,7 @@ Helperium — self-hosted платформа, которая подключае�
 ```text
 Embed widget → api-service → LLM/orchestrator → MCPClient
   → mcp-gateway /mcp → data-service → tenant DB
-  → SSE (tool_call/tool_result/token/final/error/done) → widget
+  → SSE (tool_call/tool_result/final/error/done) → widget
 ```
 
 Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding идёт через `POST /admin/tenants`, затем manifest/config generation. Агент не должен получать сырой DSN, секреты или cross-tenant scope из browser-controlled headers.
@@ -109,7 +109,7 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
 | Admin, web и operations | `services/admin-dashboard/README.md`, `doc/agents/tenant-lifecycle.md`, `doc/agents/web-service.md`, `doc/agents/operations.md`, `doc/agents/ci-cd.md`, `doc/agents/testing-guide.md` |
 | RAG, demos и E2E | `services/rag/README.md`, `services/agent-db/README.md`, `services/agent-db/agent_db/bench/README.md`, `services/agent-db/tests/e2e/README.md`, `services/agent-db/tests/e2e-llm/README.md`, `services/agent-db/tests/external/README.md`, `demo/README.md`, `demo/web/README.md`, `demo/autoparts-store/README.md` |
 | Benchmark live docs | `doc/benchmark/README.md`, `doc/benchmark/core-benchmark.md`, `doc/benchmark/runs/README.md` |
-| Benchmark archives | `doc/benchmark/data-service-audit.md`, `doc/benchmark/demo-integration-audit.md`, `doc/benchmark/incident-camry.md`, `doc/benchmark/plan-for-review.md`, `doc/benchmark/runs/2026-08-16-nvidia-nim-rebuilt-final-full-run-analysis.md` |
+| Benchmark archives | `doc/benchmark/data-service-audit.md`, `doc/benchmark/demo-integration-audit.md`, `doc/benchmark/incident-camry.md`, `doc/benchmark/plan-for-review.md` |
 | Product/audit archives | `doc/agents/data-service-refactor-audit.md`, `doc/agents/product-readiness-audit-2026-08-16.md`, `doc/agents/product-readiness-audit-2026-08-18.md`, `doc/agents/product-readiness-audit-2026-08-18-head-0a6aff5.md`, `doc/agents/product-readiness-audit-2026-08-18-head-14d3758.md`, `doc/agents/production-resilience-audit-2026-08-18-head-bd5adb5.md`, `doc/agents/remediation-plan-2026-08-18.md` |
 
 ## Current verification baseline
