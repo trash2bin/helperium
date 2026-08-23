@@ -37,16 +37,30 @@ MCP_E2E_ALLOWED_ORIGINS="http://127.0.0.1:8080,http://localhost:8080"
 
 SERVICES=("data" "rag" "mcp" "admin" "api" "web")
 AUTOPARTS_DIR="$PROJECT_ROOT/demo/autoparts-store"
-declare -A SERVICE_CMD=(
-  [data]="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
-  [rag]="uv run --package rag python -m rag.service"
-  [mcp]="$PROJECT_ROOT/services/mcp-gateway/mcp-gateway"
-  # Legacy (Python): раскомментировать для отладки
+# Keep nounset-compatible during initial command-map construction.  The value
+# may be filled from .env later by load_env().
+DS_CONFIG="${DS_CONFIG:-}"
+# Keep this launcher compatible with the Bash 3.2 shipped by macOS.  Bash 3.2
+# has no associative arrays, so use plain variables and resolve the command in
+# service_cmd() below.
+DATA_SERVICE_CMD="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service ${DS_CONFIG:+--config $DS_CONFIG}"
+RAG_SERVICE_CMD="uv run --package rag python -m rag.service"
+MCP_SERVICE_CMD="$PROJECT_ROOT/services/mcp-gateway/mcp-gateway"
+API_SERVICE_CMD="uv run --package api-service python -m api_service.server"
+WEB_SERVICE_CMD="uv run --package demo-web python -m demo.web.server"
+ADMIN_SERVICE_CMD="$PROJECT_ROOT/services/admin-dashboard/bin/admin-dashboard"
 
-  [api]="uv run --package api-service python -m api_service.server"
-  [web]="uv run --package demo-web python -m demo.web.server"
-  [admin]="$PROJECT_ROOT/services/admin-dashboard/bin/admin-dashboard"
-)
+service_cmd() {
+  case "$1" in
+    data) echo "$DATA_SERVICE_CMD" ;;
+    rag) echo "$RAG_SERVICE_CMD" ;;
+    mcp) echo "$MCP_SERVICE_CMD" ;;
+    api) echo "$API_SERVICE_CMD" ;;
+    web) echo "$WEB_SERVICE_CMD" ;;
+    admin) echo "$ADMIN_SERVICE_CMD" ;;
+    *) return 1 ;;
+  esac
+}
 
 # Дефолтные порты (перебиваются из .env)
 DATA_PORT=${DATA_PORT:-8084}
@@ -56,24 +70,28 @@ API_PORT=${API_PORT:-8081}
 WEB_PORT=${WEB_PORT:-8080}
 ADMIN_PORT=${ADMIN_PORT:-8085}
 
-declare -A SERVICE_PORT=(
-  [data]=$DATA_PORT
-  [rag]=$RAG_PORT
-  [mcp]=$MCP_PORT
-  [api]=$API_PORT
-  [web]=$WEB_PORT
-  [admin]=$ADMIN_PORT
-)
+service_port() {
+  case "$1" in
+    data) echo "$DATA_PORT" ;;
+    rag) echo "$RAG_PORT" ;;
+    mcp) echo "$MCP_PORT" ;;
+    api) echo "$API_PORT" ;;
+    web) echo "$WEB_PORT" ;;
+    admin) echo "$ADMIN_PORT" ;;
+    *) return 1 ;;
+  esac
+}
 
-# Какие сервисы ждать по health перед стартом следующих
-declare -A SERVICE_DEPS=(
-  [data]=""
-  [rag]=""
-  [mcp]="data"
-  [api]="mcp"
-  [web]="api"
-  [admin]="data api"
-)
+# Which services must be healthy before this service starts.
+service_deps() {
+  case "$1" in
+    data|rag) echo "" ;;
+    mcp) echo "data" ;;
+    api|web) echo "mcp" ;;
+    admin) echo "data api" ;;
+    *) return 1 ;;
+  esac
+}
 
 # =============================================================================
 # Utils
@@ -85,6 +103,14 @@ load_env() {
     # shellcheck source=/dev/null
     source "$PROJECT_ROOT/.env"
     set +a
+    # The API intentionally rejects wildcard CORS.  Keep the developer
+    # launcher operable when an old local .env still contains `*`, without
+    # mutating that file or weakening the runtime contract.
+    if [ "${CORS_ALLOW_ORIGINS:-}" = "*" ]; then
+      CORS_ALLOW_ORIGINS="http://localhost:8080"
+      export CORS_ALLOW_ORIGINS
+      echo "⚠️  CORS_ALLOW_ORIGINS=* in .env; native dev uses http://localhost:8080 for this process only."
+    fi
     # перечитываем порты из env после source
     RAG_PORT=${RAG_PORT:-8082}
     DATA_PORT=${DATA_PORT:-8084}
@@ -92,7 +118,6 @@ load_env() {
     API_PORT=${API_PORT:-8081}
     WEB_PORT=${WEB_PORT:-8080}
     ADMIN_PORT=${ADMIN_PORT:-8085}
-    SERVICE_PORT=([data]=$DATA_PORT [rag]=$RAG_PORT [mcp]=$MCP_PORT [api]=$API_PORT [web]=$WEB_PORT [admin]=$ADMIN_PORT)
 
     # Если DATABASE_URL задана, а DS_CONFIG нет — авто-выбор PostgreSQL конфига
     if [ -n "${DATABASE_URL:-}" ] && [ -z "${DS_CONFIG:-}" ]; then
@@ -110,7 +135,6 @@ set_e2e_ports() {
   API_PORT="${E2E_API_PORT:-18081}"
   WEB_PORT="${E2E_WEB_PORT:-18080}"
   ADMIN_PORT="${E2E_ADMIN_PORT:-18085}"
-  SERVICE_PORT=([data]=$DATA_PORT [rag]=$RAG_PORT [mcp]=$MCP_PORT [api]=$API_PORT [web]=$WEB_PORT [admin]=$ADMIN_PORT)
 }
 ensure_dirs() {
   mkdir -p "$LOG_DIR" "$PID_DIR" "$PROJECT_ROOT/.data/uploads"
@@ -173,6 +197,19 @@ start_autoparts_store() {
   if ! command -v docker >/dev/null 2>&1; then
     echo "❌ Docker is required to start the external autoparts storefront."
     return 1
+  fi
+
+  # Reuse an already-running external demo that was provisioned earlier.  In
+  # that case its compose .env is intentionally not required: the existing DB
+  # container and Helperium tenant config are the source of truth.  This keeps
+  # --with-autoparts idempotent and avoids trying to create a second database
+  # against the same preserved volume.
+  if [ "$(docker inspect -f '{{.State.Running}}' autoparts-store-storefront-db-1 2>/dev/null)" = "true" ] \
+    && [ -f "$PROJECT_ROOT/.data/tenants/autoparts.json" ] \
+    && command -v nc >/dev/null 2>&1 \
+    && nc -z 127.0.0.1 5434 >/dev/null 2>&1; then
+    echo "  ℹ️  Reusing running autoparts storefront and persisted tenant config."
+    return 0
   fi
 
   load_autoparts_env || return 1
@@ -264,7 +301,7 @@ cmd_start() {
 
   # Если DATABASE_URL задана — переопределяем data-service на PG-конфиг
   if [ -n "${DATABASE_URL:-}" ]; then
-    SERVICE_CMD[data]="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service --config $PROJECT_ROOT/specs/config.postgres.json"
+    DATA_SERVICE_CMD="LOG_LEVEL=info $PROJECT_ROOT/services/data-service/bin/data-service --config $PROJECT_ROOT/specs/config.postgres.json"
   fi
 
   # Проверка uv
@@ -339,7 +376,8 @@ cmd_start() {
     fi
 
     # Ждём зависимости
-    local dep="${SERVICE_DEPS[$svc]}"
+    local dep
+    dep=$(service_deps "$svc")
     if [ -n "$dep" ]; then
       echo "  ⏳ Waiting for $dep before starting $svc..."
       if ! wait_healthy "$dep" 60; then
@@ -397,14 +435,15 @@ cmd_start() {
 
     echo "  🚀 Starting $svc..."
     cd "$PROJECT_ROOT"
+    service_command=$(service_cmd "$svc")
     # shellcheck disable=SC2086
     # Detach the child so it survives after this shell exits and loses its tty.
-    nohup env $extra_env ${SERVICE_CMD[$svc]} >> "$(logfile "$svc")" 2>&1 < /dev/null &
+    nohup env $extra_env $service_command >> "$(logfile "$svc")" 2>&1 < /dev/null &
     local pid=$!
     echo "$pid" > "$(pidfile "$svc")"
 
     if wait_healthy "$svc" 30; then
-      echo "  ✅ $svc ready (pid $pid, :${SERVICE_PORT[$svc]})"
+      echo "  ✅ $svc ready (pid $pid, :$(service_port "$svc"))"
     else
       echo "  ⚠️  $svc started but not healthy yet (check logs: tail -f $(logfile "$svc"))"
     fi
@@ -554,7 +593,8 @@ cmd_status() {
   for svc in "${SERVICES[@]}"; do
     local url
     url=$(health_url "$svc")
-    local port="${SERVICE_PORT[$svc]}"
+    local port
+    port=$(service_port "$svc")
     local pid_info=""
     if is_running "$svc"; then
       pid_info="(pid $(cat "$(pidfile "$svc")" 2>/dev/null))"
