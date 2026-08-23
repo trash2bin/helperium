@@ -425,7 +425,7 @@ The next model request uses the same augmented transcript. After the run, the or
 
 The loop applies explicit bounds before a model call or tool call: `AGENT_MAX_ITERATIONS`, `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_TURN_TOKENS`, and `AGENT_MAX_EMPTY_ROUNDS`. Input and output guards remain direct checks. Spending is recorded after each provider response; a single-tenant budget denial is terminal.
 
-A tool failure, provider failure, cancellation, dependency outage, limit, blocked input, clarification request, or final answer produces one explicit terminal outcome. The loop never creates a hidden fallback or recovery completion. Public SSE is emitted directly as existing `AgentEvent` values: `tool_call`, `tool_result`, `token`, `final`, or `error`; the chat route remains responsible for its terminal `done` frame.
+A tool failure, provider failure, cancellation, dependency outage, limit, blocked input, clarification request, or final answer produces one explicit terminal outcome. The loop never creates a hidden fallback or recovery completion. Public SSE is emitted directly as existing `AgentEvent` values: `tool_call`, `tool_result`, `final`, or `error`; `final` is buffered until the output guard completes, not token streaming. The chat route remains responsible for its terminal `done` frame.
 
 ### Extending the agent safely
 
@@ -456,7 +456,7 @@ Provider resolution changes transport selection only. It does not change the app
 | `AGENT_MAX_TOKENS_THINKING` | `4096` | Provider-specific thinking limit where supported |
 | `ENABLE_THINK` | `true` | Enable provider-specific thinking mode where supported |
 | `LLM_MAX_ATTEMPTS` | `3` | Total physical attempts for one logical model completion; `1` disables retries |
-| `LLM_RETRY_MAX_ELAPSED_SECONDS` | `8.0` | Total monotonic budget for attempts and backoff of one logical completion |
+| `LLM_RETRY_MAX_ELAPSED_SECONDS` | `60.0` | Total monotonic budget for attempts and backoff of one logical completion |
 | `LLM_RETRY_TRANSIENT_BASE_SECONDS` | `0.25` | Full-jitter base delay for temporary transport and upstream failures |
 | `LLM_RETRY_THROTTLED_BASE_SECONDS` | `1.0` | Full-jitter base delay for `429` throttling |
 | `LLM_RETRY_MAX_BACKOFF_SECONDS` | `4.0` | Maximum selected retry delay before deadline clipping |

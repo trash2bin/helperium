@@ -761,17 +761,6 @@ function handleEventChunk(chunk, target) {
   const payload = JSON.parse(line.slice(5).trim());
   sseLog("Event type:", payload.type, payload);
   clearAssistantThinking(target);
-  if (payload.type === "token") {
-    sseLog("Token received:", payload.text?.substring(0, 50));
-    const messages = $("#messages");
-    const shouldStickToBottom = isScrolledNearBottom(messages);
-    if (target.dataset.raw === THINKING_MESSAGE) {
-      target.dataset.raw = "";
-      target.innerHTML = "";
-    }
-    appendAssistantToken(target, payload.text);
-    if (shouldStickToBottom) scrollMessagesToBottom(messages);
-  }
   if (payload.type === "final") {
     sseLog("Final text received:", payload.text?.substring(0, 100));
     const messages = $("#messages");

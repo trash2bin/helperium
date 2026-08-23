@@ -95,11 +95,6 @@ class TestEventPayloadToolResult:
 class TestEventPayloadOther:
     """Other event types are unaffected."""
 
-    def test_token(self):
-        """token event returns correct payload."""
-        result = _event_payload("token", {"data": "hello"})
-        assert result == {"type": "token", "text": "hello"}
-
     def test_final(self):
         """final event returns correct payload."""
         result = _event_payload("final", {"content": "Answer"})

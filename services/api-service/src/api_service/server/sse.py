@@ -32,8 +32,6 @@ def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | No
         logger.info(f"[SERVER] event_type={event_type}, data={str(data)[:200]}")
     else:
         logger.debug(f"[SERVER] event_type={event_type}, data={str(data)[:200]}")
-    if event_type == "token":
-        return {"type": "token", "text": data.get("data")}
     if event_type == "final":
         text = data.get("content") if isinstance(data, dict) else ""
         return {"type": "final", "text": text}

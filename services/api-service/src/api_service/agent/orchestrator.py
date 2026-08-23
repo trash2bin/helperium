@@ -71,20 +71,48 @@ class LLMAgent:
                     provider_priority=provider_priority,
                     _test_llm_client=self._test_llm_client,
                 )
-                history = await self.conversation_manager.aget_history_messages(
-                    session_id
-                )
-                messages = [
-                    {"role": "system", "content": compose_system_prompt(system_prompt)},
-                    *history,
-                    {"role": "user", "content": user_message},
-                ]
-                run = LoopRun(
-                    Transcript(messages=messages, current_turn_start=len(messages) - 1)
-                )
                 async with self.mcp_client.get_session(
                     tenant_ids=list(resolved_tenants)
                 ) as mcp:
+                    schema_message = None
+                    try:
+                        schema_result = await mcp.call_tool("db_map", {})
+                        schema_content = (
+                            schema_result.tool_content if schema_result.ok else ""
+                        )
+                        if schema_content:
+                            # Cap schema size to stay well under token budget.
+                            schema_content = schema_content[:10_000]
+                            schema_message = {
+                                "role": "system",
+                                "content": (
+                                    "Database schema (from db_map, authoritative):\n"
+                                    f"{schema_content}"
+                                ),
+                            }
+                    except Exception:
+                        logger.warning("[AGENT] schema preload failed", exc_info=True)
+
+                    history = await self.conversation_manager.aget_history_messages(
+                        session_id
+                    )
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": compose_system_prompt(system_prompt),
+                        },
+                    ]
+                    if schema_message:
+                        messages.append(schema_message)
+                    messages.extend(history)
+                    messages.append({"role": "user", "content": user_message})
+
+                    run = LoopRun(
+                        Transcript(
+                            messages=messages,
+                            current_turn_start=len(messages) - 1,
+                        )
+                    )
                     loop = AppendOnlyLoop(
                         provider=provider,
                         mcp=mcp,

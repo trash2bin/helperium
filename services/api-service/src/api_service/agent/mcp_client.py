@@ -64,6 +64,7 @@ class ToolResult:
     reminder: str  # System-reminder message for the model
     ok: bool = True
     error: str | None = None
+    error_code: str | None = None
 
 
 @dataclass(slots=True)
@@ -758,18 +759,28 @@ class MCPClient:
 
         if getattr(result, "is_error", False):
             error_text = raw_text or "Unknown error"
+            error_code: str | None = None
+            try:
+                parsed_error = json.loads(error_text)
+            except (json.JSONDecodeError, TypeError):
+                parsed_error = None
+            if isinstance(parsed_error, dict):
+                candidate_code = parsed_error.get("error_code")
+                if isinstance(candidate_code, str) and candidate_code:
+                    error_code = candidate_code
             return ToolResult(
                 tool_content=json.dumps(
-                    {"ok": False, "error": error_text}, ensure_ascii=False
+                    {
+                        "ok": False,
+                        "error": error_text,
+                        "error_code": error_code,
+                    },
+                    ensure_ascii=False,
                 ),
-                reminder=(
-                    f"[TOOL_ERROR] '{name}' FAILED: {error_text[:250]}. "
-                    "You MUST pass a non-empty 'pattern' parameter! "
-                    f"Example: {name}(pattern='your search query'). "
-                    "NEVER call with empty arguments."
-                ),
+                reminder=f"[TOOL_ERROR] '{name}' FAILED.",
                 ok=False,
                 error=error_text,
+                error_code=error_code,
             )
 
         if not raw_text or raw_text in ("null", ""):

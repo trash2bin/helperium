@@ -103,7 +103,6 @@ class TestEventType:
     def test_event_types(self):
         types = get_args(EventType)
         assert "status" in types
-        assert "token" in types
         assert "tool_call" in types
         assert "tool_result" in types
         assert "final" in types

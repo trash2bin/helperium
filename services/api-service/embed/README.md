@@ -90,7 +90,6 @@
   └── POST /api/chat/{agent}  ← SSE endpoint
         Body: { message: "...", session_id: "..." }
         Response: text/event-stream
-          data: {"type":"token","text":"..."}
           data: {"type":"tool_call","name":"find_products"}
           data: {"type":"final","text":"..."}
           data: {"type":"done"}
@@ -111,9 +110,8 @@
 
 | Тип события | Описание |
 |---|---|
-| `token` | Очередной токен ответа. `{ "type":"token", "text":"частичный текст..." }` |
+| `final` | Один проверенный output guard финальный ответ. Это buffered delivery, не token streaming. `{ "type":"final", "text":"полный ответ" }` |
 | `tool_call` | Агент вызвал инструмент. `{ "type":"tool_call", "name":"find_products" }` |
-| `final` | Финальный текст ответа. `{ "type":"final", "text":"полный ответ" }` |
 | `audio` | Голосовой ответ (base64 WAV). `{ "type":"audio", "data":"base64..." }` |
 | `done` | Поток завершён. |
 | `error` | Ошибка. `{ "type":"error", "text":"сообщение ошибки" }` |

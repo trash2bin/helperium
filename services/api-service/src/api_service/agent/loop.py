@@ -7,17 +7,43 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+
+import litellm
+from jsonschema import Draft202012Validator, SchemaError
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from .messages import (
+    CONTEXT_LIMIT,
+    DATA_SERVICE_UNAVAILABLE,
+    EMPTY_RESPONSE,
+    INPUT_BLOCKED,
+    MODEL_CALL_LIMIT,
+    MODEL_UNAVAILABLE,
+    MCP_TOOL_ERROR_NOTICE,
+    REQUEST_CANCELLED,
+    ARGUMENT_VALIDATION_NOTICE,
+    UNKNOWN_TOOL_NOTICE,
+    TOOL_CALL_LIMIT,
+    TOOL_INVALID_ARGUMENTS,
+    TOOL_INVALID_ARGUMENT_TYPE,
+    TOOL_INVOCATION_FAILED,
+    TOOL_REQUIRED_ARGUMENTS,
+    TOOL_UNAVAILABLE,
+)
 from .models import CompletionRequest, CompletionResponse, ToolCall
 from .protocols import LLMProvider, MCPToolSession
 from .types import AgentEvent
 
 
 logger = logging.getLogger("api_service.agent.loop")
+
+_RECOVERABLE_TOOL_ERROR_CODES = frozenset(
+    {"ARGUMENT_VALIDATION_FAILED", "INVALID_RELATION"}
+)
+_DEPENDENCY_UNAVAILABLE_CODE = "DEPENDENCY_UNAVAILABLE"
 
 
 class LoopLimits(BaseModel):
@@ -124,7 +150,7 @@ class AppendOnlyLoop:
                 run,
                 LoopOutcome(
                     kind="input_blocked",
-                    message="Ваше сообщение заблокировано системой безопасности.",
+                    message=INPUT_BLOCKED,
                 ),
             )
             return
@@ -132,11 +158,12 @@ class AppendOnlyLoop:
         try:
             tools = await self._mcp.list_tools()
         except Exception:
+            logger.exception("[AGENT] failed to list tenant-scoped MCP tools")
             yield self._finish(
                 run,
                 LoopOutcome(
                     kind="dependency_unavailable",
-                    message="Сервис данных временно недоступен. Попробуйте ещё раз позже.",
+                    message=DATA_SERVICE_UNAVAILABLE,
                     retryable=True,
                 ),
             )
@@ -145,25 +172,31 @@ class AppendOnlyLoop:
 
         try:
             while True:
-                limit = self._run_limit(run)
+                limit = self._run_limit(run, tools)
                 if limit is not None:
                     yield self._finish(run, limit)
                     return
 
                 run.metrics.model_calls += 1
+                final_answer_only = self._is_final_model_call(run)
                 untrusted_tool_results_in_context = (
                     self._untrusted_tool_results_in_context(run.transcript.messages)
                 )
                 logger.info(
                     "[AGENT] completion security iteration=%d "
-                    "untrusted_tool_results_in_context=%d",
+                    "untrusted_tool_results_in_context=%d final_answer_only=%s",
                     run.metrics.model_calls,
                     untrusted_tool_results_in_context,
+                    final_answer_only,
                 )
+                request_messages = run.transcript.messages
+                request_tools = tools
+                if final_answer_only:
+                    request_tools = []
                 response = await self._provider.complete(
                     CompletionRequest(
-                        messages=run.transcript.messages,
-                        tools=tools,
+                        messages=request_messages,
+                        tools=request_tools,
                         tenant_ids=list(self._tenant_ids),
                     )
                 )
@@ -175,7 +208,7 @@ class AppendOnlyLoop:
                     yield self._finish(run, spending)
                     return
 
-                if response.tool_calls:
+                if response.tool_calls and not final_answer_only:
                     run.transcript.append(
                         _assistant_tool_message(response.tool_calls, response.content)
                     )
@@ -187,10 +220,17 @@ class AppendOnlyLoop:
                         return
                     continue
 
+                if response.tool_calls and final_answer_only:
+                    logger.warning(
+                        "[AGENT] provider returned tool calls during final-only "
+                        "iteration; ignoring %d call(s): %s",
+                        len(response.tool_calls),
+                        ", ".join(call.name for call in response.tool_calls),
+                    )
+
                 if response.content:
                     final_text = self._guard_output(response.content)
                     run.transcript.append({"role": "assistant", "content": final_text})
-                    yield AgentEvent("token", {"data": final_text})
                     yield self._finish(
                         run, LoopOutcome(kind="answer", final_text=final_text)
                     )
@@ -202,20 +242,21 @@ class AppendOnlyLoop:
                         run,
                         LoopOutcome(
                             kind="needs_clarification",
-                            message="Не удалось получить содержательный ответ. Уточните запрос и попробуйте ещё раз.",
+                            message=EMPTY_RESPONSE,
                         ),
                     )
                     return
         except asyncio.CancelledError:
             yield self._finish(
-                run, LoopOutcome(kind="cancelled", message="Запрос отменён.")
+                run, LoopOutcome(kind="cancelled", message=REQUEST_CANCELLED)
             )
         except Exception:
+            logger.exception("[AGENT] completion loop failed")
             yield self._finish(
                 run,
                 LoopOutcome(
                     kind="provider_error",
-                    message="Модель временно недоступна. Попробуйте ещё раз позже.",
+                    message=MODEL_UNAVAILABLE,
                     retryable=True,
                 ),
             )
@@ -232,17 +273,10 @@ class AppendOnlyLoop:
                     run,
                     LoopOutcome(
                         kind="limit_reached",
-                        message="Достигнут лимит вызовов инструментов для этого запроса.",
+                        message=TOOL_CALL_LIMIT,
                     ),
                 )
                 return
-            validation_error = _validate_call(allowed.get(call.name), call.arguments)
-            if validation_error:
-                yield self._finish(
-                    run, LoopOutcome(kind="tool_error", message=validation_error)
-                )
-                return
-
             run.metrics.tool_calls += 1
             self._backlog.tool_call(
                 self._session_id,
@@ -255,16 +289,76 @@ class AppendOnlyLoop:
                 "tool_call",
                 {"id": call.id, "name": call.name, "arguments": call.arguments},
             )
+
+            validation_error = _validate_call(allowed.get(call.name), call.arguments)
+            if validation_error:
+                # The model's native tool call is untrusted input. Do not send an
+                # unknown tool or invalid arguments to MCP, but do give the model
+                # the same tool-result turn it would receive for an MCP-side
+                # validation error so it can correct the call within the loop
+                # limits. Previously this branch terminated the whole turn before
+                # the provider could recover.
+                error_code = _local_tool_error_code(validation_error)
+                content = json.dumps(
+                    {
+                        "ok": False,
+                        "error": validation_error,
+                        "error_code": error_code,
+                    },
+                    ensure_ascii=False,
+                )
+                run.metrics.tool_errors += 1
+                run.transcript.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "content": content,
+                    }
+                )
+                self._backlog.tool_result(
+                    self._session_id,
+                    self._turn_id,
+                    run.metrics.model_calls,
+                    call.name,
+                    content,
+                    duration_ms=0,
+                )
+                yield AgentEvent(
+                    "tool_result",
+                    {
+                        "id": call.id,
+                        "name": call.name,
+                        "result": content,
+                        "isError": True,
+                    },
+                )
+                notice = (
+                    UNKNOWN_TOOL_NOTICE
+                    if error_code == "TOOL_NOT_FOUND"
+                    else ARGUMENT_VALIDATION_NOTICE
+                )
+                run.transcript.append({"role": "system", "content": notice})
+                continue
+
             started = time.monotonic()
+            error_code: str | None = None
             try:
                 raw_result = await self._mcp.call_tool(call.name, call.arguments)
                 content = raw_result.tool_content
                 ok = bool(raw_result.ok)
+                error_code = getattr(raw_result, "error_code", None)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                content = json.dumps({"error": "tool invocation failed"})
+                logger.exception(
+                    "[AGENT] MCP tool invocation failed tool=%s", call.name
+                )
+                content = json.dumps(
+                    {"error_code": "TOOL_INVOCATION_FAILED"}, ensure_ascii=False
+                )
                 ok = False
+                error_code = "TOOL_INVOCATION_FAILED"
 
             run.transcript.append(
                 {
@@ -293,42 +387,83 @@ class AppendOnlyLoop:
             )
             if not ok:
                 run.metrics.tool_errors += 1
-                dependency = _dependency_error(content)
+                if error_code in _RECOVERABLE_TOOL_ERROR_CODES:
+                    run.transcript.append(
+                        {"role": "system", "content": MCP_TOOL_ERROR_NOTICE}
+                    )
+                    continue
+                dependency = error_code == _DEPENDENCY_UNAVAILABLE_CODE
                 yield self._finish(
                     run,
                     LoopOutcome(
                         kind="dependency_unavailable" if dependency else "tool_error",
                         message=(
-                            "Сервис данных временно недоступен. Попробуйте ещё раз позже."
+                            DATA_SERVICE_UNAVAILABLE
                             if dependency
-                            else "Не удалось выполнить запрос к данным."
+                            else TOOL_INVOCATION_FAILED
                         ),
                         retryable=dependency,
                     ),
                 )
                 return
 
-    def _run_limit(self, run: LoopRun) -> LoopOutcome | None:
+    def _run_limit(
+        self, run: LoopRun, tools: list[dict[str, Any]]
+    ) -> LoopOutcome | None:
         if (
             self._limits.max_model_calls > 0
             and run.metrics.model_calls >= self._limits.max_model_calls
         ):
-            return LoopOutcome(
-                kind="limit_reached", message="Достигнут лимит шагов обработки запроса."
-            )
+            return LoopOutcome(kind="limit_reached", message=MODEL_CALL_LIMIT)
         if self._limits.max_context_tokens > 0:
+            estimated_tokens = self._context_token_count(run.transcript.messages, tools)
+            if estimated_tokens >= self._limits.max_context_tokens:
+                return LoopOutcome(
+                    kind="limit_reached",
+                    message=CONTEXT_LIMIT,
+                )
+        return None
+
+    def _is_final_model_call(self, run: LoopRun) -> bool:
+        """Whether this is the last permitted provider call for the turn.
+
+        The boundary call is still counted inside ``max_model_calls``.  It is
+        converted into a text-only request so a tool loop cannot consume the
+        final slot and leave the user with a generic limit error.
+        """
+        return (
+            self._limits.max_model_calls > 0
+            and run.metrics.model_calls == self._limits.max_model_calls
+        )
+
+    def _context_token_count(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> int:
+        """Estimate the full provider request, using LiteLLM before a safe fallback."""
+        try:
+            message_tokens = litellm.token_counter(
+                model=self._provider.model,
+                messages=messages,
+            )
+        except Exception:
+            logger.warning(
+                "[AGENT] LiteLLM token counter unavailable; using character fallback",
+                exc_info=True,
+            )
             transcript = json.dumps(
-                run.transcript.messages,
+                messages,
                 ensure_ascii=False,
                 separators=(",", ":"),
                 default=str,
             )
-            if len(transcript) // 4 >= self._limits.max_context_tokens:
-                return LoopOutcome(
-                    kind="limit_reached",
-                    message="Достигнут лимит контекста для этого запроса.",
-                )
-        return None
+            message_tokens = len(transcript) // 4
+        tool_schema = json.dumps(
+            tools,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+        return int(message_tokens) + len(tool_schema) // 4
 
     def _record_provider_response(
         self,
@@ -434,47 +569,36 @@ def _tool_index(tools: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 def _validate_call(
     tool: dict[str, Any] | None, arguments: dict[str, Any]
 ) -> str | None:
+    """Validate native provider arguments against the advertised JSON Schema."""
     if tool is None:
-        return "Запрошенный инструмент недоступен для этого агента."
+        return TOOL_UNAVAILABLE
     schema = tool.get("function", {}).get("parameters", {})
     if not isinstance(schema, dict):
         return None
-    properties = schema.get("properties", {})
-    if not isinstance(properties, dict):
-        properties = {}
-    required = schema.get("required", [])
-    if isinstance(required, list) and any(name not in arguments for name in required):
-        return "Для инструмента не хватает обязательных аргументов."
-    if schema.get("additionalProperties") is False and set(arguments) - set(properties):
-        return "Инструмент получил недопустимые аргументы."
-    type_checks = {
-        "string": lambda value: isinstance(value, str),
-        "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
-        "number": lambda value: (
-            isinstance(value, (int, float)) and not isinstance(value, bool)
-        ),
-        "boolean": lambda value: isinstance(value, bool),
-        "array": lambda value: isinstance(value, list),
-        "object": lambda value: isinstance(value, dict),
-    }
-    for name, value in arguments.items():
-        definition = properties.get(name)
-        expected = definition.get("type") if isinstance(definition, dict) else None
-        check = type_checks.get(expected) if isinstance(expected, str) else None
-        if check and not check(value):
-            return "Аргумент инструмента имеет недопустимый тип."
-    return None
-
-
-def _dependency_error(content: str) -> bool:
-    lowered = content.lower()
-    return any(
-        marker in lowered
-        for marker in (
-            "dependency unavailable",
-            "database unavailable",
-            "service unavailable",
-            "status 503",
-            '"status":503',
-        )
+    try:
+        validator = Draft202012Validator(schema)
+    except SchemaError:
+        logger.exception("[AGENT] invalid MCP tool JSON Schema")
+        return TOOL_INVALID_ARGUMENTS
+    errors = sorted(
+        validator.iter_errors(arguments), key=lambda error: list(error.path)
     )
+    if not errors:
+        return None
+    error = errors[0]
+    if error.validator == "required":
+        return TOOL_REQUIRED_ARGUMENTS
+    if error.validator == "type":
+        return TOOL_INVALID_ARGUMENT_TYPE
+    return TOOL_INVALID_ARGUMENTS
+
+
+def _local_tool_error_code(message: str) -> str:
+    """Map a pre-dispatch validation failure to the shared recovery taxonomy."""
+    if message == TOOL_UNAVAILABLE:
+        return "TOOL_NOT_FOUND"
+    if message == TOOL_REQUIRED_ARGUMENTS:
+        return "ARGUMENT_VALIDATION_FAILED"
+    if message in {TOOL_INVALID_ARGUMENT_TYPE, TOOL_INVALID_ARGUMENTS}:
+        return "ARGUMENT_VALIDATION_FAILED"
+    return "ARGUMENT_VALIDATION_FAILED"

@@ -56,6 +56,8 @@ class _Session:
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
+        if name == "db_map":
+            return _RawResult('{"entities":[{"name":"product"}],"workflow_hints":[]}')
         return _RawResult('{"items":["Bosch"]}')
 
 
@@ -146,12 +148,19 @@ async def test_orchestrator_uses_one_scoped_append_only_loop(monkeypatch) -> Non
     assert [event.type for event in events] == [
         "tool_call",
         "tool_result",
-        "token",
         "final",
     ]
     assert mcp.tenant_ids == ["tenant-a"]
-    assert mcp.session.calls == [("search", {"query": "Bosch"})]
+    assert mcp.session.calls == [
+        ("db_map", {}),
+        ("search", {"query": "Bosch"}),
+    ]
     assert len(provider.requests) == 2
+    # Schema preload is injected as a system message before the user turn.
+    first_messages = provider.requests[0].messages
+    assert first_messages[0]["role"] == "system"
+    assert first_messages[1]["role"] == "system"
+    assert "Database schema" in first_messages[1]["content"]
     assert [message["role"] for message in conversation.saved[0]] == [
         "user",
         "assistant",
@@ -161,7 +170,7 @@ async def test_orchestrator_uses_one_scoped_append_only_loop(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_records_terminal_loop_error_in_backlog(monkeypatch) -> None:
+async def test_orchestrator_records_recovery_exhaustion_in_backlog(monkeypatch) -> None:
     import api_service.agent.adapters as adapters
     import api_service.agent.orchestrator as orchestrator
 
@@ -186,10 +195,15 @@ async def test_orchestrator_records_terminal_loop_error_in_backlog(monkeypatch) 
         )
     ]
 
-    assert [event.type for event in events] == ["error"]
+    assert [event.type for event in events] == ["tool_call", "tool_result", "error"]
     assert fake_backlog.errors == [
         (
-            ("s", "turn", 1, "Запрошенный инструмент недоступен для этого агента."),
-            {"context": {"outcome": "tool_error", "retryable": False}},
+            (
+                "s",
+                "turn",
+                4,
+                "Не удалось получить содержательный ответ. Уточните запрос и попробуйте ещё раз.",
+            ),
+            {"context": {"outcome": "needs_clarification", "retryable": False}},
         )
     ]

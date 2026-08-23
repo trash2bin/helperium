@@ -100,7 +100,23 @@ class TestBuildToolResult:
         assert "TOOL_ERROR" in tr.reminder
         assert "'find_student'" in tr.reminder
         assert "FAILED" in tr.reminder
-        assert "find_student(pattern='your search query')" in tr.reminder
+
+    def test_error_result_preserves_structured_error_code(self):
+        result = _mock_result(
+            [
+                {
+                    "type": "text",
+                    "text": '{"error_code":"INVALID_RELATION","message":"unknown relation"}',
+                }
+            ],
+            is_error=True,
+        )
+
+        tool_result = MCPClient._build_tool_result("db_related", result)
+
+        assert tool_result.ok is False
+        assert tool_result.error_code == "INVALID_RELATION"
+        assert json.loads(tool_result.tool_content)["error_code"] == "INVALID_RELATION"
 
     def test_error_reminder_uses_actual_tool_name(self):
         """Error reminder example should reference the actual tool name, not a hardcoded one."""
@@ -112,7 +128,6 @@ class TestBuildToolResult:
         assert "TOOL_ERROR" in tr.reminder
         assert "'search_doctors'" in tr.reminder
         # The example in the reminder must use the actual tool name, not 'search_auto_parts'
-        assert "search_doctors(pattern='your search query')" in tr.reminder
         assert "search_auto_parts" not in tr.reminder
 
     def test_empty_result(self):
@@ -333,7 +348,6 @@ class TestCallTool:
         assert "TOOL_ERROR" in tr.reminder
         assert "'get_student'" in tr.reminder
         assert "FAILED" in tr.reminder
-        assert "get_student(pattern='your search query')" in tr.reminder
 
     @pytest.mark.asyncio
     async def test_call_tool_reconnect_on_failure(self, mcp_client: MCPClient):

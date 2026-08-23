@@ -14,7 +14,6 @@ from .models import UsageInfo as _UsageInfoPydantic  # noqa: E402
 # Event types for AgentEvent
 EventType = Literal[
     "status",
-    "token",
     "tool_call",
     "tool_result",
     "final",
@@ -157,12 +156,6 @@ class StatusEventData(TypedDict):
     count: NotRequired[int]
 
 
-class TokenEventData(TypedDict):
-    """Data for token events."""
-
-    data: str
-
-
 class ToolCallEventData(TypedDict):
     """Data for tool_call events."""
 
@@ -200,7 +193,6 @@ class ErrorEventData(TypedDict):
 # Union type for all event data
 AgentEventData = (
     StatusEventData
-    | TokenEventData
     | ToolCallEventData
     | ToolResultEventData
     | FinalEventData
