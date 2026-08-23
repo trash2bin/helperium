@@ -35,6 +35,63 @@ const TenantIDKey contextKey = "x-tenant-id"
 // while structured logs retain the wrapped diagnostic.
 var ErrDataServiceUnavailable = errors.New("data service unavailable")
 
+// DataServiceError preserves the service's status and stable error code across
+// the gateway boundary. Tool handlers can classify the code without parsing an
+// operator-facing message.
+type DataServiceError struct {
+	Endpoint   string
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *DataServiceError) Error() string {
+	return fmt.Sprintf(
+		"data-service endpoint %s returned status %d code %s: %s",
+		e.Endpoint,
+		e.StatusCode,
+		e.Code,
+		e.Message,
+	)
+}
+
+func (e *DataServiceError) Unwrap() error {
+	if e.StatusCode >= http.StatusInternalServerError {
+		return ErrDataServiceUnavailable
+	}
+	return nil
+}
+
+type dataServiceErrorEnvelope struct {
+	Error     string `json:"error"`
+	ErrorCode string `json:"error_code"`
+	Message   string `json:"message"`
+}
+
+func parseDataServiceError(endpoint string, status int, body []byte) error {
+	var envelope dataServiceErrorEnvelope
+	if err := json.Unmarshal(body, &envelope); err == nil {
+		code := envelope.ErrorCode
+		if code == "" {
+			code = envelope.Error
+		}
+		if code != "" {
+			return &DataServiceError{
+				Endpoint:   endpoint,
+				StatusCode: status,
+				Code:       code,
+				Message:    envelope.Message,
+			}
+		}
+	}
+	return &DataServiceError{
+		Endpoint:   endpoint,
+		StatusCode: status,
+		Code:       "data_service_error",
+		Message:    string(body),
+	}
+}
+
 // ── Manifest cache ──
 //
 // FetchConfigWithTenant is called when a Streamable HTTP /mcp tenant scope is initialized.
@@ -339,13 +396,9 @@ func (c *Client) Call(ctx context.Context, endpoint string, params map[string]an
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= http.StatusInternalServerError {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%w: endpoint %s returned status %d: %s", ErrDataServiceUnavailable, endpoint, resp.StatusCode, string(body))
-	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("http: endpoint %s returned status %d: %s", endpoint, resp.StatusCode, string(body))
+		return nil, parseDataServiceError(endpoint, resp.StatusCode, body)
 	}
 
 	var result any

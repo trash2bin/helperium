@@ -342,6 +342,48 @@ func registerOne(mcpServer *server.MCPServer, td toolDef, client *httpclient.Cli
 	mcpServer.AddTool(tool, MakeAuditHandler(name, tenantID, handler))
 }
 
+type toolErrorEnvelope struct {
+	ErrorCode string `json:"error_code"`
+	Message   string `json:"message"`
+}
+
+func structuredToolError(code, message string) *mcp.CallToolResult {
+	payload, err := json.Marshal(toolErrorEnvelope{ErrorCode: code, Message: message})
+	if err != nil {
+		return mcp.NewToolResultError(`{"error_code":"TOOL_INVOCATION_FAILED"}`)
+	}
+	return mcp.NewToolResultError(string(payload))
+}
+
+func dataServiceToolErrorMessage(err error, code string) string {
+	if code == "DEPENDENCY_UNAVAILABLE" {
+		return "tenant data is temporarily unavailable; retry shortly"
+	}
+	var serviceErr *httpclient.DataServiceError
+	if errors.As(err, &serviceErr) && serviceErr.Message != "" {
+		return serviceErr.Message
+	}
+	return "data service request failed"
+}
+
+func dataServiceToolErrorCode(err error) string {
+	var serviceErr *httpclient.DataServiceError
+	if errors.As(err, &serviceErr) {
+		switch serviceErr.Code {
+		case "invalid_relation":
+			return "INVALID_RELATION"
+		case "validation_error":
+			return "ARGUMENT_VALIDATION_FAILED"
+		case "database_unavailable":
+			return "DEPENDENCY_UNAVAILABLE"
+		}
+	}
+	if errors.Is(err, httpclient.ErrDataServiceUnavailable) {
+		return "DEPENDENCY_UNAVAILABLE"
+	}
+	return "TOOL_INVOCATION_FAILED"
+}
+
 // makeHandler creates a handler that delegates to data-service via HTTP.
 // Registry construction binds the resolved tenant to the closure in both
 // single-tenant and composite modes; only MCP discovery names differ.
@@ -359,7 +401,10 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 
 		args, ok := toolArguments(request.Params.Arguments)
 		if !ok {
-			return mcp.NewToolResultError("invalid tool arguments: expected an object"), nil
+			return structuredToolError(
+				"ARGUMENT_VALIDATION_FAILED",
+				"invalid tool arguments: expected an object",
+			), nil
 		}
 
 		slog.Info("Tool call", "tool", td.Name, "tenantID", actualTenantID, "args", args)
@@ -371,7 +416,11 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 			for i, e := range errs {
 				msgs[i] = e.Error()
 			}
-			return mcp.NewToolResultError(fmt.Sprintf("argument validation failed: %s", strings.Join(msgs, "; "))), nil
+			return structuredToolError(
+				"ARGUMENT_VALIDATION_FAILED",
+				fmt.Sprintf("argument validation failed: %s", strings.Join(msgs, "; ")),
+			), nil
+
 		}
 
 		// 5. Inject tenantID into context for httpclient
@@ -380,10 +429,8 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 		result, err := client.Call(ctx, endpoint, args)
 		if err != nil {
 			slog.Error("Data-service call failed", "endpoint", endpoint, "error", err)
-			if errors.Is(err, httpclient.ErrDataServiceUnavailable) {
-				return mcp.NewToolResultError("tenant data is temporarily unavailable; retry shortly"), nil
-			}
-			return mcp.NewToolResultError(fmt.Sprintf("error calling %s: %v", endpoint, err)), nil
+			code := dataServiceToolErrorCode(err)
+			return structuredToolError(code, dataServiceToolErrorMessage(err, code)), nil
 		}
 
 		if result == nil {
@@ -394,7 +441,7 @@ func makeHandler(td toolDef, client *httpclient.Client, tenantID string) server.
 		data, err := json.Marshal(result)
 		if err != nil {
 			slog.Error("Error formatting result", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("error formatting result: %v", err)), nil
+			return structuredToolError("TOOL_INVOCATION_FAILED", fmt.Sprintf("error formatting result: %v", err)), nil
 		}
 
 		resText := truncateResult(string(data), MaxResultSize)
@@ -653,6 +700,16 @@ func validateArgs(args map[string]any, params []config.EndpointParam) []error {
 				val = float64(n)
 			case int64:
 				val = float64(n)
+			case string:
+				// Слабые модели (NIM/Nemotron) шлют числа строками: limit="1".
+				// Это легальный числовой параметр — принимаем, если парсится.
+				// "1.5", " 42 ", "100" → ok; "abc", "1e999" → ошибка.
+				parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("param %q: expected numeric type, got string %q", k, n))
+					continue
+				}
+				val = parsed
 			default:
 				// Non-numeric passed for a numeric param
 				errs = append(errs, fmt.Errorf("param %q: expected numeric type, got %T", k, v))

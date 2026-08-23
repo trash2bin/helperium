@@ -111,6 +111,9 @@ func TestMakeHandler_SanitizesDataServiceOutage(t *testing.T) {
 		t.Fatalf("marshal tool result: %v", err)
 	}
 	text := string(raw)
+	if !strings.Contains(text, `\"error_code\":\"DEPENDENCY_UNAVAILABLE\"`) {
+		t.Errorf("expected stable dependency code, got: %s", text)
+	}
 	if !strings.Contains(text, "tenant data is temporarily unavailable; retry shortly") {
 		t.Errorf("expected stable retryable message, got: %s", text)
 	}
@@ -457,8 +460,27 @@ func TestFieldTypeToParamType(t *testing.T) {
 // validateArgs tests
 // ════════════════════════════════════════════════════════════════
 
-func TestValidateArgs_RejectsNegativeNumbers(t *testing.T) {
+func TestValidateArgs_AcceptsNumericStrings(t *testing.T) {
+	// Слабые модели шлют числа строками (limit="1") — это валидно.
 	params := []config.EndpointParam{
+		{Name: "limit", Type: config.ParamTypeInt},
+	}
+	for _, v := range []any{"1", " 42 ", "100", "1.5"} {
+		args := map[string]any{"limit": v}
+		if errs := validateArgs(args, params); len(errs) != 0 {
+			t.Errorf("validateArgs should accept numeric string %q, got errors: %v", v, errs)
+		}
+	}
+	// Мусор в числовом параметре — отклоняем.
+	for _, v := range []any{"abc", "1e999", ""} {
+		args := map[string]any{"limit": v}
+		if errs := validateArgs(args, params); len(errs) == 0 {
+			t.Errorf("validateArgs should reject garbage numeric string %q, got no errors", v)
+		}
+	}
+}
+
+func TestValidateArgs_RejectsNegativeNumbers(t *testing.T) {	params := []config.EndpointParam{
 		{Name: "limit", Type: config.ParamTypeInt},
 	}
 	args := map[string]any{"limit": -1}
@@ -518,6 +540,29 @@ func TestValidateArgs_IgnoresUnknownArgs(t *testing.T) {
 	errs := validateArgs(args, params)
 	if len(errs) > 0 {
 		t.Errorf("validateArgs should ignore extra params, got errors: %v", errs)
+	}
+}
+
+// db_filter (консолидированный тул на /q/filter) объявляет только entity и limit;
+// динамические field__op параметры (price__lt=2000, status=new) не в схеме, но
+// должны проходить валидацию и уходить в query 1:1 (см. httpclient.Call).
+func TestValidateArgs_DbFilterAcceptsDynamicFieldOps(t *testing.T) {
+	required := true
+	params := []config.EndpointParam{
+		{Name: "entity", Type: config.ParamTypeString, Required: &required},
+		{Name: "limit", Type: config.ParamTypeInt},
+	}
+	args := map[string]any{
+		"entity":     "catalog_product",
+		"price__lt":  2000,
+		"status":     "new",
+		"is active":  true,
+		"brand ID":   "5",
+		"limit":      float64(10),
+	}
+	errs := validateArgs(args, params)
+	if len(errs) > 0 {
+		t.Errorf("db_filter args with dynamic field__op should pass validation, got: %v", errs)
 	}
 }
 
