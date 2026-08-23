@@ -95,13 +95,13 @@ func TestMCPTools_ConstantCount(t *testing.T) {
 		cfg := Generate(schema, &config.Config{
 			DataSource: config.DataSourceConfig{Driver: "sqlite", DSN: "test.db"},
 		})
-		// N filter_* + 5 db_* (без db_filter).
-		expected := n + 5
+		// N filter_* + 6 db_* (db_map/db_describe/db_search/db_filter/db_get/db_related).
+		expected := n + 6
 		if len(cfg.MCPTools) != expected {
-			t.Errorf("N=%d: expected %d MCP tools (N filter_* + 5 db_*), got %d",
+			t.Errorf("N=%d: expected %d MCP tools (N filter_* + 6 db_*), got %d",
 				n, expected, len(cfg.MCPTools))
 		}
-		// Ровно N filter_* и ровно 5 db_* (db_map/db_describe/db_search/db_get/db_related).
+		// Ровно N filter_* и ровно 6 db_* (db_map/db_describe/db_search/db_filter/db_get/db_related).
 		var filterCount, dbCount int
 		for _, tool := range cfg.MCPTools {
 			if strings.HasPrefix(tool.Name, "filter_") {
@@ -114,8 +114,8 @@ func TestMCPTools_ConstantCount(t *testing.T) {
 		if filterCount != n {
 			t.Errorf("N=%d: expected %d filter_* tools, got %d", n, n, filterCount)
 		}
-		if dbCount != 5 {
-			t.Errorf("N=%d: expected 5 db_* tools (no db_filter), got %d", n, dbCount)
+		if dbCount != 6 {
+			t.Errorf("N=%d: expected 6 db_* tools (with db_filter), got %d", n, dbCount)
 		}
 	}
 }
@@ -232,10 +232,7 @@ func TestStrategyToolDescriptions_DomainNeutralAndNoDeletedTools(t *testing.T) {
 				t.Errorf("hint references removed tool prefix %q: %q", forbidden, hint)
 			}
 		}
-		// db_filter (консолидированный) удалён — hints не должны на него ссылаться.
-		if strings.Contains(hint, "db_filter") {
-			t.Errorf("hint references removed consolidated db_filter: %q", hint)
-		}
+		// db_filter — консолидированный тул, hints могут (и должны) на него ссылаться.
 	}
 }
 
@@ -309,19 +306,22 @@ func TestGenerateMCPTools_NoGetByIDCountDistinct(t *testing.T) {
 		}
 	}
 
-	// Консолидированные тулы (Фаза 2): 5 db_* (без db_filter — он деконсолидирован).
+	// Консолидированные тулы (Фаза 2 + db_filter): db_map/db_describe/db_search/
+	// db_filter/db_get/db_related.
 	names := make(map[string]bool)
 	for _, tool := range cfg.MCPTools {
 		names[tool.Name] = true
 	}
-	for _, expected := range []string{"db_map", "db_describe", "db_search", "db_get", "db_related"} {
+	for _, expected := range []string{"db_map", "db_describe", "db_search", "db_filter", "db_get", "db_related"} {
 		if !names[expected] {
 			t.Errorf("expected consolidated tool %q, got %v", expected, names)
 		}
 	}
-	// db_filter НЕ в консолидированных (пер-энтити filter_products вместо него).
-	if names["db_filter"] {
-		t.Errorf("db_filter must NOT be consolidated (filter is per-entity in Phase 2.5)")
+	// db_filter — консолидированный тул на /q/filter (роут существовал всегда,
+	// но без тула модель не имела инструмента фильтрации для конфигов без
+	// strategy=filter). Пер-энтити filter_products — в дополнение.
+	if !names["db_filter"] {
+		t.Errorf("db_filter must be consolidated (filter via /q/filter for configs without filter endpoints)")
 	}
 
 	// filter_products — пер-энтити (имена полей в схеме тула).

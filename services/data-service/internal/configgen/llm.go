@@ -329,6 +329,16 @@ func generateSchemaForLLM(schema *datasource.Schema, cfg *config.Config, compact
 		})
 	}
 
+	// Detect filter tools from endpoints to keep hints in sync with
+	// the actual MCP tool set.
+	hasFilterTools := false
+	for _, ep := range cfg.Endpoints {
+		if ep.Op == config.OpStrategy && ep.Strategy == "filter" {
+			hasFilterTools = true
+			break
+		}
+	}
+
 	// Generate workflow hints
 	hintKey := func(h string) string {
 		return strings.ToLower(strings.TrimSpace(h))
@@ -337,7 +347,11 @@ func generateSchemaForLLM(schema *datasource.Schema, cfg *config.Config, compact
 	// Compact (db_map): один компактный hint вместо трёх длинных.
 	// Модель уже получила полные hints в system prompt (/mcp/schema).
 	if compact {
-		hints = append(hints, "SEARCH-FIRST: search with db_search or filter_<entity> before db_get; never guess ids. Use db_describe to discover valid values.")
+		if hasFilterTools {
+			hints = append(hints, "SEARCH-FIRST: search with db_search, db_filter or filter_<entity> before db_get; never guess ids. Use db_describe to discover valid values.")
+		} else {
+			hints = append(hints, "SEARCH-FIRST: search with db_search or db_filter before db_get or db_related; never guess ids. Use db_describe to discover valid values and field names.")
+		}
 		return &SchemaForLLM{
 			Entities:      entities,
 			WorkflowHints: hints,
@@ -345,26 +359,41 @@ func generateSchemaForLLM(schema *datasource.Schema, cfg *config.Config, compact
 	}
 
 	// Доменно-нейтральные подсказки. Ссылаются на реальные тулы: db_map,
-	// db_describe, db_search, db_get + пер-энтити filter_<entity> (Фаза 2.5 smoke:
-	// filter деконсолидирован, т.к. имена полей нужны модели прямо в схеме тула).
-	// Для filter используем паттерн filter_<entity>, т.к. имя зависит от entity.
+	// db_describe, db_search, db_filter, db_get + пер-энтити filter_<entity>
+	// (когда конфиг tenant'а объявляет strategy=filter). db_filter — консолидированный
+	// тул на /q/filter (всегда доступен); filter_<entity> даёт поля прямо в схеме.
 
 	// 1. Search-first: не перебирать по ID.
-	searchFirst := "SEARCH-FIRST: NEVER guess an id and call db_get on it. Always search first with db_search (text) or filter_<entity> (exact values), then use the id from the result with db_get. Sequential id enumeration (db_get id=1, id=2, ...) is forbidden and wastes quota."
+	var searchFirst string
+	if hasFilterTools {
+		searchFirst = "SEARCH-FIRST: NEVER guess an id and call db_get on it. Always search first with db_search (text), db_filter or filter_<entity> (exact values), then use the id from the result with db_get. Sequential id enumeration (db_get id=1, id=2, ...) is forbidden and wastes quota."
+	} else {
+		searchFirst = "SEARCH-FIRST: NEVER guess an id and call db_get on it. Always search first with db_search (text) or db_filter (exact values/ranges), then use the id from the result with db_get. Sequential id enumeration (db_get id=1, id=2, ...) is forbidden and wastes quota."
+	}
 	if !hintSet[hintKey(searchFirst)] {
 		hints = append(hints, searchFirst)
 		hintSet[hintKey(searchFirst)] = true
 	}
 
-	// 2. Efficient workflow: db_map → filter_<entity>/db_search.
-	efficient := "EFFICIENT WORKFLOW: start with db_map to see the entities. For exact filtering, use filter_<entity> (replace <entity> with the entity name — its schema lists all filterable fields). For text search, use db_search. Use db_describe to see valid values/ranges."
+	// 2. Efficient workflow: db_map → filter/db_search.
+	var efficient string
+	if hasFilterTools {
+		efficient = "EFFICIENT WORKFLOW: start with db_map to see the entities. For exact filtering, use filter_<entity> (replace <entity> with the entity name — its schema lists all filterable fields) or db_filter (field__op operators, e.g. price__lt=2000). For text search, use db_search. Use db_describe to see valid values/ranges."
+	} else {
+		efficient = "EFFICIENT WORKFLOW: start with db_map to see the entities. For exact-value or numeric filtering use db_filter (e.g. entity=catalog_product, price__lt=2000, status=new). For text search, use db_search. Use db_describe to see valid values/ranges and field names."
+	}
 	if !hintSet[hintKey(efficient)] {
 		hints = append(hints, efficient)
 		hintSet[hintKey(efficient)] = true
 	}
 
 	// 3. Self-correction: db_describe as the discovery tool.
-	selfCorrection := "SELF-CORRECTION: if db_search returns empty results, use db_describe on the same entity to discover valid values first. If filter_<entity> returns nothing, check field names (they are listed in the filter tool schema) or values via db_describe. Never call a tool without parameters."
+	var selfCorrection string
+	if hasFilterTools {
+		selfCorrection = "SELF-CORRECTION: if db_search returns empty results, use db_describe on the same entity to discover valid values first. If db_filter or filter_<entity> returns nothing, check field names (they are listed in the filter tool schema) or values via db_describe. Never call a tool without parameters."
+	} else {
+		selfCorrection = "SELF-CORRECTION: if db_search returns empty results, use db_describe on the same entity to discover valid values first. If db_filter returns nothing, check field names in db_map or values via db_describe. Never call a tool without parameters."
+	}
 	if !hintSet[hintKey(selfCorrection)] {
 		hints = append(hints, selfCorrection)
 		hintSet[hintKey(selfCorrection)] = true

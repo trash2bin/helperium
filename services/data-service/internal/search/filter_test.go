@@ -84,6 +84,67 @@ func TestFilterStrategy_ExactMatchNumeric(t *testing.T) {
 	}
 }
 
+// Модель копирует display-имена полей из db_map ("is active", "brand ID")
+// в filter-параметры. ParseRequest должен нормализовать их в snake_case колонки
+// (is_active, brand_id) — иначе "Unknown field, skip" → parse_error.
+func TestFilterStrategy_AcceptsDisplayFieldNames(t *testing.T) {
+	s := NewFilterStrategy("id", "name")
+	entity := config.Entity{
+		Name:     "catalog_product",
+		Table:    "catalog_product",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+			{Name: "is_active", Column: "is_active", Type: config.FieldTypeBool},
+			{Name: "brand_id", Column: "brand_id", Type: config.FieldTypeInt},
+			{Name: "price", Column: "price", Type: config.FieldTypeFloat},
+		},
+	}
+
+	// 1. display-имя bool-поля (db_map показывает "is active")
+	r := makeRequest(map[string]string{"is active": "true"})
+	plan, err := s.ParseRequest(r, entity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest with display name 'is active': %v", err)
+	}
+	sql, _, err := buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: %v", err)
+	}
+	if !strings.Contains(sql, `"is_active"`) {
+		t.Errorf("display name 'is active' should map to is_active column, SQL: %q", sql)
+	}
+
+	// 2. display-имя FK-поля (db_map показывает "brand ID")
+	r = makeRequest(map[string]string{"brand ID": "5"})
+	plan, err = s.ParseRequest(r, entity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest with display name 'brand ID': %v", err)
+	}
+	sql, _, err = buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: %v", err)
+	}
+	if !strings.Contains(sql, `"brand_id"`) {
+		t.Errorf("display name 'brand ID' should map to brand_id column, SQL: %q", sql)
+	}
+
+	// 3. snake_case имена продолжают работать
+	r = makeRequest(map[string]string{"price": "99.99"})
+	plan, err = s.ParseRequest(r, entity, testAdapter{})
+	if err != nil {
+		t.Fatalf("ParseRequest with snake_case 'price': %v", err)
+	}
+	sql, _, err = buildSQL(plan, testAdapter{})
+	if err != nil {
+		t.Fatalf("buildSQL: %v", err)
+	}
+	if !strings.Contains(sql, `"price"`) {
+		t.Errorf("snake_case price should map to price column, SQL: %q", sql)
+	}
+}
+
 func TestFilterStrategy_ComparisonOpGt(t *testing.T) {
 	s := NewFilterStrategy("id", "name")
 	r := makeRequest(map[string]string{"price__gt": "1000"})
@@ -103,6 +164,178 @@ func TestFilterStrategy_ComparisonOpGt(t *testing.T) {
 	}
 	if len(args) != 2 {
 		t.Errorf("Args unexpected: %v", args)
+	}
+}
+
+// Слабая модель не видит поля в JSON-схеме db_filter (там только entity+limit)
+// и упаковывает их в объект: filter='{"category": "electronics"}'. Разворачиваем
+// известные ключи-обёртки (filter/filters/filter_fields) в обычные условия с той
+// же валидацией полей — это данные, не промпт-инжиниринг.
+func TestFilterStrategy_UnwrapsJsonFilterWrapper(t *testing.T) {
+	s := NewFilterStrategy("id", "name")
+
+	tests := []struct {
+		name     string
+		params   map[string]string
+		wantSQL  string
+		wantArgs []any
+	}{
+		{
+			name:     "filter exact",
+			params:   map[string]string{"filter": `{"category": "electronics"}`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "category" = ? LIMIT ?`,
+			wantArgs: []any{"electronics"},
+		},
+		{
+			name:     "filters display-name",
+			params:   map[string]string{"filters": `{"category": "brakes"}`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "category" = ? LIMIT ?`,
+			wantArgs: []any{"brakes"},
+		},
+		{
+			name:     "filter_fields with op",
+			params:   map[string]string{"filter_fields": `{"price__gt": 1000}`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "price" > ? LIMIT ?`,
+			wantArgs: []any{float64(1000)},
+		},
+		{
+			name:     "nested ops object",
+			params:   map[string]string{"filter": `{"price": {"__gt": 1000, "__lt": 5000}}`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "price" > ? AND "price" < ? LIMIT ?`,
+			wantArgs: []any{float64(1000), float64(5000)},
+		},
+		{
+			name:     "in array",
+			params:   map[string]string{"filter": `{"category": ["a", "b"]}`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "category" IN (?, ?) LIMIT ?`,
+			wantArgs: []any{"a", "b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := makeRequest(tt.params)
+			plan, err := s.ParseRequest(r, sampleEntity, testAdapter{})
+			if err != nil {
+				t.Fatalf("ParseRequest: unexpected error: %v", err)
+			}
+			sql, args, err := buildSQL(plan, testAdapter{})
+			if err != nil {
+				t.Fatalf("buildSQL: unexpected error: %v", err)
+			}
+			if sql != tt.wantSQL {
+				t.Errorf("SQL = %q\nwant %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs)+1 {
+				t.Fatalf("args = %v, want %v (+ limit)", args, tt.wantArgs)
+			}
+			for i := range tt.wantArgs {
+				if args[i] != tt.wantArgs[i] {
+					t.Errorf("args[%d] = %v (%T), want %v (%T)", i, args[i], args[i], tt.wantArgs[i], tt.wantArgs[i])
+				}
+			}
+		})
+	}
+}
+
+// Слабая модель иногда шлёт фильтр как JSON-массив условий:
+// filters='[{"field": "category ID", "operator": "=", "value": 90}]'.
+// Разворачиваем в обычные условия с той же валидацией.
+func TestFilterStrategy_UnwrapsJsonArrayWrapper(t *testing.T) {
+	s := NewFilterStrategy("id", "name")
+
+	tests := []struct {
+		name     string
+		params   map[string]string
+		wantSQL  string
+		wantArgs []any
+	}{
+		{
+			name:     "array with = operator",
+			params:   map[string]string{"filters": `[{"field": "category", "operator": "=", "value": 90}]`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "category" = ? LIMIT ?`,
+			wantArgs: []any{float64(90)},
+		},
+		{
+			name:     "array with display-name field",
+			params:   map[string]string{"filters": `[{"field": "price", "operator": ">", "value": 1000}]`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "price" > ? LIMIT ?`,
+			wantArgs: []any{float64(1000)},
+		},
+		{
+			name:     "array with != operator",
+			params:   map[string]string{"filters": `[{"field": "category", "operator": "!=", "value": "x"}]`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "category" <> ? LIMIT ?`,
+			wantArgs: []any{"x"},
+		},
+		{
+			name:     "array with multiple conditions",
+			params:   map[string]string{"filters": `[{"field": "price", "operator": ">", "value": 1000}, {"field": "category", "operator": "=", "value": "brakes"}]`},
+			wantSQL:  `SELECT "id", "name" FROM "products" WHERE "price" > ? AND "category" = ? LIMIT ?`,
+			wantArgs: []any{float64(1000), "brakes"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := makeRequest(tt.params)
+			plan, err := s.ParseRequest(r, sampleEntity, testAdapter{})
+			if err != nil {
+				t.Fatalf("ParseRequest: unexpected error: %v", err)
+			}
+			sql, args, err := buildSQL(plan, testAdapter{})
+			if err != nil {
+				t.Fatalf("buildSQL: unexpected error: %v", err)
+			}
+			if sql != tt.wantSQL {
+				t.Errorf("SQL = %q\nwant %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs)+1 {
+				t.Fatalf("args = %v, want %v (+ limit)", args, tt.wantArgs)
+			}
+			for i := range tt.wantArgs {
+				if args[i] != tt.wantArgs[i] {
+					t.Errorf("args[%d] = %v (%T), want %v (%T)", i, args[i], args[i], tt.wantArgs[i], tt.wantArgs[i])
+				}
+			}
+		})
+	}
+}
+
+// Обёртка с неизвестным полем должна дать ту же ошибку про валидные поля
+// (не проглатывать молча и не строить SQL).
+func TestFilterStrategy_JsonWrapperUnknownField_ReturnsValidFieldsError(t *testing.T) {
+	s := NewFilterStrategy("id", "name")
+	r := makeRequest(map[string]string{"filter": `{"nope_field": 1}`})
+	_, err := s.ParseRequest(r, sampleEntity, testAdapter{})
+	if err == nil {
+		t.Fatal("ParseRequest: expected error for unknown field in wrapper, got nil")
+	}
+	if !strings.Contains(err.Error(), "at least one filter parameter") {
+		t.Errorf("Unexpected error: %v", err)
+	}
+}
+
+// tenant_id внутри обёртки не должен фильтровать (изоляция).
+func TestFilterStrategy_JsonWrapperSkipsTenantID(t *testing.T) {
+	s := NewFilterStrategy("id", "name")
+	entity := config.Entity{
+		Name:     "products",
+		Table:    "products",
+		IDColumn: "id",
+		Fields: []config.EntityField{
+			{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: boolPtr(true)},
+			{Name: "name", Column: "name", Type: config.FieldTypeString},
+			{Name: "tenant_id", Column: "tenant_id", Type: config.FieldTypeString},
+		},
+	}
+	r := makeRequest(map[string]string{"filter": `{"tenant_id": "other-tenant"}`})
+	_, err := s.ParseRequest(r, entity, testAdapter{})
+	if err == nil {
+		t.Fatal("ParseRequest: expected error (tenant_id only, skipped), got nil")
+	}
+	if !strings.Contains(err.Error(), "at least one filter parameter") {
+		t.Errorf("Unexpected error: %v", err)
 	}
 }
 

@@ -77,10 +77,20 @@ func RespondJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// RespondError отправляет стандартную ошибку.
+// ErrorResponse is the stable JSON envelope for runtime handler failures.
+// Error is retained for existing REST clients; ErrorCode is the explicit
+// machine-readable contract consumed by the MCP gateway.
+type ErrorResponse struct {
+	Error     string `json:"error"`
+	ErrorCode string `json:"error_code"`
+	Message   string `json:"message"`
+}
+
+// RespondError sends a backward-compatible error response with a stable code.
 func RespondError(w http.ResponseWriter, status int, code, message string) {
-	RespondJSON(w, status, map[string]string{
-		"error":   code,
-		"message": message,
+	RespondJSON(w, status, ErrorResponse{
+		Error:     code,
+		ErrorCode: code,
+		Message:   message,
 	})
 }

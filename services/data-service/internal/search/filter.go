@@ -1,8 +1,12 @@
 package search
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/trash2bin/helperium/data-service/internal/query"
@@ -224,10 +228,27 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 			continue
 		}
 		fieldMap[f.Name] = f
+		// db_map показывает display-имена полей ("is active", "brand ID"),
+		// а реальные колонки — snake_case (is_active, brand_id). Модель
+		// копирует имя из db_map в filter-параметр, и без этой нормализации
+		// получала "Unknown field, skip" → parse_error. Принимаем оба варианта
+		// (как CanonicalEntityName делает для сущностей).
+		if display := displayColumnName(f.Name); display != f.Name {
+			fieldMap[display] = f
+		}
 	}
 
 	// ── Parse filter conditions ─────────────────────────────────────
 	var conditions []query.Condition
+
+	// Модель иногда упаковывает фильтр в JSON-объект: filter='{"category ID": 19}'
+	// или filters='{"price__gt": 1000}', вместо прямых параметров. Это данные,
+	// а не код: разворачиваем их в обычные условия с той же валидацией полей.
+	unwrapped, err := unwrapFilterObject(q, fieldMap, a)
+	if err != nil {
+		return nil, err
+	}
+	conditions = append(conditions, unwrapped...)
 
 	for key, vals := range q {
 		if len(vals) == 0 || vals[0] == "" {
@@ -378,8 +399,23 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 	}
 
 	// ── Error if no filter conditions: LLM must learn to pass parameters.
+	// Список валидных filterable-полей (display + snake_case) — это данные для
+	// модели, а не промпт-инжиниринг: она видела db_map, но не связывает его
+	// с db_filter. Перечисляем поля, чтобы она могла исправить вызов.
 	if len(conditions) == 0 {
-		return nil, fmt.Errorf("at least one filter parameter is required. Examples: category='brakes', price__gt=1000")
+		valid := make([]string, 0, len(fieldMap))
+		for name := range fieldMap {
+			valid = append(valid, name)
+		}
+		sort.Strings(valid)
+		if len(valid) == 0 {
+			return nil, fmt.Errorf("at least one filter parameter is required, but entity %s has no filterable fields", entity.Name)
+		}
+		return nil, fmt.Errorf(
+			"at least one filter parameter is required. Valid filterable fields for %s: %s. "+
+				"Pass them directly as query parameters (e.g. %s__gt=1000), not wrapped in an object.",
+			entity.Name, strings.Join(valid, ", "), strings.ReplaceAll(valid[0], " ", "_"),
+		)
 	}
 
 	return &query.QueryPlan{
@@ -391,4 +427,237 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 		Order:  parseOrder(q, entity, a),
 		Format: parseFormat(q),
 	}, nil
+}
+
+// displayColumnName делает snake_case колонку читаемой для LLM — зеркалит
+// configgen.shortColumnName (search не может импортировать configgen из-за
+// цикличности). Нужна, чтобы filter принимал display-имена, которые модель
+// копирует из db_map ("is active", "brand ID").
+func displayColumnName(name string) string {
+	result := strings.ReplaceAll(name, "_", " ")
+	if strings.HasSuffix(name, "_id") {
+		result = strings.TrimSuffix(result, " id") + " ID"
+	}
+	return result
+}
+
+// unwrapFilterObject разворачивает JSON-обёртку фильтра, которую LLM-модель
+// иногда присылает вместо прямых query-параметров. Слабые модели не видят
+// поля в JSON-схеме db_filter (там только entity + limit) и упаковывают их в
+// объект: filter='{"category ID": 19}' / filters='{"price__gt": 1000}' /
+// filter_fields='{"is promo": true}'. Принимаем известные ключи-обёртки и
+// превращаем содержимое в обычные условия: ключи валидируются тем же fieldMap
+// (whitelist + display-имена), значения — convertValue, tenant_id и PK
+// исключаются как в основном цикле. Это данные, а не код: никакой SQL из
+// значений не строится, read-only и tenant-изоляция не обходятся.
+func unwrapFilterObject(q url.Values, fieldMap map[string]config.EntityField, a Adapter) ([]query.Condition, error) {
+	var conditions []query.Condition
+
+	for _, wrapKey := range []string{"filter", "filters", "filter_fields"} {
+		vals, ok := q[wrapKey]
+		if !ok || len(vals) == 0 {
+			continue
+		}
+		raw := strings.TrimSpace(vals[0])
+		if raw == "" {
+			continue
+		}
+
+		if strings.HasPrefix(raw, "{") {
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+				continue // мусор — не блокируем, пусть модель увидит valid-fields ошибку
+			}
+			conds, err := conditionsFromObject(obj, fieldMap, a)
+			if err != nil {
+				return nil, err
+			}
+			conditions = append(conditions, conds...)
+		}
+
+		// Слабая модель иногда шлёт массив условий:
+		// filters='[{"field": "category ID", "operator": "=", "value": 90}]'.
+		// Разбираем как список {field, operator, value} записей.
+		if strings.HasPrefix(raw, "[") {
+			var items []map[string]any
+			if err := json.Unmarshal([]byte(raw), &items); err != nil {
+				continue
+			}
+			for _, it := range items {
+				f, fok := it["field"].(string)
+				if !fok {
+					continue
+				}
+				op, _ := it["operator"].(string)
+				switch op {
+				case "", "=", "==":
+					op = "eq"
+				case "!=":
+					op = "neq"
+				case ">":
+					op = "gt"
+				case ">=":
+					op = "gte"
+				case "<":
+					op = "lt"
+				case "<=":
+					op = "lte"
+				}
+				// вложенный объект из одного ключа: {"field": X, "value": 90}
+				conds, err := conditionsFromObject(map[string]any{f + "__" + op: it["value"]}, fieldMap, a)
+				if err != nil {
+					return nil, err
+				}
+				conditions = append(conditions, conds...)
+			}
+		}
+	}
+
+	return conditions, nil
+}
+
+// conditionsFromObject превращает распарсенный JSON-объект фильтра в условия.
+// Поддерживает те же операторы, что основной цикл: {field}, {field__op},
+// {field: {__op: value}} и {field: [v1, v2]} (IN).
+func conditionsFromObject(obj map[string]any, fieldMap map[string]config.EntityField, a Adapter) ([]query.Condition, error) {
+	var conditions []query.Condition
+
+	// Детерминированный порядок: map-итерация в Go случайна, а порядок
+	// условий влияет на SQL/args в тестах и на стабильность планов.
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		val := obj[key]
+		fieldName, op, found := strings.Cut(key, "__")
+		if !found {
+			fieldName = key
+			op = "eq"
+		}
+
+		f, ok := fieldMap[fieldName]
+		if !ok {
+			continue // Unknown field, skip (как в основном цикле)
+		}
+		if f.Column == "tenant_id" {
+			continue
+		}
+		if f.PrimaryKey != nil && *f.PrimaryKey {
+			continue
+		}
+		qName := a.QuoteIdentifier(f.Column)
+
+		switch op {
+		case "eq":
+			// Массив без явного оператора → IN (как основной цикл для __in).
+			if items, ok := val.([]any); ok {
+				values := make([]any, 0, len(items))
+				for _, it := range items {
+					v, err := jsonScalar(it, f.Type)
+					if err != nil {
+						continue
+					}
+					values = append(values, v)
+				}
+				if len(values) > 0 {
+					conditions = append(conditions, query.Condition{Field: qName, Operator: query.OpIn, Values: values})
+				}
+				continue
+			}
+			// Поддержка вложенного объекта: {"price": {"__gt": 1000}} —
+			// рекурсивно разбираем его как {price__gt: 1000}.
+			if nested, ok := val.(map[string]any); ok {
+				nestedObj := make(map[string]any, len(nested))
+				for nk, nv := range nested {
+					nestedObj[fieldName+"__"+strings.TrimPrefix(nk, "__")] = nv
+				}
+				nestedConds, err := conditionsFromObject(nestedObj, fieldMap, a)
+				if err != nil {
+					return nil, err
+				}
+				conditions = append(conditions, nestedConds...)
+				continue
+			}
+			v, err := jsonScalar(val, f.Type)
+			if err != nil {
+				continue
+			}
+			conditions = append(conditions, query.Condition{Field: qName, Operator: query.OpEq, Value: v})
+
+		case "neq":
+			v, err := jsonScalar(val, f.Type)
+			if err != nil {
+				continue
+			}
+			conditions = append(conditions, query.Condition{Field: qName, Operator: query.OpEq, Value: v, Not: true})
+
+		case "gt", "lt", "gte", "lte":
+			v, err := jsonScalar(val, f.Type)
+			if err != nil {
+				continue
+			}
+			c, err := makeComparison(qName, op, f, fmt.Sprint(v))
+			if err != nil {
+				continue
+			}
+			conditions = append(conditions, c)
+
+		case "in":
+			items, ok := val.([]any)
+			if !ok {
+				continue
+			}
+			values := make([]any, 0, len(items))
+			for _, it := range items {
+				v, err := jsonScalar(it, f.Type)
+				if err != nil {
+					continue
+				}
+				values = append(values, v)
+			}
+			if len(values) > 0 {
+				conditions = append(conditions, query.Condition{Field: qName, Operator: query.OpIn, Values: values})
+			}
+
+		default:
+			// Unknown operator, skip.
+		}
+	}
+
+	return conditions, nil
+}
+
+// jsonScalar приводит JSON-значение к типизированному значению поля.
+func jsonScalar(val any, ft config.FieldType) (any, error) {
+	switch ft {
+	case config.FieldTypeInt:
+		if n, ok := val.(float64); ok {
+			return int64(n), nil
+		}
+		if s, ok := val.(string); ok {
+			return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		}
+		return nil, fmt.Errorf("invalid int value: %v", val)
+	case config.FieldTypeFloat:
+		if n, ok := val.(float64); ok {
+			return n, nil
+		}
+		if s, ok := val.(string); ok {
+			return strconv.ParseFloat(strings.TrimSpace(s), 64)
+		}
+		return nil, fmt.Errorf("invalid float value: %v", val)
+	case config.FieldTypeBool:
+		if b, ok := val.(bool); ok {
+			return b, nil
+		}
+		if s, ok := val.(string); ok {
+			return strconv.ParseBool(strings.TrimSpace(s))
+		}
+		return nil, fmt.Errorf("invalid bool value: %v", val)
+	default:
+		return val, nil
+	}
 }

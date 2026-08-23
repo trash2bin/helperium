@@ -23,10 +23,26 @@ import (
 // эмитятся per-entity get_*/count_*/distinct_* (для клиентов, которым нужны).
 // REST-эндпоинты /{entity}/get|count|distinct остаются всегда.
 func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, displayPrefixes []string, customPlurals map[string]string, filterableRules []config.FieldRule, searchableRules []config.FieldRule, policy config.LLMToolPolicy) []config.MCPTool {
-	// Консолидированные тулы (Фаза 2, деконсолидация filter в 2.5-smoke):
-	// db_map/db_describe/db_search/db_get/db_related — через /q/*.
-	// db_filter НЕ существует — фильтрация через пер-энтити filter_{entity}.
-	tools := GenerateConsolidatedMCPTools(displayPrefixes, customPlurals)
+	// Detect whether filter tools will be emitted. Descriptions must match the
+	// actual tool set; stale filter_<entity> references cause TOOL_NOT_FOUND.
+	hasFilterTools := false
+	for _, ep := range endpoints {
+		if ep.Strategy == "filter" && ep.Entity != "" {
+			hasFilterTools = true
+			break
+		}
+	}
+
+	// ── Консолидированные тулы (Фаза 2, деконсолидация filter в 2.5-smoke):
+	// db_map/db_describe/db_search/db_filter/db_get/db_related — через /q/*.
+	// Фаза 2.5 деконсолидировала filter в per-entity filter_{entity}, но это
+	// требовало strategy=filter в конфиге tenant'а. Для конфигов без filter-
+	// endpoints (introspected schema) модель остаётся без инструмента фильтрации:
+	// db_search — текстовый, db_get — по id, db_related — FK. Поэтому db_filter
+	// возвращён как консолидированный тул на /q/filter (роут существовал всегда).
+	// Динамические field__op параметры (price__lt=2000) не объявляются в схеме,
+	// но validateArgs их игнорирует, а httpclient.Call передаёт 1:1 в query.
+	tools := GenerateConsolidatedMCPTools(displayPrefixes, customPlurals, hasFilterTools)
 
 	entityMap := make(map[string]*config.Entity, len(entities))
 	for i := range entities {
@@ -40,6 +56,10 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 	// не может их дать (схема статична). Поэтому filter — пер-энтити:
 	//   filter_{entity} с полями через FilterStrategy.ToolParams() (см. filter.go:86).
 	// Указывает на живой REST-роут /{entity}/filter (tenant-безопасный).
+	// Эмитится ТОЛЬКО если endpoints содержит strategy=filter — иначе схема тула
+	// раздувается (57 параметров catalog_product) и превышает AGENT_MAX_TURN_TOKENS.
+	// Для конфигов без filter-endpoints модель использует консолидированный db_filter
+	// (компактный, поля берёт из db_map).
 	// M3: строим с resolved-правилами (как endpoint_builder.go:190), иначе
 	// ToolParams отдаст дефолтные поля, а не кастомные.
 	for _, ep := range endpoints {
@@ -116,15 +136,29 @@ func GenerateMCPTools(endpoints []config.Endpoint, entities []config.Entity, dis
 // entity — обычный string (не enum): на большой БД enum на сотни значений
 // расдул бы манифест и жрал токены на каждый вызов. Допустимые имена модель
 // узнаёт из db_map, сервер валидирует через EntityResolver (whitelist).
-func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[string]string) []config.MCPTool {
+func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[string]string, hasFilterTools bool) []config.MCPTool {
+	dbMapDesc := "Map of the database: entities, their fields, searchable columns, relations (FK). " +
+		"Call FIRST to learn what entities exist and how to query them. " +
+		"Also shows which fields are searchable (use in db_search)."
+	if hasFilterTools {
+		dbMapDesc += " Filterable fields are listed per entity (use filter_<entity> with exact field names from the entity schema)."
+	}
+	dbMapDesc += " For exact-value or numeric filtering use db_filter on any entity."
+
+	idSource := "db_search"
+	if hasFilterTools {
+		idSource = "db_search or filter_<entity>"
+	}
+	dbGetDesc := "Fetch ONE record by its id. " +
+		"ONLY use with an id you ALREADY obtained from " + idSource + ". " +
+		"NEVER enumerate ids (id=1, id=2, ...) — search or filter first."
+
 	tools := []config.MCPTool{
 		{
 			Name:        "db_map",
 			DisplayName: "Database map",
 			Endpoint:    "/q/map",
-			Description: "Map of the database: entities, their fields, searchable columns, relations (FK). " +
-				"Call FIRST to learn what entities exist and how to query them. " +
-				"Also shows which fields are searchable (use in db_search) and filterable (use in filter_<entity>).",
+			Description: dbMapDesc,
 		},
 		{
 			Name:        "db_describe",
@@ -156,12 +190,44 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 			},
 		},
 		{
+			Name:        "db_filter",
+			DisplayName: "Filter records",
+			Endpoint:    "/q/filter",
+			Description: "Filter records of an entity by field values or numeric ranges. " +
+				"HOW TO CALL: pass field names DIRECTLY as top-level parameters — do NOT wrap them in filter/filters/filter_fields/where objects. " +
+				"Field names come from db_map (both display names like 'brand ID' and snake_case like brand_id work). " +
+				"Every call needs entity plus at least one field parameter. " +
+				"RESULT: every successful response includes total, the authoritative count of matching records — for a count question use total directly (set limit=1).\n" +
+				"\n" +
+				"Operators (append to the field name with __):\n" +
+				"  {field}=value          — exact match (status=new)\n" +
+				"  {field}__gt=value      — greater than (price__gt=3000)\n" +
+				"  {field}__lt=value      — less than (price__lt=2000)\n" +
+				"  {field}__gte=value     — greater than or equal\n" +
+				"  {field}__lte=value     — less than or equal\n" +
+				"  {field}__in=a,b,c      — IN list (status__in=new,delivered)\n" +
+				"  {field}__like=value    — LIKE search (name__like=brake)\n" +
+				"  {field}__gt_field=other — compare numeric fields (old_price__gt_field=price)\n" +
+				"\n" +
+				"Examples:\n" +
+				"  entity=catalog_product, price__lt=2000 (correct)\n" +
+				"  entity=catalog_product, status=new, limit=1 (correct — count question)\n" +
+				"  WRONG: entity=catalog_product, filter={...} — never wrap fields in an object\n" +
+				"\n" +
+				"WHEN: you have an exact value or numeric range (price, status, availability, id from a previous search).\n" +
+				"WHEN NOT: do not guess values — call db_describe first to see valid values.",
+			Params: []config.EndpointParam{
+				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
+				{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: ptrBool(false),
+					Description: "Max results (1-100, default: 10). Use 1 for pure count questions."},
+			},
+		},
+		{
 			Name:        "db_get",
 			DisplayName: "Get by id",
 			Endpoint:    "/q/get",
-			Description: "Fetch ONE record by its id. " +
-				"ONLY use with an id you ALREADY obtained from db_search or filter_<entity>. " +
-				"NEVER enumerate ids (id=1, id=2, ...) — search first.",
+			Description: dbGetDesc,
 			Params: []config.EndpointParam{
 				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
 					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
