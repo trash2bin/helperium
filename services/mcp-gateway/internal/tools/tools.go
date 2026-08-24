@@ -376,6 +376,8 @@ func dataServiceToolErrorCode(err error) string {
 			return "ARGUMENT_VALIDATION_FAILED"
 		case "database_unavailable":
 			return "DEPENDENCY_UNAVAILABLE"
+		case "unknown_entity":
+			return "unknown_entity"
 		}
 	}
 	if errors.Is(err, httpclient.ErrDataServiceUnavailable) {
