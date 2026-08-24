@@ -9,7 +9,7 @@
 3. db_get(entity, id) → OK
 4. db_search(entity, pattern) → OK
 5. db_describe(entity) → OK
-6. filter_{entity}(field__op) → OK (пер-энтити; db_filter НЕ существует)
+6. db_filter(field__op) + filter_{entity}(field__op) → OK (оба тула доступны)
 7. Все db_* тулы имеют required параметры
 8. Long regex в db_search → isError (ReDoS защита)
 9. limit > 100 → isError
@@ -437,20 +437,23 @@ class TestLimitHasMaxBound:
 class TestToolComposition:
     """Фаза 2.5: N filter_* (пер-энтити) + 5 db_* консолидированных."""
 
-    def test_five_db_tools_and_filter_per_entity(self, tenant_context):
-        """5 db_* (без db_filter) + N filter_* (пер-энтити)."""
+    def test_six_db_tools_and_filter_per_entity(self, tenant_context):
+        """6 db_* (db_filter + 5 консолидированных) + N filter_* (пер-энтити)."""
         tid, tools = tenant_context
         db_tools = {t["name"] for t in tools if t["name"].startswith("db_")}
-        expected_db = {"db_map", "db_describe", "db_search", "db_get", "db_related"}
+        expected_db = {
+            "db_map", "db_describe", "db_search", "db_get",
+            "db_related", "db_filter",
+        }
         assert db_tools == expected_db, (
-            f"Ожидались 5 db_* (без db_filter): {sorted(expected_db)}, получили {sorted(db_tools)}"
+            f"Ожидались 6 db_*: {sorted(expected_db)}, получили {sorted(db_tools)}"
         )
         # filter_* — пер-энтити, есть для auto_parts.
         filter_tools = [t["name"] for t in tools if t["name"].startswith("filter_")]
         assert "filter_auto_parts" in filter_tools, (
             f"filter_auto_parts должен быть (пер-энтити filter), got {filter_tools}"
         )
-        print(f"\n  ✅ 5 db_* + N filter_*: {len(filter_tools)} filter tools")
+        print(f"\n  ✅ 6 db_* + N filter_*: {len(filter_tools)} filter tools")
 
     def test_no_per_entity_grep_schema(self, tenant_context):
         """grep_*/schema_* остаются консолидированными (не пер-энтити)."""
@@ -704,9 +707,9 @@ class TestFilterEntity:
         assert result.result.get("isError", False), f"Expected isError for unknown field: {result}"
         print("\n  ✅ filter_auto_parts(unknown_field) → isError")
 
-    def test_no_db_filter_tool(self, tenant_context):
-        """db_filter НЕ существует (только filter_{entity})."""
+    def test_db_filter_tool_exists(self, tenant_context):
+        """db_filter существует как часть db_* консолидированного набора."""
         tid, tools = tenant_context
-        tool_names = [t["name"] for t in tools]
-        assert "db_filter" not in tool_names, f"db_filter не должен существовать: {tool_names}"
-        print("\n  ✅ db_filter отсутствует (только filter_{entity})")
+        tool_names = {t["name"] for t in tools}
+        assert "db_filter" in tool_names, f"db_filter должен существовать: {sorted(tool_names)}"
+        print("\n  ✅ db_filter присутствует в db_* наборе")
