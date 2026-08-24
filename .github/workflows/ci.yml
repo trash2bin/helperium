@@ -28,7 +28,7 @@ jobs:
         run: uv run ruff format --check services/api-service/src/
       - name: Pyright type check
         run: |
-          npm install -g pyright
+          npm install -g pyright@1.1.413
           pyright
       - name: uv audit — dependency vulnerability scan
         # Warn, don't fail: 3 vulns are unfixable (chromadb code injection, torch
