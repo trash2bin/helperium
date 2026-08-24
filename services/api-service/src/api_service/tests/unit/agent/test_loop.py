@@ -395,12 +395,11 @@ async def test_invalid_tool_does_not_reach_mcp_and_allows_recovery_completion() 
     assert mcp.calls == [("search", {"query": "Bosch"})]
     assert len(provider.requests) == 3
     assert '"error_code": "TOOL_NOT_FOUND"' in events[1].data["result"]
-    assert "The requested tool is not available" in provider.requests[1].messages[-1][
-        "content"
-    ]
-    assert "arguments are invalid" not in provider.requests[1].messages[-1][
-        "content"
-    ]
+    assert (
+        "The requested tool is not available"
+        in provider.requests[1].messages[-1]["content"]
+    )
+    assert "arguments are invalid" not in provider.requests[1].messages[-1]["content"]
     assert run.metrics.tool_errors == 1
     assert run.outcome is not None and run.outcome.kind == "answer"
 
@@ -423,13 +422,9 @@ async def test_invalid_tool_arguments_do_not_reach_mcp_and_allow_recovery() -> N
     assert [event.type for event in events] == ["tool_call", "tool_result", "final"]
     assert mcp.calls == []
     assert len(provider.requests) == 2
-    assert '"error_code": "ARGUMENT_VALIDATION_FAILED"' in events[1].data[
-        "result"
-    ]
+    assert '"error_code": "ARGUMENT_VALIDATION_FAILED"' in events[1].data["result"]
     assert "arguments are invalid" in provider.requests[1].messages[-1]["content"]
-    assert "tool is not available" not in provider.requests[1].messages[-1][
-        "content"
-    ]
+    assert "tool is not available" not in provider.requests[1].messages[-1]["content"]
     assert run.outcome is not None and run.outcome.kind == "answer"
 
 

@@ -412,8 +412,8 @@ func (s *FilterStrategy) ParseRequest(r *http.Request, entity config.Entity, a A
 			return nil, fmt.Errorf("at least one filter parameter is required, but entity %s has no filterable fields", entity.Name)
 		}
 		return nil, fmt.Errorf(
-			"at least one filter parameter is required. Valid filterable fields for %s: %s. "+
-				"Pass them directly as query parameters (e.g. %s__gt=1000), not wrapped in an object.",
+			"at least one filter parameter is required; valid filterable fields for %s: %s; "+
+				"pass them directly as query parameters (e.g. %s__gt=1000), not wrapped in an object",
 			entity.Name, strings.Join(valid, ", "), strings.ReplaceAll(valid[0], " ", "_"),
 		)
 	}
