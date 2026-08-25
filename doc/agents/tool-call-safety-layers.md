@@ -78,7 +78,7 @@ The loop builds an immutable allow-list from `mcp_session.list_tools()` before t
 | Provider error | Retryable sanitised provider error |
 | Cancellation | One cancellation error; no recovery completion |
 | Model/tool/context/empty-response limit | One explicit terminal error |
-| Final provider text | Output guard, `token`, then `final` |
+| Final provider text | Output guard, then `final` |
 
 The chat route emits its existing terminal `done` frame after the event stream ends.
 

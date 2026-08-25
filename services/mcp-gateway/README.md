@@ -88,13 +88,16 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 3. **Разрешение**: `Registry.buildTools()` — маппинг endpoint → MCP toolDef
 4. **Вызов**: `makeHandler()` → `client.Call(ctx, endpoint, params)` → data-service → JSON → MCP-результат
 
-## Схема именования инструментов (Фаза 2/2.5 — N filter_* + 5 db_*)
+## Схема именования инструментов
+
+Краткая шпаргалка. Полный список, fallback-логику и `/q/*` диспетчер см. в [services/data-service/README.md#mcp-тулы](services/data-service/README.md#mcp-тулы).
 
 | Op | Имя | Пример |
 |---|---|---|
 | `/q/map` | `db_map` | `db_map` |
 | `/q/describe` | `db_describe` | `db_describe` |
 | `/q/search` | `db_search` | `db_search` |
+| `/q/filter` | `db_filter` | `db_filter` |
 | `/q/get` | `db_get` | `db_get` |
 | `/q/related` | `db_related` | `db_related` |
 | `filter` (strategy) | `filter_{entity}` | `filter_products` |
@@ -104,7 +107,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | `custom_query` | `{query_id}` | `student_grades` |
 
 > **Примечание:** `find` / `list` — REST-эндпоинты для data-service, но **не MCP-тулы**.
-> Фильтрация — пер-энтити `filter_{entity}` (поля в схеме тула); текст/разведка/получение — консолидированные `db_*` через `/q/*` (см. `data-service/README.md`).
+> Фильтрация — пер-энтити `filter_{entity}` (поля в схеме тула) ИЛИ, если нет per-entity filter-эндпоинтов, консолидированный `db_filter` через `/q/filter` (fallback; поля из db_map). Текст/разведка/получение — консолидированные `db_*` через `/q/*` (см. `data-service/README.md`).
 
 Санитизация: `deriveToolName()` удаляет `{` `}` из имён (Mistral reject).
 
@@ -134,7 +137,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | `/docs` | GET | Swagger UI | MCP_API_KEY |
 | `/openapi.json` | GET | OpenAPI spec | MCP_API_KEY |
 
-**Auth:** только явный local development с `MCP_DEV=true` может оставить `MCP_REQUIRE_AUTH=false`. Любой non-development запуск обязан установить `MCP_REQUIRE_AUTH=true` и тот же сильный secret в gateway `MCP_API_KEY` и api-service `MCP_CLIENT_API_KEY`; иначе gateway не стартует. `/health` и `/metrics` всегда открыты.
+**Auth:** только явный local development с `MCP_DEV=true` может оставить `MCP_REQUIRE_AUTH=false`. Любой non-development запуск обязан установить `MCP_REQUIRE_AUTH=true` и тот же сильный secret в gateway `MCP_API_KEY` и api-service `MCP_CLIENT_API_KEY`; gateway не стартует без непустого `MCP_API_KEY`. `/health` и `/metrics` всегда открыты.
 
 ## 📚 Ссылки
 
@@ -185,7 +188,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 MCP_DEV=true DATA_SERVICE_URL=http://127.0.0.1:8084 go run ./cmd/
 ```
 
-`MCP_DEV=true` — единственный explicit local-development opt-out для auth и включает debug log level; ручной SSE playground намеренно удалён вместе с устаревшим transport.
+`MCP_DEV=true` — единственный explicit local-development opt-out для auth и включает debug log level.
 
 ## Запуск
 
@@ -229,5 +232,6 @@ MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
 | 429 Too Many Requests | Исчерпан rate-limit burst для client IP | Ограничить повторные попытки или пересмотреть limits после capacity review |
 | 503 too many active Streamable HTTP tenant scopes | Churn tenant sets заполнил bounded cache | Стабилизировать scopes или оценить безопасное увеличение `MCP_MAX_STREAMABLE_TENANT_SCOPES` |
 
+
 ---
-**Last verified:** 2026-08-20 (commit `0337712`) — `mcp-go v0.58`, единственный Streamable HTTP `/mcp`, required-production auth, Origin allow-list, header-only tenant scope, bounded composite scopes, lifecycle-backed session metrics, session isolation и native Python SDK v2 `initialize`-compatible E2E сверены локально.
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).

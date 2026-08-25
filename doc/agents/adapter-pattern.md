@@ -29,7 +29,7 @@ type DataSource interface {
 ### Как добавить CRM/Nosql/API
 
 1. Реализовать `DataSource` interface в любом пакете
-2. Зарегистрировать в реестре драйверов (`datasource.Registry.Register()`, `registry.go:79-88`) и построить `SQLDataSource` через `query.NewEngine` — фактическая регистрация идёт в `endpoint_builder.go:141-144` (`NewSQLDataSource`), а не через `TenantStore.SetDataSource()` (такого метода в коде нет; `TenantStore` хранит только `datasource.Registry`)
+2. Зарегистрировать в реестре драйверов (`datasource.Registry.Register()`, `registry.go`) и построить `SQLDataSource` через `query.NewEngine` — фактическая регистрация идёт в `endpoint_builder.go` (`NewSQLDataSource`), а не через `TenantStore.SetDataSource()` (такого метода в коде нет; `TenantStore` хранит только `datasource.Registry`).
 3. Всё остальное — не трогать
 
 ```go
@@ -104,11 +104,11 @@ type AdapterSubset interface {
 }
 ```
 
-`QuoteString` экранирует wildcard-символы LIKE: `% → \%`, `_ → \_` (и сам `\` в runtime/adapter.go:26-35).
+`QuoteString` экранирует wildcard-символы LIKE: `% → \%`, `_ → \_` (и сам `\` в runtime/adapter.go).
 Для SQLite/Postgres реализация одинакова. Если твоя СУБД использует другой escape
 (например MySQL — `%%`), переопредели.
 
-> **Важно (SQLite):** `REGEXP` реализован как зарегистрированная UDF через `sqlite.RegisterScalarFunction` (`sqlite_adapter.go:33-63`) — без неё любой `REGEXP`-запрос упадёт. При добавлении нового адаптера учитывай это.
+> **Важно (SQLite):** `REGEXP` реализован как зарегистрированная UDF через `sqlite.RegisterScalarFunction` (`sqlite_adapter.go`) — без неё любой `REGEXP`-запрос упадёт. При добавлении нового адаптера учитывай это.
 > Драйверы: SQLite — `modernc.org/sqlite`, Postgres — `jackc/pgx/v5` stdlib.
 
 ### Шаги для MySQL

@@ -165,7 +165,7 @@ Bridge делает:
 cd api-service/embed
 npm install
 npm run build        # typecheck + esbuild → dist/embed.js + dist/embed.css
-npm run test         # vitest (59 тестов)
+npm run test         # vitest (70 тестов)
 npm run dev          # watch mode
 ```
 
@@ -178,20 +178,19 @@ api-service/embed/
 │   ├── config.ts          # Parse data-* attributes + window.EMBED_CONFIG
 │   ├── types.ts           # All interfaces (WidgetConfig, SSE events, etc.)
 │   ├── dom.ts             # buildWidget() + DOM query helpers
-│   ├── sse.ts             # streamChat() — POST /api/chat SSE
-│   ├── sse-reader.ts      # Shared SSE stream reader
+│   ├── sse.ts             # streamChat() + shared SSE stream reader
 │   ├── voice.ts           # MediaRecorder, voice streaming, audio playback
 │   ├── markdown.ts        # Lightweight markdown → HTML
 │   ├── messages.ts        # addMessage(), restoreHistory()
 │   ├── storage.ts         # sessionStorage + session-aware storage
 │   ├── tools.ts           # Tool strip (makeToolStrip, ensureToolStrip)
 │   ├── typewriter.ts      # Token-by-token rendering
-│   └── icons.ts           # SVG icons (chat, close, send, mic)
+│   ├── icons.ts           # SVG icons (chat, close, send, mic)
 │   └── icons/              # SVG icon files
 │       ├── chat.svg
 │       ├── close.svg
-│       ├── mic.svg
 │       ├── mic-off.svg
+│       ├── mic.svg
 │       └── send.svg
 ├── css/                    # Component CSS files
 │   ├── variables.css      # Design tokens
@@ -207,7 +206,7 @@ api-service/embed/
 ├── dist/                   # Build output
 │   ├── embed.js           # Bundled widget (IIFE, minified, ~44KB)
 │   └── embed.css          # CSS (standalone, ~19KB)
-├── tests/                  # Vitest unit tests (59 tests)
+├── tests/                  # Vitest unit tests (70 tests)
 ├── build.sh               # Concat CSS → esbuild bundle
 ├── package.json            # 0 runtime deps, 3 dev deps
 ├── tsconfig.json           # strict mode
@@ -271,3 +270,11 @@ connect-src https://ваш-сервер.com;
 ```
 
 Виджет **не** использует inline-скрипты, `style-src` не нужен благодаря Shadow DOM.
+
+## Ссылки
+
+- [API contracts](doc/agents/api-contracts.md) — HTTP и SSE контракты виджета
+- [MCP session lifecycle](doc/agents/mcp-session-lifecycle.md) — MCP v2 negotiate
+
+---
+**Last verified:** 2026-08-21 (working tree) — documentation links added.

@@ -25,5 +25,5 @@ Raw-артефакты отдельных прогонов больше не к�
 Новые структурные фиксы, поднявшие па Vancouver с 30% до 83.7%,
 задокументированы в `../core-benchmark.md` и changelog фиксов.
 
-**Last verified:** 2026-08-24 (рабочая ветка e839d6c) —
-plateau 83.7% проверен двумя последними live NIM прогонами.
+---
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).

@@ -13,7 +13,7 @@ It serves as ground truth for cross-service dependency mapping.
 demo-web (:8080)  — Python/FastAPI reverse proxy + static frontend
 api-service (:8081) — Python/FastAPI LLM agent orchestrator
 rag (:8082) — Python/FastAPI RAG pipeline (ChromaDB + embedding)
-mcp-gateway (:8083) — Go/MCP protocol gateway (SSE + JSON-RPC)
+mcp-gateway (:8083) — Go/MCP protocol gateway (Streamable HTTP)
 data-service (:8084) — Go/chi generic CRUD proxy + config generation
 admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 ```

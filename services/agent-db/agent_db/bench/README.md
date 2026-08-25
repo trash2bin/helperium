@@ -27,9 +27,10 @@ agent_db/bench/
 ├── backlog_parser.py      # backlog JSONL → BacklogData (turn_end)
 ├── evaluator.py           # детерминированные проверки (без LLM-судьи)
 ├── report.py              # агрегация метрик + печать + JSON
+├── run_guard.py           # exclusive local lock и evidence layout
 ├── cli.py                 # typer CLI (run + sync-agent-policy)
 ├── agent_policy.py        # versioned autoparts benchmark policy + API synchronizer
-├── __main__.py            # точка входа (дропает "run" для typer-совместимости)
+├── __main__.py            # точка входа (вызывает Typer app из cli.py)
 ├── models.py              # dataclasses (TestCase, RunResult, BacklogData, EvalResult...)
 ├── smoke_scripted.py      # dev-смоук: поднимает api-service со ScriptedLLMProvider
 └── README.md              # этот файл
@@ -139,8 +140,8 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
 | **ERROR** | infra/tool/bench сбой | INFRA_ERROR (error payload/timeout/HTTP), BENCH_ERROR |
 
 `error_source` разделяет источник: `agent` (плохой ответ) vs `tool`/`infra`
-(упал сервис — не вина агента). Раньше `{"error": "timeout"}` считался
-данными (баг) — теперь это INFRA_ERROR.
+(упал сервис — не вина агента). Timeout errors классифицируются как
+`INFRA_ERROR` — не наказывают агента.
 
 ## Метрики
 
@@ -232,24 +233,11 @@ DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell < seed_fixture.py
 7. **`order_number` фильтруется** — `filter_catalog_order({order_number:"АП-100005"})` работает (добавлено в дефолтные filterable-правила).
 8. **Модель** — для прогона нужна без лимита (local ollama или polza/deepseek). Облачные `:cloud` могут иметь сессионный лимит.
 
-### evaluator-фиксы (по рой-аудиту, 2026-08-06)
-
 9. **Bool-значения** (`available: true`) матчатся семантически: «в наличии/доступен» ↔ `True`, «закончился/нет» ↔ `False` (не literal `"true"`). Негативные маркеры проверяются первыми («нет в наличии» больше не матчится как True); слабые маркеры (`да/есть/нет/1/0`) убраны.
 10. **Морфология стран** (`country: Германия`) — предпочтительны явные `country_aliases` из ground truth; fallback — корень слова (≥4 буквы).
 11. **Локальные display aliases** — `value_aliases` задаются только в конкретной fixture и только для ожидаемого key/value (например, `payment.online` → «онлайн», «онлайн-оплата»). Они отвергают явное отрицание и не включают generic fuzzy matching.
 12. **Производные числа** — суммы/произведения подтверждённых данных НЕ галлюцинация: `677×3=2031` (regex), «плюс ещё 5», «итого N». Произвольные произведения всех чисел больше не легализуются (только при арифметическом контексте).
 13. **Discovery-тулы** (`db_map`, `db_describe`) НЕ считаются данными в absence-кейсах — модель зовёт их, получает схему (непусто), но retrieval остаётся пустым.
-14. **Табличные № строк** (1..10 в markdown-таблице) — одиночные цифры, не факты (уже фильтровались; закреплено тестом).
-
-### Фиксы (2026-08)
-
-15. **Error payload ≠ данные** — `{"error": "timeout"}` больше не считается строкой данных (был баг: INFRA_ERROR детектился как retrieval). Теперь → `INFRA_ERROR`, `error_source="tool"`.
-16. **Dedupe в min_count** — retrieval completeness по уникальным сущностям `(entity, id)`/`article`, а не по сырым строкам (20 preview + 9 db_get тех же товаров ≠ 29).
-17. **SKU-проверка** — выдуманный артикул → `HALLUCINATED_SKU` (включается через `check_skus`/`any_of_skus`; SKU из вопроса и арифметического контекста не считаются).
-18. **LOST_TOTAL** — `total:N` в тулах, в ответе vague «много» → `LOST_TOTAL` (PARTIAL, не WRONG).
-19. **FALSE_UNCERTAINTY** — «скорее всего» при подтверждённом факте → `FALSE_UNCERTAINTY` (PARTIAL).
-20. **TOOL_OVERUSE / TOOL_LOOP** — бюджет (`budget.max_*`) и loop_warnings из backlog проброшены в EvalResult.
-
 ## Тесты
 
 ```bash
@@ -259,27 +247,6 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 # derived numbers), backlog parser, report aggregation + percentiles, SSE parsing — без LLM, без сети.
 ```
 
-## Первый реальный baseline (2026-08-12)
-
-Прогон 49 кейсов на живом агенте (polza/deepseek-v4-flash, temp=0, tenant autoparts, seed=42):
-
-| Verdict | Кол-во | Доля |
-|---|---|---|
-| CORRECT | 39 | 80% |
-| PARTIAL | 8 | 16% |
-| WRONG | 2 | 4% |
-| ERROR | 0 | 0% |
-
-- verdict_pass_rate, verdict distribution, retrieval, answer, refusal, entity, hallucination, infra_error и tool_attempt_failure.
-- p50: 30.8k токенов, 23.3s, $0.149/кейс. Итого ~$7.6 за 49 кейсов, ~25-30 мин.
-- Полный отчёт: `reports/baseline-c1d7f81/summary.md`.
-
-**Triage-фиксы evaluator (false positives → 80% CORRECT):** bool-матчинг по ключу (is_available vs is_bestseller=false), убран «возможно» из UNCERTAINTY, LOST_TOTAL ищет total==expected.count (не total из db_map), табличные № строк 1..50, отказ «в базе нет», breakdown-числа с суммой ≤ total.
-
-**Дефекты агента, которые бенч теперь ловит:** галлюцинация цен в таблицах (товары >5000: 6200/7750 без подтверждения), LOST_TOTAL (total известен, но не назван) — 5 кейсов PARTIAL.
-
-**Open issue:** deepseek-v4-flash периодически отдаёт DSML-разметку вместо OpenAI JSON tool_calls; api-service не парсит DSML (проявилось при исчерпанном spending-бюджете).
-
 ## Ограничения / вне скоупа
 
 - Один прогон = один вопрос (no multi-turn).
@@ -287,5 +254,6 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 - JSONB-поиск (car_applicability) — не поддерживается тулами (см. [search-strategies.md](../../../../doc/agents/search-strategies.md)).
 - `final_text` в backlog обрезается до 2000 символов (для полного — SSE или bench-лог).
 
+
 ---
-**Last verified:** 2026-08-16 (рабочая ветка) — `run.errors` теперь детерминированно даёт `ERROR`/`INFRA_ERROR` и входит в `infra_error_rate`; fixture allowances покрывают допустимые stats/describe/filter paths. Generic field-reference contract поддерживает `old_price__gt_field=price` с whitelist/quoting validation. Versioned policy обновлена до `autoparts-benchmark-v2`: literal ID preservation, relation ID from prior result, no internal thinking in final, no schema-absent field inference и field-to-field guidance. Verdict: `CORRECT/PARTIAL/WRONG/ERROR`; таксономия ErrorClass и отчёт verdicts/percentiles/run_metadata сверены с кодом. Новый NIM benchmark не выполнялся.
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — artifact cleanup: removed historical sections, baseline, evaluator-фиксы.

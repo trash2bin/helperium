@@ -157,19 +157,8 @@ cd demo/autoparts-store && DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell
 **id меняются между прогонами** (sequence не сбрасывается), но артикулы/цены/статусы/счётчики стабильны — кейсы используют их, не id.
 ### Целостность fixture (регрессии)
 - `order-count-total-001` допускает `stats`: этот tool возвращает авторитетный total для неотфильтрованного количества заказов.
-- `product-lookup-hit-001` сохранён для истории идентификатора, но вопрос теперь опирается только на стабильный артикул `EXT-01401`; у этой записи label=`none`, поэтому предпосылка о метке «ХИТ» была удалена.
+- `product-lookup-hit-001` опирается на стабильный артикул `EXT-01401`; предпосылка о метке «ХИТ» удалена (label=`none`).
 
-
-## Ревизия кейсов (2026-08-05, независимое ревью)
-
-Ревьюер с fresh context проверил кейсы против живого стека. Исправлено:
-- **oem_number пуст у всех товаров** → `product-filter-oem-001` переписан в `product-search-partial-name-001` (db_search по имени), `product-lookup-oem-001` → `product-lookup-origin-001` (страна происхождения)
-- **supplier пуст** → `product-filter-supplier-001` → `product-filter-combined-001` (колодки Bosch в наличии)
-- **quantity EXT-01367 дрейф** (4→5) → исправлен
-- **дубль** `order-lookup-number-001` (идентичен status-001) → удалён
-- **добавлены**: комбинированный фильтр, db_search по частичному имени; позднее неоднозначные скидочные cases были сохранены как deprecated и заменены двумя явными signals: price discount (`old_price > price` → 72) и marketing label (`label IN ('sale', 'promo')` → 49)
-
-Ground truth сверен с data-service (источник правды): цены 3064/2122/3351, счётчики 74/145/73/60/36/24/32/20/407/30/117/6/3, а для явных discount cases — 72 (price) и 49 (promo/sale label).
 
 ## Логгирование
 
@@ -196,12 +185,9 @@ Ground truth сверен с data-service (источник правды): це�
 - `ERROR` — `INFRA_ERROR` (error payload/timeout/HTTP), `BENCH_ERROR`.
 
 `error_source` отделяет вину агента (`agent`) от сбоя сервиса (`tool`/`infra`).
-Интересный факт: раньше `{"error": "timeout"}` считался данными (баг) — теперь
-это INFRA_ERROR; то же правило действует для request-level timeout, записанного runner в
-`run.errors`. Поэтому дефекты инфраструктуры не наказывают агента и учитываются в
-`infra_error_rate`.
+Timeout errors (`{"error": "timeout"}` или request-level timeout в `run.errors`) классифицируются как `INFRA_ERROR` — не наказывают агента и учитываются в `infra_error_rate`.
 
-**Camry-кейс** (из `incident-camry.md`) теперь разложился бы так:
+**Camry-кейс** (архив: incident-camry, удалён) теперь разложился бы так:
 
 ```text
 TOOL_OVERUSE       # 11 tool_calls, 9 db_get
@@ -223,16 +209,11 @@ verdict = PARTIAL
 ## Связанные документы
 
 - [README.md](README.md) — дизайн бенча (для ревью)
-- [plan-for-review.md](plan-for-review.md) — план и известные gaps логгирования
-- [incident-camry.md](incident-camry.md) — кейс, мотивировавший детерминизм
+- plan-for-review (архив, удалён) — план замещён docs restructure
+- incident-camry (архив, удалён) — кейс, мотивировавший детерминизм
 - [agent_db/bench/README.md](../../services/agent-db/agent_db/bench/README.md) — код, метрики, тесты
 
+
+
 ---
-**Last verified:** 2026-08-24 (рабочая ветка e839d6c) — plateau 83.7%
-подтверждён двумя последовательными live NIM прогонами (711d07ec, 59cd878f)
-на Nemotron-3.5-lightning-30b; seed=42 canonical, `db_filter` + JSON unwrap +
-numeric-string validation + hyphen normalisation активны. Оставшиеся ошибки —
-transliteration AP↔АП, `is_promo` vs `label`, волатильные per-case; устранение
-требует либо дополнительных fixed tool/data схем, либо смены модели.
-Deteministic Go+Python regression tests pass; preflight + exclusive run lock
-в `cli.py`/`run_guard.py` активны.
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — artifact cleanup: removed revision section, Last verified, simplified case descriptions.

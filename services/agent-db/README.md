@@ -7,7 +7,6 @@ Unified CLI + Python seedgen for helperium database materialization, tenant regi
 ```
 agent-db/
 ├── agent_db/
-│   ├── __init__.py              # Package init
 │   ├── cli.py                   # Click entry point: materialize, register, test, bench
 │   ├── core/__init__.py         # Path resolution, shared constants
 │   ├── seedgen/                 # Python seed generator
@@ -18,7 +17,7 @@ agent-db/
 │   │   └── materialize.py      # scenario dir (config.json + seed.json) → populated .db
 │   └── bench/                   # Core Benchmark (детерминированный, без LLM-судьи)
 │       ├── __init__.py
-│       ├── cases/autoparts.json # 48 кейсов (lookup/filter/count/absence/status)
+│       ├── cases/autoparts.json # deterministic benchmark cases (lookup/filter/count/absence/status)
 │       ├── models.py           # TestCase, RunResult, BacklogData, EvalResult, BenchmarkReport
 │       ├── runner.py           # POST /api/chat/{agent} (SSE) + backlog + отдельный bench-лог
 │       ├── backlog_parser.py   # backlog JSONL → BacklogData (turn_end)
@@ -32,7 +31,7 @@ agent-db/
 │       ├── smoke_scripted.py   # dev-смоук без LLM (ScriptedLLMProvider)
 │       └── README.md           # документация бенча
 ├── pyproject.toml
-├── tests/test_bench_core.py   # 26 pytest (детерминированные, без LLM/сети)
+├── tests/test_bench_core.py   # детерминированные pytest (без LLM/сети)
 └── README.md
 ```
 
@@ -176,5 +175,11 @@ curl -H "X-Tenant-ID: mydb" http://127.0.0.1:8084/health
 | DB generation in e2e | `subprocess.run(["go", "run", "./cmd/seed-cli/"])` | `from agent_db.seedgen import materialize` |
 | CLI entry point | `cli.py` (root) | `agent_db/cli.py` |
 | Benchmark | — | `agent_db/bench/` — парсинг, прогон, отчёт |
+
+## Ссылки
+
+- [Testing guide](doc/agents/testing-guide.md) — E2E, pytest и docker compose workflow
+
+
 ---
-**Last verified:** 2026-08-18 (working tree after `3749daa`) — full E2E distinguishes database isolation and composite tenant tools. `test_named_agent_composite_pipeline.py` proves one persisted named-agent composite scope reaches two real prefixed MCP tools and distinct data-service tenant DB results despite hostile request `X-Tenant-ID`; `test_mcp_streamable_http.py` separately verifies the native transport contract. Obsolete SSE-only coverage is removed.
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).

@@ -61,7 +61,7 @@ admin-dashboard/
 │       ├── dist/app.js          — esbuild-бандл (TypeScript → IIFE)
 │       ├── styles.css           — общие стили
 │       ├── admin.css            — админ-специфичные стили
-│       └── i18n.json            — переводы RU/EN (309 ключей)
+│       └── i18n.json            — переводы RU/EN (500 ключей)
 ├── partials/                    — HTML-компоненты (16 файлов)
 │   ├── head.html                — doctype, meta, <link>
 │   ├── login.html               — логин-оверлей
@@ -70,12 +70,12 @@ admin-dashboard/
 │   ├── app-close.html           — закрытие </main> + </div.app>
 │   ├── modals.html              — модальные окна
 │   └── tail.html                — <script> + </body></html>
-├── src/                         — TypeScript (17 файлов)
+├── src/                         — TypeScript (21 файл)
 │   ├── index.ts                 — точка входа, Alpine.start()
 │   ├── types.ts                 — типы
 │   ├── i18n.ts                  — i18n-хелпер
 │   ├── globals.d.ts             — глобальные типы Alpine
-│   ├── core/                    — apiClient, auth, store, eventBus, notify, apiLogger
+│   ├── core/                    — apiClient, apiLogger, eventBus, notify, registry, store
 │   └── domains/                 — 11 доменных модулей
 ├── build.sh                     — сборка (см. ниже)
 ├── tests/                       — Vitest (API, contract, i18n and types)
@@ -131,8 +131,8 @@ cd admin-dashboard && bash build.sh     # 0 errors expected
 
 ## i18n
 
-- Bilingual: русский / английский (309 ключей)
-- Файл: `static/i18n.json`
+- Bilingual: русский / английский (500 ключей)
+- Файл: `internal/server/static/i18n.json`
 - Лоадер: вкомпилирован в TypeScript-бандл (`src/i18n.ts`)
 - Использование: `__('key')` в HTML, `$store.i18n.t('key')` в Alpine
 
@@ -171,5 +171,11 @@ admin-dashboard:
   volumes: [tenant_uploads:/data/tenant-dbs]
 ```
 
+## Ссылки
+
+- [Tenant lifecycle](doc/agents/tenant-lifecycle.md) — onboarding и конфигурация
+- [Operations](doc/agents/operations.md) — мониторинг и эксплуатация
+
+
 ---
-**Last verified:** 2026-08-20 (working tree with acknowledged anti-abuse apply changes) — global policy save/preset rollback, OpenAPI/dashboard contracts and active emergency settings сверены с кодом; full repository CI/live verification marker обновляется после final validation.
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).

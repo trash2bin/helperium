@@ -62,9 +62,11 @@
 ## Запуск
 
 ```bash
-# Из корня проекта
-cd /project/root
-uv run python -m rag.service
+# Из корня проекта (workspace member)
+uv run --package rag python -m rag.service
+
+# Или из директории сервиса
+cd services/rag && uv run python -m rag.service
 
 # Или через Docker
 ./infra/scripts/compose.sh up -d rag
@@ -73,7 +75,7 @@ uv run python -m rag.service
 ## Тестирование
 
 ```bash
-uv run pytest rag/tests/ -v   # 91 тест (unit + integration)
+cd services/rag && uv run pytest tests/ -v   # unit + integration
 ```
 
 ---
@@ -116,3 +118,12 @@ curl -s -X POST http://127.0.0.1:8082/context \
 ### Логи
 - Ручное запуск: stdout/stderr терминала
 - Через `dev.sh`: `.data/logs/rag.log`
+
+## Ссылки
+
+- [Search strategies](doc/agents/search-strategies.md) — grep/filter/schema и MCP-тулы
+- [RAG architecture](../../README.md#core-capabilities) — роль в системе
+
+
+---
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).

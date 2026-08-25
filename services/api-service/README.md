@@ -297,7 +297,6 @@ curl -X POST http://localhost:8081/api/agents \
 | `AGENT_MAX_EMPTY_ROUNDS` | `3` | Макс. пустых раундов thinking |
 | `AGENT_MAX_TURN_TOKENS` | `8000` | Макс. токенов за ход (контекст) |
 | `AGENT_MAX_TOOL_CALLS` | `10` | Макс. вызовов тулов за ход |
-| `AGENT_FALLBACK_MAX_MESSAGES` | `7` | Макс. сообщений в контексте Fallback |
 | `LOG_FORMAT` | `text` | Формат логов: `text` или `json` (structlog) |
 | `LOG_LEVEL` | `info` | Уровень логирования: debug, info, warn, error |
 | `ABUSE_RPS` | `1.0` | Token bucket refill rate (requests/second) |
@@ -323,13 +322,13 @@ curl -X POST http://localhost:8081/api/agents \
 
 `api-service` использует официальный Python SDK `mcp` v2 и подключается только к standard Streamable HTTP gateway endpoint `/mcp`. Прямые public routes `/api/chat` и `/api/chat/voice` всегда используют server-configured demo scope `[DEFAULT_TENANT_ID]` (fallback `default`) и **игнорируют browser `X-Tenant-ID`**. Только named-agent route разрешает один или несколько `tenant_ids` из persisted Agent Store до запуска agent loop; MCP client получает уже готовый authorized scope и передаёт его в gateway только как routing context.
 
-В production необходимо задать один сильный secret одновременно в `MCP_CLIENT_API_KEY` api-service и `MCP_API_KEY` gateway, а в gateway включить `MCP_REQUIRE_AUTH=true`. Не публикуй mcp-gateway без service authentication. Legacy GET-SSE/POST MCP transport намеренно удалён: откат этой migration выполняется git revert/redeploy предыдущего image, а не переключением runtime transport.
+В production задайте один сильный secret одновременно в `MCP_CLIENT_API_KEY` api-service и `MCP_API_KEY` gateway, а в gateway включите `MCP_REQUIRE_AUTH=true`. Legacy GET-SSE/POST JSON-RPC path удалён из runtime; rollback выполняется deploy предыдущего tested image.
 
 ### Контракт api-service → mcp-gateway
 
 | Аспект | Поведение |
 |---|---|
-| Transport | `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` и `Client(transport, mode="legacy")` из SDK v2; application не собирает JSON-RPC и не управляет session IDs вручную. Mode сохраняет standard `initialize` handshake, пока mcp-go не поддерживает auto-mode `server/discover` negotiation. |
+| Transport | `streamable_http_client(MCP_STREAMABLE_HTTP_URL)` и `Client(transport, mode="legacy")` из SDK v2; application не собирает JSON-RPC и не управляет session IDs вручную. `mode="legacy"` фиксирует standard `initialize` handshake до появления auto-mode `server/discover` в mcp-go. |
 | Tenant authority | Direct public chat всегда передаёт `[DEFAULT_TENANT_ID]`; только named-agent route может передать persisted `tenant_ids`. Browser `X-Tenant-ID` не читается API routes |
 | Tenant scope | Resolved `tenant_ids` передаётся на каждое transport request как `X-Tenant-ID`; query parameter не используется и не принимается gateway |
 | Composite agent | Несколько persisted IDs передаются как `tenant-a,tenant-b`; gateway возвращает только prefixed tools (`tenant-a__db_map`) и отклоняет duplicate/oversized scopes |
@@ -394,7 +393,7 @@ system prompt + persisted history + current user
 native tool_calls            final text
         │                        │
 append assistant tool-call       append assistant text
-message to Transcript             output guard → token/final SSE
+message to Transcript             output guard → final SSE
         │
 validate each call against the immutable scoped MCP tool set
         │
@@ -479,5 +478,13 @@ Retries are internal to the physical LiteLLM completion call. They repeat no tra
 | `MCP_HTTP_READ_TIMEOUT` | `1800.0` | Streamable HTTP read timeout |
 | `MCP_SESSION_INIT_TIMEOUT` | `15.0` | MCP session initialization timeout |
 
+## Ссылки
+
+- [MCP session lifecycle](doc/agents/mcp-session-lifecycle.md) — полный lifecycle MCP-сессии
+- [Tool call safety layers](doc/agents/tool-call-safety-layers.md) — safety orchestration
+- [Anti-abuse](doc/agents/anti-abuse.md) — guardrails и rate limiting
+- [Security isolation](doc/agents/security-isolation.md) — tenant isolation
+
+
 ---
-**Last verified:** 2026-08-19 (working tree after append-only Agent Runtime refactor) — focused typed-loop contracts pass, full API suite and isolated Docker E2E are run before commit; native structured tool calls are the only executable provider tool protocol.
+**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).
