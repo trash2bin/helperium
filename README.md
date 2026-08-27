@@ -235,6 +235,11 @@ See [`services/api-service/embed/README.md`](services/api-service/embed/README.m
 
 | Document | Description |
 | -------- | ----------- |
+| [`AGENTS.md`](AGENTS.md) | Technical project passport: architecture, service map, testing, CI |
+| [`doc/FINAL_TASK.md`](doc/FINAL_TASK.md) | Migration plan and readiness criteria for pre-final version |
+| [`doc/RUNBOOK.md`](doc/RUNBOOK.md) | Internal deployment cheat sheet: server setup, widget embedding, monitoring |
+| [`doc/PENTEST-CHEK.md`](doc/PENTEST-CHEK.md) | Security checklist and coverage status per attack vector |
+| [`doc/monitoring.md`](doc/monitoring.md) | Prometheus metrics, Grafana dashboard, tracing (Tempo/Loki/OTel), troubleshooting |
 | [`.env.example`](.env.example) | All environment variables documented |
 
 Service-level READMEs are located in each service directory (`services/data-service/`, `services/mcp-gateway/`, `services/admin-dashboard/`, `services/rag/`, `services/api-service/`, `demo/web/`).

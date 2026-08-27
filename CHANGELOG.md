@@ -8,6 +8,8 @@
 
 - **fix(ci/mcp):** make the Docker test profile self-contained for secure MCP/API credentials and test-only rate limits, with an E2E contract assertion. **Verification:** isolated secure Docker E2E (138 passed) and full `make ci` passed.
 
+- **fix(observability):** secure Prometheus access to protected API metrics and add MCP timeout, quarantine, reconnect and sustained-CPU alerts with a monitoring runbook. **Verification:** full `make ci` passed.
+
 ## 2026-08-21
 
 - **fix(agent/reliability):** added bounded internal retries around one physical LiteLLM completion request, with classified transient failures, full-jitter backoff, `Retry-After`, deadline and cancellation preservation. Retries exhaust before the existing provider fallback and never repeat transcript mutation or MCP tool execution; the policy is process-wide rather than public per-agent configuration. **Verification:** deterministic retry, adapter and fallback regressions, clean Docker E2E (137 passed), and full `make ci` passed.

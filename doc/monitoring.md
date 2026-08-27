@@ -1,47 +1,99 @@
-# 📊 Monitoring & Observability
+# 📊 Мониторинг & Observability Helperium
+
+> Полное руководство. Три уровня observability:
+> 1. **Structured logging** — JSON-логи каждого сервиса (slog / structlog)
+> 2. **Prometheus /metrics** — числовые счётчики и гистограммы
+> 3. **Grafana дашборд** — визуализация метрик (12+ панелей)
+> 4. **Distributed tracing** — OTel → Tempo (+ Loki для логов)
+
+Уровни 2–4 — **опциональны** и не влияют на работу сервисов: они запускаются
+и работают без Prometheus/Grafana. Мониторинг поднимается отдельно.
+
+---
 
 > Единый док по мониторингу (метрики, PromQL, панели Grafana, алерты). Карта доков — в [AGENTS.md](../AGENTS.md) §Карта документации.
 
 ## Быстрый старт
 
 ```bash
-# Открыть Grafana
-open http://localhost:3000
+# 1. Запустить сервисы (нативно)
+./scripts/dev.sh start
+# или целиком через stack.sh (сервисы + инфраструктура)
+./scripts/stack.sh up
 
-# Дашборд «Helperium — Full Monitoring»
-# Логин/пароль: admin / admin
+# 2. Запустить мониторинг
+docker compose --profile monitoring up -d        # Prometheus + Grafana
+docker compose --profile tracing up -d           # otel-collector + Tempo
+docker compose --profile logging up -d           # Loki + Promtail
+# или всё сразу:
+./scripts/stack.sh up
 
-# Prometheus
-open http://localhost:9090
+# 3. Проверить
+./scripts/stack.sh check
+```
 
-# JSON-логи каждого сервиса
-tail -f .data/logs/{data,mcp,api,rag,admin,web}.log
+| Сервис | URL | Логин |
+|---|---|---|
+| Grafana | http://127.0.0.1:3000 | admin / admin |
+| Prometheus | http://127.0.0.1:9090 | — |
+| Tempo (traces) | :3200 HTTP / :4317 gRPC | — |
+| Loki (logs) | :3100 | — |
+| otel-collector | :4318 (OTLP HTTP) | — |
+
+### Остановка
+
+```bash
+docker compose stop prometheus grafana
+# или полностью:
+docker compose down
 ```
 
 ---
 
 ## Архитектура
 
+### Метрики (Prometheus + Grafana)
+
 ```
-┌──────────────────────────────────────────────┐
-│  Grafana (:3000)   ◄──  Prometheus (:9090)   │
-│  дашборд + алерты       │                    │
-└──────────────────────────│────────────────────┘
-                           │ scrape /metrics (15s)
-       ┌───────────────────┼───────────────────┐
-       ▼                   ▼                   ▼
-┌────────────┐   ┌──────────────┐   ┌──────────────┐
-│ data-service│  │ mcp-gateway  │  │ api-service   │
-│ :8084      │   │ :8083        │  │ :8081         │
-├────────────┤   ├──────────────┤   ├──────────────┤
-│ admin-dash │   │ rag-service  │   │ web-proxy    │
-│ :8085      │   │ :8082        │   │ :8080        │
-└────────────┘   └──────────────┘   └──────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                        Docker (colima)                        │
+│                                                               │
+│  ┌──────────────┐      ┌────────────────┐                     │
+│  │  Prometheus  │      │    Grafana     │                     │
+│  │  :9090       │◄─────│  :3000         │                     │
+│  └──────┬───────┘      └────────────────┘                     │
+│         │  scrape via host.docker.internal (15s)              │
+│         ▼                                                     │
+│  ┌────────────────────────────────────────────────────┐       │
+│  │          Нативные сервисы (dev.sh)                 │       │
+│  │  api:8081  mcp:8083  data:8084  admin:8085         │       │
+│  │  rag:8082  web:8080   (каждый на /metrics)         │       │
+│  └────────────────────────────────────────────────────┘       │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Каждый сервис экспортирует Prometheus-метрики на `/metrics`.
-Prometheus собирает их каждые 15 секунд.
-Grafana визуализирует данные с Prometheus-датасорса.
+**Ключевой момент:** Prometheus scraпит сервисы через `host.docker.internal`,
+потому что сервисы запущены **нативно** (вне Docker). Если сервисы тоже
+в Docker — таргеты были бы `data-service:8084` и т.д.
+
+### Tracing (OTel → Tempo) + Logging (Loki)
+
+```
+Python (web, api, rag) ─┐
+                        ├─ OTLP HTTP (4318) → otel-collector (batch 100ms/512)
+Go (data, mcp, admin) ──┘                          │
+                                                   │ OTLP HTTP
+                                                   ▼
+                                              Tempo (:3200) — traces store
+                                                   │
+Логи: .data/logs/*.log ─→ Promtail (:9080) ──→  Loki (:3100) — logs store
+                                                   │
+Дербидж: все три источника ──→ Grafana (:3000)  admin/admin
+```
+
+**Graceful degradation:** если otel-collector не запущен — сервисы работают,
+ошибки логируются как `WARNING`; `OTEL_ENABLED=false` полностью отключает
+OpenTelemetry; отсутствующие пакеты не ломают сервис.
 
 ---
 
@@ -58,7 +110,7 @@ Grafana визуализирует данные с Prometheus-датасорса
 | RAG Service | UP/DOWN | ✅ UP | ❌ DOWN |
 | Web Proxy | ⚠️ панель не привязана к реальной метрике (`vector(0)`; web не скрейпится в prometheus.yml) | — | — |
 
-**При DOWN:** проверить `./scripts/dev.sh status` / `docker ps`. Смотреть `.data/logs/*.log`.
+**При DOWN:** `./scripts/dev.sh status` / `docker ps`, смотреть `.data/logs/*.log`.
 
 ### 📡 Data Service
 
@@ -120,10 +172,10 @@ Grafana визуализирует данные с Prometheus-датасорса
 | Search Error Rate | `rate(rag_searches_total{status="error"}[5m])` | err/s | 0 | >0 |
 
 **Где копать при аномалиях:**
-- **Search долгий** → `rag/pipeline/pipeline.py` (пиплайн), `rag/embedding/` (эмбеддер)
-- **Cache ratio низкий** → частые уникальные запросы, нормально
-- **Import долгий** → `rag/pipeline/pipeline.py` (чанкинг), размер документа
-- **Search errors** → ChromaDB connection, `rag/cache/local.py`
+- Search долгий → `rag/pipeline/pipeline.py`, `rag/embedding/`
+- Cache ratio низкий → частые уникальные запросы, нормально
+- Import долгий → `rag/pipeline/pipeline.py` (чанкинг), размер документа
+- Search errors → ChromaDB connection, `rag/cache/local.py`
 
 ### ⚙️ Admin Dashboard
 
@@ -134,7 +186,7 @@ Grafana визуализирует данные с Prometheus-датасорса
 
 ---
 
-## Метрики — справочник для PromQL
+## Метрики — справочник PromQL
 
 ### data-service (`:8084/metrics`)
 
@@ -163,6 +215,7 @@ Grafana визуализирует данные с Prometheus-датасорса
 | `llm_token_usage_total` | Counter | `type` | Токены (prompt/completion/total) |
 | `llm_cost_total` | Counter | `model, provider, tenant_id` | Стоимость LLM в USD |
 | `abuse_blocked_total` | Counter | `reason` | Блокировки анти-абуза |
+| `embed_widget_requests_total` | Counter | `endpoint` | Запросы к /embed/* |
 | `backlog_records_total` | Counter | `type` | Всего бэклог-задач (turn_start, llm_call, tool_call, tool_result) |
 
 ### rag-service (`:8082/metrics`)
@@ -184,15 +237,81 @@ Grafana визуализирует данные с Prometheus-датасорса
 | Метрика | Тип | Лейблы | Описание |
 |---|---|---|---|
 | `admin_requests_total` | Counter | `path, status` | HTTP-запросы админки |
+| `admin_abuse_config_changes_total` | Counter | `scope` | Изменения anti-abuse конфига |
+
+---
+
+## Tracing: сервисы и идентификация
+
+| Сервис | Язык | Имя в Tempo | OTel endpoint |
+|---|---|---|---|
+| Web | Python | `helperium-demo-web` | `OTEL_EXPORTER_OTLP_ENDPOINT` (default: `http://localhost:4318`) |
+| API | Python | `helperium-api-service` | тот же |
+| RAG | Python | `helperium-rag-service` | тот же |
+| Data | Go | `helperium-data-service` | env `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| MCP | Go | `helperium-mcp-gateway` | env `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| Admin | Go | `helperium-admin-dashboard` | env `OTEL_EXPORTER_OTLP_ENDPOINT` |
+
+### Cross-service trace propagation
+
+**traceparent header** пропагируется автоматически:
+
+- **Python → Python**: `HTTPXClientInstrumentor` в `helperium_sdk.tracing` добавляет `traceparent` на исходящие HTTPX запросы
+- **Python → Go**: Web прокси прокидывает все заголовки через `_get_proxy_headers()` → Go `tracing.Middleware` создаёт child span
+- **Go → Go**: `tracing.Middleware` прокидывает контекст через HTTP-клиент в data-service
+
+**Correlation ID** (`X-Correlation-ID`) остаётся для обратной совместимости.
+
+### Explore (Tempo)
+
+```
+# Найти трейсы по сервису
+Grafana → Explore → Tempo → Search:
+  Service Name: helperium-data-service
+
+# TraceQL запрос напрямую
+{ .service.name = "helperium-mcp-gateway" }
+
+# По trace ID (из логов)
+<trace ID> → Explore → Tempo → вставить в поле
+```
+
+### Explore (Loki)
+
+```
+# Все логи
+{job="native-services"}
+
+# Только ошибки
+{job="native-services"} |= "ERROR"
+
+# По trace ID (автоматический переход в Tempo из лога)
+{job="native-services"} |= "trace_id": "abc
+```
+
+**Derived fields**: в Loki настроен парсинг `"trace_id":"([a-f0-9]{32})"` —
+клик по TraceID в логе открывает трейс в Tempo.
+
+_Примечание:_ `trace_id` инжектится в логи Go (slog) и Python (structlog через
+log_config). Если `trace_id` пустой — `OTEL_ENABLED=false` или запрос без активного span.
+
+---
+
+## Переменные окружения
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `OTEL_ENABLED` | `true` | Отключить tracing (`false`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP HTTP endpoint |
+| `OTEL_SERVICE_NAME` | `helperium-{service_name}` | Имя сервиса в Tempo |
 
 ---
 
 ## Алерты (TODO)
 
-В будущем можно настроить алерты в Grafana Alerting:
+Пример алерта для долгих DB запросов (Grafana Alerting):
 
 ```yaml
-# Пример алерта для долгих DB запросов
 - name: Slow DB Queries
   alert: avg_over_time(rate(data_db_query_duration_ms_sum[5m]) / rate(data_db_query_duration_ms_count[5m])[5m]) > 1000
   for: 5m
@@ -206,21 +325,94 @@ Grafana визуализирует данные с Prometheus-датасорса
 ```mermaid
 flowchart TD
     A[График вырос/упал] --> B{Какой сервис?}
-
     B -->|data-service| C[1. Request Rate / Error Rate]
     B -->|mcp-gateway| D[1. Tool Calls / Streamable HTTP Sessions]
     B -->|api-service| E[1. LLM Calls / Latency]
     B -->|rag-service| F[1. Search Rate / Duration]
-
     C --> G[Смотреть логи .data/logs/data.log]
     D --> H[Смотреть логи .data/logs/mcp.log]
     E --> I[Смотреть логи .data/logs/api.log]
     F --> J[Смотреть логи .data/logs/rag.log]
-
     G --> K[data-service/internal/server/handlers/]
     H --> L[mcp-gateway/cmd/main.go + internal/tools/]
     I --> M[api-service/src/api_service/agent/]
     J --> N[rag/pipeline/ + rag/embedding/]
+```
+
+---
+
+## Диагностика: "No Data" на панели
+
+### Prometheus не видит сервис
+1. http://127.0.0.1:9090/targets — статус (UP / DOWN)
+2. Если DOWN: сервис не запущен или порт другой
+3. Если UP но No Data: метрика никогда не вызывалась
+
+### Метрика не растёт
+```bash
+curl -s http://127.0.0.1:8081/metrics | grep -E '^[a-z]'
+curl -s 'http://127.0.0.1:8084/metrics?tenant=default' | grep data_requests_total
+# В Prometheus: http://127.0.0.1:9090/graph?g0.expr=rate(data_requests_total[1m])
+```
+
+### Панель с No data — это нормально
+- `mcp_sessions_active` — нет активных SSE-сессий
+- `mcp_rate_limit_hits_total` — не было rate-limit хитов
+- `llm_*` — не было LLM-вызовов
+- `abuse_blocked_total` — не было abuse-блокировок
+- `admin_abuse_config_changes_total` — не меняли конфиг
+
+Открой чат и позадавай вопросы — метрики появятся.
+
+### Проверка что трейсы/логи доходят
+
+```bash
+# Tempo
+curl -s 'http://127.0.0.1:3200/api/search?q={}&limit=10'
+# Prometheus targets
+curl -s 'http://127.0.0.1:9090/api/v1/targets'
+# Loki
+curl -s 'http://127.0.0.1:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={job="native-services"}' \
+  --data-urlencode 'limit=5'
+```
+
+---
+
+## Как это редактировать
+
+### Добавить панель в дашборд
+
+1. Открыть `docker/grafana/dashboards/helperium-overview.json`
+2. Добавить объект в массив `panels[]`
+3. `gridPos` — расположение на сетке (12 колонок, каждая строка 8h)
+4. `targets[].expr` — PromQL-запрос
+5. Рестарт: `docker compose restart grafana`
+
+### Добавить новую метрику в сервис
+
+**Go (data-service / mcp-gateway / admin-dashboard):**
+1. Определить в `helperium-go/pkg/metrics/metrics.go`: `prometheus.NewCounterVec(...)`
+2. Зарегистрировать в `RegisterMetrics()`
+3. Вызвать `.WithLabelValues(...).Inc()` / `.Observe()` в нужном месте
+
+**Python (api-service):**
+1. Определить в `api-service/src/api_service/prometheus_metrics.py`
+2. Импортировать и вызывать `.inc()` / `.observe()`
+3. Метрика появится на `/metrics` автоматически
+
+### Поменять Prometheus-конфиг
+
+`docker/prometheus/prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'data-service'
+    metrics_path: '/metrics'
+    params:
+      tenant: ['default']           # data-service требует tenant
+    static_configs:
+      - targets: ['host.docker.internal:8084']
 ```
 
 ---

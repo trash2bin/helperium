@@ -1,0 +1,25 @@
+groups:
+  - name: service-health
+    rules:
+      # Sustained CPU burn is an early signal for the MCP reconnect busy-loop
+      # class. Healthchecks may stay green while an asyncio task is spinning.
+      - alert: ApiServiceIdleCpuBurn
+        expr: rate(process_cpu_seconds_total{job="api-service"}[5m]) > 0.30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "api-service has sustained CPU burn"
+          description: >-
+            api-service uses {{ $value | humanizePercentage }} CPU for two minutes.
+            Check current traffic first, then investigate a likely stuck asyncio task
+            (MCP/SSE reconnection loop) after a dependency drop or recent
+            gateway/data-service restart.
+
+      - alert: ServiceDown
+        expr: up{job=~"api-service|data-service|mcp-gateway|admin-dashboard"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is down"
