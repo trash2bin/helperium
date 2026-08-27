@@ -115,6 +115,10 @@ services:
       - MCP_API_KEY=${MCP_API_KEY:-}
       - MCP_ALLOWED_ORIGINS=${MCP_ALLOWED_ORIGINS:-}
       - MCP_MAX_TENANTS_PER_SCOPE=${MCP_MAX_TENANTS_PER_SCOPE:-8}
+      # Empty values preserve the gateway's safe production defaults (10/20).
+      # compose.sh exports high values only for --profile test.
+      - MCP_RATE_LIMIT_RPS=${MCP_RATE_LIMIT_RPS:-}
+      - MCP_RATE_LIMIT_BURST=${MCP_RATE_LIMIT_BURST:-}
       - OTEL_ENABLED=${OTEL_ENABLED:-false}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
     healthcheck:
@@ -258,8 +262,14 @@ services:
       - DATA_SERVICE_URL=http://data-service:8084
       - MCP_GATEWAY_URL=http://mcp-gateway:8083
       - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
+      - MCP_DEV=${MCP_DEV:-false}
+      - MCP_REQUIRE_AUTH=${MCP_REQUIRE_AUTH:-false}
       - MCP_API_KEY=${MCP_API_KEY:-}
       - MCP_CLIENT_API_KEY=${MCP_CLIENT_API_KEY:-}
+      - MCP_ALLOWED_ORIGINS=${MCP_ALLOWED_ORIGINS:-}
+      - MCP_RATE_LIMIT_RPS=${MCP_RATE_LIMIT_RPS:-}
+      - MCP_RATE_LIMIT_BURST=${MCP_RATE_LIMIT_BURST:-}
+      - API_BEARER_TOKEN=${API_BEARER_TOKEN:-}
       - API_SERVICE_URL=http://api:8081
       - ADMIN_DASHBOARD_URL=http://admin-dashboard:8085
       - DEMO_WEB_URL=http://web:8080

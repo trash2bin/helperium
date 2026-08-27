@@ -71,7 +71,7 @@ make ci-test-embed              # widget tests + build
 make ci-admin                   # admin-dashboard tests
 ```
 
-Полный isolated Docker E2E:
+Полный isolated Docker E2E. `compose.sh --profile test` принудительно заменяет local `.env` на test-only secure MCP/API credentials, explicit MCP Origin policy и повышенные только для E2E rate limits; не передавай production-named secrets вручную. При необходимости используй только `MCP_TEST_*` и `API_TEST_BEARER_TOKEN`.
 
 ```bash
 # ci-state-init is a one-shot permission bootstrap; do not attach it to
