@@ -64,11 +64,13 @@ class _Session:
 class _MCP:
     def __init__(self) -> None:
         self.tenant_ids = None
+        self.disconnect_check = None
         self.session = _Session()
 
     @asynccontextmanager
-    async def get_session(self, tenant_ids):
+    async def get_session(self, tenant_ids, disconnect_check=None):
         self.tenant_ids = tenant_ids
+        self.disconnect_check = disconnect_check
         yield self.session
 
 

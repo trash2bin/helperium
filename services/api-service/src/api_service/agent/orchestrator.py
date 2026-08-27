@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
 from helperium_sdk.settings import settings
@@ -53,6 +53,7 @@ class LLMAgent:
         system_prompt: str | None = None,
         lang: str = "ru",
         correlation_id: str = "",
+        disconnect_check: Callable[[], bool] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         del correlation_id  # kept only for the stable public route signature
         session_id = self.conversation_manager.normalize_session_id(session_id)
@@ -72,7 +73,8 @@ class LLMAgent:
                     _test_llm_client=self._test_llm_client,
                 )
                 async with self.mcp_client.get_session(
-                    tenant_ids=list(resolved_tenants)
+                    tenant_ids=list(resolved_tenants),
+                    disconnect_check=disconnect_check,
                 ) as mcp:
                     schema_message = None
                     try:

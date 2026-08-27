@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 from uuid import uuid4
 
@@ -42,8 +43,62 @@ def _backend_stream_interrupted_message(lang: str) -> str:
     return "The data service connection was interrupted. Please try again."
 
 
+class _DisconnectWatch:
+    """Polls ``request.is_disconnected()`` in the background and latches True.
+
+    StreamingResponse cancels the writer task on client disconnect, but the
+    agent loop needs a cancellation-independent signal: SDK transport blips can
+    surface as CancelledError inside tool calls even though the client is alive,
+    while genuine disconnects may be swallowed by the time the producer checks.
+    The latch is also the discriminator between those two cases.
+    """
+
+    def __init__(self, request: Request) -> None:
+        self._request = request
+        self._event = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+
+    @property
+    def disconnected(self) -> bool:
+        return self._event.is_set()
+
+    def check(self) -> bool:
+        """Zero-arg probe passed down to stream_events/call_tool."""
+        return self._event.is_set()
+
+    async def _watch(self) -> None:
+        try:
+            while not self._event.is_set():
+                if await self._request.is_disconnected():
+                    self._event.set()
+                    return
+                await asyncio.sleep(0.25)
+        except asyncio.CancelledError:
+            # Writer task is being torn down — that itself means the response
+            # is finished; treat as potential disconnect only if cancelled from
+            # outside. Conservative: writer teardown happens on normal finish
+            # too. Do NOT latch here.
+            raise
+
+    def start(self) -> None:
+        if self._task is None:
+            self._task = asyncio.create_task(
+                self._watch(), name=f"sse-disconnect-watch-{id(self):x}"
+            )
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._task
+            self._task = None
+
+
 async def _buffered_agent_sse_events(
-    source: AsyncIterator[Any], lang: str, correlation_id: str
+    source: AsyncIterator[Any],
+    lang: str,
+    correlation_id: str,
+    disconnect_check: Callable[[], bool] | None = None,
 ) -> AsyncIterator[str]:
     """Keep MCP transport cancellation inside a producer task, not the SSE writer.
 
@@ -58,6 +113,11 @@ async def _buffered_agent_sse_events(
     async def produce() -> None:
         try:
             async for event in source:
+                # Bail out early once the client is gone: the agent loop also
+                # checks this between iterations, but a long provider stream
+                # would otherwise keep running until its next await.
+                if disconnect_check is not None and disconnect_check():
+                    return
                 await queue.put(("event", event))
         except asyncio.CancelledError:
             await queue.put(("interrupted", None))
@@ -147,6 +207,8 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
     chat_sessions_total.inc()
     lang = _get_lang(request)
 
+    watcher = _DisconnectWatch(request)
+
     async def events():
         source = get_agent().stream_events(
             message,
@@ -154,10 +216,16 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
             tenant_ids=tenant_ids,
             lang=lang,
             correlation_id=correlation_id,
+            disconnect_check=watcher.check,
         )
-        async for payload in _buffered_agent_sse_events(source, lang, correlation_id):
-            yield payload
-        chat_messages_total.labels(status="sent").inc()
+        try:
+            async for payload in _buffered_agent_sse_events(
+                source, lang, correlation_id, disconnect_check=watcher.check
+            ):
+                yield payload
+            chat_messages_total.labels(status="sent").inc()
+        finally:
+            await watcher.stop()
 
     return StreamingResponse(events(), media_type="text/event-stream")
 
@@ -266,6 +334,8 @@ async def chat_voice_endpoint(
             resolved_llm_config.get("system_prompt") if resolved_llm_config else None
         )
 
+    watcher = _DisconnectWatch(request)
+
     async def events():
         try:
             async for event in get_agent().stream_events(
@@ -277,6 +347,7 @@ async def chat_voice_endpoint(
                 llm_config=resolved_llm_config,
                 provider_priority=provider_priority,
                 correlation_id=correlation_id,
+                disconnect_check=watcher.check,
             ):
                 payload = _event_payload(event.type, event.data)
                 if payload is not None:
@@ -291,6 +362,8 @@ async def chat_voice_endpoint(
                     "correlation_id": correlation_id,
                 }
             )
+        finally:
+            await watcher.stop()
 
     return StreamingResponse(events(), media_type="text/event-stream")
 
@@ -351,6 +424,8 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     chat_sessions_total.inc()
     lang = _get_lang(request)
 
+    watcher = _DisconnectWatch(request)
+
     async def events():
         source = get_agent().stream_events(
             user_message=message,
@@ -361,9 +436,15 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
             llm_config=resolved_llm_config,
             provider_priority=provider_priority,
             correlation_id=correlation_id,
+            disconnect_check=watcher.check,
         )
-        async for payload in _buffered_agent_sse_events(source, lang, correlation_id):
-            yield payload
-        chat_messages_total.labels(status="sent").inc()
+        try:
+            async for payload in _buffered_agent_sse_events(
+                source, lang, correlation_id, disconnect_check=watcher.check
+            ):
+                yield payload
+            chat_messages_total.labels(status="sent").inc()
+        finally:
+            await watcher.stop()
 
     return StreamingResponse(events(), media_type="text/event-stream")

@@ -4,6 +4,8 @@
 
 - **fix(mcp/reliability):** bound persistent Streamable HTTP MCP session ownership, cancellation, hard deadlines and teardown; added breaker/quarantine protections, safe diagnostics and lifecycle regressions. **Verification:** targeted MCP suite (69 passed) and full `make ci` passed.
 
+- **fix(chat/cancellation):** propagate a latched SSE client-disconnect signal through routes, agent orchestration and MCP work so abandoned turns terminate before further provider or tool activity. **Verification:** API route/orchestrator regressions and full `make ci` passed.
+
 ## 2026-08-21
 
 - **fix(agent/reliability):** added bounded internal retries around one physical LiteLLM completion request, with classified transient failures, full-jitter backoff, `Retry-After`, deadline and cancellation preservation. Retries exhaust before the existing provider fallback and never repeat transcript mutation or MCP tool execution; the policy is process-wide rather than public per-agent configuration. **Verification:** deterministic retry, adapter and fallback regressions, clean Docker E2E (137 passed), and full `make ci` passed.

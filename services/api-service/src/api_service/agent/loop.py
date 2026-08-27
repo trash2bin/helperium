@@ -193,6 +193,19 @@ class AppendOnlyLoop:
                 request_tools = tools
                 if final_answer_only:
                     request_tools = []
+                # Stop the turn as soon as the HTTP client that owns it is
+                # gone — do not spend another provider round-trip (thinking
+                # tokens included) for a reader that already left.
+                disconnect_check = getattr(self._mcp, "disconnect_check", None)
+                if callable(disconnect_check) and disconnect_check():
+                    logger.info(
+                        "[AGENT] client disconnected; stopping turn before provider call"
+                    )
+                    yield self._finish(
+                        run,
+                        LoopOutcome(kind="cancelled", message=REQUEST_CANCELLED),
+                    )
+                    return
                 response = await self._provider.complete(
                     CompletionRequest(
                         messages=request_messages,

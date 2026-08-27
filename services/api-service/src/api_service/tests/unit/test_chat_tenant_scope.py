@@ -82,14 +82,14 @@ async def test_direct_chat_ignores_browser_tenant_header(monkeypatch) -> None:
         await _drain(response)
 
     assert response.status_code == 200
-    assert agent.calls == [
-        {
-            "session_id": "direct:scope-direct",
-            "tenant_ids": ["configured-demo-tenant"],
-            "lang": "en",
-            "correlation_id": "tenant-scope-test",
-        }
-    ]
+    assert len(agent.calls) == 1
+    call = agent.calls[0]
+    assert call["session_id"] == "direct:scope-direct"
+    assert call["tenant_ids"] == ["configured-demo-tenant"]
+    assert call["lang"] == "en"
+    assert call["correlation_id"] == "tenant-scope-test"
+    # Route must propagate a client-disconnect probe down to the agent.
+    assert callable(call.get("disconnect_check"))
 
 
 @pytest.mark.asyncio
@@ -155,15 +155,14 @@ async def test_named_agent_uses_persisted_composite_scope_not_request_header() -
 
     assert response.status_code == 200
     assert agent.calls, body.decode()
-    assert agent.calls == [
-        {
-            "user_message": "hello",
-            "session_id": "agent:composite-agent:scope-agent",
-            "tenant_ids": ["tenant-a", "tenant-b"],
-            "system_prompt": None,
-            "lang": "en",
-            "llm_config": None,
-            "provider_priority": None,
-            "correlation_id": "tenant-scope-test",
-        }
-    ]
+    call = agent.calls[0]
+    assert call["user_message"] == "hello"
+    assert call["session_id"] == "agent:composite-agent:scope-agent"
+    assert call["tenant_ids"] == ["tenant-a", "tenant-b"]
+    assert call["system_prompt"] is None
+    assert call["lang"] == "en"
+    assert call["llm_config"] is None
+    assert call["provider_priority"] is None
+    assert call["correlation_id"] == "tenant-scope-test"
+    # Route must propagate a client-disconnect probe down to the agent.
+    assert callable(call.get("disconnect_check"))
