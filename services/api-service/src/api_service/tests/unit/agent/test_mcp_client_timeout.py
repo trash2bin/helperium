@@ -89,6 +89,7 @@ async def test_call_tool_execution_hard_deadline_when_sdk_suppresses_cancellatio
     """A reconnecting transport must not keep an SSE request alive indefinitely."""
     client = MCPClient()
     conn = _make_conn()
+    conn.consecutive_tool_timeouts = 0  # real int for zombie-escalation check
     cancellation_seen = asyncio.Event()
     allow_task_exit = asyncio.Event()
 
@@ -119,10 +120,11 @@ async def test_call_tool_execution_hard_deadline_when_sdk_suppresses_cancellatio
 @pytest.mark.asyncio
 @patch("helperium_sdk.settings.settings.mcp_lock_acquire_timeout", 0.05)
 async def test_list_tools_lock_timeout():
-    """list_tools should raise TimeoutError when lock cannot be acquired.
+    """A lock-phase timeout in list_tools degrades to an empty tool list.
 
-    Unlike call_tool which catches TimeoutError and returns a ToolResult,
-    list_tools re-raises it. Verify the exception propagates.
+    Symmetric with call_tool sanitisation and the cold-handshake path:
+    dependency failures must never leak raw exceptions into the agent loop.
+    Previously the lock timeout re-raised TimeoutError into the loop.
     """
     client = MCPClient()
 
@@ -134,8 +136,8 @@ async def test_list_tools_lock_timeout():
 
     session = await _session_proxy(client)
 
-    with pytest.raises(TimeoutError):
-        await client.list_tools(session)
+    tools = await client.list_tools(session)
+    assert tools == []
 
 
 @pytest.mark.asyncio

@@ -165,6 +165,12 @@ class DemoSettings:
         self.mcp_tool_execution_timeout: float = float(
             os.environ.get("MCP_TOOL_EXECUTION_TIMEOUT", "15.0")
         )
+        self.mcp_close_escalation_timeout: float = float(
+            os.environ.get("MCP_CLOSE_ESCALATION_TIMEOUT", "5.0")
+        )
+        self.mcp_zombie_tool_timeouts: int = int(
+            os.environ.get("MCP_ZOMBIE_TOOL_TIMEOUTS", "2")
+        )
         self.mcp_http_timeout: float = float(os.environ.get("MCP_HTTP_TIMEOUT", "10.0"))
         self.mcp_http_read_timeout: float = float(
             os.environ.get("MCP_HTTP_READ_TIMEOUT", "1800.0")

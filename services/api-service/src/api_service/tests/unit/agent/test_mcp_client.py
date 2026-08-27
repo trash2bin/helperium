@@ -6,13 +6,20 @@ real SSE connections. Follows the same pattern as test_mcp_client_timeout.py.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
+import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from api_service.agent.mcp_client import MCPClient
+from api_service.agent.mcp_client import (
+    MCPClient,
+    _SessionProxy,
+    _TenantConnection,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -27,12 +34,17 @@ def _make_conn() -> MagicMock:
     conn = MagicMock()
     conn.tenant_id = "test-tenant"
     conn.session = AsyncMock()
+    # Locks use acquire()/release() (bounded lock wait is separate from tool
+    # execution), not async-with protocol.
     conn.call_lock = MagicMock()
-    conn.call_lock.__aenter__ = AsyncMock()
-    conn.call_lock.__aexit__ = AsyncMock(return_value=None)
+    conn.call_lock.acquire = AsyncMock(return_value=True)
+    conn.call_lock.release = MagicMock()
     conn.list_lock = MagicMock()
-    conn.list_lock.__aenter__ = AsyncMock()
-    conn.list_lock.__aexit__ = AsyncMock(return_value=None)
+    # Production takes list_lock via acquire()/release() with split budgets
+    # (same pattern as call_lock), not async-with.
+    conn.list_lock.acquire = AsyncMock(return_value=True)
+    conn.list_lock.release = MagicMock()
+    conn.consecutive_tool_timeouts = 0
     return conn
 
 
@@ -139,7 +151,7 @@ class TestBuildToolResult:
             assert "записи нет" in tr.reminder
 
     def test_none_string_result(self):
-        """The literal 'None' string is valid JSON → parsed as null content."""
+        """The literal 'None' string is NOT valid JSON and must survive as raw text."""
         result = _mock_result([{"type": "text", "text": "None"}])
         tr = MCPClient._build_tool_result("find_student", result)
         assert tr.ok is True
@@ -165,8 +177,6 @@ class TestListTools:
     """Tests for MCPClient.list_tools."""
 
     async def _session(self, client: MCPClient):
-        from api_service.agent.mcp_client import _SessionProxy
-
         return _SessionProxy(client, tenant_ids=[])
 
     @pytest.mark.asyncio
@@ -202,10 +212,7 @@ class TestListTools:
         """list_tools should reconnect on first failure and retry."""
         conn = _make_conn()
         conn.session.list_tools = AsyncMock()
-        conn.session.list_tools.side_effect = [
-            Exception("Connection lost"),
-            MagicMock(tools=[_mock_tool("get_student", "Get student info")]),
-        ]
+        conn.session.list_tools.side_effect = Exception("Connection lost")
 
         reconn = _make_conn()
         reconn.session.list_tools = AsyncMock(
@@ -246,8 +253,6 @@ class TestCallTool:
     """Tests for MCPClient.call_tool."""
 
     async def _session(self, client: MCPClient):
-        from api_service.agent.mcp_client import _SessionProxy
-
         return _SessionProxy(client, tenant_ids=[])
 
     @pytest.mark.asyncio
@@ -413,3 +418,317 @@ class TestCallTool:
         tr = await mcp_client.call_tool(session, "greet", {"who": "world"})
 
         assert "plain text response" in tr.tool_content
+
+
+class TestReconnectRace:
+    """_reconnect raced-insert must keep exactly one live connection."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_reconnects_keep_winner_close_loser(
+        self, mcp_client: MCPClient
+    ):
+        conn_old = _make_conn()
+        conn_old.close = AsyncMock()
+        mcp_client._connections["t9"] = conn_old
+
+        conn_a = _make_conn()
+        conn_b = _make_conn()
+        conn_a.tenant_id = "t9"
+        conn_b.tenant_id = "t9"
+        gate = asyncio.Event()
+
+        async def fake_open(_tenant_ids=None):
+            await gate.wait()
+            if not opened:
+                opened.append(conn_a)
+                return conn_a
+            opened.append(conn_b)
+            return conn_b
+
+        opened: list[_TenantConnection | None] = []
+
+        mcp_client._open_connection = AsyncMock(side_effect=fake_open)  # type: ignore[method-assign]
+        close_spy = AsyncMock()
+        mcp_client._close_redundant_connection = AsyncMock(side_effect=close_spy)  # type: ignore[method-assign]
+
+        task_a = asyncio.create_task(mcp_client._reconnect(["t9"]))
+        task_b = asyncio.create_task(mcp_client._reconnect(["t9"]))
+        await asyncio.sleep(0.02)
+        gate.set()
+        results = await asyncio.gather(task_a, task_b, return_exceptions=True)
+
+        stored = mcp_client._connections.get("t9")
+        assert stored is conn_a or stored is conn_b
+        for r in results:
+            assert not isinstance(r, BaseException), f"reconnect raised: {r}"
+        # Loser must be scheduled/awaited for close, never silently dropped.
+        assert mcp_client._close_redundant_connection.await_count >= 1
+
+
+class TestBreakerStore:
+    """Circuit-breaker evidence accumulates even without registry entries."""
+
+    @pytest.mark.asyncio
+    async def test_cold_handshake_failure_accumulates_breaker_state(
+        self, mcp_client: MCPClient
+    ):
+        async def failing_open(_tenant_ids=None):
+            raise ConnectionError("gateway down")
+
+        mcp_client._open_connection = AsyncMock(side_effect=failing_open)  # type: ignore[method-assign]
+        session = _SessionProxy(mcp_client, tenant_ids=["dead-tenant"])
+
+        tr = await mcp_client.call_tool(session, "db_search", {})
+        assert tr.ok is False
+        failures_before = self._store_failures(mcp_client, "dead-tenant")
+        assert failures_before >= 1, "cold failure left no breaker evidence"
+
+        tr2 = await mcp_client.call_tool(session, "db_search", {})
+        assert tr2.ok is False
+        failures_after = self._store_failures(mcp_client, "dead-tenant")
+        assert failures_after == failures_before + 1
+
+    @pytest.mark.asyncio
+    async def test_list_tools_handshake_failure_returns_empty_and_marks(
+        self, mcp_client: MCPClient
+    ):
+        async def failing_open(_tenant_ids=None):
+            raise ConnectionError("gateway down")
+
+        mcp_client._open_connection = AsyncMock(side_effect=failing_open)  # type: ignore[method-assign]
+        session = _SessionProxy(mcp_client, tenant_ids=["dead-tenant"])
+        tools = await mcp_client.list_tools(session)
+        assert tools == []
+        assert self._store_failures(mcp_client, "dead-tenant") >= 1
+
+    @staticmethod
+    def _store_failures(client: MCPClient, key: str) -> int:
+        return client._breaker_state.get(key, (0, 0.0))[0]
+
+
+class TestMCPLogPrivacy:
+    """INFO diagnostics retain operational context without tool payloads."""
+
+    @pytest.mark.asyncio
+    async def test_call_log_exposes_only_argument_count(
+        self, mcp_client: MCPClient, caplog: pytest.LogCaptureFixture
+    ):
+        conn = _make_conn()
+        conn.session.call_tool = AsyncMock(
+            return_value=_mock_result([{"type": "text", "text": "ok"}])
+        )
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+        arguments = {"email": "ivan@example.test", "access_token": "super-secret"}
+
+        caplog.set_level(logging.INFO, logger="api_service.agent.mcp_client")
+        await mcp_client.call_tool(
+            _SessionProxy(mcp_client, tenant_ids=["private-tenant"]),
+            "db_search",
+            arguments,
+        )
+
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if "Calling tool" in record.getMessage()
+        ]
+        assert messages == [
+            "[MCP] Calling tool db_search for tenants=['private-tenant'] (argument_count=2)"
+        ]
+        assert "email" not in messages[0]
+        assert "ivan@example.test" not in messages[0]
+        assert "access_token" not in messages[0]
+        assert "super-secret" not in messages[0]
+
+    def test_result_log_exposes_length_but_not_content(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        raw_result = "customer email=ivan@example.test token=super-secret"
+
+        caplog.set_level(logging.INFO, logger="api_service.agent.mcp_client")
+        MCPClient._build_tool_result(
+            "db_search", _mock_result([{"type": "text", "text": raw_result}])
+        )
+
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if "_build_tool_result" in record.getMessage()
+        ]
+        assert messages == [
+            "[MCP] _build_tool_result for db_search: is_error=False, result_length=51"
+        ]
+        assert raw_result not in messages[0]
+        assert "ivan@example.test" not in messages[0]
+        assert "super-secret" not in messages[0]
+
+
+class TestMCPCallTimeoutContract:
+    """Production callers must not swallow a caller-owned cancellation."""
+
+    def test_production_callers_do_not_wrap_mcp_call_in_deadline(self):
+        """RED for direct nesting or a simple local alias in one function.
+
+        MCPClient translates an SDK transport cancellation into a retryable tool
+        result when the browser is still connected. An outer deadline would use
+        the same cancellation mechanism and could therefore be swallowed. The
+        public callers must leave all MCP deadline enforcement to MCPClient.
+
+        This deliberately catches only direct nesting and ``x = call_tool()`` /
+        ``await wait_for(x)`` (or ``await x`` under ``asyncio.timeout``) in the
+        same function. It does not perform inter-function, ``asyncio.gather``,
+        closure, object-attribute, or intentionally obfuscated data-flow analysis.
+        """
+        source_root = Path(__file__).resolve().parents[4] / "api_service"
+        violations: list[str] = []
+
+        for path in source_root.rglob("*.py"):
+            if path.name == "mcp_client.py" or "tests" in path.parts:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for function in ast.walk(tree):
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                violations.extend(self._deadline_violations(path, function))
+
+        assert not violations, (
+            "MCP public call is wrapped in an external deadline. "
+            "Move deadline enforcement into MCPClient instead: " + "; ".join(violations)
+        )
+
+    @classmethod
+    def _deadline_violations(
+        cls, path: Path, function: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> list[str]:
+        nodes = list(cls._function_scope_nodes(function))
+        parents = {
+            child: parent
+            for parent in [function, *nodes]
+            for child in ast.iter_child_nodes(parent)
+            if child in nodes
+        }
+        aliases = cls._mcp_call_aliases(nodes)
+        violations: list[str] = []
+
+        for node in nodes:
+            if cls._is_mcp_call(node):
+                violations.extend(cls._direct_deadline_violations(path, node, parents))
+            if cls._is_wait_for(node):
+                violations.extend(cls._wait_for_alias_violations(path, node, aliases))
+            if isinstance(node, ast.AsyncWith) and cls._is_timeout_context(node):
+                violations.extend(cls._timeout_alias_violations(path, node, aliases))
+
+        return violations
+
+    @staticmethod
+    def _function_scope_nodes(
+        function: ast.FunctionDef | ast.AsyncFunctionDef,
+    ):
+        """Yield nodes in one function, deliberately excluding nested scopes."""
+
+        def walk(node: ast.AST):
+            for child in ast.iter_child_nodes(node):
+                if isinstance(
+                    child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+                ):
+                    continue
+                yield child
+                yield from walk(child)
+
+        yield from walk(function)
+
+    @classmethod
+    def _direct_deadline_violations(
+        cls, path: Path, node: ast.Call, parents: dict[ast.AST, ast.AST]
+    ) -> list[str]:
+        violations: list[str] = []
+        ancestor = parents.get(node)
+        while ancestor is not None and not isinstance(
+            ancestor, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+        ):
+            if cls._is_wait_for(ancestor):
+                violations.append(f"{path}:{node.lineno} -> asyncio.wait_for")
+            if isinstance(ancestor, ast.AsyncWith) and cls._is_timeout_context(
+                ancestor
+            ):
+                violations.append(f"{path}:{node.lineno} -> asyncio.timeout context")
+            ancestor = parents.get(ancestor)
+        return violations
+
+    @staticmethod
+    def _mcp_call_aliases(nodes: list[ast.AST]) -> dict[str, int]:
+        aliases: dict[str, int] = {}
+        for node in nodes:
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = node.value
+            if not isinstance(
+                value, ast.Call
+            ) or not TestMCPCallTimeoutContract._is_mcp_call(value):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    aliases[target.id] = node.lineno
+        return aliases
+
+    @classmethod
+    def _wait_for_alias_violations(
+        cls, path: Path, node: ast.Call, aliases: dict[str, int]
+    ) -> list[str]:
+        if not node.args or not isinstance(node.args[0], ast.Name):
+            return []
+        alias = node.args[0]
+        assigned_at = aliases.get(alias.id)
+        if assigned_at is None or assigned_at >= node.lineno:
+            return []
+        return [
+            f"{path}:{node.lineno} -> asyncio.wait_for({alias.id}) "
+            f"(MCP alias at line {assigned_at})"
+        ]
+
+    @classmethod
+    def _timeout_alias_violations(
+        cls, path: Path, node: ast.AsyncWith, aliases: dict[str, int]
+    ) -> list[str]:
+        violations: list[str] = []
+        for descendant in ast.walk(node):
+            if not isinstance(descendant, ast.Await) or not isinstance(
+                descendant.value, ast.Name
+            ):
+                continue
+            alias = descendant.value
+            assigned_at = aliases.get(alias.id)
+            if assigned_at is not None and assigned_at < node.lineno:
+                violations.append(
+                    f"{path}:{descendant.lineno} -> asyncio.timeout context "
+                    f"awaiting {alias.id} (MCP alias at line {assigned_at})"
+                )
+        return violations
+
+    @staticmethod
+    def _is_mcp_call(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"call_tool", "list_tools"}
+        )
+
+    @staticmethod
+    def _is_wait_for(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and ast.unparse(node.func.value) == "asyncio"
+            and node.func.attr == "wait_for"
+        )
+
+    @staticmethod
+    def _is_timeout_context(node: ast.AsyncWith) -> bool:
+        return any(
+            isinstance(item.context_expr, ast.Call)
+            and isinstance(item.context_expr.func, ast.Attribute)
+            and ast.unparse(item.context_expr.func.value) == "asyncio"
+            and item.context_expr.func.attr == "timeout"
+            for item in node.items
+        )

@@ -35,7 +35,9 @@ class TestMCPInitializeTimeout:
                 async with asyncio.timeout(20):
                     await client._open_connection(["test-tenant"])
 
-        client_ctx.__aexit__.assert_awaited_once_with(None, None, None)
+        # Owner-task teardown: on a failed open the owner closes the raw
+        # transport; the SDK __aexit__ is only invoked for successful opens.
+        client_ctx.__aexit__.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_initialize_timeout_fast_fallback(self):

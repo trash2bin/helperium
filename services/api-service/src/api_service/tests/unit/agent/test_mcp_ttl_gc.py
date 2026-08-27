@@ -67,8 +67,6 @@ class TestCleanupIdleConnections:
         old_conn.tenant_id = "old-session"
         old_conn.close = AsyncMock()
         old_conn.last_used = time.monotonic() - 700  # ~12 min idle
-        type(old_conn).consecutive_failures = PropertyMock(return_value=0)
-        type(old_conn).last_failure_time = PropertyMock(return_value=0.0)
 
         mcp_client._connections["old-session"] = old_conn
 
@@ -87,8 +85,6 @@ class TestCleanupIdleConnections:
         active_conn.tenant_id = "active-session"
         active_conn.close = AsyncMock()
         active_conn.last_used = time.monotonic() - 10  # 10 seconds ago
-        type(active_conn).consecutive_failures = PropertyMock(return_value=0)
-        type(active_conn).last_failure_time = PropertyMock(return_value=0.0)
 
         mcp_client._connections["active-session"] = active_conn
 
@@ -107,15 +103,11 @@ class TestCleanupIdleConnections:
         broken_conn.tenant_id = "broken"
         broken_conn.close = AsyncMock(side_effect=RuntimeError("close failed"))
         broken_conn.last_used = time.monotonic() - 700
-        type(broken_conn).consecutive_failures = PropertyMock(return_value=0)
-        type(broken_conn).last_failure_time = PropertyMock(return_value=0.0)
 
         ok_conn = MagicMock(spec=_TenantConnection)
         ok_conn.tenant_id = "ok"
         ok_conn.close = AsyncMock()
         ok_conn.last_used = time.monotonic() - 700
-        type(ok_conn).consecutive_failures = PropertyMock(return_value=0)
-        type(ok_conn).last_failure_time = PropertyMock(return_value=0.0)
 
         mcp_client._connections["broken"] = broken_conn
         mcp_client._connections["ok"] = ok_conn

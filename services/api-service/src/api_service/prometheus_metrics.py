@@ -109,6 +109,24 @@ backlog_errors_total = Counter(
     ["error_type"],  # llm_timeout, llm_429, llm_error, internal
 )
 
+# ── MCP Session Health Metrics ───────────────────────────────────────────
+
+mcp_tool_timeouts_total = Counter(
+    "mcp_tool_timeouts_total",
+    "MCP tool calls that hit the execution timeout (zombie escalation signal)",
+    ["tenants"],
+)
+
+mcp_connection_quarantines_total = Counter(
+    "mcp_connection_quarantines_total",
+    "Connections force-closed after repeated timed-out tool calls",
+)
+
+mcp_reconnects_total = Counter(
+    "mcp_reconnects_total",
+    "Streamable HTTP MCP reconnects after a failed call",
+)
+
 
 _instrumented: bool = False
 

@@ -472,8 +472,10 @@ Retries are internal to the physical LiteLLM completion call. They repeat no tra
 | `MCP_CIRCUIT_BREAKER_TIMEOUT` | `30.0` | Seconds before half-open retry |
 | `MCP_GC_INTERVAL` | `60.0` | Idle Streamable HTTP connection GC interval |
 | `MCP_MAX_IDLE_SECONDS` | `600.0` | Idle connection lifetime before close |
-| `MCP_LOCK_ACQUIRE_TIMEOUT` | `10.0` | Per-tenant tool-call lock acquisition timeout |
-| `MCP_TOOL_EXECUTION_TIMEOUT` | `15.0` | One MCP tool execution timeout |
+| `MCP_LOCK_ACQUIRE_TIMEOUT` | `10.0` | Per-tenant tool-call lock acquisition timeout (bounds only the lock wait, not execution) |
+| `MCP_TOOL_EXECUTION_TIMEOUT` | `15.0` | One MCP tool execution timeout (independent of lock wait) |
+| `MCP_CLOSE_ESCALATION_TIMEOUT` | `5.0` | Grace window for MCP session teardown before forced transport close; also bounds total owner-task shutdown wait (x3) |
+| `MCP_ZOMBIE_TOOL_TIMEOUTS` | `2` | Consecutive tool timeouts on one connection before quarantine (connection replacement) |
 | `MCP_HTTP_TIMEOUT` | `10.0` | Streamable HTTP connection timeout |
 | `MCP_HTTP_READ_TIMEOUT` | `1800.0` | Streamable HTTP read timeout |
 | `MCP_SESSION_INIT_TIMEOUT` | `15.0` | MCP session initialization timeout |

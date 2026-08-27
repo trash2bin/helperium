@@ -22,30 +22,33 @@ def mcp_client():
 
 
 class TestTenantConnectionFields:
-    """_TenantConnection должен иметь поля для circuit breaker."""
+    """Circuit breaker evidence must live in MCPClient._breaker_state."""
 
-    def test_consecutive_failures_field_exists(self):
-        """_TenantConnection должен иметь consecutive_failures счётчик."""
+    def test_breaker_state_store_exists(self):
+        """MCPClient должен иметь tenant-keyed breaker store."""
+        client = MCPClient()
+        assert hasattr(client, "_breaker_state"), (
+            "\n\n❌ TDD FAIL: MCPClient не имеет _breaker_state словаря.\n"
+            "Нужно добавить: _breaker_state: dict[str, tuple[int, float]]"
+        )
+
+    def test_connection_has_no_duplicate_breaker_fields(self):
+        """_TenantConnection не должен дублировать breaker-состояние.
+
+        Единственный источник правды — store на MCPClient; поля на коннекте
+        создают два источника правды и рассинхронизацию.
+        """
         conn = _TenantConnection(
             tenant_id="test",
             session=MagicMock(),
             session_ctx=MagicMock(),
         )
-        assert hasattr(conn, "consecutive_failures"), (
-            "\n\n❌ TDD FAIL: _TenantConnection не имеет consecutive_failures поля.\n"
-            "Нужно добавить: consecutive_failures: int = 0"
+        assert not hasattr(conn, "consecutive_failures"), (
+            "\n\n❌ TDD FAIL: _TenantConnection всё ещё имеет consecutive_failures.\n"
+            "Breaker evidence должен жить только в MCPClient._breaker_state"
         )
-
-    def test_last_failure_time_field_exists(self):
-        """_TenantConnection должен иметь last_failure_time."""
-        conn = _TenantConnection(
-            tenant_id="test",
-            session=MagicMock(),
-            session_ctx=MagicMock(),
-        )
-        assert hasattr(conn, "last_failure_time"), (
-            "\n\n❌ TDD FAIL: _TenantConnection не имеет last_failure_time поля.\n"
-            "Нужно добавить: last_failure_time: float = 0.0"
+        assert not hasattr(conn, "last_failure_time"), (
+            "last_failure_time должен быть удалён с _TenantConnection"
         )
 
 
@@ -59,14 +62,13 @@ class TestCircuitBreakerReconnect:
         Вместо reconnect circuit breaker сразу возвращает
         ToolResult(ok=False, error='Circuit breaker open...').
         """
-        # Создаём соединение в состоянии open circuit (3 failures, недавно)
+        # Создаём соединение; breaker evidence регистрируем в store клиента.
         conn = _TenantConnection(
             tenant_id="test-tenant",
             session=MagicMock(),
             session_ctx=MagicMock(),
         )
-        conn.consecutive_failures = 3
-        conn.last_failure_time = time.monotonic() - 5  # 5s ago, < 30s timeout
+        mcp_client._store_breaker("test-tenant", 3, time.monotonic() - 5)
 
         mcp_client._connections["test-tenant"] = conn
 
@@ -95,20 +97,16 @@ class TestCircuitBreakerReconnect:
             session=MagicMock(),
             session_ctx=MagicMock(),
         )
-        real_conn.consecutive_failures = 3
-        real_conn.last_failure_time = time.monotonic() - 10
+        mcp_client._store_breaker("test-reset", 3, time.monotonic() - 10)
 
         mcp_client._connections["test-reset"] = real_conn
 
-        # Проверяем что _mark_success сбрасывает счётчик
+        # Проверяем что _mark_success очищает evidence из store
         mcp_client._mark_success(real_conn)
 
-        assert real_conn.consecutive_failures == 0, (
-            "\n\n❌ TDD FAIL: consecutive_failures не сброшен после _mark_success.\n"
-            "После успеха счётчик должен стать 0"
-        )
-        assert real_conn.last_failure_time == 0.0, (
-            "last_failure_time должен быть 0 после _mark_success"
+        assert "test-reset" not in mcp_client._breaker_state, (
+            "\n\n❌ TDD FAIL: breaker evidence не очищен после _mark_success.\n"
+            "После успеха store для тенанта должен быть пуст"
         )
 
 
@@ -123,8 +121,9 @@ class TestCircuitBreakerHalfOpen:
             session=MagicMock(),
             session_ctx=MagicMock(),
         )
-        conn.consecutive_failures = 3
-        conn.last_failure_time = time.monotonic() - 40  # > 30s timeout
+        mcp_client._store_breaker(
+            "test-half", 3, time.monotonic() - 40
+        )  # > 30s timeout
 
         # Счётчик > MAX, но время прошло → circuit NOT open
         assert not mcp_client._is_circuit_open(conn), (
