@@ -15,7 +15,13 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write('Заполняем базу данных...')
 
-        # Если уже есть данные — удалить
+        # Idempotent: если каталог уже заполнен — пропускаем сидирование
+        # (в проде volume сохраняется между рестартами, не надо затирать 1.7M товаров)
+        if Product.objects.exists():
+            self.stdout.write(self.style.SUCCESS('Каталог уже содержит данные — сидирование пропущено'))
+            return
+
+        # Иначе — чистая база, делаем полный сид
         Product.objects.all().delete()
         Brand.objects.all().delete()
         Category.objects.all().delete()

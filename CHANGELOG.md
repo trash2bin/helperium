@@ -12,6 +12,8 @@
 
 - **chore(typecheck):** declare Python 3.12 for Pyright, matching the supported application runtime. **Verification:** full `make ci` passed.
 
+- **fix(demo/storefront):** block public Django admin, make catalog seeding restart-safe, and enable the default Helperium widget/upstream on the shared bridge. **Verification:** static Compose/Caddy checks; external storefront runtime was not restarted.
+
 ## 2026-08-21
 
 - **fix(agent/reliability):** added bounded internal retries around one physical LiteLLM completion request, with classified transient failures, full-jitter backoff, `Retry-After`, deadline and cancellation preservation. Retries exhaust before the existing provider fallback and never repeat transcript mutation or MCP tool execution; the policy is process-wide rather than public per-agent configuration. **Verification:** deterministic retry, adapter and fallback regressions, clean Docker E2E (137 passed), and full `make ci` passed.

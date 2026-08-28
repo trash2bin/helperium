@@ -66,10 +66,10 @@ services:
       DB_NAME: ${STORE_DB_NAME:-autoparts}
       DB_USER: ${STORE_DB_USER:-autoparts}
       DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env.public}
-      HELPERIUM_WIDGET_ENABLED: ${HELPERIUM_WIDGET_ENABLED:-false}
-      HELPERIUM_API_BASE: ${HELPERIUM_API_BASE:-}
+      HELPERIUM_WIDGET_ENABLED: ${HELPERIUM_WIDGET_ENABLED:-true}
+      HELPERIUM_API_BASE: ${HELPERIUM_API_BASE:-http://api:8081}
       HELPERIUM_AGENT: ${HELPERIUM_AGENT:-autoparts-demo}
-      HELPERIUM_WIDGET_TITLE: ${HELPERIUM_WIDGET_TITLE:-Помощник по подбору}
+      HELPERIUM_WIDGET_TITLE: Помощник по подбору
       DEMO_ORDER_SUBMISSIONS: ${DEMO_ORDER_SUBMISSIONS:-false}
       DJANGO_SECURE_SSL_REDIRECT: "false"
       DJANGO_HSTS_SECONDS: ${DJANGO_HSTS_SECONDS:-0}
@@ -92,7 +92,7 @@ services:
       - "443:443"
     environment:
       DEMO_DOMAIN: ${DEMO_DOMAIN:?set DEMO_DOMAIN in .env.public}
-      HELPERIUM_API_UPSTREAM: ${HELPERIUM_API_UPSTREAM:-}
+      HELPERIUM_API_UPSTREAM: ${HELPERIUM_API_UPSTREAM:-http://api:8081}
     volumes:
       - ./Caddyfile.public:/etc/caddy/Caddyfile:ro
       - storefront_caddy_data:/data

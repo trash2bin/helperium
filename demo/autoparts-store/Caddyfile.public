@@ -43,6 +43,13 @@
         respond "not found" 404
     }
 
+    # Django admin is local management tooling; the public storefront must not
+    # expose it (there is also no seeded superuser, so fail closed entirely).
+    @django_admin path /admin /admin/*
+    handle @django_admin {
+        respond "not found" 404
+    }
+
     handle {
         reverse_proxy storefront:8000 {
             header_up X-Forwarded-For {remote_host}

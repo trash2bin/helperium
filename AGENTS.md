@@ -6,7 +6,7 @@
 
 Helperium — self-hosted платформа, которая подключает клиентскую SQL-базу в **read-only** режиме, интроспектирует схему и предоставляет LLM-агенту tenant-scoped MCP-инструменты. Встраиваемый чат отвечает по живым данным; администратор управляет tenant-конфигурацией, агентами и policy.
 
-`demo/autoparts-store` — **внешний consumer**, а не часть runtime Helperium. Не меняй, не останавливай, не seed'ируй и не очищай его контейнеры или PostgreSQL без отдельного прямого разрешения. Он должен подключаться как обычный demo tenant с отдельными read-only credentials.
+`demo/autoparts-store` — автономный поддерживаемый demo consumer, а не часть production runtime Helperium. Его код и deployment-конфигурацию можно менять для security, integration design и воспроизводимости; не останавливай, не seed'ируй и не очищай его контейнеры или PostgreSQL без отдельного прямого разрешения. Он должен подключаться как обычный demo tenant с отдельными read-only credentials.
 
 | Контур | Порт | Роль |
 |---|---:|---|
