@@ -2,6 +2,8 @@
 
 ## 2026-08-28
 
+- **docs(audit):** added product demo-readiness audit (read-only PM/TechLead assessment: E2E sabotage experiment, live LLM chat checks, subagent code reviews, knowledge-graph maintainability analysis) with verdict READY WITH NOTES and prioritized fix list. **Verification:** HEAD `53a3172`, clean tree; `make ci-docs` green.
+
 - **fix(chat/sse):** start the disconnect watcher in every streaming route, emit a terminal done when the producer stops on a disconnect latch, default the public demo browser API base to same-origin, and make the Prometheus wrapper fail fast without API_BEARER_TOKEN; added watcher lifecycle and terminal-event regressions. **Verification:** API suite (444 passed), full `make ci` and isolated secure Docker E2E (138 passed).
 
 - **fix(mcp/observability):** add a tenant-labelled circuit-breaker trip counter with transition-only warning logs, tenant labels on quarantine/reconnect counters, and four mcp-client alert rules documented in the monitoring runbook. **Verification:** MCP client metric regressions and full `make ci` passed.

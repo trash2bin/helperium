@@ -110,7 +110,7 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
 | RAG, demos и E2E | `services/rag/README.md`, `services/agent-db/README.md`, `services/agent-db/agent_db/bench/README.md`, `services/agent-db/tests/e2e/README.md`, `services/agent-db/tests/e2e-llm/README.md`, `services/agent-db/tests/external/README.md`, `demo/README.md`, `demo/web/README.md`, `demo/autoparts-store/README.md` |
 | Benchmark live docs | `doc/benchmark/README.md`, `doc/benchmark/core-benchmark.md`, `doc/benchmark/runs/README.md` |
 | Benchmark archives | `doc/archive/2026-08-05-data-service-audit.md` |
-| Product/audit archives | `doc/archive/2026-08-01-data-service-refactor-audit.md`, `doc/archive/product-readiness-audit-2026-08-18-head-14d3758.md`, `doc/archive/production-resilience-audit-2026-08-18-head-bd5adb5.md`, `doc/archive/remediation-plan-2026-08-18.md` |
+| Product/audit archives | `doc/archive/2026-08-01-data-service-refactor-audit.md`, `doc/archive/product-readiness-audit-2026-08-18-head-14d3758.md`, `doc/archive/production-resilience-audit-2026-08-18-head-bd5adb5.md`, `doc/archive/product-demo-readiness-audit-2026-08-28-head-53a3172.md`, `doc/archive/remediation-plan-2026-08-18.md` |
 
 ## Current verification baseline
 
