@@ -135,14 +135,45 @@ function renderTable(lines: string[]): string {
 }
 
 /**
+ * URL schemes that may become live links. Tool results and assistant text are
+ * untrusted input, so every other scheme (javascript:, data:, vbscript:, ...) is
+ * rejected: browsers ignore most whitespace inside a URL scheme, so matching
+ * must run on the scheme with all whitespace removed.
+ */
+const SAFE_LINK_SCHEMES = new Set(['http', 'https', 'mailto']);
+
+/**
+ * Decides whether a markdown link target can be rendered as an href.
+ *
+ * A scheme is everything before the first ':' that contains no '/', '?' or '#'
+ * (those always start the path/query/fragment part of a scheme-less URL, so
+ * `reports/draft:v2/x` or `?q=1` are relative targets, not schemes). Whitespace
+ * inside the candidate scheme is stripped before comparison because browsers
+ * strip tabs and newlines from URLs (`java\tscript:` executes as `javascript:`).
+ * A candidate that matches the URL scheme grammar must be explicitly allowed;
+ * candidates outside the grammar are treated as unsafe anyway — the widget
+ * renders untrusted tool output, so this check stays conservative.
+ */
+function isSafeLinkHref(href: string): boolean {
+  const head = href.replace(/^\s+/, '').split(/[/?#]/, 1)[0] ?? '';
+  if (!head.includes(':')) return true; // relative, /root-relative, #fragment, ?query
+  const scheme = head.replace(/\s+/g, '').split(':', 1)[0]!.toLowerCase();
+  return /^[a-z][a-z0-9+.-]*$/.test(scheme) && SAFE_LINK_SCHEMES.has(scheme);
+}
+
+/**
  * Processes inline markdown formatting within a single line / cell.
  *
- * Supports: **bold**, *italic*, `code`, and [text](url) links.
+ * Supports: **bold**, *italic*, `code`, and [text](url) links. Unsafe link
+ * targets are rendered as plain text so the link label stays readable.
  */
 function inlineMarkdown(val: string): string {
   return escapeHtml(val)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label: string, href: string) => {
+      if (!isSafeLinkHref(href)) return label;
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    });
 }

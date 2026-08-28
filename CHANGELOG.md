@@ -2,6 +2,7 @@
 
 ## 2026-08-28
 
+- **fix(api/embed):** route the voice chat endpoint through check_abuse with per-agent abuse config, reuse the buffered SSE producer for terminal error+done parity, return 404 for unknown voice agents instead of a silent direct-scope fallback, and block javascript:/data: link schemes in the embed markdown renderer; added voice and link-safety regressions. **Verification:** API suite 449 passed, embed vitest 88 passed, isolated Docker E2E 138 passed.
 - **docs(audit):** added product demo-readiness audit (read-only PM/TechLead assessment: E2E sabotage experiment, live LLM chat checks, subagent code reviews, knowledge-graph maintainability analysis) with verdict READY WITH NOTES and prioritized fix list. **Verification:** HEAD `53a3172`, clean tree; `make ci-docs` green.
 
 - **fix(chat/sse):** start the disconnect watcher in every streaming route, emit a terminal done when the producer stops on a disconnect latch, default the public demo browser API base to same-origin, and make the Prometheus wrapper fail fast without API_BEARER_TOKEN; added watcher lifecycle and terminal-event regressions. **Verification:** API suite (444 passed), full `make ci` and isolated secure Docker E2E (138 passed).

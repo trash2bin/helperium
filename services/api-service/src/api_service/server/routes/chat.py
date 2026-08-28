@@ -278,6 +278,18 @@ async def chat_voice_endpoint(
             media_type="text/event-stream",
         )
 
+    # An explicitly requested agent must exist. Silence here would silently
+    # downgrade a tenant-scoped voice request to the direct-chat scope.
+    agent_data = None
+    if agent:
+        agent_data = await asyncio.to_thread(get_agent_store().get_agent, agent)
+        if not agent_data:
+            return StreamingResponse(
+                _single_error(f"Agent '{agent}' not found", correlation_id),
+                media_type="text/event-stream",
+                status_code=404,
+            )
+
     voice_config = load_voice_config()
     if not voice_config.enabled:
         return StreamingResponse(
@@ -296,14 +308,11 @@ async def chat_voice_endpoint(
         )
 
     resolved_config = voice_config
-    agent_data = None
-    if agent:
-        agent_data = await asyncio.to_thread(get_agent_store().get_agent, agent)
-        if agent_data:
-            agent_voice_config = agent_data.get("voice_config")
-            if agent_voice_config:
-                agent_voice_obj = VoiceAgentConfig(**agent_voice_config)
-                resolved_config = resolve_voice_config(voice_config, agent_voice_obj)
+    if agent_data:
+        agent_voice_config = agent_data.get("voice_config")
+        if agent_voice_config:
+            agent_voice_obj = VoiceAgentConfig(**agent_voice_config)
+            resolved_config = resolve_voice_config(voice_config, agent_voice_obj)
 
     if not resolved_config.enabled:
         return StreamingResponse(
@@ -332,9 +341,7 @@ async def chat_voice_endpoint(
             media_type="text/event-stream",
         )
 
-    tenant_ids = named_agent_scope(agent_data) if agent_data else None
-    if not tenant_ids:
-        tenant_ids = direct_chat_scope()
+    tenant_ids = named_agent_scope(agent_data) if agent_data else direct_chat_scope()
 
     if agent:
         effective_session_id = f"agent:{agent}:{session_id}"
@@ -343,6 +350,17 @@ async def chat_voice_endpoint(
 
     request_lang = lang or _get_lang(request)
     chat_sessions_total.inc()
+
+    # Same anti-abuse gate as the text and named-agent paths: session quota,
+    # duplicate-message and UA checks all apply to transcribed voice input.
+    abuse_result = await check_abuse(
+        request,
+        session_id,
+        text,
+        agent_data.get("abuse_config") if agent_data else None,
+    )
+    if abuse_result is not None:
+        return abuse_result
 
     resolved_llm_config = None
     provider_priority = None
@@ -357,33 +375,28 @@ async def chat_voice_endpoint(
     watcher = _DisconnectWatch(request)
     watcher.start()
 
+    # Buffered producer, same as the text and named-agent paths: MCP transport
+    # cancellation must not kill the SSE writer, and every producer failure is
+    # classified into a terminal error + done pair.
     async def events():
         correlation_id_var.set(correlation_id)
+        source = get_agent().stream_events(
+            user_message=text,
+            session_id=effective_session_id,
+            tenant_ids=tenant_ids,
+            system_prompt=system_prompt,
+            lang=request_lang,
+            llm_config=resolved_llm_config,
+            provider_priority=provider_priority,
+            correlation_id=correlation_id,
+            disconnect_check=watcher.check,
+        )
         try:
-            async for event in get_agent().stream_events(
-                user_message=text,
-                session_id=effective_session_id,
-                tenant_ids=tenant_ids,
-                system_prompt=system_prompt,
-                lang=request_lang,
-                llm_config=resolved_llm_config,
-                provider_priority=provider_priority,
-                correlation_id=correlation_id,
-                disconnect_check=watcher.check,
+            async for payload in _buffered_agent_sse_events(
+                source, request_lang, correlation_id, disconnect_check=watcher.check
             ):
-                payload = _event_payload(event.type, event.data)
-                if payload is not None:
-                    yield _sse(payload)
+                yield payload
             chat_messages_total.labels(status="sent").inc()
-            yield _sse({"type": "done"})
-        except Exception as exc:
-            yield _sse(
-                {
-                    "type": "error",
-                    "text": classify_error(exc, request_lang),
-                    "correlation_id": correlation_id,
-                }
-            )
         finally:
             await watcher.stop()
 

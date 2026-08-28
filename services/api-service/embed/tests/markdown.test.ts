@@ -55,6 +55,113 @@ describe('renderMarkdown', () => {
     });
   });
 
+  describe('link scheme safety', () => {
+    it('blocks javascript: URLs (renders link text as plain text)', () => {
+      const result = renderMarkdown('[click](javascript:alert(1))');
+      expect(result).not.toContain('<a ');
+      expect(result).not.toContain('javascript:');
+      expect(result).toContain('click');
+    });
+
+    it('blocks data: URLs', () => {
+      const result = renderMarkdown('[click](data:text/html;base64,PHNjcmlwdD4=)');
+      expect(result).not.toContain('<a ');
+      expect(result).not.toContain('data:');
+      expect(result).toContain('click');
+    });
+
+    it('blocks vbscript: URLs', () => {
+      const result = renderMarkdown('[click](vbscript:msgbox)');
+      expect(result).not.toContain('<a ');
+      expect(result).toContain('click');
+    });
+
+    it('blocks JAVASCRIPT: (case-insensitive scheme match)', () => {
+      const result = renderMarkdown('[click](JAVASCRIPT:alert(1))');
+      expect(result).not.toContain('<a ');
+      expect(result).not.toContain('alert(1)');
+      expect(result).toContain('click');
+    });
+
+    it('blocks java\\tscript: (tab inside scheme, browsers strip tabs from URLs)', () => {
+      const result = renderMarkdown('[click](java\tscript:alert(1))');
+      expect(result).not.toContain('<a ');
+      expect(result).not.toContain('alert(1)');
+      expect(result).toContain('click');
+    });
+
+    it('blocks java\\nscript: (newline inside scheme)', () => {
+      const result = renderMarkdown('[click](java\nscript:alert(1))');
+      expect(result).not.toContain('<a ');
+      expect(result).not.toContain('alert(1)');
+      expect(result).toContain('click');
+    });
+
+    it('blocks java script: (space inside scheme is not a valid scheme grammar)', () => {
+      const result = renderMarkdown('[click](java script:alert(1))');
+      expect(result).not.toContain('<a ');
+      expect(result).toContain('click');
+    });
+
+    it('blocks scheme after leading whitespace', () => {
+      const result = renderMarkdown('[click](   javascript:alert(1)   )');
+      expect(result).not.toContain('<a ');
+      expect(result).toContain('click');
+    });
+
+    it('blocks unknown schemes like tel:', () => {
+      const result = renderMarkdown('[click](tel:+1234567890)');
+      expect(result).not.toContain('<a ');
+      expect(result).toContain('click');
+    });
+
+    it('still renders https links', () => {
+      const result = renderMarkdown('[docs](https://example.com/docs?x=1)');
+      expect(result).toContain('<a href="https://example.com/docs?x=1"');
+      expect(result).toContain('docs</a>');
+    });
+
+    it('still renders http links', () => {
+      const result = renderMarkdown('[link](http://example.com/x)');
+      expect(result).toContain('<a href="http://example.com/x"');
+    });
+
+    it('still renders uppercase HTTPS links', () => {
+      const result = renderMarkdown('[link](HTTPS://example.com)');
+      expect(result).toContain('<a href="HTTPS://example.com"');
+    });
+
+    it('still renders mailto links', () => {
+      const result = renderMarkdown('[mail](mailto:test@example.com)');
+      expect(result).toContain('<a href="mailto:test@example.com"');
+    });
+
+    it('still renders root-relative links', () => {
+      const result = renderMarkdown('[dash](/dashboard)');
+      expect(result).toContain('<a href="/dashboard"');
+    });
+
+    it('still renders relative links', () => {
+      const result = renderMarkdown('[doc](reports/2026/report.md)');
+      expect(result).toContain('<a href="reports/2026/report.md"');
+    });
+
+    it('still renders fragment links', () => {
+      const result = renderMarkdown('[jump](#section-2)');
+      expect(result).toContain('<a href="#section-2"');
+    });
+
+    it('still renders query-only links', () => {
+      const result = renderMarkdown('[search](?q=1)');
+      expect(result).toContain('<a href="?q=1"');
+    });
+
+    it('still renders links where a colon appears only after a path separator', () => {
+      const result = renderMarkdown('[file](reports/draft:v2/readme)');
+      expect(result).toContain('<a href="reports/draft:v2/readme"');
+    });
+  });
+
   describe('edge cases', () => {
     it('handles empty string', () => {
       expect(renderMarkdown('')).toBe('');
