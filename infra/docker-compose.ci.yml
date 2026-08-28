@@ -12,7 +12,7 @@ services:
       - /bin/sh
       - -ec
       - |
-        mkdir -p /data/app /data/data-service /data/uploads /e2e/db /e2e/tenants
+        mkdir -p /data/app /data/data-service /uploads /e2e/db /e2e/tenants
         chown -R 1000:1000 /data /e2e
     volumes:
       - ci_app_data:/data/app
@@ -76,6 +76,11 @@ services:
     environment:
       MCP_API_KEY: "helperium-e2e-mcp-token"
       MCP_CLIENT_API_KEY: "helperium-e2e-mcp-token"
+      # Mirror the gateway's enforced test-profile contract into the e2e
+      # caller (see test_test_profile_exposes_matching_secure_service_credentials).
+      MCP_REQUIRE_AUTH: "true"
+      MCP_RATE_LIMIT_RPS: "1000"
+      MCP_RATE_LIMIT_BURST: "1000"
       MCP_ALLOWED_ORIGINS: "http://web:8080,http://127.0.0.1:8080,http://localhost:8080"
       API_BEARER_TOKEN: "${API_BEARER_TOKEN:-helperium-e2e-api-control-token}"
       CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8080}"

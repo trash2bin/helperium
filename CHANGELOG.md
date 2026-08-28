@@ -16,6 +16,8 @@
 
 - **fix(ci/mcp):** make the Docker test profile self-contained for secure MCP/API credentials and test-only rate limits, with an E2E contract assertion. **Verification:** isolated secure Docker E2E (138 passed) and full `make ci` passed.
 
+- **fix(ci/mcp):** mirror `MCP_REQUIRE_AUTH`, `MCP_RATE_LIMIT_RPS/BURST` into the `e2e` CI override so the GH-actions E2E path satisfies the test-profile contract assertion (the workflow invokes `docker compose` directly, bypassing `compose.sh`), and relax the allowlist/rate-limit assertions to launcher-agnostic invariants. **Verification:** updated E2E contract assertion passes under both `compose.sh` and raw `docker compose -f ...ci.yml`; YAML config parses.
+
 - **fix(observability):** secure Prometheus access to protected API metrics and add MCP timeout, quarantine, reconnect and sustained-CPU alerts with a monitoring runbook. **Verification:** full `make ci` passed.
 
 - **chore(typecheck):** declare Python 3.12 for Pyright, matching the supported application runtime. **Verification:** full `make ci` passed.
