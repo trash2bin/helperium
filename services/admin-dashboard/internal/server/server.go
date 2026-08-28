@@ -15,6 +15,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -240,6 +241,48 @@ type contextKey string
 
 const roleKey contextKey = "role"
 
+// secureBearerMatch compares an "Authorization: Bearer <token>" header value
+// against the expected token in constant time, so response timing cannot be
+// used to recover the configured dashboard token byte by byte.
+func secureBearerMatch(authHeader, token string) bool {
+	const prefix = "Bearer "
+	provided, ok := strings.CutPrefix(authHeader, prefix)
+	if !ok {
+		return false
+	}
+	// subtle.ConstantTimeCompare reports length mismatches with a -1 return,
+	// which is itself constant time with respect to the secret, so no
+	// length-equality shortcut is needed here.
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
+}
+
+// proxyResponseHeaderDenylist lists headers that must not be copied from an
+// upstream response to the dashboard client: hop-by-hop headers describe the
+// upstream connection (not the client connection), and Set-Cookie would leak
+// upstream data-service/api-service sessions into the admin browser context.
+var proxyResponseHeaderDenylist = map[string]struct{}{
+	"Connection":          {},
+	"Keep-Alive":          {},
+	"Proxy-Authenticate":  {},
+	"Proxy-Authorization": {},
+	"Te":                  {},
+	"Trailer":             {},
+	"Transfer-Encoding":   {},
+	"Upgrade":             {},
+	"Set-Cookie":          {},
+}
+
+// copyProxiedHeaders copies upstream response headers onto the client
+// response, excluding hop-by-hop headers and Set-Cookie.
+func copyProxiedHeaders(dst, src http.Header) {
+	for k, v := range src {
+		if _, blocked := proxyResponseHeaderDenylist[k]; blocked {
+			continue
+		}
+		dst[k] = v
+	}
+}
+
 // RoleFromContext извлекает роль из контекста запроса.
 func RoleFromContext(ctx context.Context) string {
 	if r, ok := ctx.Value(roleKey).(string); ok {
@@ -289,9 +332,9 @@ func authMiddleware(adminToken, viewerToken string) func(http.Handler) http.Hand
 
 			var role string
 			switch {
-			case adminToken != "" && auth == "Bearer "+adminToken:
+			case adminToken != "" && secureBearerMatch(auth, adminToken):
 				role = "admin"
-			case viewerToken != "" && auth == "Bearer "+viewerToken:
+			case viewerToken != "" && secureBearerMatch(auth, viewerToken):
 				role = "viewer"
 			case adminToken == "" && viewerToken == "":
 				http.Error(w, `{"error":"no tokens configured"}`, http.StatusInternalServerError)
@@ -425,9 +468,7 @@ func (s *Server) proxyToDataService(w http.ResponseWriter, r *http.Request, path
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	copyProxiedHeaders(w.Header(), resp.Header)
 	w.Header().Del("Access-Control-Allow-Origin") // наш CORS уже установлен
 	w.WriteHeader(resp.StatusCode)
 	w.Write(respBody)
@@ -817,10 +858,73 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 
 // ── Tenant Config ──
 
+// maskedDSNValue replaces secret DSN values for viewer-role responses.
+// Admin keeps the real value because the admin UI round-trips the config via PUT.
+const maskedDSNValue = "***masked***"
+
+// maskConfigForViewer returns the config body with secret connection strings
+// removed for viewer-role clients. The dashboard frontend only renders
+// driver/read_only/pool_size from data_source (never the DSN itself), so a
+// masked placeholder is display-safe, and viewers cannot PUT configs
+// (authMiddleware restricts viewer to GET), so the placeholder cannot flow
+// back into data-service through a round-trip save.
+func maskConfigForViewer(body []byte) []byte {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		// Not a JSON object — leave untouched; the proxy error paths already
+		// handle non-JSON upstream responses.
+		return body
+	}
+	dsRaw, ok := payload["data_source"]
+	if !ok {
+		return body
+	}
+	var ds map[string]json.RawMessage
+	if err := json.Unmarshal(dsRaw, &ds); err != nil {
+		return body
+	}
+	masked := false
+	for _, key := range []string{"readonly_dsn", "dsn"} {
+		if raw, ok := ds[key]; ok && string(raw) != "null" {
+			ds[key] = json.RawMessage(`"` + maskedDSNValue + `"`)
+			masked = true
+		}
+	}
+	if !masked {
+		return body
+	}
+	dsBytes, err := json.Marshal(ds)
+	if err != nil {
+		return body
+	}
+	payload["data_source"] = dsBytes
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 func (s *Server) tenantConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	// Set X-Tenant-ID so data-service resolves the right tenant
 	r.Header.Set("X-Tenant-ID", id)
+
+	// Viewer responses must not carry connection strings: data-service DTOs
+	// include readonly_dsn in clear for admin round-trip PUT. Capture the
+	// proxied response and mask DSN fields when the caller is a viewer.
+	if RoleFromContext(r.Context()) == "viewer" {
+		body, status, err := s.proxyGetToDataService("/admin/config", id)
+		if err != nil {
+			respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(maskConfigForViewer(body))
+		return
+	}
+
 	s.proxyToDataService(w, r, "/admin/config")
 }
 
@@ -1141,9 +1245,7 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 		"body_size", len(body),
 	)
 
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	copyProxiedHeaders(w.Header(), resp.Header)
 	w.Header().Del("Access-Control-Allow-Origin")
 	// 204 No Content — не пишем тело и сбрасываем Content-Type
 	if resp.StatusCode == http.StatusNoContent {
@@ -1156,7 +1258,100 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 }
 
 func (s *Server) agentListHandler(w http.ResponseWriter, r *http.Request) {
-	s.proxyToApiService(w, r, "/api/agents")
+	s.proxyAgentsToApiService(w, r, "/api/agents")
+}
+
+// maskAgentLlmConfigForViewer returns the agent payload with per-agent
+// llm_config.api_key replaced by a masked placeholder for viewer-role clients.
+// The api-service Agent DTO returns api_key in clear (no server-side masking),
+// and viewers have no write path for agents, so the placeholder cannot round-
+// trip into a saved config. Admin keeps the real value for GET-then-PUT edits.
+func maskAgentLlmConfigForViewer(body []byte) []byte {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+	masked := false
+	maskAgents := func(agent map[string]json.RawMessage) {
+		lcRaw, ok := agent["llm_config"]
+		if !ok {
+			return
+		}
+		var lc map[string]json.RawMessage
+		if err := json.Unmarshal(lcRaw, &lc); err != nil {
+			return
+		}
+		if raw, ok := lc["api_key"]; ok && string(raw) != "null" && string(raw) != `""` {
+			lc["api_key"] = json.RawMessage(`"` + maskedDSNValue + `"`)
+			masked = true
+			agent["llm_config"], _ = json.Marshal(lc)
+		}
+	}
+	if agentsRaw, ok := payload["agents"]; ok {
+		var agents []map[string]json.RawMessage
+		if err := json.Unmarshal(agentsRaw, &agents); err == nil {
+			for _, agent := range agents {
+				maskAgents(agent)
+			}
+			if masked {
+				agentsBytes, err := json.Marshal(agents)
+				if err == nil {
+					payload["agents"] = agentsBytes
+				}
+			}
+		}
+		// List shape handled; single-agent shape falls through when absent.
+	} else if _, isAgent := payload["name"]; isAgent {
+		maskAgents(payload)
+	}
+	if !masked {
+		return body
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// proxyAgentsToApiService proxies agent GETs; viewer responses never carry the
+// plaintext llm_config.api_key the Agent DTO includes for admin round-trip PUT.
+func (s *Server) proxyAgentsToApiService(w http.ResponseWriter, r *http.Request, path string) {
+	if RoleFromContext(r.Context()) == "viewer" {
+		body, status, err := s.getFromApiService(r, path)
+		if err != nil {
+			respondError(w, http.StatusBadGateway, "api_unreachable", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(maskAgentLlmConfigForViewer(body))
+		return
+	}
+	s.proxyToApiService(w, r, path)
+}
+
+// getFromApiService issues a GET against api-service and returns the raw body.
+func (s *Server) getFromApiService(r *http.Request, path string) ([]byte, int, error) {
+	apiURL := s.opts.ApiSvcURL + path
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	if s.opts.ApiBearerToken == "" {
+		return nil, 0, errors.New("API control-plane bearer is not configured")
+	}
+	req.Header.Set("Authorization", "Bearer "+s.opts.ApiBearerToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, err
+	}
+	return body, resp.StatusCode, nil
 }
 
 func (s *Server) agentCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -1165,7 +1360,7 @@ func (s *Server) agentCreateHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) agentGetHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	s.proxyToApiService(w, r, "/api/agents/"+name)
+	s.proxyAgentsToApiService(w, r, "/api/agents/"+name)
 }
 
 func (s *Server) agentUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -1264,9 +1459,7 @@ func (s *Server) voiceChatHandler(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	// Проксируем статус + заголовки
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	copyProxiedHeaders(w.Header(), resp.Header)
 	w.Header().Del("Access-Control-Allow-Origin")
 	w.WriteHeader(resp.StatusCode)
 
