@@ -120,11 +120,19 @@ mcp_tool_timeouts_total = Counter(
 mcp_connection_quarantines_total = Counter(
     "mcp_connection_quarantines_total",
     "Connections force-closed after repeated timed-out tool calls",
+    ["tenants"],
 )
 
 mcp_reconnects_total = Counter(
     "mcp_reconnects_total",
     "Streamable HTTP MCP reconnects after a failed call",
+    ["tenants"],
+)
+
+mcp_circuit_breaker_trips_total = Counter(
+    "mcp_circuit_breaker_trips_total",
+    "Circuit breaker transitions closed→open per tenant scope (one inc per trip)",
+    ["tenants"],
 )
 
 

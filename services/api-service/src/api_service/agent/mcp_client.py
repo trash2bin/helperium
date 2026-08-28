@@ -36,6 +36,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from api_service.prometheus_metrics import (
+    mcp_circuit_breaker_trips_total,
     mcp_connection_quarantines_total,
     mcp_reconnects_total,
     mcp_tool_timeouts_total,
@@ -261,6 +262,14 @@ class MCPClient:
     `close()` — so callers elsewhere in the codebase don't need to change.
     """
 
+    # Idle seconds after which a reused session is proactively re-established
+    # instead of being trusted again. Lower than the background GC threshold
+    # (MCP_MAX_IDLE_SECONDS, default 600s) so on-demand reuse reconnects first.
+    PROACTIVE_RECONNECT_IDLE_SECONDS = 240.0
+    # How much of a successful tool payload is echoed into the loop reminder
+    # before pointing the model at the full tool_content.
+    REMINDER_PREVIEW_CHARS = 200
+
     def __init__(self) -> None:
         self._connections: dict[str, _TenantConnection] = {}
         # Circuit-breaker evidence keyed by tenant scope, tracked separately
@@ -269,6 +278,10 @@ class MCPClient:
         # the entry before failing), so without this store the breaker never
         # accumulates and every request pays the full init timeout.
         self._breaker_state: dict[str, tuple[int, float]] = {}
+        # Tenant keys whose breaker most recently transitioned closed→open.
+        # Ensures the trip counter and OPENED log fire exactly once per trip;
+        # cleared on success/reconnect so a re-trip counts again.
+        self._breaker_tripped_keys: set[str] = set()
         self._registry_lock = asyncio.Lock()
         # GC background task
         self._gc_task: asyncio.Task | None = None
@@ -454,6 +467,7 @@ class MCPClient:
     def _mark_success(self, conn: _TenantConnection) -> None:
         """Reset circuit breaker on successful operation."""
         self._store_breaker(conn.tenant_id, 0, 0.0)
+        self._breaker_tripped_keys.discard(conn.tenant_id)
 
     def _mark_failure(self, conn: _TenantConnection) -> None:
         """Increment circuit breaker for the connection's tenant scope."""
@@ -463,6 +477,7 @@ class MCPClient:
             max(self._as_int(prev_failures) + 1, 1),
             time.monotonic(),
         )
+        self._count_breaker_trip_if_open(conn.tenant_id, prev_failures)
 
     def _mark_failure_if_tracked(
         self, conn: _TenantConnection | None, tenant_key: list[str] | str
@@ -479,6 +494,23 @@ class MCPClient:
             return
         prev_failures, _ = self._load_breaker(key)
         self._store_breaker(key, max(prev_failures + 1, 1), time.monotonic())
+        self._count_breaker_trip_if_open(key, prev_failures)
+
+    def _count_breaker_trip_if_open(self, key: str, prev_failures: int) -> None:
+        """Increment mcp_circuit_breaker_trips_total exactly once per
+        closed→open transition (the failure that reaches the threshold),
+        not on every further failure while the breaker stays open."""
+        if self._as_int(prev_failures) + 1 != settings.mcp_max_consecutive_failures:
+            return
+        self._breaker_tripped_keys.add(key)
+        mcp_circuit_breaker_trips_total.labels(key or "(default)").inc()
+        logger.warning(
+            "[MCP] Circuit breaker OPENED for tenants=%s "
+            "(%d consecutive failures, cooldown %.0fs)",
+            key or "(default)",
+            settings.mcp_max_consecutive_failures,
+            settings.mcp_circuit_breaker_timeout,
+        )
 
     async def _get_connection(
         self, tenant_ids: list[str] | None = None
@@ -502,13 +534,22 @@ class MCPClient:
         if failures >= settings.mcp_max_consecutive_failures and (
             time.monotonic() - last_failure < settings.mcp_circuit_breaker_timeout
         ):
-            logger.warning(
-                "[MCP] Circuit breaker open for tenants=%s (%d failures, %.1fs ago), "
-                "fast-failing cold open",
-                tenant_key or "(default)",
-                failures,
-                time.monotonic() - last_failure,
-            )
+            # Repeated "still open" hits are expected while an outage lasts:
+            # log them at info so warning stays a per-trip transition signal.
+            if tenant_key in self._breaker_tripped_keys:
+                logger.info(
+                    "[MCP] Circuit breaker still open for tenants=%s, "
+                    "fast-failing cold open",
+                    tenant_key or "(default)",
+                )
+            else:
+                logger.warning(
+                    "[MCP] Circuit breaker open for tenants=%s (%d failures, %.1fs ago), "
+                    "fast-failing cold open",
+                    tenant_key or "(default)",
+                    failures,
+                    time.monotonic() - last_failure,
+                )
             raise _CircuitBreakerOpen(
                 f"Circuit breaker open for {tenant_key or '(default)'}: "
                 f"{failures} consecutive failures, "
@@ -535,9 +576,11 @@ class MCPClient:
                         f"retry in {settings.mcp_circuit_breaker_timeout - (time.monotonic() - stored_last):.0f}s"
                     )
 
-                # Session idle > 4 min — reconnect proactively
+                # Proactive reconnect threshold. Deliberately lower than the
+                # background GC's MCP_MAX_IDLE_SECONDS (600s default): a reused
+                # session gets a fresh handshake sooner than GC would reap it.
                 idle = time.monotonic() - conn.last_used
-                if idle > 240:
+                if idle > self.PROACTIVE_RECONNECT_IDLE_SECONDS:
                     logger.info(
                         "[MCP] Session for tenants=%s idle %.0fs, reconnecting",
                         tenant_key or "(default)",
@@ -630,8 +673,8 @@ class MCPClient:
         paths now share the same primitives: pop/remove under the registry
         lock, tenant-keyed breaker evidence, detached bounded owner-task close.
         """
-        mcp_reconnects_total.inc()
         tenant_key = ",".join(tenant_ids) if tenant_ids else ""
+        mcp_reconnects_total.labels(tenant_key or "(default)").inc()
 
         # Consult the breaker before paying a full handshake: the caller
         # (call_tool retry path) has usually just recorded another failure,
@@ -640,13 +683,19 @@ class MCPClient:
         if failures >= settings.mcp_max_consecutive_failures and (
             time.monotonic() - last_failure < settings.mcp_circuit_breaker_timeout
         ):
-            logger.warning(
-                "[MCP] Reconnect skipped, circuit breaker open for tenants=%s "
-                "(%d failures, %.1fs ago)",
-                tenant_key or "(default)",
-                failures,
-                time.monotonic() - last_failure,
-            )
+            if tenant_key in self._breaker_tripped_keys:
+                logger.info(
+                    "[MCP] Reconnect skipped, circuit breaker still open for tenants=%s",
+                    tenant_key or "(default)",
+                )
+            else:
+                logger.warning(
+                    "[MCP] Reconnect skipped, circuit breaker open for tenants=%s "
+                    "(%d failures, %.1fs ago)",
+                    tenant_key or "(default)",
+                    failures,
+                    time.monotonic() - last_failure,
+                )
             raise _CircuitBreakerOpen(
                 f"Circuit breaker open for {tenant_key or '(default)'}: "
                 f"{failures} consecutive failures, "
@@ -667,6 +716,7 @@ class MCPClient:
             conn = await self._open_connection(tenant_ids)
             # Reset circuit breaker on successful reconnect
             self._store_breaker(tenant_key, 0, 0.0)
+            self._breaker_tripped_keys.discard(tenant_key)
         except Exception:
             # Reconnect failed — persist evidence in the tenant-keyed store so
             # the breaker accumulates even though the registry entry is gone.
@@ -1074,7 +1124,7 @@ class MCPClient:
                         conn.consecutive_tool_timeouts,
                         tenant_ids,
                     )
-                    mcp_connection_quarantines_total.inc()
+                    mcp_connection_quarantines_total.labels(tenant_label).inc()
                     self._spawn_detached(
                         self._quarantine_connection(conn),
                         f"mcp-quarantine-{conn.tenant_id or 'default'}",
@@ -1145,19 +1195,11 @@ class MCPClient:
                 ok=False,
                 error=str(exc),
             )
-        except ConnectionError as exc:
-            logger.warning(
-                "[MCP] call_tool %s could not obtain connection for tenants=%s: %s",
-                name,
-                session.tenant_ids,
-                type(exc).__name__,
-            )
-            self._mark_failure_if_tracked(conn=None, tenant_key=session.tenant_ids)
-            return self._connection_interrupted_result(name)
         except Exception as exc:
-            # Handshake/transport failures that are not the circuit breaker
-            # (init timeout, httpx errors, ...) must still yield a sanitised,
-            # retryable public result — never a raw exception into the loop.
+            # ConnectionError (transport refused/reset) and other handshake
+            # failures (init timeout, httpx errors, ...) share one path: they
+            # must all yield a sanitised, retryable public result — never a raw
+            # exception into the loop.
             logger.warning(
                 "[MCP] call_tool %s could not obtain connection for tenants=%s: %s",
                 name,
@@ -1337,7 +1379,10 @@ class MCPClient:
             flat = raw_text
 
         # If result has empty_hint, append it to the reminder
-        reminder_text = f"Инструмент {name} вернул данные: {flat[:200]}. "
+        reminder_text = (
+            f"Инструмент {name} вернул данные: "
+            f"{flat[: MCPClient.REMINDER_PREVIEW_CHARS]}. "
+        )
         if (
             isinstance(parsed, dict)
             and parsed.get("total", 0) == 0

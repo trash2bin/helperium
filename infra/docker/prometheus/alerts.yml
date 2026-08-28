@@ -23,3 +23,64 @@ groups:
           severity: critical
         annotations:
           summary: "{{ $labels.job }} is down"
+
+  - name: mcp-client-health
+    rules:
+      # Tool calls hitting the hard deadline. Rare by design (bounded tool
+      # execution); a sustained rate means the gateway or tenant DB is hanging.
+      - alert: McpToolTimeouts
+        expr: sum(rate(mcp_tool_timeouts_total[10m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP tool calls are timing out"
+          description: >-
+            api-service MCP client hit the tool execution deadline
+            ({{ $labels.tenants }}). Repeated timeouts on one connection
+            escalate to a zombie quarantine; check mcp-gateway and
+            data-service health for that tenant scope.
+
+      # Quarantines are expected ~never: a connection is force-closed only
+      # after MCP_ZOMBIE_TOOL_TIMEOUTS consecutive timed-out calls.
+      - alert: McpConnectionQuarantined
+        expr: increase(mcp_connection_quarantines_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MCP client quarantined a zombie-suspect connection"
+          description: >-
+            A tenant connection ({{ $labels.tenants }}) was force-closed after
+            repeated timed-out tool calls. This is the zombie/100%-CPU-spin
+            countermeasure firing; expect elevated api-service latency and
+            check the gateway restart history.
+
+      # One inc per closed→open transition. Steady low rate = dependency
+      # flapping; a spike means an outage window, correlated with reconnects.
+      - alert: McpCircuitBreakerTrips
+        expr: increase(mcp_circuit_breaker_trips_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP client circuit breaker tripped"
+          description: >-
+            Circuit breaker opened for {{ $labels.tenants }} after
+            consecutive failures. Requests for that scope fail fast until the
+            cooldown elapses; look for gateway/data-service incidents in the
+            same window (mcp_reconnects_total, ServiceDown).
+
+      # Reconnect bursts: some reconnects are normal after idle GC; a storm
+      # means calls are failing and the retry path is churning connections.
+      - alert: McpReconnectStorm
+        expr: sum(rate(mcp_reconnects_total[5m])) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP client reconnect storm"
+          description: >-
+            api-service is reconnecting MCP sessions faster than 1/s for two
+            minutes. Usually a gateway/data-service outage being retried per
+            call; verify upstream health before touching the client.

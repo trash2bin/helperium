@@ -217,6 +217,10 @@ OpenTelemetry; отсутствующие пакеты не ломают сер�
 | `abuse_blocked_total` | Counter | `reason` | Блокировки анти-абуза |
 | `embed_widget_requests_total` | Counter | `endpoint` | Запросы к /embed/* |
 | `backlog_records_total` | Counter | `type` | Всего бэклог-задач (turn_start, llm_call, tool_call, tool_result) |
+| `mcp_tool_timeouts_total` | Counter | `tenants` | MCP tool-вызовы, упёршиеся в hard deadline (сигнал zombie-эскалации) |
+| `mcp_connection_quarantines_total` | Counter | `tenants` | Принудительно закрытые zombie-подозрительные соединения |
+| `mcp_reconnects_total` | Counter | `tenants` | MCP reconnects после неудачного вызова |
+| `mcp_circuit_breaker_trips_total` | Counter | `tenants` | Переходы circuit breaker closed→open (один inc на trip) |
 
 ### rag-service (`:8082/metrics`)
 
@@ -307,7 +311,19 @@ log_config). Если `trace_id` пустой — `OTEL_ENABLED=false` или з
 
 ---
 
-## Алерты (TODO)
+## Алерты
+
+Алерты живущие в `infra/docker/prometheus/alerts.yml` загружаются Prometheus'ом автоматически
+(group `service-health` — базовые, group `mcp-client-health` — здоровье MCP-клиента в api-service).
+
+| Алерт | Выражение | Severity | Что значит |
+|---|---|---|---|
+| `ApiServiceIdleCpuBurn` | `rate(process_cpu_seconds_total{job="api-service"}[5m]) > 0.30` | warning | Устойчивый CPU burn — прокси на asyncio busy-spin (MCP/SSE reconnect loop) |
+| `ServiceDown` | `up{job=~"api-service\|data-service\|mcp-gateway\|admin-dashboard"} == 0` | critical | Сервис недоступен для скрейпа |
+| `McpToolTimeouts` | `sum(rate(mcp_tool_timeouts_total[10m])) > 0` | warning | Tool-вызовы упираются в hard deadline — виснет gateway или tenant DB |
+| `McpConnectionQuarantined` | `increase(mcp_connection_quarantines_total[10m]) > 0` | critical | Сработала zombie-защита: соединение force-closed после повторных таймаутов |
+| `McpCircuitBreakerTrips` | `increase(mcp_circuit_breaker_trips_total[15m]) > 0` | warning | Circuit breaker открылся для tenant scope — запросы fail-fast до конца cooldown |
+| `McpReconnectStorm` | `sum(rate(mcp_reconnects_total[5m])) > 1` | warning | Reconnect-шторм: retry-путь молотит соединения — проверять upstream |
 
 Пример алерта для долгих DB запросов (Grafana Alerting):
 

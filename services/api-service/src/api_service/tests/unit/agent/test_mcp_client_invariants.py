@@ -506,7 +506,9 @@ class TestMCPClientInvariants:
         # Spy на карантин и метрику.
         quarantine_spy = AsyncMock()
         mcp_client._quarantine_connection = quarantine_spy  # type: ignore[assignment]
-        metric_before = mcp_client_module.mcp_connection_quarantines_total._value.get()
+        metric_before = mcp_client_module.mcp_connection_quarantines_total.labels(
+            "z1"
+        )._value.get()
 
         mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
         session = _SessionProxy(mcp_client, tenant_ids=["z1"])
@@ -534,7 +536,9 @@ class TestMCPClientInvariants:
             f"REGRESSION (Г5): _quarantine_connection не вызван "
             f"(call_count={quarantine_spy.await_count})"
         )
-        metric_after = mcp_client_module.mcp_connection_quarantines_total._value.get()
+        metric_after = mcp_client_module.mcp_connection_quarantines_total.labels(
+            "z1"
+        )._value.get()
         assert metric_after >= metric_before + 1, (
             f"REGRESSION (Г5): mcp_connection_quarantines_total не вырос "
             f"({metric_before} → {metric_after})"
