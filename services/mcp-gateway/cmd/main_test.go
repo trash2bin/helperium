@@ -303,6 +303,139 @@ func TestAuthMiddleware_InvalidAuthScheme_Returns401(t *testing.T) {
 	}
 }
 
+// Regression: audit 2026-08-28 (head 53a3172) — API key was compared with a
+// plain != which allows a timing side channel. Constant-time comparison itself
+// is not directly assertable through behavior; these tests pin the exact
+// response contract that must not change when the compare becomes constant-time:
+// missing header, non-Bearer scheme, and wrong key all produce the identical
+// 401 JSON shape, while a correct key reaches the downstream handler.
+func TestAuthMiddleware_TokenCompareBehaviorParity(t *testing.T) {
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+	configureManifestClient(t)
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	cases := []struct {
+		name          string
+		authorization string
+		wantStatus    int
+		wantBody      string
+	}{
+		{name: "missing auth header", authorization: "", wantStatus: http.StatusUnauthorized, wantBody: "Missing or invalid Authorization header"},
+		{name: "non-Bearer scheme", authorization: "Basic dGVzdDp0ZXN0", wantStatus: http.StatusUnauthorized, wantBody: "Missing or invalid Authorization header"},
+		{name: "empty bearer token", authorization: "Bearer ", wantStatus: http.StatusUnauthorized, wantBody: "Invalid API key"},
+		{name: "wrong key same length", authorization: "Bearer XXXX-secret-123", wantStatus: http.StatusUnauthorized, wantBody: "Invalid API key"},
+		{name: "wrong key different length", authorization: "Bearer short", wantStatus: http.StatusUnauthorized, wantBody: "Invalid API key"},
+		{name: "correct key passes through", authorization: "Bearer test-secret-123", wantStatus: http.StatusOK, wantBody: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/config", nil)
+			if tc.authorization != "" {
+				req.Header.Set("Authorization", tc.authorization)
+			}
+			req.Header.Set("X-Tenant-ID", "tenant-a")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("Authorization %q: status = %d, want %d\nbody: %s", tc.authorization, rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if tc.wantBody != "" && !strings.Contains(rec.Body.String(), tc.wantBody) {
+				t.Errorf("Authorization %q: body = %q, want containing %q", tc.authorization, rec.Body.String(), tc.wantBody)
+			}
+		})
+	}
+}
+
+// Regression: audit 2026-08-28 (head 53a3172) — the three metadata proxy
+// handlers returned err.Error() to the client on upstream failure. The
+// httpclient wraps errors with the internal DATA_SERVICE_URL and forwards
+// upstream response bodies, so a failed manifest/mapping/schema fetch leaked
+// internal hosts and upstream details to callers. After the fix the client
+// receives a generic retryable JSON error; the full error goes to slog only.
+func TestMetadataProxyHandlers_SanitizeUpstreamErrorDetails(t *testing.T) {
+	unsetEnv(t, "MCP_API_KEY")
+	t.Setenv("DATA_SERVICE_URL", "http://127.0.0.1:1") // closed port: dial error embeds the internal address
+
+	previousClient := globalClient
+	t.Cleanup(func() { globalClient = previousClient })
+	globalClient = httpclient.New()
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "manifest", path: "/mcp/manifest"},
+		{name: "mapping", path: "/mcp/tools/mapping"},
+		{name: "schema", path: "/mcp/schema"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("X-Tenant-ID", "tenant-a")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("GET %s with unreachable upstream = %d, want 500\nbody: %s", tc.path, rec.Code, rec.Body.String())
+			}
+			body := rec.Body.String()
+			if strings.Contains(body, "127.0.0.1:1") {
+				t.Errorf("GET %s leaked the internal upstream address in the response body: %q", tc.path, body)
+			}
+			if strings.Contains(body, "dial tcp") {
+				t.Errorf("GET %s leaked transport error detail in the response body: %q", tc.path, body)
+			}
+			if !strings.Contains(body, "retry") {
+				t.Errorf("GET %s body = %q, want a retryable error message", tc.path, body)
+			}
+		})
+	}
+}
+
+func TestMetadataProxyHandlers_DoNotForwardUpstreamErrorBodies(t *testing.T) {
+	unsetEnv(t, "MCP_API_KEY")
+
+	previousClient := globalClient
+	t.Cleanup(func() { globalClient = previousClient })
+
+	const upstreamSecret = "internal-dsn postgres://helperium:secret@10.0.0.5:5432/tenants"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, upstreamSecret, http.StatusInternalServerError)
+	}))
+	t.Cleanup(upstream.Close)
+	t.Setenv("DATA_SERVICE_URL", upstream.URL)
+	globalClient = httpclient.New()
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "manifest", path: "/mcp/manifest"},
+		{name: "mapping", path: "/mcp/tools/mapping"},
+		{name: "schema", path: "/mcp/schema"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("X-Tenant-ID", "tenant-a")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("GET %s with failing upstream = %d, want 500\nbody: %s", tc.path, rec.Code, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), upstreamSecret) {
+				t.Errorf("GET %s forwarded the upstream error body to the client: %q", tc.path, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestValidateStartupConfigurationNonDevelopmentRequiresAuth(t *testing.T) {
 	unsetEnv(t, "MCP_DEV")
 	unsetEnv(t, "MCP_REQUIRE_AUTH")

@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -420,7 +421,10 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if token != apiKey {
+		// Constant-time compare: token equality must not be observable through
+		// response timing. Length mismatch returns immediately inside
+		// ConstantTimeCompare, which is the standard accepted behavior.
+		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized", "message": "Invalid API key"})
@@ -492,7 +496,9 @@ func manifestProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("Failed to fetch manifest from upstream",
+			"handler", "manifestProxyHandler", "tenantID", tenantID, "error", err)
+		writeUpstreamUnavailable(w)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -512,8 +518,9 @@ func mappingHandler(w http.ResponseWriter, r *http.Request) {
 
 	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
 	if err != nil {
-		slog.Error("Failed to fetch config for mapping", "tenantID", tenantID, "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("Failed to fetch config for mapping",
+			"handler", "mappingHandler", "tenantID", tenantID, "error", err)
+		writeUpstreamUnavailable(w)
 		return
 	}
 
@@ -538,11 +545,26 @@ func schemaProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, err := globalClient.FetchSchemaWithTenant(tenantID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("Failed to fetch schema from upstream",
+			"handler", "schemaProxyHandler", "tenantID", tenantID, "error", err)
+		writeUpstreamUnavailable(w)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
+}
+
+// writeUpstreamUnavailable answers metadata routes with a generic retryable
+// error. It never forwards err.Error() from the upstream client: those errors
+// embed the internal DATA_SERVICE_URL, transport detail and upstream response
+// bodies, which must not reach callers.
+func writeUpstreamUnavailable(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	json.NewEncoder(w).Encode(map[string]string{
+		"error":   "upstream_unavailable",
+		"message": "Upstream metadata is temporarily unavailable, please retry.",
+	})
 }
 
 // ── Debug Handlers ──

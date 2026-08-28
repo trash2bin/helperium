@@ -2,6 +2,7 @@
 
 ## 2026-08-28
 
+- **fix(mcp-gateway):** compare the API key with crypto/subtle.ConstantTimeCompare and stop forwarding upstream error details from the manifest, mapping and schema proxies (full errors go to slog, clients get a generic retryable upstream_unavailable JSON); added sanitisation and auth-parity regressions. **Verification:** mcp-gateway suite green, go vet clean, isolated Docker E2E 138 passed.
 - **fix(data-service):** enforce the repo-wide tenant ID pattern on the sqlite upload handler and validate the browser-controlled ?tenant= query fallback (invalid values treated as absent, header/context paths unchanged); added tenant_id_from_request and upload validation regressions. **Verification:** data-service suite green, go vet clean, isolated Docker E2E 138 passed.
 - **fix(api/embed):** route the voice chat endpoint through check_abuse with per-agent abuse config, reuse the buffered SSE producer for terminal error+done parity, return 404 for unknown voice agents instead of a silent direct-scope fallback, and block javascript:/data: link schemes in the embed markdown renderer; added voice and link-safety regressions. **Verification:** API suite 449 passed, embed vitest 88 passed, isolated Docker E2E 138 passed.
 - **docs(audit):** added product demo-readiness audit (read-only PM/TechLead assessment: E2E sabotage experiment, live LLM chat checks, subagent code reviews, knowledge-graph maintainability analysis) with verdict READY WITH NOTES and prioritized fix list. **Verification:** HEAD `53a3172`, clean tree; `make ci-docs` green.
