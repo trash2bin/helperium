@@ -67,7 +67,11 @@ services:
       DB_USER: ${STORE_DB_USER:-autoparts}
       DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env.public}
       HELPERIUM_WIDGET_ENABLED: ${HELPERIUM_WIDGET_ENABLED:-true}
-      HELPERIUM_API_BASE: ${HELPERIUM_API_BASE:-http://api:8081}
+      # Browser-side default stays empty on purpose: embed.js falls back to
+      # window.location.origin and the public Caddy proxy forwards /embed and
+      # /api/chat to the internal HELPERIUM_API_UPSTREAM. A docker-internal
+      # default (api:8081) would be rendered into user browsers and fail.
+      HELPERIUM_API_BASE: ${HELPERIUM_API_BASE:-}
       HELPERIUM_AGENT: ${HELPERIUM_AGENT:-autoparts-demo}
       HELPERIUM_WIDGET_TITLE: Помощник по подбору
       DEMO_ORDER_SUBMISSIONS: ${DEMO_ORDER_SUBMISSIONS:-false}

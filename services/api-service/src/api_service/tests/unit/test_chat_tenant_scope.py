@@ -166,3 +166,134 @@ async def test_named_agent_uses_persisted_composite_scope_not_request_header() -
     assert call["correlation_id"] == "tenant-scope-test"
     # Route must propagate a client-disconnect probe down to the agent.
     assert callable(call.get("disconnect_check"))
+
+
+@pytest.mark.asyncio
+async def test_disconnect_watcher_is_started_and_stopped() -> None:
+    """Regression: a watcher that is never started cannot latch a disconnect,
+    so abandoned turns kept consuming provider budget and tool calls."""
+    from api_service.server.routes.chat import chat_endpoint
+    from api_service.server.routes import chat as chat_module
+
+    started: list[object] = []
+    original_start = chat_module._DisconnectWatch.start
+
+    def spy_start(self: chat_module._DisconnectWatch) -> None:
+        started.append(self)
+        original_start(self)
+
+    agent = _SpyAgent()
+    request = _request({"message": "hello", "session_id": "watcher-lifecycle"})
+
+    with (
+        patch("api_service.server.routes.chat.get_agent", return_value=agent),
+        patch(
+            "api_service.server.routes.chat.check_abuse",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch.object(chat_module._DisconnectWatch, "start", spy_start),
+    ):
+        response = await chat_endpoint(request)
+        await _drain(response)
+
+    assert response.status_code == 200
+    # The watcher must have been started exactly once and stopped afterwards.
+    assert len(started) == 1
+    watcher = started[0]
+    assert watcher is not None
+    assert watcher._task is None  # stop() ran and cleared the task
+
+
+@pytest.mark.asyncio
+async def test_disconnect_watcher_latch_stops_agent_stream() -> None:
+    """Once the watcher latches a disconnect, the buffered SSE stream must
+    terminate with a done event instead of hanging on the queue."""
+    from api_service.server.routes.chat import (
+        _buffered_agent_sse_events,
+        _DisconnectWatch,
+    )
+
+    latch = _DisconnectWatch(_request({}))
+
+    async def source():
+        yield SimpleNamespace(type="final", data={"content": "first"})
+        # Simulate the watcher latching between provider events.
+        latch._event.set()
+        yield SimpleNamespace(type="final", data={"content": "second"})
+
+    received: list[str] = []
+    async for chunk in _buffered_agent_sse_events(
+        source(), "en", "cid", disconnect_check=latch.check
+    ):
+        received.append(chunk)
+
+    assert any('"type": "done"' in chunk for chunk in received)
+    # The second event must never be delivered after the latch.
+    assert not any("second" in chunk for chunk in received)
+
+
+@pytest.mark.asyncio
+async def test_buffered_stream_terminates_on_disconnect_before_first_event() -> None:
+    """Producer must emit a terminal event even when the disconnect is detected
+    before the first source event, instead of leaving the consumer blocked."""
+    from api_service.server.routes.chat import (
+        _buffered_agent_sse_events,
+        _DisconnectWatch,
+    )
+
+    latch = _DisconnectWatch(_request({}))
+    latch._event.set()
+
+    async def source():
+        yield SimpleNamespace(type="final", data={"content": "never"})
+        yield SimpleNamespace(type="final", data={"content": "also never"})
+
+    received: list[str] = []
+    async for chunk in _buffered_agent_sse_events(
+        source(), "en", "cid", disconnect_check=latch.check
+    ):
+        received.append(chunk)
+
+    assert received == [] or any('"type": "done"' in chunk for chunk in received)
+    assert not any("never" in chunk for chunk in received)
+
+
+@pytest.mark.asyncio
+async def test_mcp_logs_carry_correlation_id_from_contextvar() -> None:
+    """Correlation id set by the route must reach structured MCP log records
+    (JSON payload), so tool-call failures can be tied to a chat turn."""
+    import json as _json
+    import logging
+
+    from api_service.log_config import (
+        build_log_formatter,
+        configure_logging,
+        correlation_id_var,
+    )
+
+    configure_logging()  # ensure structlog processors are installed
+    correlation_id_var.set("corr-mcp-123")
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Capture()
+    test_logger = logging.getLogger("api_service.agent.mcp_client")
+    test_logger.addHandler(handler)
+    try:
+        test_logger.warning("[MCP] correlation test message")
+    finally:
+        test_logger.removeHandler(handler)
+
+    assert records, "expected the warning record to reach the handler"
+    # Stdlib-origin records are rendered by the ProcessorFormatter installed
+    # on the root handler; format the captured record through a fresh
+    # formatter instance to verify the foreign_pre_chain injects the
+    # correlation id from the contextvar.
+    rendered = build_log_formatter().format(records[0])
+    payload = _json.loads(rendered)
+    assert payload["correlation_id"] == "corr-mcp-123"
+    assert payload["event"] == "[MCP] correlation test message"

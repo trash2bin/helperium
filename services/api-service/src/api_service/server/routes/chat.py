@@ -22,6 +22,7 @@ from api_service.audio.voice_config import (
 )
 from api_service.audio.stt_engine import STTEngine
 from ..deps import get_agent, get_agent_store
+from api_service.log_config import correlation_id_var
 from ..sse import _sse, _single_error, _event_payload, _get_lang
 from ..security import check_abuse
 from ..tenant_authority import direct_chat_scope, named_agent_scope
@@ -71,6 +72,11 @@ class _DisconnectWatch:
             while not self._event.is_set():
                 if await self._request.is_disconnected():
                     self._event.set()
+                    logger.warning(
+                        "[SSE] client disconnected, latching stream cancel "
+                        "(correlation_id=%s)",
+                        correlation_id_var.get() or "unknown",
+                    )
                     return
                 await asyncio.sleep(0.25)
         except asyncio.CancelledError:
@@ -111,12 +117,24 @@ async def _buffered_agent_sse_events(
     queue: asyncio.Queue[tuple[str, Any | None]] = asyncio.Queue()
 
     async def produce() -> None:
+        # The producer task runs in an empty copied context; restore the
+        # correlation id so MCP/agent log lines below stay attributable.
+        correlation_id_var.set(correlation_id)
         try:
             async for event in source:
                 # Bail out early once the client is gone: the agent loop also
                 # checks this between iterations, but a long provider stream
                 # would otherwise keep running until its next await.
                 if disconnect_check is not None and disconnect_check():
+                    logger.warning(
+                        "[SSE] producer stopping after disconnect latch "
+                        "(correlation_id=%s), emitting terminal done",
+                        correlation_id,
+                    )
+                    # Always emit a terminal event before exiting: the consumer
+                    # blocks on queue.get() and has no other way to observe a
+                    # silent producer return.
+                    await queue.put(("done", None))
                     return
                 await queue.put(("event", event))
         except asyncio.CancelledError:
@@ -208,8 +226,10 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
     lang = _get_lang(request)
 
     watcher = _DisconnectWatch(request)
+    watcher.start()
 
     async def events():
+        correlation_id_var.set(correlation_id)
         source = get_agent().stream_events(
             message,
             session_id=effective_session_id,
@@ -335,8 +355,10 @@ async def chat_voice_endpoint(
         )
 
     watcher = _DisconnectWatch(request)
+    watcher.start()
 
     async def events():
+        correlation_id_var.set(correlation_id)
         try:
             async for event in get_agent().stream_events(
                 user_message=text,
@@ -425,8 +447,10 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     lang = _get_lang(request)
 
     watcher = _DisconnectWatch(request)
+    watcher.start()
 
     async def events():
+        correlation_id_var.set(correlation_id)
         source = get_agent().stream_events(
             user_message=message,
             session_id=effective_session_id,
