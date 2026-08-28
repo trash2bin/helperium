@@ -43,6 +43,12 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
     allowed, ctx = token_bucket.allow(safe_id, ip, user_agent)
     if not allowed:
         retry_after = ctx.get("retry_after", 1.0)
+        logger.warning(
+            "[ABUSE] rate limit rejected session=%s ip=%s retry_after=%.1fs",
+            safe_id,
+            ip,
+            retry_after,
+        )
         msg = _make_error_message(request, retry_after)
         return StreamingResponse(
             _single_error(msg),
@@ -68,6 +74,13 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
     )
     if not check_result.allowed:
         lang = _get_lang_from_request(request)
+        logger.warning(
+            "[ABUSE] request blocked session=%s ip=%s reason=%s turn_count=%s",
+            safe_id,
+            ip,
+            check_result.reason,
+            state.user_turn_count,
+        )
         msg = (
             f"Запрос заблокирован: {check_result.reason}"
             if lang == "ru"

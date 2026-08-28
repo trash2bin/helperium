@@ -2,6 +2,12 @@
 
 ## 2026-08-28
 
+- **fix(chat/sse):** start the disconnect watcher in every streaming route, emit a terminal done when the producer stops on a disconnect latch, default the public demo browser API base to same-origin, and make the Prometheus wrapper fail fast without API_BEARER_TOKEN; added watcher lifecycle and terminal-event regressions. **Verification:** API suite (444 passed), full `make ci` and isolated secure Docker E2E (138 passed).
+
+- **fix(mcp/observability):** add a tenant-labelled circuit-breaker trip counter with transition-only warning logs, tenant labels on quarantine/reconnect counters, and four mcp-client alert rules documented in the monitoring runbook. **Verification:** MCP client metric regressions and full `make ci` passed.
+
+- **fix(api/logging):** render stdlib log records through the structlog ProcessorFormatter so all api-service logs emit JSON, propagate correlation_id from a contextvar into MCP and agent log lines, log SSE disconnects and abuse rejections, and fix a configure_logging crash on cold start. **Verification:** correlation JSON contract test, cold-start import check, full `make ci` and isolated secure Docker E2E (138 passed).
+
 - **fix(mcp/reliability):** bound persistent Streamable HTTP MCP session ownership, cancellation, hard deadlines and teardown; added breaker/quarantine protections, safe diagnostics and lifecycle regressions. **Verification:** targeted MCP suite (69 passed) and full `make ci` passed.
 
 - **fix(chat/cancellation):** propagate a latched SSE client-disconnect signal through routes, agent orchestration and MCP work so abandoned turns terminate before further provider or tool activity. **Verification:** API route/orchestrator regressions and full `make ci` passed.
