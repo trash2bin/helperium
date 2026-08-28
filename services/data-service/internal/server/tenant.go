@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -377,6 +378,12 @@ func (ts *TenantStore) resolveTenantAndLock(r *http.Request) (*TenantInstance, f
 	return inst, ts.mu.RUnlock
 }
 
+// tenantIDPattern is the repo-wide tenant-ID contract (AGENTS.md "MCP scope":
+// [A-Za-z0-9][A-Za-z0-9_-]{0,127}). The mcp-gateway enforces the same pattern
+// for header-based MCP scopes; here it guards the browser-controlled query
+// fallback only. Header/context paths keep their current behavior.
+var tenantIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+
 // tenantIDFromRequest extracts the tenant identifier from context, header, or query.
 func tenantIDFromRequest(r *http.Request) string {
 	// 1. Try context (populated by TenantIDMiddleware when present)
@@ -387,9 +394,22 @@ func tenantIDFromRequest(r *http.Request) string {
 		tenantID = r.Header.Get("X-Tenant-ID")
 	}
 
-	// 3. Fallback to query parameter ?tenant=... (critical for Swagger UI / Browser)
+	// 3. Fallback to query parameter ?tenant=... (critical for Swagger UI / Browser).
+	// The query is browser-controlled input; a value violating the tenant-ID
+	// contract is treated as absent instead of reaching tenant routing.
 	if tenantID == "" {
-		tenantID = r.URL.Query().Get("tenant")
+		queryTenant := r.URL.Query().Get("tenant")
+		// Composite scopes arrive comma-separated (e.g. "shop-1,default" from
+		// MCP composite sessions); routing uses the first tenant only.
+		if strings.Contains(queryTenant, ",") {
+			queryTenant = strings.TrimSpace(strings.Split(queryTenant, ",")[0])
+		}
+		if tenantIDPattern.MatchString(queryTenant) {
+			tenantID = queryTenant
+		} else if queryTenant != "" {
+			slog.Warn("rejecting invalid tenant id in query parameter",
+				"raw_len", len(queryTenant))
+		}
 	}
 
 	// Handle comma-separated tenant IDs (e.g. "shop,default" from composite MCP sessions)
