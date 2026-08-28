@@ -7,7 +7,8 @@
 ## Запуск
 
 ```bash
-# Все e2e (без LLM) — 131 тест, ~2-3 мин
+# Все e2e (без LLM) — 138 тестов, ~2-3 мин
+# (счёт = AST-подсчёт def test_* в tests/e2e/test_*.py; сверяйте при изменении набора)
 uv run pytest tests/e2e/ -v
 
 # Без traceback

@@ -169,6 +169,12 @@ set `CORS_ALLOW_ORIGINS` to the exact `https://<DEMO_DOMAIN>` origin, keep
 `MCP_CLIENT_API_KEY`, and do not expose ports `8083` or `8084` through a proxy
 or host mapping.
 
+Note the intentional `HELPERIUM_WIDGET_ENABLED` default drift: this example
+keeps the safe opt-in `false`, while `docker-compose.public.yml` defaults to
+`true` because the public storefront ships with the widget on once its own
+tenant bootstrap succeeds. Keep the example value until the public tenant,
+agent and embed origins are actually configured.
+
 The public Compose bootstrap is mandatory: after migrations and seed, it creates
 or rotates `helperium_autoparts_ro`, grants only `CONNECT`, schema `USAGE` and
 `SELECT` on the seven catalog tables, and registers/re-writes tenant `autoparts`

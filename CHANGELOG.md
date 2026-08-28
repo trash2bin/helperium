@@ -2,6 +2,7 @@
 
 ## 2026-08-28
 
+- **chore(docs):** correct the e2e README test count from 131 to the current 138 with a recount rule, and document the intentional HELPERIUM_WIDGET_ENABLED default drift between .env.public.example (safe opt-in) and the public compose default. **Verification:** docs paths check green.
 - **fix(admin-dashboard):** mask readonly_dsn in tenant config responses and llm_config.api_key in agent list/get responses for viewer-role callers, compare bearer tokens with subtle.ConstantTimeCompare, and stop copying hop-by-hop and Set-Cookie headers from upstream responses; added security_hardening_test.go with red-first regressions. **Verification:** admin-dashboard suite green (-race on new tests), vitest 73 passed, isolated Docker E2E 138 passed.
 - **fix(mcp-gateway):** compare the API key with crypto/subtle.ConstantTimeCompare and stop forwarding upstream error details from the manifest, mapping and schema proxies (full errors go to slog, clients get a generic retryable upstream_unavailable JSON); added sanitisation and auth-parity regressions. **Verification:** mcp-gateway suite green, go vet clean, isolated Docker E2E 138 passed.
 - **fix(data-service):** enforce the repo-wide tenant ID pattern on the sqlite upload handler and validate the browser-controlled ?tenant= query fallback (invalid values treated as absent, header/context paths unchanged); added tenant_id_from_request and upload validation regressions. **Verification:** data-service suite green, go vet clean, isolated Docker E2E 138 passed.
