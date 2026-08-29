@@ -169,6 +169,15 @@ set `CORS_ALLOW_ORIGINS` to the exact `https://<DEMO_DOMAIN>` origin, keep
 `MCP_CLIENT_API_KEY`, and do not expose ports `8083` or `8084` through a proxy
 or host mapping.
 
+The public Caddy edge sets `Strict-Transport-Security` (one year, without
+`includeSubDomains`/`preload` so sibling demo services on the domain are not
+forced onto HTTPS) and a `Content-Security-Policy` tailored to what the page
+actually loads: same-origin by default, inline styles plus Google Fonts for
+the storefront, `blob:` media for widget audio. `frame-ancestors` is
+deliberately not set yet: if the storefront will never be embedded in another
+portal page, add `frame-ancestors 'none'` to the policy in
+`Caddyfile.public`.
+
 Note the intentional `HELPERIUM_WIDGET_ENABLED` default drift: this example
 keeps the safe opt-in `false`, while `docker-compose.public.yml` defaults to
 `true` because the public storefront ships with the widget on once its own

@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -47,6 +49,44 @@ func TestTenantIDFromRequest_QueryFallbackCompositeTakesFirst(t *testing.T) {
 	req := httptest.NewRequest("GET", "/students?tenant=shop-1,default", nil)
 	if got := tenantIDFromRequest(req); got != "shop-1" {
 		t.Errorf("composite query tenant: got %q, want %q", got, "shop-1")
+	}
+}
+
+// The ?tenant= query fallback is browser-controlled input kept only for the
+// Swagger UI spec fetch and curl-style workflows documented in doc/RUNBOOK.md.
+// It must warn on every use so operators migrate to the X-Tenant-ID header.
+func TestTenantIDFromRequest_QueryFallbackLogsDeprecation(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	req := httptest.NewRequest("GET", "/students?tenant=shop-1", nil)
+	if got := tenantIDFromRequest(req); got != "shop-1" {
+		t.Fatalf("valid query tenant: got %q, want %q", got, "shop-1")
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "deprecated") {
+		t.Errorf("expected deprecation warning for ?tenant= use, got: %s", logs)
+	}
+	if !strings.Contains(logs, "X-Tenant-ID") {
+		t.Errorf("deprecation warning must point to the X-Tenant-ID header, got: %s", logs)
+	}
+}
+
+func TestTenantIDFromRequest_HeaderPathNoDeprecation(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	req := httptest.NewRequest("GET", "/students", nil)
+	req.Header.Set("X-Tenant-ID", "shop-1")
+	if got := tenantIDFromRequest(req); got != "shop-1" {
+		t.Fatalf("header tenant: got %q, want %q", got, "shop-1")
+	}
+	if strings.Contains(buf.String(), "deprecated") {
+		t.Errorf("header path must not log a deprecation warning, got: %s", buf.String())
 	}
 }
 

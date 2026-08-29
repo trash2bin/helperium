@@ -397,6 +397,9 @@ func tenantIDFromRequest(r *http.Request) string {
 	// 3. Fallback to query parameter ?tenant=... (critical for Swagger UI / Browser).
 	// The query is browser-controlled input; a value violating the tenant-ID
 	// contract is treated as absent instead of reaching tenant routing.
+	// DEPRECATED: kept only for the Swagger UI spec fetch and curl-style
+	// workflows (doc/RUNBOOK.md); every use is logged so operators migrate
+	// to the X-Tenant-ID header. Physical removal is tracked separately.
 	if tenantID == "" {
 		queryTenant := r.URL.Query().Get("tenant")
 		// Composite scopes arrive comma-separated (e.g. "shop-1,default" from
@@ -405,6 +408,12 @@ func tenantIDFromRequest(r *http.Request) string {
 			queryTenant = strings.TrimSpace(strings.Split(queryTenant, ",")[0])
 		}
 		if tenantIDPattern.MatchString(queryTenant) {
+			slog.Warn(
+				"deprecated: ?tenant= query parameter is used; switch to the X-Tenant-ID header",
+				"raw_len", len(queryTenant),
+				"method", r.Method,
+				"path", r.URL.Path,
+			)
 			tenantID = queryTenant
 		} else if queryTenant != "" {
 			slog.Warn("rejecting invalid tenant id in query parameter",

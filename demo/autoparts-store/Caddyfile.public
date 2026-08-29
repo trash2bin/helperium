@@ -6,6 +6,20 @@
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
         Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        # No includeSubDomains/preload: the demo domain may host unrelated
+        # sibling services that are not ready for a blanket HTTPS commitment.
+        Strict-Transport-Security "max-age=31536000"
+        # Tailored to the storefront plus the embed widget: the widget injects
+        # <style> into its Shadow DOM and plays blob: audio; the storefront
+        # loads Google Fonts. There are no <img> tags, so images stay
+        # same-origin. frame-ancestors is intentionally omitted pending a
+        # deployment decision on portal embedding (see README).
+        # connect-src 'self' assumes the widget talks to the API through this
+        # same-origin reverse proxy (HELPERIUM_API_BASE defaults to empty). If
+        # a deployer ever points HELPERIUM_API_BASE at an external origin, the
+        # CSP here must add that origin to connect-src or widget requests will
+        # be blocked regardless of CORS.
+        Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self'; connect-src 'self'; media-src 'self' blob:; base-uri 'self'; form-action 'self'"
     }
     log {
         output stdout
