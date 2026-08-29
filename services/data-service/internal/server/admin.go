@@ -62,13 +62,13 @@ type adminConfigResponse struct {
 
 // adminDataSourceResponse — часть конфига.
 // DSN намеренно не отдаётся в DTO (секрет); вместо него HasReadonlyDSN.
-// ReadonlyDSN отдаётся целиком: он нужен админке для round-trip PUT, и
-// админка уже авторизована (AdminAuthMiddleware + Bearer-токен).
+// ReadonlyDSN тоже не отдаётся: он секрет уровня DSN. Round-trip PUT не
+// требует эха — adminConfigUpdateHandler сохраняет прежнее значение, когда
+// входящий readonly_dsn пуст (empty-means-preserve).
 type adminDataSourceResponse struct {
 	Driver         config.Driver `json:"driver"`
 	PoolSize       *int          `json:"pool_size,omitempty"`
 	ReadOnly       *bool         `json:"read_only,omitempty"`
-	ReadonlyDSN    string        `json:"readonly_dsn,omitempty"`
 	HasReadonlyDSN bool          `json:"has_readonly_dsn"`
 }
 
@@ -114,10 +114,11 @@ func AdminAuthMiddleware(next http.Handler) http.Handler {
 
 func responseFromDataSource(ds config.DataSourceConfig) *adminDataSourceResponse {
 	return &adminDataSourceResponse{
-		Driver:         ds.Driver,
-		PoolSize:       ds.PoolSize,
-		ReadOnly:       ds.ReadOnly,
-		ReadonlyDSN:    ds.ReadonlyDSN,
+		Driver:   ds.Driver,
+		PoolSize: ds.PoolSize,
+		ReadOnly: ds.ReadOnly,
+		// ReadonlyDSN is intentionally NOT copied to the response DTO (secret;
+		// HasReadonlyDSN is the only signal exposed).
 		HasReadonlyDSN: ds.ReadonlyDSN != "",
 	}
 }
