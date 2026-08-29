@@ -57,6 +57,14 @@ MCP_ALLOWED_ORIGINS=
 
 # Optional: read-only access to admin dashboard
 # VIEWER_TOKEN=viewer-token
+
+# Required once any agent stores llm_config (e.g. per-tenant LLM keys):
+# ENCRYPTION_KEY=<base64 32 bytes>
+# Generate: uv run -- python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# The api-service fails fast at startup if agents.sqlite already holds
+# llm_config rows and this key is absent or cannot decrypt them. When the key
+# is first set, legacy plaintext llm_config rows are auto-migrated to
+# ciphertext at startup. Keep the key out of Git and stable across restarts.
 ```
 
 The remaining variables have safe defaults for the demo. **Do not leave MCP auth disabled in a public deployment**: `MCP_REQUIRE_AUTH=true` plus matching non-empty credentials are mandatory.

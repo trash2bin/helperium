@@ -19,6 +19,10 @@ from starlette.staticfiles import StaticFiles
 
 from api_service.prometheus_metrics import init_metrics
 from api_service.log_config import configure_logging
+from api_service.agent_repository import (
+    LLMConfigUnavailableError,
+    LLMEncryptionKeyRequiredError,
+)
 from .auth import require_api_bearer
 from .rate_limit import limiter
 
@@ -46,6 +50,15 @@ logger = logging.getLogger("api_service.server")
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info("API server starting up")
+
+    # Fail fast on encryption-policy violations before any agent-dependent
+    # initialization runs. Swallowing these would boot a process that answers
+    # /health yet fails every agent request (C5 follow-up).
+    try:
+        get_agent_store()
+    except (LLMEncryptionKeyRequiredError, LLMConfigUnavailableError) as exc:
+        logger.critical("Refusing to start: %s", exc)
+        raise
 
     # Warm up LLM agent
     try:

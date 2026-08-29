@@ -322,6 +322,23 @@ cmd_start() {
     echo "$PROJECT_ROOT" > "$PROJECT_ROOT/.venv/lib/python$pyver/site-packages/_project_root.pth"
   fi
 
+  # api-service fails fast at startup when agents.sqlite already has any rows
+  # with llm_config and ENCRYPTION_KEY is unset (C5). For native dev keep a
+  # persistent local key in .data (gitignored): generated once here so legacy
+  # plaintext rows migrate to ciphertext and stay decryptable across restarts.
+  # Production must set ENCRYPTION_KEY explicitly in .env instead.
+  if [ -z "${ENCRYPTION_KEY:-}" ]; then
+    local dev_key_file="$PROJECT_ROOT/.data/dev_encryption_key"
+    if [ ! -s "$dev_key_file" ]; then
+      mkdir -p "$PROJECT_ROOT/.data"
+      uv run -- python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > "$dev_key_file"
+      chmod 600 "$dev_key_file"
+      echo "ℹ️  Generated local dev ENCRYPTION_KEY → $dev_key_file (gitignored; keep it, agents.sqlite is keyed to it)"
+    fi
+    ENCRYPTION_KEY=$(cat "$dev_key_file")
+    export ENCRYPTION_KEY
+  fi
+
   # Напоминание про PostgreSQL, если задан DATABASE_URL
   if [ -n "${DATABASE_URL:-}" ]; then
     echo "ℹ️  Режим PostgreSQL (DATABASE_URL задана)."

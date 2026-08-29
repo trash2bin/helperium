@@ -19,6 +19,24 @@ from cryptography.fernet import Fernet
 logger = logging.getLogger(__name__)
 
 
+class LLMEncryptionKeyRequiredError(RuntimeError):
+    """Raised at construction when agent llm_config rows exist but no valid
+    ENCRYPTION_KEY is configured. Fail fast instead of silently storing new
+    secrets as plaintext."""
+
+
+class LLMConfigUnavailableError(RuntimeError):
+    """Raised when the stored llm_config cannot be decrypted with the
+    currently configured key.
+
+    Two paths reach this:
+      * at construction, when existing ciphertext rows fail to decrypt under
+        the configured key (e.g. after key rotation without re-encryption) —
+        fail fast instead of booting with a silently-unavailable config;
+      * on update, when carrying an undecryptable value forward would wipe
+        the stored config (persisting NULL)."""
+
+
 # ── Encryption helpers ──
 
 
@@ -40,6 +58,24 @@ def _get_fernet() -> Fernet | None:
 
 
 _FERNET = _get_fernet()
+
+
+def _resolve_llm_key_requirement(
+    key_ready: bool, has_agent_llm_rows: bool
+) -> str | None:
+    """Decide whether repository construction may proceed.
+
+    Returns None when construction is allowed, otherwise a human-readable
+    reason string. The key is mandatory only when agent llm_config rows
+    already exist: a fresh dev/demo database may still boot without one.
+    """
+    if key_ready or not has_agent_llm_rows:
+        return None
+    return (
+        "ENCRYPTION_KEY is required: this database already stores agent "
+        "llm_config values and starting without a key would persist new "
+        "secrets as plaintext"
+    )
 
 
 def _encrypt_value(value: str | None) -> str | None:
@@ -164,6 +200,102 @@ class SqliteAgentRepository(AgentRepository):
         self._db_path = db_path
         self._lock = threading.Lock()
         self._init_db()
+        self._enforce_llm_key_policy()
+        self._migrate_legacy_plaintext_llm_configs()
+        self._validate_existing_llm_configs()
+
+    def _agent_llm_rows_exist(self) -> bool:
+        """Whether any agent row carries a non-null llm_config value."""
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM agents WHERE llm_config IS NOT NULL LIMIT 1"
+            ).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+
+    def _enforce_llm_key_policy(self) -> None:
+        """Fail fast when secrets exist but no valid key is configured."""
+        key_ready = _FERNET is not None
+        if key_ready:
+            return
+        if not self._agent_llm_rows_exist():
+            return
+        reason = _resolve_llm_key_requirement(False, True)
+        raise LLMEncryptionKeyRequiredError(reason)
+
+    def _migrate_legacy_plaintext_llm_configs(self) -> None:
+        """Encrypt legacy plaintext llm_config rows at startup.
+
+        Previously, rows written before a key was configured stayed plaintext
+        forever, and reading them with a key configured returned None (the
+        value then got wiped on the next update). Migration closes both gaps.
+        """
+        if _FERNET is None:
+            return
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT name, llm_config FROM agents WHERE llm_config IS NOT NULL"
+            ).fetchall()
+            migrated = 0
+            for row in rows:
+                value = row["llm_config"]
+                if value.startswith("gAAAAA"):
+                    continue  # already ciphertext
+                encrypted = _encrypt_value(value)
+                conn.execute(
+                    "UPDATE agents SET llm_config = ? WHERE name = ?",
+                    (encrypted, row["name"]),
+                )
+                migrated += 1
+            if migrated:
+                conn.commit()
+                logger.info(
+                    "Migrated %d legacy plaintext llm_config row(s) to ciphertext",
+                    migrated,
+                )
+        finally:
+            conn.close()
+
+    def _validate_existing_llm_configs(self) -> None:
+        """Fail fast when stored ciphertext cannot be decrypted by the key.
+
+        A mismatched ENCRYPTION_KEY (e.g. after key rotation without
+        re-encrypting) would otherwise leave the service running while every
+        read silently maps llm_config to None — an "unavailable config" state
+        that is easy to miss. Refuse to construct instead, and name the
+        affected agents.
+
+        Ciphertext is recognized by Fernet's ``gAAAAA`` prefix — the same
+        convention the migration step uses, so the classification is
+        internally consistent. A non-config value that happens to share the
+        prefix (e.g. a stray token) fails closed here, which is the safe
+        direction for secret material.
+        """
+        if _FERNET is None:
+            return
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT name, llm_config FROM agents WHERE llm_config IS NOT NULL"
+            ).fetchall()
+            undecryptable: list[str] = []
+            for row in rows:
+                value = row["llm_config"]
+                if not value.startswith("gAAAAA"):
+                    continue  # plaintext — handled by migration above
+                if _decrypt_value(value) is None:
+                    undecryptable.append(row["name"])
+            if undecryptable:
+                raise LLMConfigUnavailableError(
+                    "ENCRYPTION_KEY cannot decrypt stored llm_config for "
+                    "agent(s): " + ", ".join(sorted(undecryptable)) + ". "
+                    "Refusing to start with an unavailable configuration."
+                )
+        finally:
+            conn.close()
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path, check_same_thread=False)
@@ -337,6 +469,21 @@ class SqliteAgentRepository(AgentRepository):
                     else existing["widget_config"]
                 )
                 existing_llm_decrypted = _decrypt_value(existing["llm_config"])
+                if (
+                    llm_config is None
+                    and existing["llm_config"] is not None
+                    and existing_llm_decrypted is None
+                ):
+                    # The stored value exists but cannot be decrypted with the
+                    # configured key (key rotated / wrong key). Refuse to carry
+                    # an undecryptable config forward: that would persist NULL
+                    # and silently wipe the secret.
+                    raise LLMConfigUnavailableError(
+                        f"Agent '{name}' has an llm_config that cannot be "
+                        "decrypted with the currently configured ENCRYPTION_KEY; "
+                        "refusing to persist a NULL replacement. Provide an "
+                        "explicit llm_config or restore the correct key."
+                    )
                 new_llm_config = (
                     llm_config if llm_config is not None else existing_llm_decrypted
                 )

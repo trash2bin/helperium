@@ -33,6 +33,9 @@ if [[ "$test_profile" == true ]]; then
   export MCP_RATE_LIMIT_RPS="${MCP_TEST_RATE_LIMIT_RPS:-1000}"
   export MCP_RATE_LIMIT_BURST="${MCP_TEST_RATE_LIMIT_BURST:-1000}"
   export API_BEARER_TOKEN="${API_TEST_BEARER_TOKEN:-ci-api-control-token}"
+  # Fixed test-only Fernet key so the api ENCRYPTION_KEY fail-fast policy is
+  # exercised (E2E creates agents with llm_config); never use in production.
+  export ENCRYPTION_KEY="${API_TEST_ENCRYPTION_KEY:-aGVscGVyaXVtLWNpLXRlc3Qta2V5LTMyYnl0ZXMhISE=}"
 fi
 
 if docker compose version >/dev/null 2>&1; then

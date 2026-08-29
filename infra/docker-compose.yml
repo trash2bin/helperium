@@ -147,6 +147,10 @@ services:
       # Control-plane bearer: without it private API routes (agents, providers,
       # abuse-config) fail closed with 503 and admin-dashboard cannot manage them.
       - API_BEARER_TOKEN=${API_BEARER_TOKEN:-}
+      # Fernet key for agent llm_config at-rest encryption. Optional until the
+      # first llm_config row exists: from then on the API refuses to start
+      # without a valid key (secrets would otherwise be stored as plaintext).
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - MCP_GATEWAY_URL=http://mcp-gateway:8083
       - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
