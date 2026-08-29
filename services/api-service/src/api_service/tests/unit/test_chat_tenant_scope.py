@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import Request
@@ -140,6 +140,13 @@ async def test_named_agent_uses_persisted_composite_scope_not_request_header() -
 
     with (
         patch("api_service.server.routes.chat.get_agent", return_value=agent),
+        # get_agent_store() is evaluated eagerly before the (mocked)
+        # asyncio.to_thread call; patch it so the test never opens the
+        # developer's real agents.sqlite.
+        patch(
+            "api_service.server.routes.chat.get_agent_store",
+            return_value=MagicMock(),
+        ),
         patch(
             "api_service.server.routes.chat.asyncio.to_thread",
             new=AsyncMock(return_value=persisted_agent),

@@ -112,9 +112,7 @@ async def _run_voice(agent="test-agent", *, stt_text="test", **extra):
     with contextlib.ExitStack() as stack:
         for p in _voice_patches(MagicMock(), **{"store": None} if False else {}):
             stack.enter_context(p)
-        stt_cls = stack.enter_context(
-            patch("api_service.server.routes.chat.STTEngine")
-        )
+        stt_cls = stack.enter_context(patch("api_service.server.routes.chat.STTEngine"))
         stt_cls.from_config.return_value.transcribe = AsyncMock(
             return_value=MagicMock(text=stt_text, provider_name="stt")
         )
@@ -142,13 +140,9 @@ async def test_voice_calls_check_abuse_with_transcribed_text():
     with contextlib.ExitStack() as stack:
         for p in _voice_patches(mock_agent):
             stack.enter_context(p)
-        stt_cls = stack.enter_context(
-            patch("api_service.server.routes.chat.STTEngine")
-        )
+        stt_cls = stack.enter_context(patch("api_service.server.routes.chat.STTEngine"))
         stt_cls.from_config.return_value.transcribe = AsyncMock(
-            return_value=MagicMock(
-                text="какой у нас ассортимент", provider_name="stt"
-            )
+            return_value=MagicMock(text="какой у нас ассортимент", provider_name="stt")
         )
         stack.enter_context(patch("api_service.server.routes.chat.check_abuse", abuse))
 
@@ -196,9 +190,7 @@ async def test_voice_check_abuse_rejection_blocks_pipeline():
     with contextlib.ExitStack() as stack:
         for p in _voice_patches(mock_agent):
             stack.enter_context(p)
-        stt_cls = stack.enter_context(
-            patch("api_service.server.routes.chat.STTEngine")
-        )
+        stt_cls = stack.enter_context(patch("api_service.server.routes.chat.STTEngine"))
         # STT runs before the abuse gate (it produces the checked text).
         stt_cls.from_config.return_value.transcribe = AsyncMock(
             return_value=MagicMock(text="какой у нас ассортимент", provider_name="stt")
@@ -242,9 +234,7 @@ async def test_voice_unknown_agent_returns_404():
     with contextlib.ExitStack() as stack:
         for p in _voice_patches(mock_agent, store=_agent_store(None)):
             stack.enter_context(p)
-        stt_cls = stack.enter_context(
-            patch("api_service.server.routes.chat.STTEngine")
-        )
+        stt_cls = stack.enter_context(patch("api_service.server.routes.chat.STTEngine"))
         stt_cls.from_config.return_value.transcribe = AsyncMock()
 
         result = await chat_voice_endpoint(
@@ -276,9 +266,7 @@ async def test_voice_stream_success_emits_final_and_done():
     with contextlib.ExitStack() as stack:
         for p in _voice_patches(mock_agent):
             stack.enter_context(p)
-        stt_cls = stack.enter_context(
-            patch("api_service.server.routes.chat.STTEngine")
-        )
+        stt_cls = stack.enter_context(patch("api_service.server.routes.chat.STTEngine"))
         stt_cls.from_config.return_value.transcribe = AsyncMock(
             return_value=MagicMock(text="test", provider_name="stt")
         )
@@ -312,9 +300,7 @@ async def test_voice_stream_producer_error_is_buffered_with_terminal_done():
     with contextlib.ExitStack() as stack:
         for p in _voice_patches(mock_agent):
             stack.enter_context(p)
-        stt_cls = stack.enter_context(
-            patch("api_service.server.routes.chat.STTEngine")
-        )
+        stt_cls = stack.enter_context(patch("api_service.server.routes.chat.STTEngine"))
         stt_cls.from_config.return_value.transcribe = AsyncMock(
             return_value=MagicMock(text="test", provider_name="stt")
         )

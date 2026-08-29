@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 
@@ -22,6 +24,24 @@ def _get_app():
         del sv.app
     importlib.reload(sv)
     return sv.app
+
+
+@pytest.fixture(autouse=True)
+def _isolated_agent_db(monkeypatch, tmp_path):
+    """Keep these app-level tests away from the developer's real agents.sqlite.
+
+    The app constructs its agent store lazily via get_agent_store(); without an
+    AGENT_DB_PATH override the reload would open (and, since the ENCRYPTION_KEY
+    fail-fast policy, potentially refuse to start on) the developer's live
+    database, which contains agents with llm_config.
+    """
+    db = tmp_path / "agents.sqlite"
+    monkeypatch.setenv("AGENT_DB_PATH", str(db))
+    import api_service.server.deps as deps
+
+    monkeypatch.setattr(deps, "_agent_store", None)
+    yield
+    monkeypatch.delenv("AGENT_DB_PATH", raising=False)
 
 
 def _request(client, method: str, path: str, **kwargs):
