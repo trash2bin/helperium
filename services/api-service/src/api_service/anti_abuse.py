@@ -20,6 +20,16 @@ import time
 from dataclasses import dataclass, field
 
 
+# Eviction bounds for attacker-influenced in-memory state. Session IDs and
+# IPs arrive from request data, so the per-key maps below would otherwise
+# grow without limit under crafted traffic. These are module constants, not
+# AbuseConfig fields: AbuseConfig is an extra=forbid DTO contract.
+TOKEN_BUCKET_MAX_ENTRIES = 4096
+TOKEN_BUCKET_IDLE_SECONDS = 3600
+TOKEN_BUCKET_EVICT_SCAN_INTERVAL = 128
+RECENT_MESSAGES_MAX_SESSIONS = 4096
+RECENT_MESSAGE_WINDOW_SECONDS = 300
+
 # ── Config ──
 
 
@@ -108,8 +118,9 @@ class TokenBucket:
 
     def __init__(self, config: AbuseConfig) -> None:
         self.config = config
-        self._buckets: dict[str, dict] = {}  # key -> {tokens, last_time}
+        self._buckets: dict[str, dict] = {}  # key -> {tokens, last_time, last_seen}
         self._lock = threading.Lock()
+        self._inserts_since_scan = 0
 
     def _key(self, session_id: str, ip: str, user_agent: str) -> str:
         """Composite key: session + IP + UA hash prevents bypass via IP switching."""
@@ -130,8 +141,12 @@ class TokenBucket:
                 bucket = {
                     "tokens": float(self.config.burst),
                     "last_time": now,
+                    "last_seen": now,
                 }
                 self._buckets[key] = bucket
+                self._maybe_evict_locked(now)
+            else:
+                bucket["last_seen"] = now
 
             elapsed = now - bucket["last_time"]
             bucket["last_time"] = now
@@ -149,6 +164,30 @@ class TokenBucket:
             deficit = 1.0 - bucket["tokens"]
             retry_after = deficit / self.config.rps if self.config.rps > 0 else 1.0
             return False, {"retry_after": max(0.1, retry_after)}
+
+    def _maybe_evict_locked(self, now: float) -> None:
+        """Lazy eviction, called on new-bucket inserts while holding the lock.
+
+        Idle eviction runs at most once per TOKEN_BUCKET_EVICT_SCAN_INTERVAL
+        inserts. The hard cap is enforced on every insert that would exceed
+        it (O(n) over the map only when the cap is actually crossed).
+        """
+        self._inserts_since_scan += 1
+        if self._inserts_since_scan >= TOKEN_BUCKET_EVICT_SCAN_INTERVAL:
+            self._inserts_since_scan = 0
+            idle_cutoff = now - TOKEN_BUCKET_IDLE_SECONDS
+            stale = [
+                k for k, b in self._buckets.items() if b["last_seen"] < idle_cutoff
+            ]
+            for k in stale:
+                del self._buckets[k]
+
+        if len(self._buckets) > TOKEN_BUCKET_MAX_ENTRIES:
+            # Drop least-recently-seen buckets until back under the cap.
+            ordered = sorted(self._buckets.items(), key=lambda kv: kv[1]["last_seen"])
+            excess = len(self._buckets) - TOKEN_BUCKET_MAX_ENTRIES
+            for k, _ in ordered[:excess]:
+                del self._buckets[k]
 
     def _advance_time(self, key_prefix: str, ms: int) -> None:
         """Test helper: advance time for all buckets matching key_prefix.
@@ -189,6 +228,50 @@ class AntiAbuseChecker:
         self._recent_messages: dict[str, list[tuple[str, float]]] = {}
         self._lock = threading.Lock()
 
+    def _prune_session_locked(
+        self, session_id: str, now: float
+    ) -> list[tuple[str, float]]:
+        """Drop messages outside the window for one session.
+
+        Callers must hold the lock. Entries older than the repeated-message
+        window are removed; sessions whose list becomes empty are dropped
+        from the map entirely. The hard cap evicts sessions whose newest
+        message is oldest.
+        """
+        cutoff = now - RECENT_MESSAGE_WINDOW_SECONDS
+        msgs = [
+            (m, t) for m, t in self._recent_messages.get(session_id, []) if t > cutoff
+        ]
+        if msgs:
+            self._recent_messages[session_id] = msgs
+        else:
+            self._recent_messages.pop(session_id, None)
+        return msgs
+
+    def _maybe_evict_sessions_locked(self, session_id: str, now: float) -> None:
+        """Hard-cap eviction for the recent-messages map, after an append.
+
+        Callers must hold the lock. Sessions are evicted by newest stored
+        timestamp (least-recently-active first) until back under the cap;
+        the session being served always survives.
+        """
+        if len(self._recent_messages) <= RECENT_MESSAGES_MAX_SESSIONS:
+            return
+        protected = self._recent_messages.get(session_id)
+        ordered = sorted(
+            (
+                (k, max(t for _, t in v))
+                for k, v in self._recent_messages.items()
+                if k != session_id
+            ),
+            key=lambda kv: kv[1],
+        )
+        excess = len(self._recent_messages) - RECENT_MESSAGES_MAX_SESSIONS
+        for k, _ in ordered[:excess]:
+            del self._recent_messages[k]
+        if protected is not None:
+            self._recent_messages[session_id] = protected
+
     def _check_user_agent(self, user_agent: str) -> str | None:
         """Returns error reason if UA is blocked, None if OK."""
         if not user_agent and self.config.block_empty_user_agent:
@@ -211,10 +294,7 @@ class AntiAbuseChecker:
         """Check if this session has sent the same message too many times."""
         now = time.monotonic()
         with self._lock:
-            msgs = self._recent_messages.get(session_id, [])
-            # Clean old entries (> 5 minutes)
-            cutoff = now - 300
-            msgs = [(m, t) for m, t in msgs if t > cutoff]
+            msgs = self._prune_session_locked(session_id, now)
 
             count = sum(1 for m, _ in msgs if m == message)
 
@@ -223,6 +303,7 @@ class AntiAbuseChecker:
 
             msgs.append((message, now))
             self._recent_messages[session_id] = msgs
+            self._maybe_evict_sessions_locked(session_id, now)
         return None
 
     def check(

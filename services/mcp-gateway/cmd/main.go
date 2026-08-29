@@ -98,16 +98,47 @@ var (
 )
 
 type streamableTenantRegistry struct {
-	mu       sync.Mutex
-	handlers map[string]http.Handler
-	max      int
+	mu         sync.Mutex
+	handlers   map[string]http.Handler
+	lastAccess map[string]time.Time
+	max        int
 }
 
 func newStreamableTenantRegistry() *streamableTenantRegistry {
 	return &streamableTenantRegistry{
-		handlers: make(map[string]http.Handler),
-		max:      MaxStreamableTenantScopes,
+		handlers:   make(map[string]http.Handler),
+		lastAccess: make(map[string]time.Time),
+		max:        MaxStreamableTenantScopes,
 	}
+}
+
+// registryIdleEvictionTTL bounds how long a cached Streamable HTTP tenant
+// scope may stay unused before it becomes evictable at capacity. It must stay
+// comfortably above SessionIdleTimeout so live MCP sessions are never evicted;
+// zero disables idle eviction.
+var registryIdleEvictionTTL = 15 * time.Minute
+
+// nowFunc is the clock used for registry idle-eviction timestamps. It is a
+// package-level variable so tests can stub it deterministically.
+var nowFunc = time.Now
+
+// evictIdleScopes removes cached scopes whose last access is older than
+// registryIdleEvictionTTL and returns whether at least one slot was freed.
+// Active scopes (accessed within the TTL) are never evicted: their stateful
+// MCP sessions would break. Callers must hold registry.mu.
+func (registry *streamableTenantRegistry) evictIdleScopes(now time.Time) bool {
+	if registryIdleEvictionTTL <= 0 {
+		return false
+	}
+	evicted := false
+	for key, last := range registry.lastAccess {
+		if now.Sub(last) > registryIdleEvictionTTL {
+			delete(registry.handlers, key)
+			delete(registry.lastAccess, key)
+			evicted = true
+		}
+	}
+	return evicted
 }
 
 func (registry *streamableTenantRegistry) handlerFor(tenantIDs []string) (http.Handler, error) {
@@ -117,13 +148,19 @@ func (registry *streamableTenantRegistry) handlerFor(tenantIDs []string) (http.H
 	// A slow or unavailable tenant must not block already-cached scopes.
 	registry.mu.Lock()
 	if handler, ok := registry.handlers[tenantKey]; ok {
+		registry.lastAccess[tenantKey] = nowFunc()
 		registry.mu.Unlock()
 		return handler, nil
 	}
 	if len(registry.handlers) >= registry.max {
-		registry.mu.Unlock()
-		return nil, errMaxStreamableTenantScopes
+		if registry.evictIdleScopes(nowFunc()) {
+			// Fall through: a slot opened up.
+		} else {
+			registry.mu.Unlock()
+			return nil, errMaxStreamableTenantScopes
+		}
 	}
+	registry.lastAccess[tenantKey] = nowFunc()
 	registry.mu.Unlock()
 
 	mcpServer, err := createCompositeServer(tenantIDs)
