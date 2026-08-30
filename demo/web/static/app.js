@@ -37,9 +37,22 @@ const THINKING_MESSAGE = "Thinking and checking data...";
 const $ = (selector) => document.querySelector(selector);
 
 let currentSessionId;
-let manifestRetries = 0;
-const MANIFEST_MAX_RETRIES = 10;
-const MANIFEST_RETRY_MS = 3000; // 3 секунды между попытками
+
+// Bootstrap/retry policy lives in a pure ES module (tested by node --test,
+// see bootstrap_core.test.mjs). Classic <script> cannot use static import,
+// so we load it dynamically before first use and cache the promise.
+let bootstrapCorePromise = null;
+function bootstrapCore() {
+  if (!bootstrapCorePromise) {
+    bootstrapCorePromise = import("./bootstrap_core.mjs");
+  }
+  return bootstrapCorePromise;
+}
+
+// Generation token: every manifest load cycle captures its own value.
+// reloadForNewTenant()/Retry bump it, so any in-flight older cycle aborts at
+// its next await resumption and can never render a foreign tenant's manifest.
+let manifestGeneration = 0;
 
 function activeCollectionEndpoint() {
   return (state.manifest?.endpoints || []).find(
@@ -91,8 +104,12 @@ async function init() {
   if (state.agentId && window.__agentTutorSetAgent) {
     window.__agentTutorSetAgent(state.agentId);
   }
-  // Manifest загружается после того как tenant выбран
-  await loadManifest();
+  // Manifest загружается только когда есть подтверждённый backend'ом tenant:
+  // если список недоступен, loadTenants уже показал backend-unavailable и
+  // продолжать с неподтверждённым state.tenantId бессмысленно.
+  if (state.tenantId) {
+    await loadManifest();
+  }
 }
 
 // ── Placeholder пока manifest не пришёл ──
@@ -121,26 +138,139 @@ function showTabPlaceholder() {
 // ── Manifest (повторяет попытки пока не загрузится) ──
 
 async function loadManifest() {
-  while (manifestRetries < MANIFEST_MAX_RETRIES) {
+  const core = await bootstrapCore();
+  const captured = ++manifestGeneration;
+
+  for (let attempt = 1; attempt <= core.MAX_MANIFEST_ATTEMPTS; attempt++) {
+    if (core.isStaleGeneration(captured, manifestGeneration)) return;
+
+    let status = null; // null = network failure (fetch threw)
+    let payload = null;
     try {
       const response = await fetchWithTenant(`${apiBase}/api/manifest`);
-      if (response.ok) {
-        state.manifest = await response.json();
-        buildTabsFromManifest();
-        // Загружаем данные для первой вкладки
-        if (state.tab) await loadData();
-        return;
-      }
+      status = response.status;
+      if (response.ok) payload = await response.json();
     } catch (_) {
-      // data-service ещё не готов — подождём и попробуем снова
+      // data-service/прокси недоступен — классифицируем как retryable ниже
     }
-    manifestRetries++;
-    console.warn(`Manifest retry ${manifestRetries}/${MANIFEST_MAX_RETRIES}…`);
-    await new Promise((r) => setTimeout(r, MANIFEST_RETRY_MS));
+
+    if (core.isStaleGeneration(captured, manifestGeneration)) return; // ответ устарел
+
+    if (payload != null) {
+      if (!core.shouldRenderManifest(captured, manifestGeneration, payload)) return;
+      state.manifest = payload;
+      buildTabsFromManifest();
+      if (state.tab) await loadData();
+      return;
+    }
+
+    const outcome = core.classifyManifestStatus(status);
+    if (outcome === "tenant-not-found") {
+      // Постоянная ошибка: ретраить бессмысленно. Возможно, выбранный tenant
+      // удалили — проверяем список и, если он действительно исчез, чистим
+      // stale storage и переключаемся на актуальный tenant.
+      await recoverStaleTenant();
+      return;
+    }
+
+    if (attempt >= core.MAX_MANIFEST_ATTEMPTS) break;
+    console.warn(`Manifest retry ${attempt}/${core.MAX_MANIFEST_ATTEMPTS} (status ${status})…`);
+    await new Promise((r) => setTimeout(r, core.computeBackoffMs(attempt)));
   }
-  // Исчерпали попытки — показываем ошибку
+
+  if (core.isStaleGeneration(captured, manifestGeneration)) return;
+  showManifestRetryState("Не удалось загрузить сущности. Бэкенд недоступен.");
+}
+
+// Tenant vanished between /api/tenants and /api/manifest: re-fetch the list,
+// and only when the saved tenant is genuinely gone from it, clear stale
+// storage and retry once with a real, currently available tenant.
+async function recoverStaleTenant() {
+  const core = await bootstrapCore();
+  const savedTenantId = state.tenantId;
+  let tenants = null;
+  try {
+    const resp = await fetch(`${apiBase}/api/tenants`);
+    if (resp.ok) tenants = (await resp.json()).tenants || [];
+  } catch (_) {
+    tenants = null;
+  }
+
+  if (!Array.isArray(tenants) || tenants.length === 0) {
+    // Список недоступен/пуст: это backend-unavailable, не «tenant нет».
+    showManifestRetryState("Не удалось загрузить список баз данных. Бэкенд недоступен.");
+    return;
+  }
+
+  const recovered = core.pickRecoveryTenant(tenants, savedTenantId);
+  if (!recovered) {
+    showManifestRetryState("Не удалось загрузить сущности. Бэкенд недоступен.");
+    return;
+  }
+
+  // Recursion guard: reloading with the SAME tenant would 404 again and
+  // re-enter recoverStaleTenant forever. If the tenant is still listed,
+  // the 404 is a persistent tenant/manifest error — surface it with Retry.
+  if (!core.shouldReloadAfterTenantCheck(recovered, savedTenantId)) {
+    showManifestRetryState(
+      `База «${savedTenantId}» недоступна (нет данных или доступ закрыт).`
+    );
+    return;
+  }
+
+  const select = $("#tenantSelect");
+  if (select) {
+    select.innerHTML = tenants
+      .map((t) => `<option value="${escapeHtml(t)}" ${t === recovered ? "selected" : ""}>${escapeHtml(t)}</option>`)
+      .join("");
+  }
+  await setTenantId(recovered);
+  // Exactly one reload: the previous tenant is gone and a different,
+  // currently listed tenant was picked.
+  await loadManifest();
+}
+
+// Explicit user-facing failure state with a working Retry action.
+// Tenant-list failure state: distinct from manifest errors because there is
+// no tenant context to retry against; a manual Retry re-runs the whole
+// bootstrap phase (tenant list → agents → manifest) for the current page.
+function showTenantsRetryState() {
+  showManifestRetryState(
+    "Не удалось загрузить список баз данных. Бэкенд недоступен.",
+    async () => {
+      showTabPlaceholder();
+      await init();
+    }
+  );
+}
+
+function showManifestRetryState(reason, retryAction) {
+  const retry =
+    retryAction ||
+    (async () => {
+      showTabPlaceholder();
+      await loadManifest();
+    });
   const tabBar = document.getElementById("tabBar");
-  if (tabBar) tabBar.innerHTML = '<span class="tab-placeholder" style="color:#b4235a">Failed to load entities. Refresh the page.</span>';
+  if (tabBar) {
+    tabBar.innerHTML = "";
+    const msg = document.createElement("span");
+    msg.className = "tab-placeholder";
+    msg.style.color = "#b4235a";
+    msg.textContent = reason;
+    const btn = document.createElement("button");
+    btn.className = "tab";
+    btn.type = "button";
+    btn.textContent = "Retry";
+    btn.style.marginLeft = "10px";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      await retry();
+    });
+    tabBar.append(msg, btn);
+  }
+  const title = $("#tableTitle");
+  if (title) title.textContent = "Error";
 }
 
 function buildTabsFromManifest() {
@@ -239,19 +369,26 @@ async function loadTenants(preferredTenantId) {
   const select = $("#tenantSelect");
   if (!select) return;
 
+  let fetchedTenants = null;
   try {
     const resp = await fetch(`${apiBase}/api/tenants`);
     if (!resp.ok) throw new Error(`status ${resp.status}`);
-    const data = await resp.json();
-    state.tenants = data.tenants || [];
+    fetchedTenants = (await resp.json()).tenants || [];
   } catch (err) {
     console.warn("Failed to load tenants:", err);
-    state.tenants = ["default"];
   }
 
-  if (state.tenants.length === 0) {
-    state.tenants = ["default"];
+  // Список недоступен или пуст — НЕ выдумываем ["default"] и НЕ продолжаем
+  // со старым списком/state.tenantId как будто он подтверждён backend'ом:
+  // чистим state и показываем backend-unavailable с рабочим Retry.
+  if (!Array.isArray(fetchedTenants) || fetchedTenants.length === 0) {
+    state.tenants = [];
+    select.innerHTML = '<option value="">—</option>';
+    showTenantsRetryState();
+    await loadAgents();
+    return;
   }
+  state.tenants = fetchedTenants;
 
   // Determine active tenant
   let activeTenant = preferredTenantId;
@@ -347,11 +484,11 @@ function setTenantId(id) {
 async function reloadForNewTenant() {
   // Сброс и перезагрузка всего
   showTabPlaceholder();
-  // Сброс manifest (загрузим заново под новым tenant)
+  // Сброс manifest (загрузим заново под новым tenant).
+  // loadManifest() захватит новый generation — старые циклы прервутся сами.
   state.manifest = null;
   state.tab = null;
   state.data = null;
-  manifestRetries = 0;
 
   // Генерируем новую сессию для нового tenant'а
   currentSessionId = getSessionId();
