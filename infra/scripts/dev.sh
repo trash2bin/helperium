@@ -446,7 +446,7 @@ cmd_start() {
           extra_env="MCP_CLIENT_API_KEY=$MCP_CLIENT_API_KEY $extra_env"
         fi
         ;;
-      web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT DEMO_WEB_PORT=$WEB_PORT" ;;
+      web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT DEMO_WEB_PORT=$WEB_PORT DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT" ;;
       admin) extra_env="LISTEN_ADDR=:$ADMIN_PORT ADMIN_TOKEN=$ADMIN_TOKEN VIEWER_TOKEN=$VIEWER_TOKEN DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT API_SERVICE_URL=http://127.0.0.1:$API_PORT LOG_LEVEL=$LOG_LEVEL LOG_FORMAT=$LOG_FORMAT" ;;
     esac
 
@@ -1021,9 +1021,17 @@ case "${1:-help}" in
     # E2E_DB_DIR unset, so its e2e container continues using /workspace/.data.
     native_e2e_db_dir="${E2E_DB_DIR:-/tmp}"
     echo "   Native SQLite workdir: $native_e2e_db_dir"
-    MCP_API_KEY="$MCP_E2E_API_KEY" \
+    # Mirror the secure-profile contract on the pytest caller, matching what
+    # compose.sh --profile test and the CI override provide to the e2e
+    # container. Without MCP_DEV=false / MCP_REQUIRE_AUTH=true the
+    # test-profile contract assertions would read developer .env values.
+    MCP_DEV="false" \
+      MCP_REQUIRE_AUTH="true" \
+      MCP_API_KEY="$MCP_E2E_API_KEY" \
       MCP_CLIENT_API_KEY="$MCP_E2E_API_KEY" \
       MCP_ALLOWED_ORIGINS="$MCP_E2E_ALLOWED_ORIGINS" \
+      MCP_RATE_LIMIT_RPS="${MCP_E2E_RATE_LIMIT_RPS:-1000}" \
+      MCP_RATE_LIMIT_BURST="${MCP_E2E_RATE_LIMIT_BURST:-1000}" \
       E2E_DB_DIR="$native_e2e_db_dir" \
       ADMIN_TOKEN="${MCP_E2E_ADMIN_TOKEN:-helperium-e2e-admin-token}" \
       VIEWER_TOKEN="${MCP_E2E_VIEWER_TOKEN:-helperium-e2e-viewer-token}" \
