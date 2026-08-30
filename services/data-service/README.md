@@ -186,7 +186,7 @@ Multi-token AND по полям, OR между полями. Лимиты: `maxR
 - `TenantStore` — мапа id→instance, RWMutex. `ServeHTTP` — роутинг по `X-Tenant-ID` (удерживает RLock на весь запрос, закрывает TOCTOU с ReloadTenant/RemoveTenant). `resolveTenant()` — без лока (для admin-хендлеров, с проверкой `removing`).
 - Персистентность: `SaveTenantConfig()` — **атомарная запись** (temp-файл + `os.Rename`, битый JSON невозможен), `DeleteTenantConfig()` — удаляет и `{id}.json`, и `{id}.schema.json`. Директория `$TENANTS_DIR` (default `.data/tenants/`).
 - Schema cache: `TenantSchemaPath()`, `SaveTenantSchema()`, `LoadTenantSchema()` (нет файла → nil), `PersistTenantConfig()` — регенерирует Entities/Endpoints (fallback: сохраняет как есть).
-- **Tenant resolution (deprecated fallback):** порядок — context → `X-Tenant-ID` header → `?tenant=` query. Query-параметр **остаётся только как deprecation bridge** (Swagger UI fetch `/openapi.json` и curl-сценарии в RUNBOOK); каждое использование логирует `deprecated`-warn и указывает на `X-Tenant-ID`. Планируемое удаление — после миграции Swagger spec-fetch на header-инъекцию; не добавляйте новых потребителей query-параметра.
+- **Tenant resolution:** порядок — context → `X-Tenant-ID` header. Query-параметр `?tenant=` **не выбирает tenant** (удалён как authority): даже валидное значение игнорируется, а запрос без header получает fail-closed 404/400. Это закрывает tenant authority contract из AGENTS.md и согласовано с mcp-gateway `resolveTenantIDs` (header-only). Swagger UI передаёт tenant через `requestInterceptor` (header) с сохранением выбора в `localStorage`.
 
 ### Lifecycle (`tenant_lifecycle.go`)
 

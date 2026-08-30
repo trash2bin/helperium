@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -333,7 +332,7 @@ func (ts *TenantStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if inst == nil {
 		unlock()
 		handlers.RespondError(w, http.StatusNotFound, "tenant_not_found",
-			"no tenant identifier provided — please use X-Tenant-ID header or ?tenant= query parameter")
+			"no tenant identifier provided — please use the X-Tenant-ID header")
 		return
 	}
 	defer unlock()
@@ -378,51 +377,25 @@ func (ts *TenantStore) resolveTenantAndLock(r *http.Request) (*TenantInstance, f
 	return inst, ts.mu.RUnlock
 }
 
-// tenantIDPattern is the repo-wide tenant-ID contract (AGENTS.md "MCP scope":
-// [A-Za-z0-9][A-Za-z0-9_-]{0,127}). The mcp-gateway enforces the same pattern
-// for header-based MCP scopes; here it guards the browser-controlled query
-// fallback only. Header/context paths keep their current behavior.
-var tenantIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
-
-// tenantIDFromRequest extracts the tenant identifier from context, header, or query.
+// tenantIDFromRequest extracts the tenant identifier from request context or
+// X-Tenant-ID header. The ?tenant= query parameter is deliberately NOT
+// accepted — tenant scope authority lives exclusively in X-Tenant-ID per the
+// AGENTS.md tenant authority contract. This mirrors mcp-gateway's
+// resolveTenantIDs (header-only).
 func tenantIDFromRequest(r *http.Request) string {
-	// 1. Try context (populated by TenantIDMiddleware when present)
+	// 1. Context (populated by TenantIDMiddleware when present)
 	tenantID, _ := r.Context().Value(tenantIDKey).(string)
 
-	// 2. Fallback: direct header read (for tests / when middleware not applied)
+	// 2. Header fallback (for tests / when middleware not applied)
 	if tenantID == "" {
 		tenantID = r.Header.Get("X-Tenant-ID")
 	}
+	// Query parameter ?tenant= is intentionally ignored — even a valid value
+	// does not select a tenant. This closes the legacy fallback that violated
+	// the tenant authority contract.
 
-	// 3. Fallback to query parameter ?tenant=... (critical for Swagger UI / Browser).
-	// The query is browser-controlled input; a value violating the tenant-ID
-	// contract is treated as absent instead of reaching tenant routing.
-	// DEPRECATED: kept only for the Swagger UI spec fetch and curl-style
-	// workflows (doc/RUNBOOK.md); every use is logged so operators migrate
-	// to the X-Tenant-ID header. Physical removal is tracked separately.
-	if tenantID == "" {
-		queryTenant := r.URL.Query().Get("tenant")
-		// Composite scopes arrive comma-separated (e.g. "shop-1,default" from
-		// MCP composite sessions); routing uses the first tenant only.
-		if strings.Contains(queryTenant, ",") {
-			queryTenant = strings.TrimSpace(strings.Split(queryTenant, ",")[0])
-		}
-		if tenantIDPattern.MatchString(queryTenant) {
-			slog.Warn(
-				"deprecated: ?tenant= query parameter is used; switch to the X-Tenant-ID header",
-				"raw_len", len(queryTenant),
-				"method", r.Method,
-				"path", r.URL.Path,
-			)
-			tenantID = queryTenant
-		} else if queryTenant != "" {
-			slog.Warn("rejecting invalid tenant id in query parameter",
-				"raw_len", len(queryTenant))
-		}
-	}
-
-	// Handle comma-separated tenant IDs (e.g. "shop,default" from composite MCP sessions)
-	// Use the first tenant only for routing to data-service
+	// Handle comma-separated tenant IDs (e.g. "shop,default" from composite
+	// MCP sessions) — routing uses the first tenant only.
 	if tenantID != "" && strings.Contains(tenantID, ",") {
 		parts := strings.Split(tenantID, ",")
 		tenantID = strings.TrimSpace(parts[0])

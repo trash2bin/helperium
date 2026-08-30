@@ -55,13 +55,14 @@ func TestNewOpenAPIHandler_NoTenant(t *testing.T) {
 	}
 }
 
-// TestNewOpenAPIHandler_WithTenant — с tenant возвращает spec с эндпоинтами
+// TestNewOpenAPIHandler_WithTenant — с X-Tenant-ID header возвращает spec
 func TestNewOpenAPIHandler_WithTenant(t *testing.T) {
 	store := server.NewTenantStore(nil, "")
 	h := server.NewOpenAPIHandler(store, true)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/openapi.json?tenant=test", nil)
+	r := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	r.Header.Set("X-Tenant-ID", "test")
 	h.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -83,7 +84,8 @@ func TestNewOpenAPIHandler_WithAdmin(t *testing.T) {
 	h := server.NewOpenAPIHandler(store, true)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/openapi.json?tenant=test", nil)
+	r := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	r.Header.Set("X-Tenant-ID", "test")
 	h.ServeHTTP(w, r)
 
 	var spec map[string]any

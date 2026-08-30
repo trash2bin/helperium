@@ -66,7 +66,7 @@ func TestAdminConfig_RoundTripPreservesFieldRules(t *testing.T) {
 	}
 
 	// 2. GET /admin/config → DTO.
-	getReq := httptest.NewRequest(http.MethodGet, "/admin/config?tenant=test-rt", nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
 	getReq.Header.Set("X-Tenant-ID", "test-rt")
 	getRec := httptest.NewRecorder()
 	ts.adminConfigHandler(getRec, getReq)
@@ -154,7 +154,7 @@ func TestAdminConfig_PutRoundTrip(t *testing.T) {
 	}
 
 	// GET.
-	getReq := httptest.NewRequest(http.MethodGet, "/admin/config?tenant=test-put", nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
 	getReq.Header.Set("X-Tenant-ID", "test-put")
 	getRec := httptest.NewRecorder()
 	ts.adminConfigHandler(getRec, getReq)
@@ -163,7 +163,7 @@ func TestAdminConfig_PutRoundTrip(t *testing.T) {
 	}
 
 	// PUT: тело ровно то, что вернул GET (как делает админка).
-	putReq := httptest.NewRequest(http.MethodPost, "/admin/config?tenant=test-put",
+	putReq := httptest.NewRequest(http.MethodPost, "/admin/config",
 		strings.NewReader(getRec.Body.String()))
 	putReq.Header.Set("X-Tenant-ID", "test-put")
 	putRec := httptest.NewRecorder()

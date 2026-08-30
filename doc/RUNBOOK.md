@@ -106,7 +106,7 @@ Each service exposes `/metrics` by default.
 uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
 
 # Introspect client DB schema
-curl http://localhost:8084/admin/introspect?tenant=client-name
+curl -H "X-Tenant-ID: client-name" http://localhost:8084/admin/introspect
 
 # Import RAG documents via admin dashboard (:8085) or CLI:
 uv run agent-rag-ingest import /path/to/doc.pdf -d client-name
@@ -322,7 +322,7 @@ curl http://localhost:8081/health    # → {"status":"ok"}
 uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
 
 # Проинтроспектировать схему БД клиента
-curl http://localhost:8084/admin/introspect?tenant=client-name
+curl -H "X-Tenant-ID: client-name" http://localhost:8084/admin/introspect
 
 # Импорт RAG-документов через админку (:8085) или CLI:
 uv run agent-rag-ingest import /path/to/doc.pdf -d client-name

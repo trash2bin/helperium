@@ -15,25 +15,28 @@ const (
 	tenantBarBody template.HTML = `<div class="tenant-bar"> <label for="tenant">Tenant:</label> <input id="tenant" list="tenantList" placeholder="default" /> <datalist id="tenantList"></datalist> <button id="applyTenant">Apply</button> </div>`
 )
 
-// swaggerInitWithTenant wraps DefaultInit with a requestInterceptor that
-// injects X-Tenant-ID from the tenant input field and a script that
-// populates the datalist from the current tenant set.
-const swaggerInitWithTenant template.JS = ` // Populate tenant dropdown from URL param if present
-const qs = new URLSearchParams(window.location.search);
+// swaggerInitWithTenant injects X-Tenant-ID via requestInterceptor and
+// persists the selected tenant in localStorage (no ?tenant= in the URL).
+const swaggerInitWithTenant template.JS = `
 const tenantInput = document.getElementById('tenant');
-if (tenantInput && qs.has('tenant')) tenantInput.value = qs.get('tenant');
+const savedTenant = localStorage.getItem('helperium_tenant') || '';
+if (tenantInput && savedTenant) tenantInput.value = savedTenant;
+
 document.getElementById('applyTenant')?.addEventListener('click', () => {
 	const val = tenantInput.value.trim();
-	const url = new URL(location.origin + '/docs' + (val ? '?tenant=' + encodeURIComponent(val) : ''));
-	location.href = url.toString();
+	localStorage.setItem('helperium_tenant', val);
+	window.location.reload();
 });
 
 SwaggerUIBundle({
-	url: "/openapi.json" + window.location.search,
+	url: "/openapi.json",
 	dom_id: "#swagger-ui",
 	presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
 	layout: "StandaloneLayout",
 	defaultModelsExpandDepth: -1,
+	// requestInterceptor injects X-Tenant-ID into every request, including
+	// the initial spec fetch for /openapi.json. This is the ONLY way tenant is
+	// communicated — no ?tenant= query parameter is used.
 	requestInterceptor: function(req) {
 		const v = document.getElementById('tenant')?.value?.trim();
 		if (v) req.headers['X-Tenant-ID'] = v;

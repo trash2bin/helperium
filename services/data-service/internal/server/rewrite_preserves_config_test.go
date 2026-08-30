@@ -95,7 +95,7 @@ func TestRewrite_PreservesCustomConfig(t *testing.T) {
 	}
 
 	// 3. Вызов adminRewriteHandler (это и есть /admin/config/rewrite).
-	req := httptest.NewRequest(http.MethodPost, "/admin/config/rewrite?tenant=test-rewrite", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/config/rewrite", nil)
 	req.Header.Set("X-Tenant-ID", "test-rewrite")
 	rec := httptest.NewRecorder()
 	ts.adminRewriteHandler(nil, "")(rec, req)
@@ -217,7 +217,7 @@ func TestRewrite_CustomQueries_Idempotent(t *testing.T) {
 
 	// rewrite ×2 — идемпотентность.
 	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/admin/config/rewrite?tenant=test-idem", nil)
+		req := httptest.NewRequest(http.MethodPost, "/admin/config/rewrite", nil)
 		req.Header.Set("X-Tenant-ID", "test-idem")
 		rec := httptest.NewRecorder()
 		ts.adminRewriteHandler(nil, "")(rec, req)

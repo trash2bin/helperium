@@ -308,3 +308,71 @@ func TestTenantStore_ServeHTTP_TenantNotFound(t *testing.T) {
 		t.Errorf("expected 404, got %d", rec.Code)
 	}
 }
+
+// ── Regression: ?tenant= query parameter is NOT tenant authority ──
+// AGENTS.md tenant authority contract: only X-Tenant-ID (context or header)
+// selects the tenant. The ?tenant= query parameter must never choose a tenant.
+
+func TestTenantStore_ServeHTTP_QueryTenantWithoutHeaderIsIgnored(t *testing.T) {
+	ts := newTestTenantStore(t)
+	addDefaultTenant(t, ts)
+
+	// ?tenant=default without X-Tenant-ID header must NOT reach the default
+	// tenant — fail-closed 404, not a tenant-selected response.
+	req := httptest.NewRequest(http.MethodGet, "/students?tenant=default", nil)
+	rec := httptest.NewRecorder()
+	ts.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("query-only ?tenant= must fail closed with 404, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err == nil {
+		if body["error"] != "tenant_not_found" {
+			t.Errorf("expected tenant_not_found error, got %v", body)
+		}
+	}
+}
+
+func TestTenantStore_ServeHTTP_QueryTenantDoesNotOverrideHeader(t *testing.T) {
+	ts := newTestTenantStore(t)
+	addDefaultTenant(t, ts)
+	{
+		cfg := newInMemoryConfig(t)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		if _, err := ts.AddTenant(ctx, "shop-1", cfg, ""); err != nil {
+			t.Fatalf("AddTenant shop-1: %v", err)
+		}
+	}
+
+	// Header selects shop-1; ?tenant=default must be ignored entirely.
+	req := httptest.NewRequest(http.MethodGet, "/students?tenant=default", nil)
+	req.Header.Set("X-Tenant-ID", "shop-1")
+	rec := httptest.NewRecorder()
+	ts.ServeHTTP(rec, req)
+
+	// Strong assertion: resolveTenant must return shop-1, never default.
+	inst := ts.resolveTenant(req)
+	if inst == nil {
+		t.Fatal("header tenant must resolve even with ?tenant= present")
+	}
+	if inst.ID != "shop-1" {
+		t.Errorf("resolved tenant = %q, want shop-1 (query must be ignored)", inst.ID)
+	}
+}
+
+func TestTenantStore_ServeHTTP_AdminRouteQueryTenantWithoutHeaderIsIgnored(t *testing.T) {
+	ts := newTestTenantStore(t)
+	addDefaultTenant(t, ts)
+
+	// Admin handler invoked through resolveTenant: ?tenant=default without
+	// header must not select the default tenant.
+	req := httptest.NewRequest(http.MethodGet, "/admin/config?tenant=default", nil)
+	rec := httptest.NewRecorder()
+	ts.adminConfigHandler(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("admin route query-only ?tenant= must fail closed with 400, got %d", rec.Code)
+	}
+}

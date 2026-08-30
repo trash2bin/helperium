@@ -93,7 +93,7 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 		}
 		if inst == nil {
 			handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
-				"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+				"an X-Tenant-ID header is required to select a tenant")
 			return
 		}
 		// Читаем схему под schemaMu — adminRewriteHandler пишет её из другого goroutine.

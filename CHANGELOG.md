@@ -1,5 +1,9 @@
 # CHANGELOG.md
 
+## 2026-08-30
+
+- **fix(data-service):** remove the ?tenant= query fallback as tenant authority: tenant scope now resolves exclusively from context/X-Tenant-ID header, Swagger UI fetches the spec via the requestInterceptor with the choice persisted in localStorage, and query-only requests fail closed with 404/400. **Verification:** data-service suite green, mcp-gateway suite green.
+
 ## 2026-08-28
 
 - **chore(docs):** correct the e2e README test count from 131 to the current 138 with a recount rule, and document the intentional HELPERIUM_WIDGET_ENABLED default drift between .env.public.example (safe opt-in) and the public compose default. **Verification:** docs paths check green.

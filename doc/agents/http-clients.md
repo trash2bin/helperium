@@ -9,7 +9,7 @@
 ## mcp-gateway → data-service
 
 `services/mcp-gateway/internal/httpclient/client.go`:
-- `FetchConfigWithTenant(tenantID)` → GET `http://data-service:8084/mcp/manifest?tenant={id}`
+- `FetchConfigWithTenant(tenantID)` → GET `http://data-service:8084/mcp/manifest` с `X-Tenant-ID: {id}` header (query-параметр tenant не используется — authority только в header)
 - `FetchSchemaWithTenant(tenantID)` → GET `http://data-service:8084/mcp/schema`
 - `Call(ctx, endpoint, params)` → GET `http://data-service:8084/{endpoint}?{params}` с `X-Tenant-ID`
 - Stateless `http.Client`. 30s TTL-кэш на manifest. Ошибка → JSON `{"error": "..."}`

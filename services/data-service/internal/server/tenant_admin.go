@@ -256,7 +256,7 @@ func (ts *TenantStore) adminConfigHandler(w http.ResponseWriter, r *http.Request
 	inst := ts.resolveTenant(r)
 	if inst == nil {
 		handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
-			"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+			"an X-Tenant-ID header is required to select a tenant")
 		return
 	}
 
@@ -268,7 +268,7 @@ func (ts *TenantStore) adminConfigUpdateHandler(w http.ResponseWriter, r *http.R
 	inst := ts.resolveTenant(r)
 	if inst == nil {
 		handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
-			"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+			"an X-Tenant-ID header is required to select a tenant")
 		return
 	}
 
@@ -372,7 +372,7 @@ func (ts *TenantStore) adminConfigReloadHandler(w http.ResponseWriter, r *http.R
 	inst := ts.resolveTenant(r)
 	if inst == nil {
 		handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
-			"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+			"an X-Tenant-ID header is required to select a tenant")
 		return
 	}
 
@@ -406,7 +406,7 @@ func (ts *TenantStore) adminConfigVersionsHandler(w http.ResponseWriter, r *http
 	inst := ts.resolveTenant(r)
 	if inst == nil {
 		handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
-			"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+			"an X-Tenant-ID header is required to select a tenant")
 		return
 	}
 	versionsDir := filepath.Join(filepath.Dir(inst.ConfigPath), "config_versions")
@@ -484,7 +484,7 @@ func (ts *TenantStore) adminRewriteHandler(_ datasource.Adapter, _ string) http.
 		inst := ts.resolveTenant(r)
 		if inst == nil {
 			handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
-				"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+				"an X-Tenant-ID header is required to select a tenant")
 			return
 		}
 
@@ -574,7 +574,7 @@ func (ts *TenantStore) adminDiscoverHandler(_ datasource.Adapter) http.HandlerFu
 		inst := ts.resolveTenant(r)
 		if inst == nil {
 			handlers.RespondError(w, http.StatusBadRequest, "missing_tenant",
-				"please specify a tenant identifier via X-Tenant-ID header or ?tenant= query parameter")
+				"an X-Tenant-ID header is required to select a tenant")
 			return
 		}
 
