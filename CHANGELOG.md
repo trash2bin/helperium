@@ -2,6 +2,7 @@
 
 ## 2026-08-30
 
+- **test(api):** isolate API unit suite from live runtime artifacts: a session-scoped autouse fixture redirects AGENT_DB_PATH and SPENDING_PERSISTENCE_PATH to pytest temp and resets the lazy agent store singleton, so app-level tests with lifespan can no longer create the agent store at the live repo path where an ENCRYPTION_KEY-bearing run would migrate plaintext llm_config to ciphertext. **Verification:** full pytest run (714 passed / 18 skipped) left agents.sqlite, providers.json, spending.json and demo_sessions.sqlite byte-identical by sha256 while the fixture DB was created in pytest temp; ruff and pyright clean.
 - **feat(api):** pin direct chat quality via DIRECT_CHAT_AGENT: direct chat and agent-less voice read the system prompt, llm_config and provider priority from the named Agent Store record while tenant scope stays server-configured (DEFAULT_TENANT_ID, browser X-Tenant-ID ignored); a missing record or store failure degrades to legacy pool/env resolution with a warning. **Verification:** API suite 482 passed with a test-only ENCRYPTION_KEY (without the key 22 failed / 15 errors, expected fail-fast), SDK 74 passed / 12 skipped, ruff and pyright clean.
 - **fix(data-service):** remove the ?tenant= query fallback as tenant authority: tenant scope now resolves exclusively from context/X-Tenant-ID header, Swagger UI fetches the spec via the requestInterceptor with the choice persisted in localStorage, and query-only requests fail closed with 404/400. **Verification:** data-service suite green, mcp-gateway suite green.
 
