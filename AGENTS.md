@@ -103,7 +103,7 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
 
 | Группа | Документы |
 |---|---|
-| API и agent | `services/api-service/README.md`, `services/api-service/embed/README.md`, `doc/agents/anti-abuse.md`, `doc/agents/tool-call-safety-layers.md`, `doc/agents/backlog-product-decision.md`, `doc/agents/deferred-decisions.md`, `doc/agents/openspec-adoption-decision.md`, `doc/agents/documentation-restructure-plan.md` |
+| API и agent | `services/api-service/README.md`, `services/api-service/embed/README.md`, `doc/agents/anti-abuse.md`, `doc/agents/tool-call-safety-layers.md`, `doc/agents/backlog-product-decision.md`, `doc/agents/deferred-decisions.md`, `doc/agents/openspec-adoption-decision.md`, `doc/agents/documentation-restructure-plan.md`, `doc/agents/queue-plan-2026-08-30-head-bfa16d3.md` |
 | Data и config | `services/data-service/README.md`, `services/data-service/internal/configgen/README.md`, `doc/agents/adapter-pattern.md`, `doc/agents/config-migration.md`, `doc/agents/search-strategies.md`, `specs/config.schema.md`, `specs/fixtures/README.md`, `specs/README.md` |
 | MCP и security | `services/mcp-gateway/README.md`, `doc/agents/mcp-session-lifecycle.md`, `doc/agents/security-isolation.md`, `doc/agents/http-clients.md`, `doc/agents/api-contracts.md` |
 | Admin, web и operations | `services/admin-dashboard/README.md`, `doc/agents/tenant-lifecycle.md`, `doc/agents/web-service.md`, `doc/agents/operations.md`, `doc/agents/ci-cd.md`, `doc/agents/testing-guide.md` |
