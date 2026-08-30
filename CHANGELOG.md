@@ -2,6 +2,7 @@
 
 ## 2026-08-30
 
+- **feat(api):** pin direct chat quality via DIRECT_CHAT_AGENT: direct chat and agent-less voice read the system prompt, llm_config and provider priority from the named Agent Store record while tenant scope stays server-configured (DEFAULT_TENANT_ID, browser X-Tenant-ID ignored); a missing record or store failure degrades to legacy pool/env resolution with a warning. **Verification:** API suite 482 passed with a test-only ENCRYPTION_KEY (without the key 22 failed / 15 errors, expected fail-fast), SDK 74 passed / 12 skipped, ruff and pyright clean.
 - **fix(data-service):** remove the ?tenant= query fallback as tenant authority: tenant scope now resolves exclusively from context/X-Tenant-ID header, Swagger UI fetches the spec via the requestInterceptor with the choice persisted in localStorage, and query-only requests fail closed with 404/400. **Verification:** data-service suite green, mcp-gateway suite green.
 
 ## 2026-08-28

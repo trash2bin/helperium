@@ -156,6 +156,7 @@ services:
       - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
       - MCP_CLIENT_API_KEY=${MCP_CLIENT_API_KEY:-}
       - DEFAULT_TENANT_ID=${DEFAULT_TENANT_ID:-default}
+      - DIRECT_CHAT_AGENT=${DIRECT_CHAT_AGENT:-}
       - DB_PATH=/data/app/university.db
       - DEMO_SESSION_DB_PATH=/data/app/demo_sessions.sqlite
       - PROVIDER_STORE_PATH=/data/app/providers.json

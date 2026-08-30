@@ -63,6 +63,13 @@ class DemoSettings:
         self.default_tenant_id: str = os.environ.get("DEFAULT_TENANT_ID", "default")
         self.demo_tenants: str = os.environ.get("DEMO_TENANTS", "")
 
+        # Optional admin-managed agent record used as the direct-chat quality
+        # profile (system prompt, llm_config, provider_priority). Tenant scope
+        # is NEVER taken from this record: direct chat stays bound to
+        # DEFAULT_TENANT_ID per the tenant authority contract. Empty value
+        # keeps the legacy pool/env provider resolution.
+        self.direct_chat_agent: str = os.environ.get("DIRECT_CHAT_AGENT", "").strip()
+
         # Model backlog (full interaction tracing)
         self.backlog_dir: str = os.environ.get(
             "BACKLOG_DIR", str(project_root() / "backlog")

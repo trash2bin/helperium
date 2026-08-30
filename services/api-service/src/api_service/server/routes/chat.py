@@ -25,7 +25,7 @@ from ..deps import get_agent, get_agent_store
 from api_service.log_config import correlation_id_var
 from ..sse import _sse, _single_error, _event_payload, _get_lang
 from ..security import check_abuse
-from ..tenant_authority import direct_chat_scope, named_agent_scope
+from ..tenant_authority import direct_chat_profile, direct_chat_scope, named_agent_scope
 
 logger = logging.getLogger("api_service.server")
 router = APIRouter()
@@ -205,6 +205,10 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
     message = chat_req.message
     session_id = chat_req.session_id
     tenant_ids = direct_chat_scope()
+    # Optional admin-managed quality profile (prompt/provider pin) for direct
+    # chat. Tenant scope stays server-configured; profile only affects the
+    # system prompt and provider selection.
+    profile = direct_chat_profile()
 
     if not message:
         return StreamingResponse(
@@ -234,6 +238,9 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
             message,
             session_id=effective_session_id,
             tenant_ids=tenant_ids,
+            llm_config=profile.llm_config if profile else None,
+            provider_priority=profile.provider_priority if profile else None,
+            system_prompt=profile.system_prompt if profile else None,
             lang=lang,
             correlation_id=correlation_id,
             disconnect_check=watcher.check,
@@ -342,6 +349,9 @@ async def chat_voice_endpoint(
         )
 
     tenant_ids = named_agent_scope(agent_data) if agent_data else direct_chat_scope()
+    # Optional admin-managed quality profile for agent-less voice requests;
+    # tenant scope stays server-configured either way.
+    profile = None if agent_data else direct_chat_profile()
 
     if agent:
         effective_session_id = f"agent:{agent}:{session_id}"
@@ -371,6 +381,10 @@ async def chat_voice_endpoint(
         system_prompt = agent_data.get("system_prompt") or (
             resolved_llm_config.get("system_prompt") if resolved_llm_config else None
         )
+    elif profile:
+        provider_priority = profile.provider_priority
+        resolved_llm_config = profile.llm_config
+        system_prompt = profile.system_prompt
 
     watcher = _DisconnectWatch(request)
     watcher.start()

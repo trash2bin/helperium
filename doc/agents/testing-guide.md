@@ -28,6 +28,20 @@ uv run pytest services/agent-db/tests/e2e/test_mcp_streamable_http.py -v
 uv run pytest services/agent-db/tests/e2e/ --collect-only -q
 ```
 
+## Изоляция живых runtime-артефактов
+
+API unit suite обязан работать на изолированных путях. Session-scoped autouse fixture `_isolate_runtime_artifacts` (services/api-service/src/api_service/tests/unit/conftest.py) перенаправляет `AGENT_DB_PATH` и `SPENDING_PERSISTENCE_PATH` в pytest temp: без этого app-level тесты с `TestClient` + lifespan лениво создают `get_agent_store()` по живому пути `<repo>/agents.sqlite`, и при заданном `ENCRYPTION_KEY` конструктор репозитория мигрирует plaintext `llm_config` в ciphertext тестовым ключом — dev-БД молча повреждается. Эти две переменные читаются лениво; import-time константы (`settings.session_db_path`, `provider_store.DEFAULT_PROVIDERS_PATH`) из fixture перенаправить нельзя — если тесту нужны реальные пути, он обязан задать их через `monkeypatch` явно.
+
+Команда с test-only ключом (ключ одноразовый, в репозиторий не сохраняется):
+
+```bash
+ENCRYPTION_KEY=$(python3 -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())") \
+ENCRYPTION_KEY="$ENCRYPTION_KEY" CORS_ALLOW_ORIGINS=http://localhost:8080 PYTHONPATH=$PWD \
+  uv run -- python -m pytest services/api-service/src/api_service/tests/ -q
+```
+
+Без `ENCRYPTION_KEY` часть suite ожидаемо падает (`LLMEncryptionKeyRequiredError`) — это fail-fast контракт, а не дефект.
+
 ## E2E без live LLM
 
 ### Clean Docker CI profile
