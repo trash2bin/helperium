@@ -14,6 +14,20 @@ def test_step37_nim_policy_shapes_reasoning_and_keeps_continuation_tools() -> No
     assert policy.keep_tool_schemas_on_continuation is True
 
 
+def test_openai_passthrough_deepseek_keeps_continuation_tools() -> None:
+    """OpenAI-compatible relays false-negative litellm's function-calling probe.
+    The wire verifies native function calling (finish_reason=tool_calls), so
+    unresolved tool continuations must keep the tool schemas instead of
+    stripping them, which pushed the model into emitting its native tool-call
+    markup as visible text.
+    """
+    policy = find_provider_model_policy("openai", "openai/deepseek-v4-flash")
+
+    assert policy is not None
+    assert policy.keep_tool_schemas_on_continuation is True
+    assert policy.reasoning_body is None
+
+
 def test_unknown_nim_model_has_no_policy() -> None:
     assert (
         find_provider_model_policy("nvidia_nim", "nvidia_nim/new-vendor/new-model")

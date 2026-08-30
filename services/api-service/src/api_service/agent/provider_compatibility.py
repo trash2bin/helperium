@@ -36,6 +36,17 @@ _POLICIES: tuple[ProviderModelPolicy, ...] = (
         reasoning_body=_step37_reasoning_body,
         keep_tool_schemas_on_continuation=True,
     ),
+    # OpenAI-compatible passthrough relays (api_base overrides) serve models
+    # litellm cannot resolve in its OpenAI registry, so
+    # litellm.supports_function_calling() false-negatives and the completion
+    # policy strips tool schemas on unresolved tool continuations. The wire
+    # itself verifies native function calling (finish_reason=tool_calls), so
+    # keep the schemas and let the model finish the tool cycle.
+    ProviderModelPolicy(
+        provider="openai",
+        model_prefix="openai/deepseek",
+        keep_tool_schemas_on_continuation=True,
+    ),
 )
 
 
