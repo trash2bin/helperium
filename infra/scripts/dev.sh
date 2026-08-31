@@ -150,6 +150,51 @@ is_running() {
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
+# Return the PID listening on a TCP port. The launcher is fail-safe: if the
+# platform cannot identify listeners, start refuses instead of guessing that a
+# foreign process belongs to Helperium.
+port_listener_pid() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -n 1
+    return 0
+  fi
+  return 2
+}
+
+check_port_ownership() {
+  local svc="$1"
+  local port listener_pid recorded_pid
+  port=$(service_port "$svc")
+  [ -n "$port" ] || return 0
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    echo "❌ Cannot verify ownership of $svc port :$port (lsof is required)." >&2
+    echo "   Install lsof or free the port before running dev.sh start." >&2
+    return 1
+  fi
+
+  listener_pid=$(port_listener_pid "$port")
+  [ -n "$listener_pid" ] || return 0
+
+  recorded_pid=$(cat "$(pidfile "$svc")" 2>/dev/null || echo "")
+  if [ -n "$recorded_pid" ] && [ "$listener_pid" = "$recorded_pid" ] \
+    && kill -0 "$recorded_pid" 2>/dev/null; then
+    return 0
+  fi
+
+  echo "❌ Port :$port for $svc is already owned by foreign process (pid $listener_pid)." >&2
+  echo "   Stop that process or choose another $svc port; dev.sh will not claim it." >&2
+  return 1
+}
+
+check_all_port_ownership() {
+  local svc
+  for svc in "${SERVICES[@]}"; do
+    check_port_ownership "$svc" || return 1
+  done
+}
+
 health_url() {
   local svc="$1"
   case "$svc" in
@@ -297,6 +342,9 @@ cmd_start() {
     export VIEWER_TOKEN="${MCP_E2E_VIEWER_TOKEN:-helperium-e2e-viewer-token}"
     echo "🧪 Secure E2E profile enabled — RPS=$MCP_RATE_LIMIT_RPS, burst=$MCP_RATE_LIMIT_BURST, auth and Origin policy on"
   fi
+
+  # Refuse to build or launch when a port is held by an unowned listener.
+  check_all_port_ownership || return 1
   ensure_dirs
 
   # Если DATABASE_URL задана — переопределяем data-service на PG-конфиг
