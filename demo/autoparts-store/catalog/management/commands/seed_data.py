@@ -12,13 +12,20 @@ fake = Faker('ru_RU')
 class Command(BaseCommand):
     help = 'Наполняет БД тестовыми данными автозапчастей'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--force',
+            action='store_true',
+            help='Удалить существующий каталог и пересоздать seed-данные',
+        )
+
     def handle(self, *args, **options):
         self.stdout.write('Заполняем базу данных...')
 
         # Idempotent: если каталог уже заполнен — пропускаем сидирование
         # (в проде volume сохраняется между рестартами, не надо затирать 1.7M товаров)
-        if Product.objects.exists():
-            self.stdout.write(self.style.SUCCESS('Каталог уже содержит данные — сидирование пропущено'))
+        if Product.objects.exists() and not options.get('force', False):
+            self.stdout.write(self.style.SUCCESS('Каталог уже содержит данные — сидирование пропущено (используйте --force для пересоздания)'))
             return
 
         # Иначе — чистая база, делаем полный сид
