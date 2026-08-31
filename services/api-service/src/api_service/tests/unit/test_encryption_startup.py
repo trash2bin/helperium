@@ -107,9 +107,7 @@ def _run_startup(app) -> None:
 
 
 class TestLifespanEncryptionPolicy:
-    def test_lifespan_fails_fast_when_plaintext_and_no_key(
-        self, monkeypatch, tmp_path
-    ):
+    def test_lifespan_fails_fast_when_plaintext_and_no_key(self, monkeypatch, tmp_path):
         """Plaintext llm_config + no key: startup must raise, not degrade.
 
         Confirmed by code: the lifespan used to wrap get_agent_store() in a

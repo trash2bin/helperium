@@ -158,12 +158,8 @@ async def test_voice_without_agent_uses_pinned_profile(
 
     with (
         patch("api_service.server.routes.chat.get_agent", return_value=mock_agent),
-        patch(
-            "api_service.server.routes.chat.load_voice_config", return_value=vc
-        ),
-        patch(
-            "api_service.server.routes.chat.resolve_voice_config", return_value=vc
-        ),
+        patch("api_service.server.routes.chat.load_voice_config", return_value=vc),
+        patch("api_service.server.routes.chat.resolve_voice_config", return_value=vc),
         patch("api_service.server.routes.chat.STTEngine") as mock_stt_cls,
         patch(
             "api_service.server.routes.chat.check_abuse",

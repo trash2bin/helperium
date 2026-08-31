@@ -169,9 +169,7 @@ class TestKeyMismatchProtection:
             SqliteAgentRepository(db)
         assert "ENCRYPTION_KEY" in str(excinfo.value)
 
-    def test_correct_key_and_ciphertext_constructs_cleanly(
-        self, tmp_path, monkeypatch
-    ):
+    def test_correct_key_and_ciphertext_constructs_cleanly(self, tmp_path, monkeypatch):
         """Baseline: ciphertext + the matching key constructs fine."""
         db = str(tmp_path / "agents.sqlite")
         _use_fernet(monkeypatch, KEY_A)

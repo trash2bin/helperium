@@ -49,9 +49,7 @@ def test_profile_reads_quality_fields_from_agent_store(
     )
     store = MagicMock()
     store.get_agent.return_value = _record()
-    with patch(
-        "api_service.server.deps.get_agent_store", return_value=store
-    ) as getter:
+    with patch("api_service.server.deps.get_agent_store", return_value=store) as getter:
         getter.return_value = store
         profile = direct_chat_profile()
 
@@ -78,9 +76,7 @@ def test_profile_system_prompt_falls_back_to_llm_config(
     )
     store = MagicMock()
     store.get_agent.return_value = record
-    with patch(
-        "api_service.server.deps.get_agent_store", return_value=store
-    ) as getter:
+    with patch("api_service.server.deps.get_agent_store", return_value=store) as getter:
         getter.return_value = store
         profile = direct_chat_profile()
 
@@ -97,9 +93,7 @@ def test_profile_missing_record_degrades_to_none(
     )
     store = MagicMock()
     store.get_agent.return_value = None
-    with patch(
-        "api_service.server.deps.get_agent_store", return_value=store
-    ) as getter:
+    with patch("api_service.server.deps.get_agent_store", return_value=store) as getter:
         getter.return_value = store
         assert direct_chat_profile() is None
 
@@ -132,8 +126,6 @@ def test_direct_chat_scope_untouched_by_profile_config(
     )
     store = MagicMock()
     store.get_agent.return_value = _record()
-    with patch(
-        "api_service.server.deps.get_agent_store", return_value=store
-    ) as getter:
+    with patch("api_service.server.deps.get_agent_store", return_value=store) as getter:
         getter.return_value = store
         assert direct_chat_scope() == ["configured-demo-tenant"]
