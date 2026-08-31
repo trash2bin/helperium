@@ -161,6 +161,14 @@ services:
       - DEMO_SESSION_DB_PATH=/data/app/demo_sessions.sqlite
       - PROVIDER_STORE_PATH=/data/app/providers.json
       - BACKLOG_DIR=/data/app/backlog
+      # Two-phase spending admission stays OFF (see
+      # doc/agents/spending-reserve-commit-decision.md). The ledger path is set
+      # explicitly so that, if it is ever enabled, reservations live in the
+      # persistent volume instead of a CWD-relative file inside the container.
+      - SPENDING_RESERVATIONS_ENABLED=${SPENDING_RESERVATIONS_ENABLED:-false}
+      - SPENDING_LEDGER_PATH=/data/app/spending-ledger.sqlite3
+      - SPENDING_PRINCIPAL_DEFAULT_BUDGET=${SPENDING_PRINCIPAL_DEFAULT_BUDGET:-0}
+      - SPENDING_RESERVATION_TTL_SECONDS=${SPENDING_RESERVATION_TTL_SECONDS:-1800}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:0.5b}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - MISTRAL_MODEL=${MISTRAL_MODEL:-mistral/mistral-small}

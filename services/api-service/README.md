@@ -308,6 +308,10 @@ curl -X POST http://localhost:8081/api/agents \
 | `EMBED_DIR` | `<project>/embed/dist/` | Путь к статике embed-виджета (absolute override) |
 | `ENABLE_METRICS` | `true` | Включить Prometheus-метрики |
 | `API_BEARER_TOKEN` | — | Bearer token для API (обязателен в production) |
+| `SPENDING_RESERVATIONS_ENABLED` | `false` | Двухфазное reserve/commit-допущение расходов. Не включать: см. `doc/agents/spending-reserve-commit-decision.md` |
+| `SPENDING_LEDGER_PATH` | `<project>/.data/spending-ledger.sqlite3` | SQLite-ledger резерваций |
+| `SPENDING_PRINCIPAL_DEFAULT_BUDGET` | `0` | Бюджет billing principal (account/agent), USD. 0 = без лимита |
+| `SPENDING_RESERVATION_TTL_SECONDS` | `1800` | Время жизни резервации; должно превышать максимальную длительность turn |
 | `VOICE_ENABLED` | `true` | Мастер-выключатель голосовых функций |
 | `VOICE_STT_PROVIDER` | `litellm` | Тип STT: `litellm` или `local` |
 | `VOICE_STT_MODEL` | `whisper-1` | Модель STT |
@@ -423,6 +427,12 @@ The next model request uses the same augmented transcript. After the run, the or
 ### Limits, terminals, and events
 
 The loop applies explicit bounds before a model call or tool call: `AGENT_MAX_ITERATIONS`, `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_TURN_TOKENS`, and `AGENT_MAX_EMPTY_ROUNDS`. Input and output guards remain direct checks. Spending is recorded after each provider response; a single-tenant budget denial is terminal.
+
+### Spending admission
+
+By default cost accounting is post-hoc: the provider response cost is recorded per tenant, and a single-tenant budget denial stops the *next* call. `SPENDING_RESERVATIONS_ENABLED=true` switches the loop to two-phase admission — a micro-USD reservation against the billing principal before each provider call, then commit of realized cost (or release on failure). A refused reservation is a `limit_reached` terminal, not an internal error, and per-tenant recording continues so the admin spending API keeps working.
+
+The flag is **off in every environment** and must stay off until the pre-call token estimate is a true upper bound and configured models have per-token pricing. Selection depends only on the flag, never on whether a provider was injected, so tests exercise the same path as runtime. See `doc/agents/spending-reserve-commit-decision.md`.
 
 A tool failure, provider failure, cancellation, dependency outage, limit, blocked input, clarification request, or final answer produces one explicit terminal outcome. The loop never creates a hidden fallback or recovery completion. Public SSE is emitted directly as existing `AgentEvent` values: `tool_call`, `tool_result`, `final`, or `error`; `final` is buffered until the output guard completes, not token streaming. The chat route remains responsible for its terminal `done` frame.
 
