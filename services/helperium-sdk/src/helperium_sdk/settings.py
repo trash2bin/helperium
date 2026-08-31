@@ -195,6 +195,33 @@ class DemoSettings:
         self.spending_budget_period: str = os.environ.get(
             "SPENDING_BUDGET_PERIOD", "monthly"
         )
+        # Two-phase reserve/commit spending admission. Default OFF: the
+        # reservation path still needs money-unit, principal-budget and
+        # estimate-accuracy work before any environment may enable it. The
+        # flag is the single authority for both runtime and tests, so the
+        # production path is never selected by "is a provider injected?".
+        self.spending_reservations_enabled: bool = os.environ.get(
+            "SPENDING_RESERVATIONS_ENABLED", "false"
+        ).lower() in ("true", "1", "yes")
+        # Ledger location is resolved against the project root, never the
+        # process CWD: launchers start api-service from different directories
+        # and a relative path would silently split the ledger per launcher.
+        self.spending_ledger_path: str = os.environ.get(
+            "SPENDING_LEDGER_PATH",
+            str(project_root() / ".data" / "spending-ledger.sqlite3"),
+        )
+        # Budget of the billing principal (account or named agent). It is
+        # deliberately NOT derived from tenant budgets: one composite turn has
+        # a single billing principal and several tenant usage dimensions.
+        # 0 or less means unlimited, matching SPENDING_DEFAULT_BUDGET.
+        self.spending_principal_default_budget: float = float(
+            os.environ.get("SPENDING_PRINCIPAL_DEFAULT_BUDGET", "0")
+        )
+        # Must exceed the worst-case turn duration; a reservation that expires
+        # mid-turn is still committed, but expiry frees capacity for others.
+        self.spending_reservation_ttl_seconds: float = float(
+            os.environ.get("SPENDING_RESERVATION_TTL_SECONDS", "1800")
+        )
 
 
 settings = DemoSettings()
