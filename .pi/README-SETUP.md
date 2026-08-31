@@ -1,46 +1,47 @@
 # Внешние пакеты (Pi Packages)
-Необходимо для работы с [APPEND_SYSTEM](./APPEND_SYSTEM.md)
+Необходимо для работы с [.pi/APPEND_SYSTEM.md](./APPEND_SYSTEM.md)
 
-### @ollama/pi-web-search
-github.com/ollama/pi-web-search
-Инструменты web\_search и web\_fetch через локальную Ollama
+### @boozedog/pi-codemode
+`pi install npm:@boozedog/pi-codemode`
+Исполнение TypeScript-кода для параллельного вызова инструментов, фильтрации и пакетных операций (`codemode`).
 
-### pi-mcp-adapter
-github.com/nicobailon/pi-mcp-adapter
-Адаптер MCP-протокола для Pi
-
-### pi-ollama
-github.com/CaptCanadaMan/pi-ollama
-Провайдер локальных Ollama-моделей
-
-### @aliou/pi-processes
-github.com/aliou/pi-processes
-Управление фоновыми процессами
-
-### context-mode
-pi install npm:context-mode
-Улучшения контекста
-
-### subagents
-pi install npm:pi-subagents
-Сабагенты
+### pi-subagents
+`pi install npm:pi-subagents`
+Делегирование задач субагентам, параллельные воркфлоу, рецензирование и изоляция контекста (`subagent`, `subagent_wait`, `subagent_supervisor`).
 
 ### pi-intercom
-pi install npm:pi-intercom
-Межсессионная координация
+`pi install npm:pi-intercom`
+Координация и обмен сообщениями между активными сессиями Pi (`intercom`).
+
+### pi-mcp-adapter
+`pi install npm:pi-mcp-adapter`
+Адаптер MCP-протокола для интеграции внешних MCP-серверов (codebase-memory, playwright, anytype и др.).
+
+### pi-web-access
+`pi install npm:pi-web-access`
+Инструменты поиска в сети и фетчинга страниц (`web_search`, `fetch_content`, `source_check`, `get_search_content`).
+
+### @juicesharp/rpiv-ask-user-question
+`pi install npm:@juicesharp/rpiv-ask-user-question`
+Интерактивные вопросы пользователю с готовыми вариантами ответа (`ask_user_question`).
+
+### pi-prompt-template-model
+`pi install npm:pi-prompt-template-model`
+Создание и запуск пользовательских шаблонов промптов и slash-команд.
+
+---
 
 ### codebase-memory (MCP сервер)
-Предустановлен — кодстатистический граф через MCP (codebase-memory).
-Построен: 5234 nodes, 24614 edges.
+Предустановленный граф знаний по коду проекта.
 
 #### Использование
-```
+```javascript
 codebase_memory_search_graph({ query: "...", project: "helperium" })
 codebase_memory_trace_path({ function_name: "...", project: "helperium", direction: "both", mode: "calls", depth: 3 })
 codebase_memory_get_architecture({ project: "helperium", aspects: ["all"] })
 ```
 
 #### Переиндексировать
-```
-codebase_memory_index_repository({ repo_path: ".", name: "helperium", mode: "moderate" })
+```javascript
+codebase_memory_index_repository({ repo_path: ".", name: "helperium", mode: "full" })
 ```
