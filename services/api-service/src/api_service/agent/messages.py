@@ -19,6 +19,10 @@ EMPTY_RESPONSE = (
 MODEL_CALL_LIMIT = "Достигнут лимит шагов обработки запроса."
 CONTEXT_LIMIT = "Достигнут лимит контекста для этого запроса."
 TOOL_CALL_LIMIT = "Достигнут лимит вызовов инструментов для этого запроса."
+SPENDING_LIMIT_REACHED = "Лимит расходов исчерпан для этого тенанта."
+SPENDING_PRINCIPAL_LIMIT_REACHED = (
+    "Лимит расходов для этого аккаунта исчерпан. Попробуйте позже."
+)
 TOOL_UNAVAILABLE = "The requested tool is not available in the current tool set."
 TOOL_REQUIRED_ARGUMENTS = "Required tool arguments are missing."
 TOOL_INVALID_ARGUMENTS = "Tool arguments failed schema validation."

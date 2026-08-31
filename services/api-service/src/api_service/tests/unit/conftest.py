@@ -58,22 +58,31 @@ def _isolate_runtime_artifacts(tmp_path_factory):
     runtime_dir = tmp_path_factory.mktemp("runtime-artifacts")
     agents_db = runtime_dir / "agents.sqlite"
     spending_store = runtime_dir / "spending.json"
+    spending_ledger = runtime_dir / "spending-ledger.sqlite3"
 
     monkeypatched = [
         ("AGENT_DB_PATH", str(agents_db)),
         ("SPENDING_PERSISTENCE_PATH", str(spending_store)),
+        ("SPENDING_LEDGER_PATH", str(spending_ledger)),
     ]
     previous = {key: os.environ.get(key) for key, _ in monkeypatched}
     for key, value in monkeypatched:
         os.environ[key] = value
     # Reset lazy singletons so repositories re-resolve the throwaway paths.
     import api_service.server.deps as deps
+    from helperium_sdk.settings import settings
+
+    from api_service.spending import reset_spending_singletons
 
     deps._agent_store = None
+    settings.spending_ledger_path = str(spending_ledger)
+    reset_spending_singletons()
 
     yield
 
     import api_service.server.deps as deps_teardown
+
+    reset_spending_singletons()
 
     deps_teardown._agent_store = None
     for key, value in previous.items():

@@ -13,7 +13,11 @@ from api_service.backlog import backlog
 from api_service.error_messages import classify_error
 from api_service.guardrails import get_guard_checker
 
-from .adapters import _AsyncBacklogWriter, _AsyncSpendingTracker
+from .adapters import (
+    _AsyncBacklogWriter,
+    _AsyncSpendingTracker,
+    resolve_reservations,
+)
 from .conversation import ConversationManager
 from .factory import _create_env_provider, _pool, resolve_llm
 from .loop import AppendOnlyLoop, LoopLimits, LoopRun, Transcript
@@ -54,6 +58,7 @@ class LLMAgent:
         lang: str = "ru",
         correlation_id: str = "",
         disconnect_check: Callable[[], bool] | None = None,
+        principal_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         del correlation_id  # kept only for the stable public route signature
         session_id = self.conversation_manager.normalize_session_id(session_id)
@@ -126,10 +131,16 @@ class LLMAgent:
                         ),
                         guard_checker=get_guard_checker(),
                         spending=_AsyncSpendingTracker(),
+                        reservations=resolve_reservations(),
                         backlog=_AsyncBacklogWriter(),
                         session_id=session_id,
                         turn_id=turn_id,
                         tenant_ids=resolved_tenants,
+                        principal_id=principal_id,
+                        max_output_tokens=(
+                            getattr(provider, "max_tokens_thinking", 0)
+                            or self._settings.agent_max_turn_tokens
+                        ),
                     )
                     async for event in loop.run(run):
                         yield event

@@ -30,3 +30,37 @@ class MCPToolSession(Protocol):
     async def call_tool(
         self, name: str, arguments: dict[str, Any]
     ) -> MCPToolResult: ...
+
+
+class SpendingPort(Protocol):
+    """Post-hoc per-tenant spending accounting.
+
+    This is the always-present accounting surface: cost is recorded after a
+    completion returns and the limit check can only stop the next call.
+    """
+
+    async def record(self, tenant_id: str, cost: float) -> None: ...
+
+    async def check_limits(self, tenant_id: str) -> tuple[bool, str]: ...
+
+
+class SpendingReservationPort(Protocol):
+    """Two-phase spending admission for one provider completion.
+
+    The loop receives this port only when reservations are explicitly enabled.
+    Presence of the port — not attribute sniffing on the accounting tracker —
+    is what selects the admission path, so the same code path runs in tests and
+    in production.
+    """
+
+    async def reserve(
+        self,
+        principal_id: str,
+        request_id: str,
+        estimated_cost: float,
+        tenant_ids: list[str],
+    ) -> Any: ...
+
+    async def commit(self, request_id: str, actual_cost: float) -> None: ...
+
+    async def release(self, request_id: str) -> None: ...

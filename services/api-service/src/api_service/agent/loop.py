@@ -12,6 +12,7 @@ import litellm
 from jsonschema import Draft202012Validator, SchemaError
 from dataclasses import dataclass, field
 from typing import Any, Literal
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,6 +26,8 @@ from .messages import (
     MCP_TOOL_ERROR_NOTICE,
     REQUEST_CANCELLED,
     ARGUMENT_VALIDATION_NOTICE,
+    SPENDING_LIMIT_REACHED,
+    SPENDING_PRINCIPAL_LIMIT_REACHED,
     UNKNOWN_TOOL_NOTICE,
     TOOL_CALL_LIMIT,
     TOOL_INVALID_ARGUMENTS,
@@ -34,8 +37,10 @@ from .messages import (
     TOOL_UNAVAILABLE,
 )
 from .models import CompletionRequest, CompletionResponse, ToolCall
-from .protocols import LLMProvider, MCPToolSession
+from .pricing import PricingConfigurationError, estimate_reservation_cost
+from .protocols import LLMProvider, MCPToolSession, SpendingReservationPort
 from .types import AgentEvent
+from api_service.spending import BudgetExceeded, ReservationConflict
 
 
 logger = logging.getLogger("api_service.agent.loop")
@@ -133,6 +138,10 @@ class AppendOnlyLoop:
         session_id: str,
         turn_id: str,
         tenant_ids: tuple[str, ...],
+        reservations: SpendingReservationPort | None = None,
+        principal_id: str | None = None,
+        model_cost: Mapping[str, Any] | None = None,
+        max_output_tokens: int = 0,
     ) -> None:
         self._provider = provider
         self._mcp = mcp
@@ -143,6 +152,12 @@ class AppendOnlyLoop:
         self._session_id = session_id
         self._turn_id = turn_id
         self._tenant_ids = tenant_ids
+        self._reservations = reservations
+        self._principal_id = principal_id or (
+            f"tenant:{tenant_ids[0]}" if len(tenant_ids) == 1 else "account:default"
+        )
+        self._model_cost = model_cost
+        self._max_output_tokens = max_output_tokens
 
     async def run(self, run: LoopRun) -> AsyncIterator[AgentEvent]:
         if self._input_blocked(run.transcript.messages[-1].get("content", "")):
@@ -206,20 +221,41 @@ class AppendOnlyLoop:
                         LoopOutcome(kind="cancelled", message=REQUEST_CANCELLED),
                     )
                     return
-                response = await self._provider.complete(
-                    CompletionRequest(
-                        messages=request_messages,
-                        tools=request_tools,
-                        tenant_ids=list(self._tenant_ids),
+                reservation_id: str | None = None
+                reservations = self._reservations
+                if reservations is not None:
+                    admission = await self._admit(
+                        reservations, request_messages, run.metrics.model_calls
                     )
-                )
+                    if isinstance(admission, LoopOutcome):
+                        yield self._finish(run, admission)
+                        return
+                    reservation_id = admission
+                try:
+                    response = await self._provider.complete(
+                        CompletionRequest(
+                            messages=request_messages,
+                            tools=request_tools,
+                            tenant_ids=list(self._tenant_ids),
+                        )
+                    )
+                except BaseException:
+                    if reservation_id is not None and reservations is not None:
+                        await reservations.release(reservation_id)
+                    raise
+                if reservation_id is not None and reservations is not None:
+                    await reservations.commit(reservation_id, response.cost)
+                    # Admission is authoritative for blocking, but per-tenant
+                    # usage must stay visible to the admin spending API.
+                    await self._record_tenant_spending(response.cost)
                 self._record_provider_response(
                     run.metrics, response, untrusted_tool_results_in_context
                 )
-                spending = await self._check_spending(response.cost)
-                if spending is not None:
-                    yield self._finish(run, spending)
-                    return
+                if reservations is None:
+                    spending = await self._check_spending(response.cost)
+                    if spending is not None:
+                        yield self._finish(run, spending)
+                        return
 
                 if response.tool_calls and not final_answer_only:
                     run.transcript.append(
@@ -509,6 +545,72 @@ class AppendOnlyLoop:
         """Count tool-result data structurally, independent of provider wire format."""
         return sum(message.get("role") == "tool" for message in messages)
 
+    async def _admit(
+        self,
+        reservations: SpendingReservationPort,
+        request_messages: list[dict[str, Any]],
+        model_calls: int,
+    ) -> str | LoopOutcome:
+        """Reserve budget for one completion, or return the blocking outcome.
+
+        Returns the reservation ID on admission. A refused reservation is a
+        spending limit, not an internal failure, so it maps to the same
+        ``limit_reached`` contract the post-hoc path uses.
+        """
+        try:
+            estimate = estimate_reservation_cost(
+                model=getattr(self._provider, "model", ""),
+                messages=request_messages,
+                max_output_tokens=self._max_output_tokens,
+                model_cost=self._model_cost,
+            )
+        except PricingConfigurationError:
+            logger.exception("[AGENT] missing safe pricing estimate")
+            return LoopOutcome(
+                kind="provider_error",
+                message=MODEL_UNAVAILABLE,
+                retryable=False,
+            )
+        reservation_id = f"{self._turn_id}:model-{model_calls}"
+        try:
+            await reservations.reserve(
+                self._principal_id,
+                reservation_id,
+                estimate,
+                list(self._tenant_ids),
+            )
+        except BudgetExceeded:
+            logger.warning(
+                "[AGENT] spending admission refused for %s", self._principal_id
+            )
+            return LoopOutcome(
+                kind="limit_reached",
+                message=SPENDING_PRINCIPAL_LIMIT_REACHED,
+            )
+        except ReservationConflict:
+            logger.exception("[AGENT] reservation conflict for %s", reservation_id)
+            return LoopOutcome(
+                kind="provider_error",
+                message=MODEL_UNAVAILABLE,
+                retryable=False,
+            )
+        return reservation_id
+
+    async def _record_tenant_spending(self, cost: float) -> None:
+        """Keep per-tenant usage reporting alive under reserve/commit.
+
+        Reporting must never fail an already-paid turn.
+        """
+        if cost <= 0:
+            return
+        for tenant_id in self._tenant_ids:
+            try:
+                await self._spending.record(tenant_id, cost)
+            except Exception:
+                logger.exception(
+                    "[AGENT] failed to record tenant spending for %s", tenant_id
+                )
+
     async def _check_spending(self, cost: float) -> LoopOutcome | None:
         if cost <= 0:
             return None
@@ -519,7 +621,7 @@ class AppendOnlyLoop:
             if not allowed:
                 return LoopOutcome(
                     kind="limit_reached",
-                    message="Лимит расходов исчерпан для этого тенанта.",
+                    message=SPENDING_LIMIT_REACHED,
                 )
         return None
 

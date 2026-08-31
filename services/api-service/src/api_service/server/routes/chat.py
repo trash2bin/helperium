@@ -12,6 +12,8 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
+from helperium_sdk.settings import settings
+
 from ..rate_limit import rate_limit, limiter
 from api_service.http_models import ChatRequest, VoiceAgentConfig
 from api_service.error_messages import classify_error
@@ -244,6 +246,11 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
             lang=lang,
             correlation_id=correlation_id,
             disconnect_check=watcher.check,
+            principal_id=(
+                f"agent:{settings.direct_chat_agent}"
+                if settings.direct_chat_agent
+                else "account:default"
+            ),
         )
         try:
             async for payload in _buffered_agent_sse_events(
@@ -488,6 +495,7 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
             provider_priority=provider_priority,
             correlation_id=correlation_id,
             disconnect_check=watcher.check,
+            principal_id=f"agent:{name}",
         )
         try:
             async for payload in _buffered_agent_sse_events(
