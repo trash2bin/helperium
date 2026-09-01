@@ -52,6 +52,9 @@ ENCRYPTION_KEY="$ENCRYPTION_KEY" CORS_ALLOW_ORIGINS=http://localhost:8080 PYTHON
 ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test up -d data-service mcp-gateway api admin-dashboard web
 
+# `up`/`run` в test-профиле автоматически пересобирают образы сервисов
+# (ps/logs/down — нет), поэтому свежий workspace-код не встречает старый image.
+
 ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http://localhost:8080 \
   ./infra/scripts/compose.sh --profile test run --rm e2e
 
@@ -122,4 +125,4 @@ uv run pytest path/to/test.py::test_name -v --tb=long -s
 
 External/live LLM and browser checks are intentionally outside deterministic CI. Keep their credentials, budgets and target domains explicit; do not target `demo/autoparts-store` without separate approval.
 
-**Last verified:** 2026-08-20 (working tree after `e839d6c`). Clean Docker E2E passed 137 tests with ci-state-init completing normally outside the terminal E2E lifecycle and explicit fail-closed CORS default.
+**Last verified:** 2026-08-31 (working tree after `f094429`, uncommitted audit-tail fixes on top). Clean Docker E2E last passed 138 tests with ci-state-init completing normally outside the terminal E2E lifecycle and explicit fail-closed CORS default; the test-profile compose wrapper now rebuilds service images on `up`/`run` (see above), and the e2e README AST counter stands at 148.

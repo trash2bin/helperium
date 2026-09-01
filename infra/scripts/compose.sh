@@ -38,6 +38,23 @@ if [[ "$test_profile" == true ]]; then
   export ENCRYPTION_KEY="${API_TEST_ENCRYPTION_KEY:-aGVscGVyaXVtLWNpLXRlc3Qta2V5LTMyYnl0ZXMhISE=}"
 fi
 
+# The E2E container mounts the live /workspace over images that may be stale,
+# so fresh service code can meet old baked-in dependencies and fail in
+# confusing ways. Rebuild the long-lived service images before any up/run
+# under the test profile; ps/logs/down and other read-only commands stay
+# build-free. Docker cache keeps this fast when nothing relevant changed.
+needs_build=false
+if [[ "$test_profile" == true ]]; then
+  compose_command=""
+  for arg in "$@"; do
+    if [[ "$arg" == "up" || "$arg" == "run" ]]; then
+      needs_build=true
+      compose_command="$arg"
+      break
+    fi
+  done
+fi
+
 if docker compose version >/dev/null 2>&1; then
   COMPOSE=(docker compose)
 else
@@ -50,6 +67,11 @@ ARGS=(
 )
 if [[ -f "$ENV_FILE" ]]; then
   ARGS+=(--env-file "$ENV_FILE")
+fi
+
+if [[ "$needs_build" == true ]]; then
+  echo "[compose.sh] test profile: rebuilding service images before '$compose_command'" >&2
+  "${COMPOSE[@]}" "${ARGS[@]}" build api data-service mcp-gateway admin-dashboard web
 fi
 
 exec "${COMPOSE[@]}" "${ARGS[@]}" "$@"

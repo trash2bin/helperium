@@ -139,6 +139,7 @@ jobs:
   test-e2e:
     name: E2E tests (no LLM)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -244,9 +245,10 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --profile test logs api
-          echo '--- data-service logs ---'
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --profile test logs data-service
+          for svc in api data-service mcp-gateway admin-dashboard web; do
+            echo "--- $svc logs ---"
+            docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --profile test logs "$svc" || true
+          done
       - name: Stop services
         if: always()
         run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --profile test down -v
