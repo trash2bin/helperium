@@ -37,6 +37,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/trash2bin/helperium/admin-dashboard/internal/openapi"
+	"github.com/trash2bin/helperium/helperium-go/config"
 	"github.com/trash2bin/helperium/helperium-go/pkg/metrics"
 	"github.com/trash2bin/helperium/helperium-go/pkg/tracing"
 )
@@ -79,12 +80,21 @@ var staticFS embed.FS
 
 // New создаёт новый Server.
 func New(opts Options) *Server {
+	auditDir := filepath.Join(opts.DataDir, "..", "audit")
+	if opts.DataDir == "" {
+		// DataDir is unset (tests, constructor-only use). Writing the audit log
+		// to "../audit" would land in the tracked internal/audit/ fixture next
+		// to this package and pollute the repository on every test run; send it
+		// to a temporary directory instead. NewAuditStore already falls back to
+		// os.TempDir() if the directory cannot be created.
+		auditDir = filepath.Join(os.TempDir(), "helperium-admin-audit-test")
+	}
 	s := &Server{
 		opts:       opts,
 		dataClient: NewDataServiceClient(opts.DataSvcURL, opts.AdminToken),
 		ragClient:  NewRagClient(opts.RagSvcURL, opts.AdminToken),
 		abuseStore: NewAbuseStore(opts.DataDir),
-		auditStore: NewAuditStore(filepath.Join(opts.DataDir, "..", "audit")),
+		auditStore: NewAuditStore(auditDir),
 	}
 	// OpenAPI spec генерится в build.sh → internal/server/static/openapi.json
 	// и вкомпиливается через //go:embed static. runtime — через openAPIHandler.
@@ -219,7 +229,8 @@ func (s *Server) Router() chi.Router {
 
 // corsMiddleware разрешает CORS для dev-режима.
 // Origin читается из CORS_ALLOW_ORIGINS env var (по умолчанию "http://localhost:8080").
-// Для разрешения любых origin'ов (embed/production) установи CORS_ALLOW_ORIGINS=*.
+// Wildcard "*" запрещён контрактом AGENTS.md («API CORS»): публичные embed-домены
+// перечисляются явно через запятую, fail-closed fallback — только localhost.
 func corsMiddleware(next http.Handler) http.Handler {
 	origin := os.Getenv("CORS_ALLOW_ORIGINS")
 	if origin == "" {
@@ -769,6 +780,16 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 		respondError(w, http.StatusBadRequest, "missing_field", "tenant_id is required")
 		return
 	}
+	// Defense-in-depth: the tenant ID is externally controlled and later becomes
+	// part of a filesystem path (and the data-service tenant ID). Enforce the
+	// repo-wide tenant-ID contract (AGENTS.md "MCP scope") before any filepath
+	// math so a crafted value cannot escape the upload directory. Keep this in
+	// sync with config.ValidTenantID (helperium-go), the single pattern source.
+	if !config.ValidTenantID(tenantID) {
+		respondError(w, http.StatusBadRequest, "invalid_tenant_id",
+			"tenant_id must match [A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+		return
+	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -787,10 +808,17 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Use .sqlite extension from original or default .db
-	ext := filepath.Ext(header.Filename)
-	if ext == "" {
-		ext = ".db"
+	// Only trusted SQLite extensions are accepted. filepath.Ext is otherwise
+	// attacker-controlled (header.Filename) and must never smuggle separators
+	// or traversal sequences into savePath.
+	ext := filepath.Ext(filepath.Base(header.Filename))
+	switch ext {
+	case ".db", ".sqlite", ".sqlite3":
+		// allowed
+	default:
+		respondError(w, http.StatusBadRequest, "invalid_extension",
+			"file must have one of the extensions: .db, .sqlite, .sqlite3")
+		return
 	}
 	savePath := filepath.Join(dataDir, tenantID+ext)
 
