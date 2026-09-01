@@ -167,6 +167,7 @@ X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tena
 | `MCP_DEV` | `false` | Единственный explicit local-development opt-out для `MCP_REQUIRE_AUTH=false`; также включает debug log level |
 | `MCP_RATE_LIMIT_RPS` | `10` | Requests per second (rate limiter) |
 | `MCP_RATE_LIMIT_BURST` | `20` | Burst size (rate limiter) |
+| `MCP_RATE_LIMIT_MAX_IPS` | `10000` | Max tracked per-IP rate-limit buckets before LRU eviction |
 
 ## Управление сессиями
 

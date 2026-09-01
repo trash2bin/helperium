@@ -119,6 +119,7 @@ services:
       # compose.sh exports high values only for --profile test.
       - MCP_RATE_LIMIT_RPS=${MCP_RATE_LIMIT_RPS:-}
       - MCP_RATE_LIMIT_BURST=${MCP_RATE_LIMIT_BURST:-}
+      - MCP_RATE_LIMIT_MAX_IPS=${MCP_RATE_LIMIT_MAX_IPS:-}
       - OTEL_ENABLED=${OTEL_ENABLED:-false}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
     healthcheck:
@@ -285,6 +286,7 @@ services:
       - MCP_ALLOWED_ORIGINS=${MCP_ALLOWED_ORIGINS:-}
       - MCP_RATE_LIMIT_RPS=${MCP_RATE_LIMIT_RPS:-}
       - MCP_RATE_LIMIT_BURST=${MCP_RATE_LIMIT_BURST:-}
+      - MCP_RATE_LIMIT_MAX_IPS=${MCP_RATE_LIMIT_MAX_IPS:-}
       - API_BEARER_TOKEN=${API_BEARER_TOKEN:-}
       - API_SERVICE_URL=http://api:8081
       - ADMIN_DASHBOARD_URL=http://admin-dashboard:8085

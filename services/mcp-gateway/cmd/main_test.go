@@ -625,7 +625,7 @@ func TestConcurrentRequests(t *testing.T) {
 
 func TestRateLimit_AllowsUpToBurst(t *testing.T) {
 	// Use a high RPS but small burst so tests are fast
-	rl := newRateLimiter(1000, 10) // 1000 rps, burst 10
+	rl := newRateLimiter(1000, 10, 0) // 1000 rps, burst 10, default max
 
 	// First 10 requests should succeed (burst capacity)
 	for i := 0; i < 10; i++ {
@@ -638,7 +638,7 @@ func TestRateLimit_AllowsUpToBurst(t *testing.T) {
 func TestRateLimit_BurstBlocksExcess(t *testing.T) {
 	rps := 1000
 	burst := 5
-	rl := newRateLimiter(rps, burst)
+	rl := newRateLimiter(rps, burst, 0)
 
 	// Use burst requests
 	for i := 0; i < burst; i++ {
@@ -654,7 +654,7 @@ func TestRateLimit_BurstBlocksExcess(t *testing.T) {
 }
 
 func TestRateLimit_PerIPIsolation(t *testing.T) {
-	rl := newRateLimiter(1000, 5)
+	rl := newRateLimiter(1000, 5, 0)
 
 	// Exhaust burst for IP A
 	for i := 0; i < 5; i++ {
@@ -676,7 +676,7 @@ func TestRateLimit_PerIPIsolation(t *testing.T) {
 
 func TestRateLimit_ReplenishesTokensOverTime(t *testing.T) {
 	// Set RPS to 10, burst 2 — tokens replenish at ~1 per 100ms
-	rl := newRateLimiter(10, 2)
+	rl := newRateLimiter(10, 2, 0)
 
 	// Use burst
 	for i := 0; i < 2; i++ {
