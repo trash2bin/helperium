@@ -144,6 +144,15 @@ func (ts *TenantStore) adminAddTenantHandler(w http.ResponseWriter, r *http.Requ
 		handlers.RespondError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
+	// Defense-in-depth: the tenant ID is externally controlled and later becomes
+	// a config filename and tenant lookup key. Enforce the repo-wide tenant-ID
+	// contract (AGENTS.md "MCP scope") via the single pattern source in
+	// helperium-go (config.ValidTenantID) before the ID reaches any path or store.
+	if !config.ValidTenantID(req.ID) {
+		handlers.RespondError(w, http.StatusBadRequest, "invalid_tenant_id",
+			"id must match [A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+		return
+	}
 
 	// Parse config (decode does basic type validation)
 	var cfg config.Config

@@ -462,3 +462,41 @@ func TestTenantAdmin_AddTenant_ReadOnlySQLite_AutoDatabaseLevelDSN(t *testing.T)
 		t.Fatal("database-level readonly connection accepted a write")
 	}
 }
+
+// TestTenantAdmin_AddTenant_RejectsInvalidTenantID pins the repo-wide
+// tenant-ID contract (AGENTS.md "MCP scope") at the admin ingress: the ID is
+// externally controlled and later becomes a config filename and tenant lookup
+// key, so malformed values (path traversal, separators, over-length) must fail
+// closed with 400 invalid_tenant_id before any path or store is touched.
+func TestTenantAdmin_AddTenant_RejectsInvalidTenantID(t *testing.T) {
+	ts := newTenantAdminTestStore(t)
+	ts.TenantsDir = t.TempDir()
+
+	invalid := []struct {
+		name string
+		id   string
+	}{
+		{name: "path traversal", id: "../evil"},
+		{name: "nested path", id: "a/b"},
+		{name: "backslash", id: `a\b`},
+		{name: "hidden style", id: ".hidden"},
+		{name: "too long 129", id: strings.Repeat("a", 129)},
+		{name: "empty-ish space", id: " "},
+	}
+
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := `{"id": "` + tc.id + `", "config": {"version": 1, "data_source": {"driver": "sqlite", "dsn": ":memory:"}, "entities": [], "endpoints": []}}`
+			req := httptest.NewRequest(http.MethodPost, "/admin/tenants", strings.NewReader(payload))
+			rec := httptest.NewRecorder()
+			ts.adminAddTenantHandler(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("id %q: status = %d, want 400; body=%s", tc.id, rec.Code, rec.Body.String())
+			}
+			if body := rec.Body.String(); !strings.Contains(body, "invalid_tenant_id") {
+				t.Fatalf("id %q: want error code invalid_tenant_id, body=%s", tc.id, body)
+			}
+		})
+	}
+}
