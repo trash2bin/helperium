@@ -381,10 +381,11 @@ class TestScriptedPipeline:
     # ── v5 тулсёрфейс ──
 
     def test_v5_tool_chain(self, scripted_server):
-        """v5 цепочка: db_describe → filter_auto_parts → db_get → final.
+        """v5-тулы доступны через MCP без LLM: db_map → filter_auto_parts.
 
-        Проверяет, что pipeline с scripted LLM корректно исполняет
-        консолидированные db_* тулы и пер-энтити filter_{entity}.
+        Тело выполняет прямые mcp_call к консолидированным db_* тулам и
+        пер-энтити filter_{entity} (без оркестратора) — проверяет доступность
+        и корректность ответов v5-поверхности, а не LLM-цепочку.
         """
         api_url, agent_name, tid, data_dir = scripted_server
         script_path = data_dir / "v5_chain.jsonl"

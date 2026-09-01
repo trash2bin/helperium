@@ -263,6 +263,30 @@ def _check_services():
             os.environ.get("MCP_GATEWAY_URL", "http://127.0.0.1:8083") + "/health",
             False,
         ),
+        "api": (
+            os.environ.get(
+                "API_SERVICE_URL",
+                "http://%s:%s"
+                % (
+                    os.environ.get("DEMO_API_HOST", "127.0.0.1"),
+                    os.environ.get("DEMO_API_PORT", "8081"),
+                ),
+            )
+            + "/health",
+            False,
+        ),
+        "web": (
+            os.environ.get(
+                "DEMO_WEB_URL",
+                "http://%s:%s"
+                % (
+                    os.environ.get("DEMO_WEB_HOST", "127.0.0.1"),
+                    os.environ.get("DEMO_WEB_PORT", "8080"),
+                ),
+            )
+            + "/health",
+            False,
+        ),
     }
     fatal = []
     for name, (url, optional) in services.items():

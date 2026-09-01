@@ -165,12 +165,21 @@ def tenant_context():
     tid = _tenant_id("val")
     _register_and_rewrite(tid, db_path)
 
-    # Даём mcp-gateway время подхватить новый tenant
+    # Ждём, пока mcp-gateway подхватит новый tenant: poll вместо blind sleep —
+    # готовность = тулы появились в admin config (тот же источник, что и тест).
     import time
 
-    time.sleep(1)
-
-    tools = _get_tool_list(tid)
+    deadline = time.time() + 15
+    tools: list[dict] = []
+    while time.time() < deadline:
+        try:
+            tools = _get_tool_list(tid)
+            if tools:
+                break
+        except (requests.ConnectionError, OSError, AssertionError):
+            pass
+        time.sleep(0.5)
+    assert tools, f"tenant {tid} tools never appeared within 15s"
 
     yield tid, tools
 

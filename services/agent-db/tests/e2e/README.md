@@ -7,7 +7,7 @@
 ## Запуск
 
 ```bash
-# Все e2e (без LLM) — 138 тестов, ~2-3 мин
+# Все e2e (без LLM) — 148 тестов, ~2-3 мин
 # (счёт = AST-подсчёт def test_* в tests/e2e/test_*.py; сверяйте при изменении набора)
 uv run pytest tests/e2e/ -v
 
@@ -128,7 +128,8 @@ assert result.success
 ## Запуск в Docker (профиль test)
 
 ```bash
-# Собрать образы сервисов
+# Собрать образы сервисов (опционально: `up`/`run` в test-профиле
+# пересобирают эти образы автоматически через compose.sh)
 ADMIN_TOKEN=ci-secret-token VIEWER_TOKEN=ci-viewer-token \
   ./infra/scripts/compose.sh --profile test build data-service mcp-gateway api admin-dashboard web
 
