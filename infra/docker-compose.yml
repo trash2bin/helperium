@@ -16,7 +16,11 @@ services:
   # PostgreSQL (локальная БД для разработки / pre-prod)
   # Поднять:  docker compose up db
   #          docker compose up -d db
-  # Проверить: docker compose exec db psql -U tutor -d helperium -c '\dt'
+  # Проверить: docker compose exec db psql -U ${POSTGRES_USER:-tutor} -d ${POSTGRES_DB:-helperium} -c '\dt'
+  #
+  # db забинжена на 127.0.0.1:5432 (dev/pre-prod), пароль — переопределяемый
+  # dev-дефолт: задай POSTGRES_PASSWORD в .env для shared/pre-prod хоста.
+  # Note: postgres:16 применяет пароль только при первом init Volume.
   # ──────────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
@@ -25,11 +29,11 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     environment:
-      POSTGRES_USER: tutor
-      POSTGRES_PASSWORD: tutor
-      POSTGRES_DB: helperium
+      POSTGRES_USER: ${POSTGRES_USER:-tutor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tutor}
+      POSTGRES_DB: ${POSTGRES_DB:-helperium}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tutor -d helperium"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tutor} -d ${POSTGRES_DB:-helperium}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -343,7 +347,7 @@ services:
   # ──────────────────────────────────────────────────────────────────
   # MONITORING (profile: monitoring)
   # Поднять:  docker compose --profile monitoring up -d
-  # Войти в Grafana: http://127.0.0.1:3000  admin/admin
+  # Войти в Grafana: http://127.0.0.1:3000 (${GRAFANA_ADMIN_USER:-admin}/${GRAFANA_ADMIN_PASSWORD:-admin})
   # ──────────────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
@@ -376,8 +380,10 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Monitoring profile is loopback-only (127.0.0.1:3000); admin/admin — dev
+      # дефолт. Задай GRAFANA_ADMIN_PASSWORD в .env для shared/pre-prod хоста.
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_INSTALL_PLUGINS=
       - GF_AUTH_ANONYMOUS_ENABLED=true
     volumes:

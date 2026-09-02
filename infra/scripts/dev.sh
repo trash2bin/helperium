@@ -980,7 +980,7 @@ cmd_db_drop() {
       echo "⚠️  PostgreSQL: drop должен делаться вручную (защита от clobber)."
       echo ""
       echo "   Сбросить только схему public:"
-      echo "     docker exec helperium-db-1 psql -U tutor -d helperium \\"
+      echo "     docker exec helperium-db-1 psql -U \${POSTGRES_USER:-tutor} -d \${POSTGRES_DB:-helperium} \\"
       echo "       -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public'"
       exit 1
       ;;
