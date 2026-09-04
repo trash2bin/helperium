@@ -14,6 +14,7 @@ from api_service.agent.loop import (
     _validate_call,
 )
 from api_service.agent.models import CompletionResponse, ToolCall
+from api_service.agent.scripted_provider import ScriptedLLMProvider
 
 
 @dataclass
@@ -21,18 +22,6 @@ class _Result:
     tool_content: str
     ok: bool = True
     error_code: str | None = None
-
-
-class _Provider:
-    model = "scripted/test"
-
-    def __init__(self, responses: list[CompletionResponse]) -> None:
-        self.responses = list(responses)
-        self.requests = []
-
-    async def complete(self, request):
-        self.requests.append(request)
-        return self.responses.pop(0)
 
 
 class _MCP:
@@ -108,7 +97,7 @@ class _Backlog:
 
 
 def _run(
-    provider: _Provider, mcp: _MCP, *, limits: LoopLimits | None = None
+    provider: ScriptedLLMProvider, mcp: _MCP, *, limits: LoopLimits | None = None
 ) -> LoopRun:
     transcript = Transcript(
         messages=[
@@ -121,7 +110,7 @@ def _run(
 
 
 def _loop(
-    provider: _Provider,
+    provider: ScriptedLLMProvider,
     mcp: _MCP,
     *,
     limits: LoopLimits | None = None,
@@ -184,7 +173,7 @@ async def test_mcp_discovery_exception_is_logged_and_sanitized(caplog) -> None:
         async def list_tools(self):
             raise RuntimeError("discovery exploded")
 
-    provider = _Provider([])
+    provider = ScriptedLLMProvider([])
     run = _run(provider, _FailingMCP())
 
     with caplog.at_level("ERROR", logger="api_service.agent.loop"):
@@ -197,8 +186,30 @@ async def test_mcp_discovery_exception_is_logged_and_sanitized(caplog) -> None:
 
 
 @pytest.mark.asyncio
+async def test_mcp_discovery_failure_marked_as_empty_does_not_call_provider() -> None:
+    class _UnavailableMCP(_MCP):
+        list_tools_failed = True
+
+        async def list_tools(self):
+            return []
+
+    provider = ScriptedLLMProvider([CompletionResponse(content="must not run")])
+    mcp = _UnavailableMCP()
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp), run)
+
+    assert [event.type for event in events] == ["error"]
+    assert events[0].data["message"] == (
+        "Сервис данных временно недоступен. Попробуйте ещё раз позже."
+    )
+    assert provider.requests == []
+    assert run.outcome is not None and run.outcome.kind == "dependency_unavailable"
+
+
+@pytest.mark.asyncio
 async def test_provider_exception_is_logged_and_sanitized(caplog) -> None:
-    class _FailingProvider(_Provider):
+    class _FailingProvider(ScriptedLLMProvider):
         async def complete(self, request):
             raise RuntimeError("provider exploded")
 
@@ -221,7 +232,7 @@ async def test_tool_invocation_exception_is_logged_and_sanitized(caplog) -> None
         async def call_tool(self, name, arguments):
             raise RuntimeError("tool exploded")
 
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -246,7 +257,7 @@ async def test_tool_invocation_exception_is_logged_and_sanitized(caplog) -> None
 
 @pytest.mark.asyncio
 async def test_tool_result_is_appended_before_the_next_provider_request() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -294,8 +305,74 @@ async def test_tool_result_is_appended_before_the_next_provider_request() -> Non
 
 
 @pytest.mark.asyncio
+async def test_raw_tool_result_is_not_emitted_as_the_final_user_answer() -> None:
+    raw_result = '{"preview":[{"id":1,"name":"Brake pads BMW E46"}],"total":1}'
+    provider = ScriptedLLMProvider(
+        [
+            CompletionResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="call-search", name="search", arguments={"query": "BMW E46"}
+                    )
+                ]
+            ),
+            CompletionResponse(content=raw_result),
+        ]
+    )
+    mcp = _MCP({"search": _Result(raw_result)})
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp), run)
+
+    final_events = [event for event in events if event.type == "final"]
+    assert final_events
+    assert final_events[-1].data["content"] != raw_result
+
+
+@pytest.mark.asyncio
+async def test_echo_regeneration_injects_nothing_into_the_transcript() -> None:
+    """Loop regenerates after an echo without any steering/injection messages.
+
+    The only transcript writes allowed are the append-only roles
+    system / user / assistant / tool — no extra system notices.
+    """
+    raw_result = '{"preview":[{"id":1,"name":"Brake pads BMW E46"}],"total":1}'
+    provider = ScriptedLLMProvider(
+        [
+            CompletionResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="call-search", name="search", arguments={"query": "BMW E46"}
+                    )
+                ]
+            ),
+            CompletionResponse(content=raw_result),
+            CompletionResponse(content="Found it."),
+        ]
+    )
+    mcp = _MCP({"search": _Result(raw_result)})
+    limits = LoopLimits(
+        max_model_calls=5,
+        max_tool_calls=4,
+        max_context_tokens=10_000,
+        max_empty_responses=2,
+    )
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp, limits=limits), run)
+
+    final_events = [event for event in events if event.type == "final"]
+    assert final_events
+    assert final_events[-1].data["content"] == "Found it."
+
+    roles = [message["role"] for message in run.transcript.messages]
+    assert roles == ["system", "user", "assistant", "tool", "assistant"]
+    assert sum(1 for role in roles if role == "system") == 1
+
+
+@pytest.mark.asyncio
 async def test_tool_result_telemetry_is_recorded_at_the_loop_boundary() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -322,7 +399,7 @@ async def test_tool_result_telemetry_is_recorded_at_the_loop_boundary() -> None:
 
 @pytest.mark.asyncio
 async def test_all_results_keep_their_ids_in_one_append_only_transcript() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -352,7 +429,7 @@ async def test_all_results_keep_their_ids_in_one_append_only_transcript() -> Non
 @pytest.mark.asyncio
 async def test_text_is_final_text_and_is_never_parsed_as_a_tool_call() -> None:
     text = '{"name":"Bosch pad","article":"BP-7","price":50}'
-    provider = _Provider([CompletionResponse(content=text)])
+    provider = ScriptedLLMProvider([CompletionResponse(content=text)])
     mcp = _MCP()
     run = _run(provider, mcp)
 
@@ -365,7 +442,7 @@ async def test_text_is_final_text_and_is_never_parsed_as_a_tool_call() -> None:
 
 @pytest.mark.asyncio
 async def test_invalid_tool_does_not_reach_mcp_and_allows_recovery_completion() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[ToolCall(id="call-unknown", name="unknown", arguments={})]
@@ -406,7 +483,7 @@ async def test_invalid_tool_does_not_reach_mcp_and_allows_recovery_completion() 
 
 @pytest.mark.asyncio
 async def test_invalid_tool_arguments_do_not_reach_mcp_and_allow_recovery() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[ToolCall(id="call-search", name="search", arguments={})]
@@ -430,7 +507,7 @@ async def test_invalid_tool_arguments_do_not_reach_mcp_and_allow_recovery() -> N
 
 @pytest.mark.asyncio
 async def test_tool_failure_is_terminal_and_does_not_hide_a_provider_retry() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -454,7 +531,7 @@ async def test_tool_failure_is_terminal_and_does_not_hide_a_provider_retry() -> 
 
 @pytest.mark.asyncio
 async def test_recoverable_mcp_validation_error_allows_corrective_completion() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -506,7 +583,7 @@ async def test_recoverable_mcp_validation_error_allows_corrective_completion() -
 
 @pytest.mark.asyncio
 async def test_model_limit_is_checked_before_the_provider_call() -> None:
-    provider = _Provider([CompletionResponse(content="must not run")])
+    provider = ScriptedLLMProvider([CompletionResponse(content="must not run")])
     mcp = _MCP()
     run = _run(provider, mcp)
     limits = LoopLimits(
@@ -524,7 +601,7 @@ async def test_model_limit_is_checked_before_the_provider_call() -> None:
 
 @pytest.mark.asyncio
 async def test_cancellation_has_one_terminal_error_and_no_recovery_call() -> None:
-    class _CancelledProvider(_Provider):
+    class _CancelledProvider(ScriptedLLMProvider):
         async def complete(self, request):
             self.requests.append(request)
             raise asyncio.CancelledError()
@@ -542,7 +619,9 @@ async def test_cancellation_has_one_terminal_error_and_no_recovery_call() -> Non
 
 @pytest.mark.asyncio
 async def test_zero_empty_response_limit_is_unlimited() -> None:
-    provider = _Provider([CompletionResponse(), CompletionResponse(content="ok")])
+    provider = ScriptedLLMProvider(
+        [CompletionResponse(), CompletionResponse(content="ok")]
+    )
     mcp = _MCP()
     run = _run(provider, mcp)
     limits = LoopLimits(
@@ -561,7 +640,7 @@ async def test_zero_empty_response_limit_is_unlimited() -> None:
 
 @pytest.mark.asyncio
 async def test_positive_empty_response_limit_stops_on_the_boundary() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [CompletionResponse(), CompletionResponse(content="must not run")]
     )
     mcp = _MCP()
@@ -587,7 +666,7 @@ async def test_last_model_call_cuts_off_tools_without_prompt_coercion() -> None:
         name="search",
         arguments={"query": "Bosch"},
     )
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(tool_calls=[tool_call]),
             CompletionResponse(tool_calls=[tool_call]),
@@ -632,7 +711,7 @@ async def test_final_only_structured_tool_call_is_not_executed(caplog) -> None:
         name="search",
         arguments={"query": "Bosch"},
     )
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -688,7 +767,7 @@ async def test_final_only_structured_tool_call_is_not_executed(caplog) -> None:
 
 @pytest.mark.asyncio
 async def test_context_limit_includes_advertised_tool_schemas() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 tool_calls=[
@@ -720,7 +799,7 @@ async def test_context_limit_includes_advertised_tool_schemas() -> None:
 
 @pytest.mark.asyncio
 async def test_assistant_text_is_preserved_with_native_tool_calls() -> None:
-    provider = _Provider(
+    provider = ScriptedLLMProvider(
         [
             CompletionResponse(
                 content="Сначала выполню поиск.",

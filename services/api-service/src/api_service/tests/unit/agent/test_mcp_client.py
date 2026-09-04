@@ -499,6 +499,7 @@ class TestBreakerStore:
         session = _SessionProxy(mcp_client, tenant_ids=["dead-tenant"])
         tools = await mcp_client.list_tools(session)
         assert tools == []
+        assert session.list_tools_failed is True
         assert self._store_failures(mcp_client, "dead-tenant") >= 1
 
     @staticmethod

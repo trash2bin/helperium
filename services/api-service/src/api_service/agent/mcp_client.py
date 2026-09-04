@@ -800,6 +800,7 @@ class MCPClient:
         Handshake failures degrade to an empty tool list (safe public
         behaviour) instead of leaking raw transport exceptions.
         """
+        session.list_tools_failed = False
         try:
             conn = await self._get_connection(session.tenant_ids)
         except Exception as exc:
@@ -809,6 +810,7 @@ class MCPClient:
                 type(exc).__name__,
             )
             self._mark_failure_if_tracked(None, session.tenant_ids)
+            session.list_tools_failed = True
             return []
         try:
             result = await self._list_tools_bounded(conn)
@@ -819,6 +821,7 @@ class MCPClient:
             logger.warning(
                 "[MCP] list_tools timed out for tenants=%s", session.tenant_ids
             )
+            session.list_tools_failed = True
             return []
         except Exception as exc:
             if "Tool not found" in str(exc):
@@ -826,6 +829,7 @@ class MCPClient:
                     "[MCP] list_tools encountered Tool not found for tenants=%s, not reconnecting",
                     session.tenant_ids,
                 )
+                session.list_tools_failed = True
                 return []
 
             logger.warning(
@@ -845,6 +849,7 @@ class MCPClient:
                     session.tenant_ids,
                     type(exc2).__name__,
                 )
+                session.list_tools_failed = True
                 return []
 
         return [
@@ -1441,6 +1446,9 @@ class _SessionProxy:
         # Returns True when the HTTP client that started this turn is gone.
         # None means the caller did not provide a probe (tests, non-SSE paths).
         self.disconnect_check = disconnect_check
+        # ``[]`` is a valid MCP tool set, so the agent needs an explicit
+        # signal when list_tools returned it because discovery failed.
+        self.list_tools_failed = False
 
     async def list_tools(self) -> list[dict[str, Any]]:
         return await self.client.list_tools(self)

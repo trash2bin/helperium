@@ -138,6 +138,7 @@ async def test_list_tools_lock_timeout():
 
     tools = await client.list_tools(session)
     assert tools == []
+    assert session.list_tools_failed is True
 
 
 @pytest.mark.asyncio
@@ -161,3 +162,4 @@ async def test_list_tools_lock_acquires_normally():
     assert len(tools) == 1
     assert tools[0]["function"]["name"] == "get_student"
     assert tools[0]["function"]["description"] == "Get student info"
+    assert session.list_tools_failed is False

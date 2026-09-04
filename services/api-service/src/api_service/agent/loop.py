@@ -183,6 +183,17 @@ class AppendOnlyLoop:
                 ),
             )
             return
+        if getattr(self._mcp, "list_tools_failed", False):
+            logger.warning("[AGENT] MCP tool discovery failed")
+            yield self._finish(
+                run,
+                LoopOutcome(
+                    kind="dependency_unavailable",
+                    message=DATA_SERVICE_UNAVAILABLE,
+                    retryable=True,
+                ),
+            )
+            return
         allowed = _tool_index(tools)
 
         try:
@@ -277,11 +288,31 @@ class AppendOnlyLoop:
                         ", ".join(call.name for call in response.tool_calls),
                     )
 
-                if response.content:
-                    final_text = self._guard_output(response.content)
-                    run.transcript.append({"role": "assistant", "content": final_text})
+                final_text = response.content.strip()
+                if final_text and self._echoes_last_tool_result(run, final_text):
+                    # A model that copies the raw tool JSON into ``content``
+                    # did not answer. Treat the echo exactly like an empty
+                    # response: count one empty round and regenerate from the
+                    # same transcript without adding steering text; at the
+                    # boundary degrade to the polite fallback so raw tool
+                    # data never becomes the final user answer.
+                    run.metrics.empty_responses += 1
+                    if self._empty_limit_reached(run.metrics):
+                        yield self._finish(
+                            run,
+                            LoopOutcome(
+                                kind="answer",
+                                final_text=EMPTY_RESPONSE,
+                            ),
+                        )
+                        return
+                    continue
+
+                if final_text:
+                    guarded = self._guard_output(response.content)
+                    run.transcript.append({"role": "assistant", "content": guarded})
                     yield self._finish(
-                        run, LoopOutcome(kind="answer", final_text=final_text)
+                        run, LoopOutcome(kind="answer", final_text=guarded)
                     )
                     return
 
@@ -629,6 +660,20 @@ class AppendOnlyLoop:
         return bool(
             self._guard_checker and self._guard_checker.check_input(content).blocked
         )
+
+    @staticmethod
+    def _echoes_last_tool_result(run: LoopRun, final_text: str) -> bool:
+        """Whether the final text is the last tool result copied verbatim.
+
+        Comparison is exact: partial reuse of tool data inside a natural
+        language answer is legitimate and must not be blocked.
+        """
+        for message in reversed(run.transcript.messages):
+            if message.get("role") == "tool":
+                return message.get("content") == final_text
+            if message.get("role") == "assistant":
+                break
+        return False
 
     def _guard_output(self, content: str) -> str:
         if self._guard_checker and self._guard_checker.check_output(content).blocked:

@@ -37,6 +37,7 @@ Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding и
 | MCP scope | Только `X-Tenant-ID`; query parameter не выбирает tenant. Composite scope ограничен уникальными ID. Tenant ID допускает `[A-Za-z0-9][A-Za-z0-9_-]{0,127}`. |
 | MCP auth/origin | Production требует distinct `MCP_API_KEY`/`MCP_CLIENT_API_KEY` и explicit `MCP_ALLOWED_ORIGINS`. `/health` остаётся public. |
 | Direct chat | Browser `X-Tenant-ID` не определяет scope direct chat; используется server-configured default. |
+| No prompt steering | Поведение модели контролируется структурой (schemas, allow-list, validation, лимиты, регенерация), не текстовыми уговорами в транскрипте. Новые model-facing steering-нотисы не добавлять; существующие repair-нотисы после структурного отказа — не прецедент. |
 | API CORS | При отсутствии override Compose разрешает только `http://localhost:8080`. Public embed domains указываются явно в `CORS_ALLOW_ORIGINS`; не возвращай wildcard fallback. |
 | Demo isolation | Локальные E2E используют CI volumes и loopback ports; не пишут в пользовательские `.data` или external storefront data. |
 | Public errors | Ошибки dependency/transport должны быть retryable и sanitised; не раскрывать DSN, credentials, filesystem paths, stack traces или internal hosts. |

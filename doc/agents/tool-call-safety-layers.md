@@ -79,6 +79,7 @@ The loop builds an immutable allow-list from `mcp_session.list_tools()` before t
 | Cancellation | One cancellation error; no recovery completion |
 | Model/tool/context/empty-response limit | One explicit terminal error |
 | Final provider text | Output guard, then `final` |
+| Final text copies the last tool result verbatim | Not published. Counted as an empty round; regenerate from the same transcript without steering text; at the limit, degraded to the standard fallback text |
 
 The chat route emits its existing terminal `done` frame after the event stream ends.
 
@@ -92,4 +93,4 @@ The current focused contracts are intentionally behavioral rather than parser-im
 | `test_orchestrator.py` | Public SSE order, server-resolved tenant scope, and persisted `user → assistant → tool → assistant` transcript |
 | `test_litellm_provider.py` | Native call normalization, malformed-native-call rejection, text finality, current-turn continuation policy, historical-tool cross-turn schemas, and cost propagation |
 
-**Last verified:** 2026-08-20 (commit `0337712`) — native structured tool calls remain the only executable provider protocol; live MiniMax `Bosch → Camry V40 characteristics` completed two tenant-scoped MCP tool turns without emitting a raw tool transcript.
+**Last verified:** 2026-09-04 (working tree; uncommitted edits on `2efde0c`) — native structured tool calls remain the only executable provider protocol; text is never parsed as a tool outside a verified per-model policy, verbatim tool-result echoes are never published as the final answer, and model-facing behavior is controlled structurally (schemas, allow-list, validation, limits, regeneration) rather than by steering text. Focused unit suites: `test_loop.py`, `test_litellm_provider.py`, `test_provider_compatibility.py` all green.
