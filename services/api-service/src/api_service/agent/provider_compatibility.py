@@ -23,6 +23,7 @@ class ProviderModelPolicy:
     model_prefix: str
     reasoning_body: ReasoningBodyFactory | None = None
     keep_tool_schemas_on_continuation: bool = False
+    parse_text_tool_calls: bool = False
 
 
 def _step37_reasoning_body(enabled: bool) -> dict[str, Any]:
@@ -46,6 +47,16 @@ _POLICIES: tuple[ProviderModelPolicy, ...] = (
         provider="openai",
         model_prefix="openai/deepseek",
         keep_tool_schemas_on_continuation=True,
+    ),
+    # Ollama's registry currently reports false for this cloud model even
+    # though its live wire response includes native tool_calls.  Stripping the
+    # schemas after the first call makes the next model step fall back to
+    # visible JSON/text instead of continuing the MCP cycle.
+    ProviderModelPolicy(
+        provider="ollama",
+        model_prefix="gemma4:31b-cloud",
+        keep_tool_schemas_on_continuation=True,
+        parse_text_tool_calls=True,
     ),
 )
 

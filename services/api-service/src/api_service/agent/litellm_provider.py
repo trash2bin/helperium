@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any
 
 import litellm
@@ -33,8 +34,9 @@ class ProviderProtocolError(ValueError):
 class LiteLLMProvider:
     """Translate native LiteLLM function calls into the one provider protocol.
 
-    Text is final assistant text. The adapter deliberately does not parse JSON,
-    XML, Markdown or provider-specific delimiters from ``content`` as tool calls.
+    Text is final assistant text by default. A verified provider/model policy may
+    opt into one strict compatibility parser for models that emit an exact
+    structured tool call as fenced JSON instead of using the native field.
     """
 
     def __init__(
@@ -131,9 +133,19 @@ class LiteLLMProvider:
 
         message = response.choices[0].message
         tool_calls = [self._tool_call(raw) for raw in (message.tool_calls or [])]
+        content = message.content or ""
+        if (
+            not tool_calls
+            and self._policy is not None
+            and self._policy.parse_text_tool_calls
+        ):
+            text_call = self._text_tool_call(content, tools)
+            if text_call is not None:
+                tool_calls = [text_call]
+                content = ""
         usage = self._usage(getattr(response, "usage", None))
         return CompletionResponse(
-            content=message.content or "",
+            content=content,
             tool_calls=tool_calls,
             usage=usage,
             cost=self._cost(response, getattr(response, "usage", None)),
@@ -259,6 +271,48 @@ class LiteLLMProvider:
                 f"native tool call '{name}' arguments must be a JSON object"
             )
         return ToolCall(id=call_id, name=name, arguments=arguments)
+
+    @staticmethod
+    def _text_tool_call(content: str, tools: list[dict[str, Any]]) -> ToolCall | None:
+        """Convert one verified model's exact JSON tool envelope.
+
+        This is intentionally narrower than a general content parser: the
+        entire response must be a JSON object (optionally in a JSON code fence),
+        it must contain only ``name``/``arguments``, and the name must be in the
+        tool schemas sent on this request. Argument schema validation remains in
+        the agent loop before MCP dispatch.
+        """
+        candidate = content.strip()
+        if candidate.startswith("```json") and candidate.endswith("```"):
+            candidate = candidate[len("```json") : -len("```")].strip()
+        elif candidate.startswith("```") and candidate.endswith("```"):
+            candidate = candidate[3:-3].strip()
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        if set(parsed) != {"name", "arguments"}:
+            return None
+        name = parsed.get("name")
+        arguments = parsed.get("arguments")
+        if not isinstance(name, str) or not name or not isinstance(arguments, dict):
+            return None
+        advertised_names = {
+            function.get("name")
+            for tool in tools
+            if isinstance(tool, dict)
+            and isinstance(function := tool.get("function"), dict)
+            and isinstance(function.get("name"), str)
+        }
+        if name not in advertised_names:
+            return None
+        return ToolCall(
+            id=f"text-call-{uuid.uuid4()}",
+            name=name,
+            arguments=arguments,
+        )
 
     @staticmethod
     def _usage(raw: Any) -> UsageInfo | None:

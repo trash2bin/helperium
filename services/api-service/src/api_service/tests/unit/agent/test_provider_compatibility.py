@@ -37,3 +37,11 @@ def test_unknown_nim_model_has_no_policy() -> None:
 
 def test_non_nim_provider_has_no_nim_policy() -> None:
     assert find_provider_model_policy("openai", "openai/gpt-4.1-mini") is None
+
+
+def test_ollama_gemma_cloud_keeps_continuation_tools() -> None:
+    policy = find_provider_model_policy("ollama", "gemma4:31b-cloud")
+
+    assert policy is not None
+    assert policy.keep_tool_schemas_on_continuation is True
+    assert policy.parse_text_tool_calls is True

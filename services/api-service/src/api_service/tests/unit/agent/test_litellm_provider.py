@@ -170,6 +170,42 @@ async def test_litellm_adapter_never_interprets_text_as_a_tool_call() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gemma_compatibility_parses_only_advertised_fenced_json_tool_call() -> (
+    None
+):
+    provider = LiteLLMProvider("gemma4:31b-cloud", provider="ollama")
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "db_search", "parameters": {"type": "object"}},
+        }
+    ]
+    text = '```json\n{"name":"db_search","arguments":{"pattern":"Bosch"}}\n```'
+    completion = AsyncMock(return_value=_response(content=text))
+
+    with patch("api_service.agent.litellm_provider.litellm.acompletion", completion):
+        response = await provider.complete(CompletionRequest(messages=[], tools=tools))
+
+    assert response.content == ""
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "db_search"
+    assert response.tool_calls[0].arguments == {"pattern": "Bosch"}
+
+
+@pytest.mark.asyncio
+async def test_gemma_compatibility_keeps_unrecognized_json_as_text() -> None:
+    provider = LiteLLMProvider("gemma4:31b-cloud", provider="ollama")
+    text = '{"answer":"Здравствуйте"}'
+    completion = AsyncMock(return_value=_response(content=text))
+
+    with patch("api_service.agent.litellm_provider.litellm.acompletion", completion):
+        response = await provider.complete(CompletionRequest(messages=[]))
+
+    assert response.content == text
+    assert response.tool_calls == []
+
+
+@pytest.mark.asyncio
 async def test_litellm_adapter_keeps_schemas_for_new_turn_after_historical_tool_result() -> (
     None
 ):
