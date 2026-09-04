@@ -40,13 +40,15 @@ services:
     build: .
     command: ["python", "helperium_readonly_bootstrap.py"]
     environment:
-      STORE_DB_HOST: db
-      STORE_DB_PORT: "5432"
+      STORE_DB_HOST: ${STORE_DB_HOST:-db}
+      STORE_DB_PORT: ${STORE_DB_PORT:-5432}
       STORE_DB_NAME: ${STORE_DB_NAME:-autoparts}
       STORE_DB_USER: ${STORE_DB_USER:-autoparts}
       STORE_DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env}
       HELPERIUM_AUTOPARTS_RO_USER: ${HELPERIUM_AUTOPARTS_RO_USER:-helperium_autoparts_ro}
       HELPERIUM_AUTOPARTS_RO_PASSWORD: ${HELPERIUM_AUTOPARTS_RO_PASSWORD:?set HELPERIUM_AUTOPARTS_RO_PASSWORD}
+      HELPERIUM_AUTOPARTS_DSN_HOST: ${HELPERIUM_AUTOPARTS_DSN_HOST:-}
+      HELPERIUM_AUTOPARTS_DSN_PORT: ${HELPERIUM_AUTOPARTS_DSN_PORT:-0}
       HELPERIUM_AUTOPARTS_REGISTER_TENANT: ${HELPERIUM_AUTOPARTS_REGISTER_TENANT:-false}
       HELPERIUM_DATA_SERVICE_URL: ${HELPERIUM_DATA_SERVICE_URL:-}
       HELPERIUM_DATA_ADMIN_TOKEN: ${HELPERIUM_DATA_ADMIN_TOKEN:-}
@@ -67,6 +69,14 @@ services:
       DB_NAME: ${STORE_DB_NAME:-autoparts}
       DB_USER: ${STORE_DB_USER:-autoparts}
       DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env}
+      # The local storefront is a separate browser origin from Helperium.
+      # Keep the integration HTML-only: the browser loads the widget bundle
+      # and calls the host-published API directly; never render a Docker DNS
+      # name into browser HTML.
+      HELPERIUM_WIDGET_ENABLED: ${HELPERIUM_WIDGET_ENABLED:-true}
+      HELPERIUM_API_BASE: ${HELPERIUM_API_BASE:-http://127.0.0.1:8081}
+      HELPERIUM_AGENT: ${HELPERIUM_AGENT:-autoparts-assistant}
+      HELPERIUM_WIDGET_TITLE: ${HELPERIUM_WIDGET_TITLE:-Помощник по подбору}
     volumes:
       - .:/app
     depends_on:

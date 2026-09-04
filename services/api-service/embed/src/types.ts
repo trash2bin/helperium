@@ -7,7 +7,8 @@
 /* ─── Configuration (parsed from data-* attributes) ─── */
 
 export interface WidgetConfig {
-  readonly agent: string;
+  // The demo dashboard can switch the selected named agent at runtime.
+  agent: string;
   readonly apiBase: string;
   readonly title: string;
   readonly greeting: string;

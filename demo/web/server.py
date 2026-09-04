@@ -436,6 +436,12 @@ async def proxy_rag_documents(request: Request) -> Response:
 # --- API Reverse Proxy Routes (только агент: chat, sessions, backlog) ---
 
 
+@app.get("/api/agents")
+async def proxy_agents(request: Request) -> Response:
+    """Proxy the public demo agent list so the UI can select named agents."""
+    return await _proxy_to_api(request, "/api/agents")
+
+
 @app.api_route(
     "/api/tenant/{tenant_id}/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

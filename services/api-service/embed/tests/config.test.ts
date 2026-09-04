@@ -27,6 +27,14 @@ describe('parseConfig', () => {
     expect(config.greeting).toBe('Hello!');
   });
 
+  it('allows the selected agent to change at runtime', () => {
+    const config = parseConfig(createScript({ 'data-agent': 'default' }));
+
+    config.agent = 'autoparts-assistant';
+
+    expect(config.agent).toBe('autoparts-assistant');
+  });
+
   it('uses defaults for missing attributes', () => {
     const script = createScript({ 'data-agent': 'test' });
     const config = parseConfig(script);

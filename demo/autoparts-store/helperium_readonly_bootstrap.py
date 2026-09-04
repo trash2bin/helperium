@@ -47,6 +47,11 @@ class BootstrapSettings:
     tenant_id: str
     attempts: int
     retry_seconds: float
+    # The bootstrap runs inside Docker, while data-service may run on the
+    # host during native development. Allow the registered DSN to use a
+    # host-reachable address independently from the bootstrap DB connection.
+    dsn_host: str = ""
+    dsn_port: int = 0
 
 
 def required_env(name: str) -> str:
@@ -72,6 +77,8 @@ def load_settings() -> BootstrapSettings:
         tenant_id=os.environ.get("HELPERIUM_AUTOPARTS_TENANT_ID", "autoparts"),
         attempts=int(os.environ.get("HELPERIUM_BOOTSTRAP_ATTEMPTS", "60")),
         retry_seconds=float(os.environ.get("HELPERIUM_BOOTSTRAP_RETRY_SECONDS", "2")),
+        dsn_host=os.environ.get("HELPERIUM_AUTOPARTS_DSN_HOST", ""),
+        dsn_port=int(os.environ.get("HELPERIUM_AUTOPARTS_DSN_PORT", "0")),
     )
 
 
@@ -157,7 +164,9 @@ def readonly_dsn(settings: BootstrapSettings) -> str:
     username = quote(settings.readonly_user, safe="")
     password = quote(settings.readonly_password, safe="")
     database = quote(settings.store_database, safe="")
-    return f"postgres://{username}:{password}@{settings.store_host}:{settings.store_port}/{database}?sslmode=disable"
+    host = settings.dsn_host or settings.store_host
+    port = settings.dsn_port or settings.store_port
+    return f"postgres://{username}:{password}@{host}:{port}/{database}?sslmode=disable"
 
 
 def request_json(

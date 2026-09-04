@@ -273,6 +273,9 @@ start_autoparts_store() {
     (
       cd "$AUTOPARTS_DIR" &&
         HELPERIUM_AUTOPARTS_REGISTER_TENANT=true \
+        HELPERIUM_WIDGET_ENABLED=true \
+        HELPERIUM_API_BASE="http://127.0.0.1:$API_PORT" \
+        HELPERIUM_AGENT=autoparts-assistant \
         HELPERIUM_DATA_SERVICE_URL="http://host.docker.internal:$DATA_PORT" \
         HELPERIUM_DATA_ADMIN_TOKEN="$ADMIN_TOKEN" \
         docker-compose up -d
@@ -281,6 +284,9 @@ start_autoparts_store() {
     (
       cd "$AUTOPARTS_DIR" &&
         HELPERIUM_AUTOPARTS_REGISTER_TENANT=true \
+        HELPERIUM_WIDGET_ENABLED=true \
+        HELPERIUM_API_BASE="http://127.0.0.1:$API_PORT" \
+        HELPERIUM_AGENT=autoparts-assistant \
         HELPERIUM_DATA_SERVICE_URL="http://host.docker.internal:$DATA_PORT" \
         HELPERIUM_DATA_ADMIN_TOKEN="$ADMIN_TOKEN" \
         docker compose up -d
@@ -488,7 +494,9 @@ cmd_start() {
       api)
         extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT MCP_GATEWAY_URL=http://127.0.0.1:$MCP_PORT MCP_STREAMABLE_HTTP_URL=http://127.0.0.1:$MCP_PORT/mcp${USE_SCRIPTED_LLM:+ USE_SCRIPTED_LLM=$USE_SCRIPTED_LLM}${SCRIPTED_LLM_PATH:+ SCRIPTED_LLM_PATH=$SCRIPTED_LLM_PATH}${SCRIPTED_LLM_RECORD:+ SCRIPTED_LLM_RECORD=$SCRIPTED_LLM_RECORD}"
         if [ "$with_autoparts" = "true" ]; then
-          extra_env="DEFAULT_TENANT_ID=autoparts DIRECT_CHAT_AGENT=autoparts-assistant $extra_env"
+          # The external storefront is served from :8000 and the demo UI from
+          # :8080. Both are browser origins of this API in native demo mode.
+          extra_env="DEFAULT_TENANT_ID=autoparts DIRECT_CHAT_AGENT=autoparts-assistant CORS_ALLOW_ORIGINS=http://localhost:8080,http://127.0.0.1:8080,http://localhost:8000,http://127.0.0.1:8000 $extra_env"
         fi
         if [ -n "${MCP_CLIENT_API_KEY:-}" ]; then
           extra_env="MCP_CLIENT_API_KEY=$MCP_CLIENT_API_KEY $extra_env"

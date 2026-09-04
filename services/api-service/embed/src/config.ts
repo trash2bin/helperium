@@ -13,7 +13,7 @@ import type { WidgetConfig } from './types';
  * Falls back to sensible defaults when attributes are missing.
  *
  * @param script - The <script> element that loaded the widget.
- * @returns A readonly WidgetConfig.
+ * @returns A WidgetConfig whose selected agent may change at runtime.
  */
 export function parseConfig(script: HTMLScriptElement | null): WidgetConfig {
   const attr = (name: string): string =>
@@ -35,7 +35,7 @@ export function parseConfig(script: HTMLScriptElement | null): WidgetConfig {
   const rawLang = fromWindow('lang', 'data-lang');
   const detectedLang = navigator.language.startsWith('ru') ? 'ru' : 'en';
 
-  return Object.freeze({
+  return {
     agent,
     apiBase: fromWindow('apiBase', 'data-api-base') || window.location.origin,
     title: fromWindow('title', 'data-title') || 'Assistant',
@@ -54,5 +54,5 @@ export function parseConfig(script: HTMLScriptElement | null): WidgetConfig {
     voiceInput: fromWindow('voiceInput', 'data-voice-input') !== 'false',
     voiceOutput: fromWindow('voiceOutput', 'data-voice-output') !== 'false',
     voiceToggle: fromWindow('voiceToggle', 'data-voice-toggle') === 'classic' ? 'classic' : 'telegram',
-  });
+  };
 }
