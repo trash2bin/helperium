@@ -36,7 +36,7 @@ demo/
 ```
 
 Флаг вызывает `docker-compose up -d` только в `demo/autoparts-store`. Он не
-запускается по умолчанию, не включается в `./infra/scripts/dev.sh stop` и не
-получает автоматически tenant-конфигурацию или виджет. Для живой интеграции
-сначала выполни onboarding storefront PostgreSQL как read-only tenant и создай
-соответствующего агента.
+запускается по умолчанию и не включается в `./infra/scripts/dev.sh stop`. В
+этом явном режиме launcher также выполняет onboarding storefront PostgreSQL
+как read-only tenant и включает HTML-встраивание виджета: storefront на
+`:8000` загружает `/embed/embed.js` и вызывает host-published API на `:8081`.

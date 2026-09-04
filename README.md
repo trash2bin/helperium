@@ -25,35 +25,35 @@ Unlike static RAG systems that require manual re-indexing, this platform queries
 
 | Demo Web — chat with agent & data tables | Admin Dashboard — dashboard & tenant list |
 |---|---|
-| ![Demo Web UI](doc/demo-web-ui.png) | ![Admin Dashboard](doc/admin-dashboard.png) |
+| ![Demo Web UI](doc/images/demo-web-ui.png) | ![Admin Dashboard](doc/images/admin-dashboard.png) |
 
 | API Swagger (api-service) | RAG Swagger (rag-service) |
 |---|---|
-| ![API Swagger](doc/api-swagger.png) | ![RAG Swagger](doc/rag-swagger.png) |
+| ![API Swagger](doc/images/api-swagger.png) | ![RAG Swagger](doc/images/rag-swagger.png) |
 
 ### Admin Panels
 
 | Tenants list | Tenant config — entities & endpoints |
 |---|---|
-| ![Admin Tenants](doc/admin-tenants.png) | ![Admin Config](doc/admin-config.png) |
+| ![Admin Tenants](doc/images/admin-tenants.png) | ![Admin Config](doc/images/admin-config.png) |
 
 | Tools & write approval | Agents |
 |---|---|
-| ![Admin Tools](doc/admin-tools.png) | ![Admin Agents](doc/admin-agents.png) |
+| ![Admin Tools](doc/images/admin-tools.png) | ![Admin Agents](doc/images/admin-agents.png) |
 
 | RAG document management | Anti-Abuse settings |
 |---|---|
-| ![Admin RAG](doc/admin-rag.png) | ![Admin Anti-Abuse](doc/admin-antiabuse.png) |
+| ![Admin RAG](doc/images/admin-rag.png) | ![Admin Anti-Abuse](doc/images/admin-antiabuse.png) |
 
 | Data Service Swagger UI | MCP Gateway Debug Playground |
 |---|---|
-| ![Data Service Swagger](doc/data-swagger.png) | ![MCP Debug](doc/mcp-debug.png) |
+| ![Data Service Swagger](doc/images/data-swagger.png) | ![MCP Debug](doc/images/mcp-debug.png) |
 
 ### Monitoring
 
 | Grafana Dashboard (12 panels) — full-page overview of all service metrics |
 |---|
-| ![Grafana Overview](doc/grafana-overview.png) |
+| ![Grafana Overview](doc/images/grafana-overview.png) |
 
 ## Core Capabilities
 
