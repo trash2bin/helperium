@@ -90,15 +90,22 @@ export function createStorage(storageKey: string, sessionId: string) {
     kind: string;
     text: string;
     tools: string[];
+    ts?: number;
   }> {
     const stored = loadStoredMessages(storageKey);
-    return stored
-      .filter((m) => (m as StoredMessageWithMeta).sessionId === sessionId)
-      .map((m) => ({
+    const items: Array<{ kind: string; text: string; tools: string[]; ts?: number }> = [];
+    for (const m of stored) {
+      if ((m as StoredMessageWithMeta).sessionId !== sessionId) continue;
+      const item: { kind: string; text: string; tools: string[]; ts?: number } = {
         kind: m.kind,
         text: m.text,
         tools: m.tools || [],
-      }));
+      };
+      const ts = (m as StoredMessageWithMeta).ts;
+      if (typeof ts === 'number') item.ts = ts;
+      items.push(item);
+    }
+    return items;
   }
 
   /**

@@ -9,6 +9,7 @@
 // SVG icons (imported as text strings by esbuild)
 import chatSvg from './icons/chat.svg';
 import closeSvg from './icons/close.svg';
+import flagSvg from './icons/flag.svg';
 import micSvg from './icons/mic.svg';
 import micOffSvg from './icons/mic-off.svg';
 import sendSvg from './icons/send.svg';
@@ -18,6 +19,7 @@ import type { IconSet } from './types';
 export const ICONS: IconSet = {
   chat: chatSvg,
   close: closeSvg,
+  flag: flagSvg,
   send: sendSvg,
   mic: micSvg,
   micOff: micOffSvg,

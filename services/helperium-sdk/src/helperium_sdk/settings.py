@@ -79,6 +79,16 @@ class DemoSettings:
         )
         self.backlog_mode: str = os.environ.get("BACKLOG_MODE", "full")
 
+        # Widget problem reports (public /api/reports endpoint). Like the
+        # spending ledger, the path resolves against the project root, never
+        # the process CWD. Retention 0 keeps every report (evidence first).
+        self.reports_db_path: str = os.environ.get(
+            "REPORTS_DB_PATH", str(project_root() / ".data" / "reports.sqlite3")
+        )
+        self.reports_retention_days: int = int(
+            os.environ.get("REPORTS_RETENTION_DAYS", "0")
+        )
+
         # MCP gateway uses one standard Streamable HTTP endpoint.
         self.mcp_gateway_url: str = os.environ.get(
             "MCP_GATEWAY_URL", "http://127.0.0.1:8083"

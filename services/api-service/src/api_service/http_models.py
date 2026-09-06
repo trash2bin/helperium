@@ -19,6 +19,11 @@ from helperium_sdk.api.models import (
     AgentListResponse,
     VoiceConfig,
     VoiceAgentConfig,
+    ReportCreateRequest,
+    ReportLastError,
+    ReportMessageContext,
+    ReportStatusUpdateRequest,
+    ReportTranscriptMessage,
 )
 
 __all__ = [
@@ -36,4 +41,9 @@ __all__ = [
     "AgentListResponse",
     "VoiceConfig",
     "VoiceAgentConfig",
+    "ReportCreateRequest",
+    "ReportLastError",
+    "ReportMessageContext",
+    "ReportStatusUpdateRequest",
+    "ReportTranscriptMessage",
 ]

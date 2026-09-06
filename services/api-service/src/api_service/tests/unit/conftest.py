@@ -59,11 +59,13 @@ def _isolate_runtime_artifacts(tmp_path_factory):
     agents_db = runtime_dir / "agents.sqlite"
     spending_store = runtime_dir / "spending.json"
     spending_ledger = runtime_dir / "spending-ledger.sqlite3"
+    reports_db = runtime_dir / "reports.sqlite3"
 
     monkeypatched = [
         ("AGENT_DB_PATH", str(agents_db)),
         ("SPENDING_PERSISTENCE_PATH", str(spending_store)),
         ("SPENDING_LEDGER_PATH", str(spending_ledger)),
+        ("REPORTS_DB_PATH", str(reports_db)),
     ]
     previous = {key: os.environ.get(key) for key, _ in monkeypatched}
     for key, value in monkeypatched:
@@ -72,17 +74,21 @@ def _isolate_runtime_artifacts(tmp_path_factory):
     import api_service.server.deps as deps
     from helperium_sdk.settings import settings
 
+    from api_service.reports import reset_report_store
     from api_service.spending import reset_spending_singletons
 
     deps._agent_store = None
     settings.spending_ledger_path = str(spending_ledger)
+    settings.reports_db_path = str(reports_db)
     reset_spending_singletons()
+    reset_report_store()
 
     yield
 
     import api_service.server.deps as deps_teardown
 
     reset_spending_singletons()
+    reset_report_store()
 
     deps_teardown._agent_store = None
     for key, value in previous.items():

@@ -19,6 +19,7 @@ import { readSSEStream, type SSEReadCallbacks } from '../src/sse';
 function createSSEResponse(
   events: Array<Record<string, unknown>>,
   chunkSize: number = 512,
+  headers?: Record<string, string>,
 ): Response {
   const encoder = new TextEncoder();
   const allData = encoder.encode(
@@ -38,7 +39,7 @@ function createSSEResponse(
     },
   });
 
-  return new Response(stream);
+  return new Response(stream, { headers });
 }
 
 /** Creates a minimal target DOM node. */
@@ -220,6 +221,48 @@ describe('readSSEStream', () => {
 
     expect(targetNode.classList.contains('at-error')).toBe(true);
     expect(targetNode.textContent).toContain('Something went wrong');
+  });
+
+  it('captures the correlation id from the error event', async () => {
+    const targetNode = makeTargetNode();
+    const response = createSSEResponse([
+      { type: 'error', text: 'boom', correlation_id: 'corr-turn-1' },
+    ]);
+
+    await readSSEStream(response, targetNode, {
+      onToken: () => {},
+      onFinal: () => {},
+      onToolCall: () => {},
+      onAudio: () => {},
+      onDone: () => {},
+      onError: () => {},
+    }, 'en');
+
+    expect(targetNode.dataset.correlationId).toBe('corr-turn-1');
+  });
+
+  it('falls back to the response correlation header on premature close', async () => {
+    const targetNode = makeTargetNode();
+    const response = createSSEResponse(
+      [{ type: 'token', text: 'partial' }],
+      512,
+      { 'x-correlation-id': 'corr-request-1' },
+    );
+    // The stream above completes normally with no terminal event, which
+    // triggers the same premature-close path as a dropped connection.
+
+    const errors: string[] = [];
+    await readSSEStream(response, targetNode, {
+      onToken: () => {},
+      onFinal: () => {},
+      onToolCall: () => {},
+      onAudio: () => {},
+      onDone: () => {},
+      onError: (t) => errors.push(t),
+    }, 'en');
+
+    expect(errors).toEqual(['No response.']);
+    expect(targetNode.dataset.correlationId).toBe('corr-request-1');
   });
 
   it('removes at-thinking class on first event', async () => {

@@ -34,6 +34,7 @@ export interface WidgetConfig {
 export interface IconSet {
   readonly chat: string;
   readonly close: string;
+  readonly flag: string;
   readonly send: string;
   readonly mic: string;
   readonly micOff: string;
@@ -122,6 +123,13 @@ export interface AddMessageOptions {
   readonly scroll?: boolean;
   readonly tools?: string[];
   readonly before?: Node;
+  /**
+   * Called after an assistant row is built (per-message actions, e.g. the
+   * problem-report flag). Not fired for non-reportable messages.
+   */
+  readonly onAssistantRow?: (row: HTMLDivElement, node: HTMLDivElement) => void;
+  /** Set false for assistant bubbles that are not model answers (greeting). */
+  readonly report?: boolean;
 }
 
 /* ─── Stored Message (sessionStorage format) ─── */

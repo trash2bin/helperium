@@ -40,7 +40,7 @@ except ImportError:
 from .deps import get_agent, get_agent_instance, get_agent_store, _sync_pool_from_store
 from .middleware.correlation import add_correlation_id as correlation_middleware
 from .middleware.embed import add_embed_security_headers as embed_security_middleware
-from .routes import chat, agents, admin, backlog, health, voice
+from .routes import chat, agents, admin, backlog, health, voice, reports
 
 configure_logging()
 logger = logging.getLogger("api_service.server")
@@ -99,6 +99,15 @@ async def lifespan(app: FastAPI):
             logger.info("OpenTelemetry tracing initialized")
         except Exception as exc:
             logger.warning("OTel setup failed: %s", exc)
+
+    # Retention cleanup for widget problem reports (0 disables retention).
+    try:
+        from api_service.reports import get_report_store
+
+        if get_report_store().cleanup_old():
+            logger.info("Report retention cleanup completed")
+    except Exception as exc:
+        logger.warning("Report cleanup failed: %s", exc)
 
     yield
 
@@ -221,6 +230,7 @@ if embed_path.is_dir():
 
 # Public allowlist: browser-facing chat, widget bootstrap/assets and liveness only.
 app.include_router(chat.router)
+app.include_router(reports.router)
 app.include_router(agents.public_router)
 app.include_router(health.router)
 

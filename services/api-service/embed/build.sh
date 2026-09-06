@@ -15,7 +15,7 @@ fi
 
 echo "=== CSS: concatenate component files ==="
 cat css/variables.css css/root.css css/trigger.css css/panel.css css/header.css \
-    css/messages.css css/form.css css/tools.css css/animations.css \
+    css/messages.css css/report.css css/form.css css/tools.css css/animations.css \
     css/responsive.css > src/_bundle.css
 echo "  src/_bundle.css  $(wc -c < src/_bundle.css) bytes"
 

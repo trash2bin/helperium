@@ -59,6 +59,67 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/reports:
+    post:
+      summary: Create Report
+      description: Accept a problem report from the embed widget.
+      operationId: create_report_api_reports_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/agents/{name}/widget-config:
+    get:
+      summary: Agent Widget Config Endpoint
+      operationId: agent_widget_config_endpoint_api_agents__name__widget_config_get
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Agent Widget Config Endpoint Api Agents  Name  Widget
+                  Config Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health:
+    get:
+      summary: Health check
+      operationId: health_endpoint_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
   /api/agents:
     post:
       summary: Create Agent Endpoint
@@ -212,27 +273,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/agents/{name}/widget-config:
+  /admin/reports:
     get:
-      summary: Agent Widget Config Endpoint
-      operationId: agent_widget_config_endpoint_api_agents__name__widget_config_get
+      summary: List Reports
+      description: List widget problem reports, newest first, with a total count.
+      operationId: list_reports_admin_reports_get
       parameters:
-      - name: name
-        in: path
-        required: true
+      - name: limit
+        in: query
+        required: false
         schema:
-          type: string
-          title: Name
+          type: integer
+          default: 50
+          title: Limit
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Agent Widget Config Endpoint Api Agents  Name  Widget
-                  Config Get
+                $ref: '#/components/schemas/HTTPValidationError'
+  /admin/reports/{report_id}/status:
+    post:
+      summary: Update Report Status
+      description: Mark a report as reviewed (or back to new).
+      operationId: update_report_status_admin_reports__report_id__status_post
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportStatusUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -518,7 +631,7 @@ paths:
       summary: Add Llm Provider
       description: "Add a new LLM provider.\n\nBody:\n    name (required): unique\
         \ provider name\n    model (required): model identifier (e.g. openai/gpt-4o,\
-        \ anthropic/claude-3-sonnet)\n    provider: provider type — auto-detected\
+        \ anthropic/claude-3-sonnet)\n    provider: provider type \u2014 auto-detected\
         \ from model prefix if omitted\n    api_key: API key (will not be returned\
         \ in full)\n    api_base: custom API base URL\n    enabled: whether the provider\
         \ is active (default: true)"
@@ -951,17 +1064,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /health:
-    get:
-      summary: Health check
-      operationId: health_endpoint_health_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
   /api/voice-config:
     get:
       summary: Get Voice Config
@@ -1322,14 +1424,9 @@ components:
       - ts
       - data
       title: BacklogEvent
-      description: 'A single event/record in a backlog session.
-
-
-        Fields vary by ``event`` type — ``model_response`` events contain
-
-        ``duration_ms`` and ``tokens``. Extra fields are preserved via
-
-        ``extra=''allow''``.'
+      description: "A single event/record in a backlog session.\n\nFields vary by\
+        \ ``event`` type \u2014 ``model_response`` events contain\n``duration_ms``\
+        \ and ``tokens``. Extra fields are preserved via\n``extra='allow'``."
     BacklogListResponse:
       properties:
         sessions:
@@ -1501,8 +1598,167 @@ components:
           description: Maximum tokens in response
       type: object
       title: LLMConfig
-      description: Per-agent LLM configuration. All fields optional — falls back to
-        global defaults when null.
+      description: "Per-agent LLM configuration. All fields optional \u2014 falls\
+        \ back to global defaults when null."
+    ReportCreateRequest:
+      properties:
+        agent:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Agent
+          description: Agent name
+        session_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Session Id
+          description: Widget session id
+        lang:
+          anyOf:
+          - type: string
+            pattern: ^(ru|en)$
+          - type: 'null'
+          title: Lang
+          description: Widget language
+        message:
+          $ref: '#/components/schemas/ReportMessageContext'
+          description: The message being reported
+        transcript:
+          items:
+            $ref: '#/components/schemas/ReportTranscriptMessage'
+          type: array
+          maxItems: 20
+          title: Transcript
+          description: Recent session transcript (client-capped)
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Comment
+          description: Optional visitor comment
+        last_error:
+          anyOf:
+          - $ref: '#/components/schemas/ReportLastError'
+          - type: 'null'
+          description: Last error seen in this session
+        page_url:
+          anyOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+          title: Page Url
+          description: Host page URL the widget runs on
+      additionalProperties: false
+      type: object
+      required:
+      - agent
+      - session_id
+      - message
+      title: ReportCreateRequest
+      description: 'Widget problem report payload (public ``POST /api/reports``).
+
+
+        Stored verbatim for operator review; the content is never fed to the LLM,
+
+        so report text cannot steer model behaviour.'
+    ReportLastError:
+      properties:
+        text:
+          type: string
+          maxLength: 500
+          title: Text
+          description: Error bubble text
+          default: ''
+        correlation_id:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Correlation Id
+          description: Correlation id from the SSE error event
+      additionalProperties: false
+      type: object
+      title: ReportLastError
+      description: Last SSE error observed by the widget, with its correlation id.
+    ReportMessageContext:
+      properties:
+        kind:
+          type: string
+          pattern: ^(assistant|error)$
+          title: Kind
+          description: assistant answer or an error bubble
+          default: assistant
+        text:
+          type: string
+          maxLength: 4000
+          title: Text
+          description: Message text
+          default: ''
+        tools:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Tools
+          description: Tool names used for the answer
+        display_names:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Display Names
+          description: Human-readable tool labels
+      additionalProperties: false
+      type: object
+      title: ReportMessageContext
+      description: The assistant message a visitor is complaining about.
+    ReportStatusUpdateRequest:
+      properties:
+        status:
+          type: string
+          pattern: ^(new|reviewed)$
+          title: Status
+          description: New status
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      title: ReportStatusUpdateRequest
+      description: Operator update of a report's review status.
+    ReportTranscriptMessage:
+      properties:
+        kind:
+          type: string
+          pattern: ^(user|assistant)$
+          title: Kind
+          description: Message kind
+        text:
+          type: string
+          maxLength: 2000
+          title: Text
+          description: Message text
+          default: ''
+        tools:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Tools
+        ts:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Ts
+          description: Client timestamp
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      title: ReportTranscriptMessage
+      description: One transcript entry attached to a widget problem report.
     SessionHistoryResponse:
       properties:
         messages:
@@ -1581,12 +1837,13 @@ components:
           type: string
           title: Title
           description: Widget header title
-          default: Ассистент
+          default: "\u0410\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442"
         greeting:
           type: string
           title: Greeting
           description: Greeting message in chat
-          default: Чем могу помочь?
+          default: "\u0427\u0435\u043C \u043C\u043E\u0433\u0443 \u043F\u043E\u043C\
+            \u043E\u0447\u044C?"
         accent_color:
           type: string
           title: Accent Color

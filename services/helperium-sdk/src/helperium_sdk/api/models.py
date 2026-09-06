@@ -95,7 +95,87 @@ class SessionHistoryResponse(BaseModel):
     )
 
 
-# === Agent Management ===
+# === Widget Problem Reports ===
+
+
+class ReportMessageContext(BaseModel):
+    """The assistant message a visitor is complaining about."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(
+        default="assistant",
+        pattern=r"^(assistant|error)$",
+        description="assistant answer or an error bubble",
+    )
+    text: str = Field(default="", max_length=4000, description="Message text")
+    tools: list[str] = Field(
+        default_factory=list, max_length=20, description="Tool names used for the answer"
+    )
+    display_names: list[str] = Field(
+        default_factory=list, max_length=20, description="Human-readable tool labels"
+    )
+
+
+class ReportTranscriptMessage(BaseModel):
+    """One transcript entry attached to a widget problem report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(..., pattern=r"^(user|assistant)$", description="Message kind")
+    text: str = Field(default="", max_length=2000, description="Message text")
+    tools: list[str] = Field(default_factory=list, max_length=20)
+    ts: str | None = Field(default=None, max_length=64, description="Client timestamp")
+
+
+class ReportLastError(BaseModel):
+    """Last SSE error observed by the widget, with its correlation id."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(default="", max_length=500, description="Error bubble text")
+    correlation_id: str | None = Field(
+        default=None, max_length=64, description="Correlation id from the SSE error event"
+    )
+
+
+class ReportCreateRequest(BaseModel):
+    """Widget problem report payload (public ``POST /api/reports``).
+
+    Stored verbatim for operator review; the content is never fed to the LLM,
+    so report text cannot steer model behaviour.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent: str = Field(..., min_length=1, max_length=128, description="Agent name")
+    session_id: str = Field(..., min_length=1, max_length=128, description="Widget session id")
+    lang: str | None = Field(default=None, pattern=r"^(ru|en)$", description="Widget language")
+    message: ReportMessageContext = Field(
+        ..., description="The message being reported"
+    )
+    transcript: list[ReportTranscriptMessage] = Field(
+        default_factory=list,
+        max_length=20,
+        description="Recent session transcript (client-capped)",
+    )
+    comment: str | None = Field(
+        default=None, max_length=1000, description="Optional visitor comment"
+    )
+    last_error: ReportLastError | None = Field(
+        default=None, description="Last error seen in this session"
+    )
+    page_url: str | None = Field(
+        default=None, max_length=2048, description="Host page URL the widget runs on"
+    )
+
+
+class ReportStatusUpdateRequest(BaseModel):
+    """Operator update of a report's review status."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(..., pattern=r"^(new|reviewed)$", description="New status")
 
 
 # === Widget & LLM Config Models ===

@@ -15,6 +15,7 @@ import { buildWidget,
   scrollToBottom,} from './dom';
 import { escapeHtml, } from './icons';
 import { addMessage, restoreHistory } from './messages';
+import { attachReportButton } from './report';
 import { streamChat } from './sse';
 import { createStorage, getSessionId } from './storage';
 import { ensureToolStrip } from './tools';
@@ -110,13 +111,28 @@ export function initWidget(): void {
   const ui = buildWidget(root, config);
   const messagesEl = ui.messages;
 
+  /* ── Problem-report dependencies (rebind on agent switch) ── */
+  const reportDeps = {
+    config,
+    getSessionId: () => sessionId,
+    getTranscript: () => readStored(),
+  };
+  const attachReportFlag = (
+    row: HTMLDivElement,
+    node: HTMLDivElement,
+  ): void => attachReportButton(reportDeps, node, row);
+
   /* ── Bound addMessage (attaches persist + storage) ── */
   function addMsg(
     kind: 'user' | 'assistant',
     text: string,
     opts?: AddMessageOptions
   ): HTMLDivElement {
-    const node = addMessage(kind, text, messagesEl, opts);
+    const merged: AddMessageOptions =
+      kind === 'assistant'
+        ? { ...opts, onAssistantRow: attachReportFlag }
+        : { ...opts };
+    const node = addMessage(kind, text, messagesEl, merged);
     if (opts?.persist) {
       appendStored(kind, text, opts.tools);
     }
@@ -379,7 +395,9 @@ export function initWidget(): void {
   }
 
   /* ── Restore History ── */
-  restoreHistory(config, messagesEl, readStored, addMsg);
+  restoreHistory(config, messagesEl, readStored, addMsg, {
+    onAssistantRow: attachReportFlag,
+  });
 
   /* ── Mount to DOM ── */
   document.body.appendChild(host);
@@ -407,7 +425,9 @@ export function initWidget(): void {
     }
     // Clear messages and restore history
     messagesEl.innerHTML = '';
-    restoreHistory(config, messagesEl, readStored, addMsg);
+    restoreHistory(config, messagesEl, readStored, addMsg, {
+      onAssistantRow: attachReportFlag,
+    });
     // Persist agent choice
     try {
       localStorage.setItem('agentTutorAgentId', name);

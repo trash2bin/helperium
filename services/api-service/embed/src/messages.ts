@@ -12,6 +12,43 @@ import { makeToolStrip } from './tools';
 import type { AddMessageOptions, WidgetConfig } from './types';
 
 /**
+ * Builds one assistant message row (bubble + avatar). The shared factory for
+ * live messages and restored history so per-message actions (problem-report
+ * flag) attach identically on both paths.
+ */
+function buildAssistantRow(
+  text: string,
+  opts: AddMessageOptions,
+): { row: HTMLDivElement; node: HTMLDivElement } {
+  const row = document.createElement('div');
+  row.className = 'at-msg-row';
+
+  const node = document.createElement('div');
+  node.className = 'at-msg at-assistant';
+
+  if (opts.thinking) {
+    node.dataset.raw = '';
+    node.innerHTML = ICONS.thinking;
+  } else {
+    node.dataset.raw = text || '';
+    node.innerHTML = renderMarkdown(text || '');
+  }
+
+  const avatar = document.createElement('div');
+  avatar.className = 'at-avatar';
+  avatar.textContent = 'AI';
+
+  row.appendChild(node);
+  row.appendChild(avatar);
+
+  if (!opts.thinking && opts.report !== false && opts.onAssistantRow) {
+    opts.onAssistantRow(row, node);
+  }
+
+  return { row, node };
+}
+
+/**
  * Creates a message element and appends it to the messages container.
  */
 export function addMessage(
@@ -23,26 +60,7 @@ export function addMessage(
   const o = opts || {};
 
   if (kind === 'assistant') {
-    const row = document.createElement('div');
-    row.className = 'at-msg-row';
-
-    const avatar = document.createElement('div');
-    avatar.className = 'at-avatar';
-    avatar.textContent = 'AI';
-
-    const node = document.createElement('div');
-    node.className = 'at-msg at-assistant';
-
-    if (o.thinking) {
-      node.dataset.raw = '';
-      node.innerHTML = ICONS.thinking;
-    } else {
-      node.dataset.raw = text || '';
-      node.innerHTML = renderMarkdown(text || '');
-    }
-
-    row.appendChild(node);
-    row.appendChild(avatar);
+    const { row } = buildAssistantRow(text, o);
 
     if (o.before) {
       messagesEl.insertBefore(row, o.before);
@@ -74,18 +92,25 @@ export function addMessage(
 export function restoreHistory(
   config: WidgetConfig,
   messagesEl: HTMLElement,
-  readStored: () => Array<{ kind: string; text: string; tools: string[] }>,
+  readStored: () => Array<{
+    kind: string;
+    text: string;
+    tools: string[];
+    ts?: number;
+  }>,
   addMsg: (
     kind: 'user' | 'assistant',
     text: string,
     opts?: AddMessageOptions
-  ) => HTMLDivElement
+  ) => HTMLDivElement,
+  hooks?: { onAssistantRow?: (row: HTMLDivElement, node: HTMLDivElement) => void }
 ): void {
   const stored = readStored();
   if (!stored.length) {
     addMsg('assistant', config.greeting, {
       persist: false,
       scroll: false,
+      report: false,
     });
     return;
   }
@@ -113,20 +138,9 @@ export function restoreHistory(
         if (strip) messagesEl.appendChild(strip);
       }
 
-      const row = document.createElement('div');
-      row.className = 'at-msg-row';
-
-      const avatar = document.createElement('div');
-      avatar.className = 'at-avatar';
-      avatar.textContent = 'AI';
-
-      const node = document.createElement('div');
-      node.className = 'at-msg at-assistant';
-      node.dataset.raw = msgText;
-      node.innerHTML = renderMarkdown(msgText);
-
-      row.appendChild(node);
-      row.appendChild(avatar);
+      const { row } = buildAssistantRow(msgText, hooks?.onAssistantRow
+        ? { onAssistantRow: hooks.onAssistantRow }
+        : {});
       messagesEl.appendChild(row);
     }
   }

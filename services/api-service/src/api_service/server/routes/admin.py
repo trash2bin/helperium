@@ -1,4 +1,4 @@
-"""Admin endpoints — guardrails, spending, abuse, LLM providers."""
+"""Admin endpoints — guardrails, spending, abuse, LLM providers, reports."""
 
 from __future__ import annotations
 import logging
@@ -7,9 +7,45 @@ from api_service.guardrails import get_guard_checker
 from api_service.spending import get_spending_checker
 import api_service.provider_store as _provider_store
 from api_service.abuse_live import get_live_abuse_provider
+from api_service.http_models import ReportStatusUpdateRequest
+from api_service.reports import REPORT_STATUSES, get_report_store
 
 logger = logging.getLogger("api_service.server")
 router = APIRouter()
+
+
+# ── Widget Problem Reports Admin API ──
+
+
+@router.get("/admin/reports")
+async def list_reports(limit: int = 50, status: str | None = None):
+    """List widget problem reports, newest first, with a total count."""
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    if status is not None and status not in REPORT_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status must be one of {list(REPORT_STATUSES)}",
+        )
+    try:
+        reports, total = get_report_store().list_reports(limit=limit, status=status)
+    except Exception as exc:
+        logger.warning("Report store read failed", exc_info=exc)
+        raise HTTPException(status_code=503, detail="Report store unavailable") from exc
+    return {"reports": reports, "total": total}
+
+
+@router.post("/admin/reports/{report_id}/status")
+async def update_report_status(report_id: str, body: ReportStatusUpdateRequest):
+    """Mark a report as reviewed (or back to new)."""
+    try:
+        updated = get_report_store().set_status(report_id, body.status)
+    except Exception as exc:
+        logger.warning("Report store update failed", exc_info=exc)
+        raise HTTPException(status_code=503, detail="Report store unavailable") from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Report '{report_id}' not found")
+    return {"id": report_id, "status": body.status}
 
 
 @router.get("/admin/guardrails")

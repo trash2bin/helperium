@@ -109,6 +109,19 @@ backlog_errors_total = Counter(
     ["error_type"],  # llm_timeout, llm_429, llm_error, internal
 )
 
+# ── Widget Problem Report Metrics ────────────────────────────────────────────
+
+reports_total = Counter(
+    "reports_total",
+    "Widget problem reports accepted for operator review",
+    ["status"],  # accepted
+)
+
+report_store_errors_total = Counter(
+    "report_store_errors_total",
+    "Failures to persist widget problem reports",
+)
+
 # ── MCP Session Health Metrics ───────────────────────────────────────────
 
 mcp_tool_timeouts_total = Counter(

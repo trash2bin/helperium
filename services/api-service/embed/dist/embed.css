@@ -441,6 +441,129 @@
   margin-left: 1px;
 }
 /*
+ * Problem Report
+ *
+ * Per-message flag button and the inline report mini-form.
+ * The flag lives next to the bubble inside .at-bubble-line so error-path
+ * textContent overwrites of the bubble never wipe it.
+ */
+
+.at-bubble-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.at-report-btn {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-top: 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-light);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0.45;
+  transition: opacity 0.15s var(--ease-smooth), background 0.15s var(--ease-smooth);
+}
+
+.at-report-btn:hover {
+  opacity: 1;
+  background: var(--line);
+}
+
+.at-report-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.at-report-btn.at-reported {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.at-report-form {
+  align-self: flex-start;
+  width: min(320px, 88%);
+  margin: 4px 0 2px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: at-msg-in 0.25s var(--ease-spring) both;
+}
+
+.at-report-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: var(--font);
+  resize: vertical;
+  min-height: 40px;
+  box-sizing: border-box;
+  background: var(--panel-solid);
+  color: var(--ink);
+}
+
+.at-report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.at-report-actions button {
+  border: none;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+.at-report-cancel {
+  background: transparent;
+  color: var(--ink-light);
+}
+
+.at-report-submit {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.at-report-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.at-report-error {
+  color: var(--rose);
+  font-size: 12px;
+}
+
+.at-report-done {
+  align-self: flex-start;
+  margin: 2px 0 2px 14px;
+  font-size: 12px;
+  color: var(--ink-light);
+  animation: at-msg-in 0.25s var(--ease-spring) both;
+}
+/*
  * Input Form
  *
  * Glass-morphic bottom bar with frosted textarea.

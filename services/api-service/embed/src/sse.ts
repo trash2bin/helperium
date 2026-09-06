@@ -96,6 +96,9 @@ export async function readSSEStream(
   // A proxy timeout or dropped connection can end the stream without a
   // terminal event; without this flag the bubble would stay in thinking.
   let sawTerminalEvent = false;
+  // Correlation id for this chat turn — surfaced on the bubble so a problem
+  // report can point straight at the server log/trace.
+  const responseCorrelationId = response.headers.get('x-correlation-id') || '';
 
   while (true) {
     const { done, value } = await reader.read();
@@ -115,6 +118,7 @@ export async function readSSEStream(
         name?: string;
         display_name?: string;
         data?: string;
+        correlation_id?: string;
       };
       try {
         payload = JSON.parse(line.slice(5).trim());
@@ -195,6 +199,8 @@ export async function readSSEStream(
             (lang === 'ru'
               ? 'Произошла ошибка.'
               : 'An error occurred.');
+          targetNode.dataset.correlationId =
+            payload.correlation_id || responseCorrelationId;
           break;
       }
     }
@@ -204,6 +210,9 @@ export async function readSSEStream(
   // the same fallback the server-side empty `done` uses instead of leaving
   // the thinking bubble hanging forever.
   if (!sawTerminalEvent) {
+    if (responseCorrelationId) {
+      targetNode.dataset.correlationId = responseCorrelationId;
+    }
     callbacks.onError(
       lang === 'ru'
         ? 'Не удалось получить ответ.'
@@ -304,6 +313,8 @@ export function streamChat(opts: StreamChatOpts): void {
         targetNode.classList.remove('at-thinking');
         targetNode.classList.add('at-error');
         targetNode.textContent = 'Error: ' + response.status;
+        const correlationId = response.headers.get('x-correlation-id');
+        if (correlationId) targetNode.dataset.correlationId = correlationId;
         return;
       }
 

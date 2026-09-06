@@ -10,6 +10,10 @@ from slowapi import Limiter
 
 rate_limit = os.environ.get("CHAT_RATE_LIMIT", "30/minute")
 
+# Public problem-report endpoint: reports are rare by nature, so the per-IP
+# budget is much tighter than chat and independent of chat's bucket.
+reports_rate_limit = os.environ.get("REPORTS_RATE_LIMIT", "5/minute")
+
 
 def get_client_ip(request: Request) -> str:
     """Return the original client IP forwarded by the private ingress chain.
