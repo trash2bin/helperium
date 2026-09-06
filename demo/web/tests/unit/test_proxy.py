@@ -425,6 +425,28 @@ class TestApiRoutes:
         assert request.headers.get("authorization") == "Bearer secret-token-xyz"
         assert json.loads(request.content)["session_id"] == "s-1"
 
+    @respx.mock
+    def test_proxy_forwards_correlation_id_upstream_when_client_sends_none(
+        self, client
+    ):
+        """Without a client x-correlation-id the proxy must send its own
+        middleware-generated id upstream, so browser, proxy and api-service logs
+        share one correlation chain (the widget echoes it back in reports)."""
+        upstream_route = respx.post("http://127.0.0.1:8081/api/chat").mock(
+            return_value=httpx.Response(
+                200,
+                text='data: {"type": "error", "text": "boom", "correlation_id": "x"}\n\n',
+                headers={"x-correlation-id": "upstream-echoes-proxy-id"},
+            )
+        )
+        response = client.post("/api/chat", json={"message": "", "session_id": "s-1"})
+
+        assert response.status_code == 200
+        upstream_id = upstream_route.calls.last.request.headers.get("x-correlation-id")
+        assert upstream_id, "proxy must forward a correlation id upstream"
+        # The id the browser sees must be the same one the proxy sent upstream.
+        assert response.headers.get("x-correlation-id") == upstream_id
+
     def test_unknown_api_path_is_not_forwarded_when_bearer_is_configured(self, client):
         with patch.object(settings, "api_bearer_token", "secret-token-xyz"):
             response = client.get("/api/unknown")

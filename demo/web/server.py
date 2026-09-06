@@ -82,8 +82,13 @@ async def _get_proxy_headers(request: Request) -> dict[str, str]:
     if tenant_id:
         headers["X-Tenant-ID"] = tenant_id
 
-    # Пробрасываем correlation ID для трассировки запроса через все сервисы
-    correlation_id = request.headers.get("x-correlation-id")
+    # Единый correlation ID на всю цепочку браузер → прокси → api-service:
+    # если браузер не прислал свой, отдаём наверх id из middleware прокси.
+    # api-service принимает входящий заголовок, так что логи, SSE-события
+    # и ответ браузеру получают один и тот же id.
+    correlation_id = request.headers.get("x-correlation-id") or getattr(
+        request.state, "correlation_id", None
+    )
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         headers["x-forwarded-for"] = forwarded_for
