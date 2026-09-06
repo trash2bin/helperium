@@ -27,6 +27,7 @@ import './domains/emergency.js';
 import './domains/llm.js';
 import './domains/voice.js';
 import './domains/audit.js';
+import './domains/reports.js';
 
 import type { DashboardData } from './types.js';
 
