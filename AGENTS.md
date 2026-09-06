@@ -54,6 +54,7 @@ Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding и
 | Data-service/query/config generation | `services/data-service/README.md` → `doc/agents/search-strategies.md` → `doc/agents/adapter-pattern.md` |
 | Tenant onboarding и Admin | `doc/agents/tenant-lifecycle.md` → `services/admin-dashboard/README.md` → `doc/RUNBOOK.md` |
 | API, SSE, LLM или abuse | `services/api-service/README.md` → `doc/agents/anti-abuse.md` → `doc/agents/tool-call-safety-layers.md` |
+| Разбор жалоб посетителей (reports) | `doc/agents/reports-triage.md` → `doc/agents/operations.md` → `doc/monitoring.md` |
 | Security assessment | `doc/PENTEST-CHEK.md` → `doc/agents/security-isolation.md` → `doc/agents/tool-call-safety-layers.md` |
 | Cross-service HTTP/CORS | `doc/api-flow.md` → `doc/agents/http-clients.md` → `doc/agents/api-contracts.md` |
 | CI, local failures и E2E | `doc/agents/testing-guide.md` → `doc/agents/ci-cd.md` → `Makefile` |
@@ -108,7 +109,7 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
 | API и agent | `services/api-service/README.md`, `services/api-service/embed/README.md`, `doc/agents/anti-abuse.md`, `doc/agents/tool-call-safety-layers.md`, `doc/agents/backlog-product-decision.md`, `doc/agents/deferred-decisions.md`, `doc/agents/spending-reserve-commit-decision.md`, `doc/agents/openspec-adoption-decision.md`, `doc/agents/documentation-restructure-plan.md`, `doc/agents/queue-plan-2026-08-30-head-bfa16d3.md` |
 | Data и config | `services/data-service/README.md`, `services/data-service/internal/configgen/README.md`, `doc/agents/adapter-pattern.md`, `doc/agents/config-migration.md`, `doc/agents/search-strategies.md`, `specs/config.schema.md`, `specs/fixtures/README.md`, `specs/README.md` |
 | MCP и security | `services/mcp-gateway/README.md`, `doc/agents/mcp-session-lifecycle.md`, `doc/agents/security-isolation.md`, `doc/agents/http-clients.md`, `doc/agents/api-contracts.md` |
-| Admin, web и operations | `services/admin-dashboard/README.md`, `doc/agents/tenant-lifecycle.md`, `doc/agents/web-service.md`, `doc/agents/operations.md`, `doc/agents/ci-cd.md`, `doc/agents/testing-guide.md` |
+| Admin, web и operations | `services/admin-dashboard/README.md`, `doc/agents/tenant-lifecycle.md`, `doc/agents/web-service.md`, `doc/agents/operations.md`, `doc/agents/reports-triage.md`, `doc/agents/ci-cd.md`, `doc/agents/testing-guide.md` |
 | RAG, demos и E2E | `services/rag/README.md`, `services/agent-db/README.md`, `services/agent-db/agent_db/bench/README.md`, `services/agent-db/tests/e2e/README.md`, `services/agent-db/tests/e2e-llm/README.md`, `services/agent-db/tests/external/README.md`, `demo/README.md`, `demo/web/README.md`, `demo/autoparts-store/README.md` |
 | Benchmark live docs | `doc/benchmark/README.md`, `doc/benchmark/core-benchmark.md`, `doc/benchmark/runs/README.md` |
 | Benchmark archives | `doc/archive/2026-08-05-data-service-audit.md` |
