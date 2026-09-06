@@ -36,6 +36,9 @@
         <a href="#" @click.prevent="page='audit'; if (typeof loadAudit==='function') loadAudit(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='audit'}">
           <span x-text="__('nav.audit')"></span>
         </a>
+        <a href="#" @click.prevent="page='reports'; if (typeof loadReports==='function') loadReports(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='reports'}">
+          <span x-text="__('nav.reports')"></span>
+        </a>
       </nav>
       <div class="sidebar-footer">
         <span class="version" x-text="__('sidebar.version')">v0.1.0</span>

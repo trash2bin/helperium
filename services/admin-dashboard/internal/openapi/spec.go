@@ -90,6 +90,20 @@ func buildPaths() map[string]any {
 		withQueryParam("limit", "integer", "Max entries (1-1000, default 50)", false),
 		withResponse("ok", "#/components/schemas/AuditListResponse"))
 
+	addGet(paths, "/api/reports", "reports_list", "Widget problem reports (newest first)", "API-Service",
+		withProxyTo("api-service"),
+		withProxyTarget("GET", "/admin/reports", "Authorization"),
+		withQueryParam("limit", "integer", "Max reports (1-200, default 50)", false),
+		withQueryParam("status", "string", "Filter by status: new | reviewed", false),
+		withResponse("ok", "#/components/schemas/ReportListResponse"))
+
+	addPost(paths, "/api/reports/{reportID}/status", "report_status_update", "Update problem report review status", "API-Service",
+		withProxyTo("api-service"),
+		withProxyTarget("POST", "/admin/reports/{report_id}/status", "Authorization"),
+		withPathParam("reportID", "string", "Report id"),
+		withRequestBody("#/components/schemas/ReportStatusUpdate"),
+		withResponse("ok", "#/components/schemas/StatusResponse"))
+
 	addGet(paths, "/api/abuse-settings", "abuse_settings_get", "Get global abuse config", "Local",
 		withResponse("ok", "#/components/schemas/AbuseConfig"))
 
@@ -491,6 +505,48 @@ func buildSchemas() map[string]any {
 					},
 				},
 				"count": map[string]any{"type": "integer"},
+			},
+		},
+
+		// ── Widget problem reports ──
+		"ReportListResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"reports": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"id":                         map[string]any{"type": "string"},
+							"created_at":                 map[string]any{"type": "number", "description": "Unix epoch seconds"},
+							"status":                     map[string]any{"type": "string", "enum": []string{"new", "reviewed"}},
+							"agent":                      map[string]any{"type": "string"},
+							"session_id":                 map[string]any{"type": "string"},
+							"session_key":                map[string]any{"type": "string", "description": "agent:{name}:{session_id}, matches backlog/log lookup"},
+							"lang":                       map[string]any{"type": "string"},
+							"message_kind":               map[string]any{"type": "string"},
+							"message_text":               map[string]any{"type": "string"},
+							"message_tools":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"display_names":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"transcript":                 map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+							"comment":                    map[string]any{"type": "string"},
+							"last_error_text":            map[string]any{"type": "string"},
+							"last_error_correlation_id":  map[string]any{"type": "string"},
+							"page_url":                   map[string]any{"type": "string"},
+							"correlation_id":             map[string]any{"type": "string"},
+							"client_ip":                  map[string]any{"type": "string"},
+							"user_agent":                 map[string]any{"type": "string"},
+						},
+					},
+				},
+				"total": map[string]any{"type": "integer"},
+			},
+		},
+		"ReportStatusUpdate": map[string]any{
+			"type":     "object",
+			"required": []string{"status"},
+			"properties": map[string]any{
+				"status": map[string]any{"type": "string", "enum": []string{"new", "reviewed"}},
 			},
 		},
 

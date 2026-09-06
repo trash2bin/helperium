@@ -655,6 +655,109 @@
         },
         "type": "object"
       },
+      "ReportListResponse": {
+        "properties": {
+          "reports": {
+            "items": {
+              "properties": {
+                "agent": {
+                  "type": "string"
+                },
+                "client_ip": {
+                  "type": "string"
+                },
+                "comment": {
+                  "type": "string"
+                },
+                "correlation_id": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "description": "Unix epoch seconds",
+                  "type": "number"
+                },
+                "display_names": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "lang": {
+                  "type": "string"
+                },
+                "last_error_correlation_id": {
+                  "type": "string"
+                },
+                "last_error_text": {
+                  "type": "string"
+                },
+                "message_kind": {
+                  "type": "string"
+                },
+                "message_text": {
+                  "type": "string"
+                },
+                "message_tools": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "page_url": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": "string"
+                },
+                "session_key": {
+                  "description": "agent:{name}:{session_id}, matches backlog/log lookup",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "new",
+                    "reviewed"
+                  ],
+                  "type": "string"
+                },
+                "transcript": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "user_agent": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ReportStatusUpdate": {
+        "properties": {
+          "status": {
+            "enum": [
+              "new",
+              "reviewed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "RewriteResponse": {
         "properties": {
           "endpoints": {
@@ -2558,6 +2661,145 @@
         "x-route-group": "rag-service",
         "x-upstream-method": "GET",
         "x-upstream-path": "/admin/stats"
+      }
+    },
+    "/api/reports": {
+      "get": {
+        "operationId": "reports_list",
+        "parameters": [
+          {
+            "description": "Max reports (1-200, default 50)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by status: new | reviewed",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportListResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Widget problem reports (newest first)",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "GET",
+        "x-upstream-path": "/admin/reports"
+      }
+    },
+    "/api/reports/{reportID}/status": {
+      "post": {
+        "operationId": "report_status_update",
+        "parameters": [
+          {
+            "description": "Report id",
+            "in": "path",
+            "name": "reportID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Успешный ответ"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized — неверный или отсутствующий Bearer токен"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Внутренняя ошибка сервера"
+          }
+        },
+        "summary": "Update problem report review status",
+        "tags": [
+          "API-Service"
+        ],
+        "x-auth-required": true,
+        "x-proxy-to": "api-service",
+        "x-route-group": "api-service",
+        "x-upstream-headers": [
+          "Authorization"
+        ],
+        "x-upstream-method": "POST",
+        "x-upstream-path": "/admin/reports/{report_id}/status"
       }
     },
     "/api/tenants": {

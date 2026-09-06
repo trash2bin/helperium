@@ -67,6 +67,9 @@
         <a href="#" @click.prevent="page='audit'; if (typeof loadAudit==='function') loadAudit(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='audit'}">
           <span x-text="__('nav.audit')"></span>
         </a>
+        <a href="#" @click.prevent="page='reports'; if (typeof loadReports==='function') loadReports(); document.querySelector('.main').scrollTop = 0" :class="{active: page==='reports'}">
+          <span x-text="__('nav.reports')"></span>
+        </a>
       </nav>
       <div class="sidebar-footer">
         <span class="version" x-text="__('sidebar.version')">v0.1.0</span>
@@ -1535,6 +1538,128 @@
               </template>
             </tbody>
           </table>
+        </div>
+      </div>
+      <div x-show="page === 'reports'" x-cloak>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 class="page-title"><span x-text="__('nav.reports')"></span></h2>
+            <p class="page-subtitle" x-text="__('reports.subtitle')"></p>
+          </div>
+          <div class="page-header-right">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8b949e;">
+              <span x-text="__('reports.filter')"></span>
+              <select x-model="reportsStatus" @change="loadReports()" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:4px 8px;">
+                <option value="" x-text="__('reports.filterAll')"></option>
+                <option value="new" x-text="__('reports.filterNew')"></option>
+                <option value="reviewed" x-text="__('reports.filterReviewed')"></option>
+              </select>
+            </label>
+            <button @click="loadReports()" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:6px 12px;border-radius:6px;cursor:pointer;">
+              <span x-text="__('reports.refresh')"></span>
+            </button>
+          </div>
+        </div>
+
+        <div x-show="reportsLoading" style="text-align:center;padding:40px;color:#8b949e;" x-text="__('reports.loading')"></div>
+        <div x-show="reportsError" style="padding:12px;background:#3d1f1f;border:1px solid #6b3030;border-radius:6px;margin:16px;color:#f0c6c6;" x-text="reportsError"></div>
+
+        <div x-show="!reportsLoading && !reportsError && reportsList.length === 0" style="text-align:center;padding:40px;color:#8b949e;" x-text="__('reports.empty')"></div>
+
+        <div x-show="!reportsLoading && reportsList.length > 0" style="margin:16px;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #21262d;">
+                <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('reports.time')"></th>
+                <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('reports.status')"></th>
+                <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('reports.agent')"></th>
+                <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('reports.session')"></th>
+                <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('reports.excerpt')"></th>
+                <th style="text-align:left;padding:8px 12px;color:#8b949e;font-weight:500;" x-text="__('reports.actions')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="rep in reportsList" :key="rep.id">
+                <tr @click="reportsExpanded = reportsExpanded === rep.id ? '' : rep.id" style="border-bottom:1px solid #21262d;cursor:pointer;">
+                  <td style="padding:8px 12px;white-space:nowrap;font-size:12px;color:#8b949e;" x-text="reportsTimestamp(rep.created_at)"></td>
+                  <td style="padding:8px 12px;">
+                    <span :style="{color: rep.status === 'new' ? '#f0883e' : '#8b949e', fontWeight: rep.status === 'new' ? 600 : 400}" x-text="rep.status === 'new' ? __('reports.statusNew') : __('reports.statusReviewed')"></span>
+                  </td>
+                  <td style="padding:8px 12px;" x-text="rep.agent"></td>
+                  <td style="padding:8px 12px;color:#7ee787;font-family:monospace;font-size:12px;word-break:break-all;" x-text="rep.session_key"></td>
+                  <td style="padding:8px 12px;color:#c9d1d9;font-size:12px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="reportsExcerpt(rep)"></td>
+                  <td style="padding:8px 12px;">
+                    <button x-show="!$store.ui.isViewer() && rep.status === 'new'" @click.stop="markReportReviewed(rep)" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;">
+                      <span x-text="__('reports.markReviewed')"></span>
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <div style="padding:4px 12px;color:#8b949e;font-size:12px;" x-text="__('reports.total') + ': ' + reportsTotal"></div>
+        </div>
+
+        <div x-show="reportsExpanded" style="margin:0 16px 16px;padding:14px;background:#0d1117;border:1px solid #30363d;border-radius:8px;">
+          <template x-for="rep in reportsList.filter(r => r.id === reportsExpanded)" :key="'detail-' + rep.id">
+            <div style="font-size:13px;color:#c9d1d9;">
+              <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;">
+                <div>
+                  <span style="color:#8b949e;" x-text="__('reports.correlation')"></span>
+                  <code style="color:#79c0ff;font-family:monospace;" x-text="rep.correlation_id || '—'"></code>
+                  <button x-show="rep.correlation_id" @click="copyText(rep.correlation_id)" style="background:transparent;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer;font-size:11px;padding:1px 6px;margin-left:4px;">⧉</button>
+                </div>
+                <div>
+                  <span style="color:#8b949e;" x-text="__('reports.turnCorrelation')"></span>
+                  <code style="color:#79c0ff;font-family:monospace;" x-text="rep.last_error_correlation_id || '—'"></code>
+                </div>
+                <div>
+                  <span style="color:#8b949e;" x-text="__('reports.page')"></span>
+                  <span style="font-size:12px;word-break:break-all;" x-text="rep.page_url || '—'"></span>
+                </div>
+              </div>
+
+              <div style="margin-bottom:10px;">
+                <div style="color:#8b949e;margin-bottom:4px;" x-text="__('reports.reportedMessage')"></div>
+                <div style="white-space:pre-wrap;background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px;" x-text="rep.message_text || '—'"></div>
+                <div style="margin-top:4px;color:#8b949e;font-size:12px;" x-show="rep.message_tools && rep.message_tools.length">
+                  <span x-text="__('reports.tools')"></span>
+                  <code style="font-family:monospace;color:#7ee787;" x-text="(rep.message_tools || []).join(', ')"></code>
+                </div>
+              </div>
+
+              <div style="margin-bottom:10px;" x-show="rep.comment">
+                <div style="color:#8b949e;margin-bottom:4px;" x-text="__('reports.comment')"></div>
+                <div style="white-space:pre-wrap;background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px;" x-text="rep.comment"></div>
+              </div>
+
+              <div style="margin-bottom:10px;" x-show="rep.last_error_text">
+                <div style="color:#8b949e;margin-bottom:4px;" x-text="__('reports.lastError')"></div>
+                <div style="white-space:pre-wrap;background:#161b22;border:1px solid #6b3030;border-radius:6px;padding:10px;color:#f0c6c6;" x-text="rep.last_error_text"></div>
+              </div>
+
+              <div style="margin-bottom:10px;" x-show="rep.transcript && rep.transcript.length">
+                <div style="color:#8b949e;margin-bottom:4px;">
+                  <span x-text="__('reports.transcript')"></span> (<span x-text="(rep.transcript || []).length"></span>)
+                </div>
+                <div style="background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px;max-height:320px;overflow-y:auto;">
+                  <template x-for="(m, mi) in (rep.transcript || [])" :key="mi">
+                    <div style="margin-bottom:8px;">
+                      <span :style="{color: m.kind === 'user' ? '#58a6ff' : '#7ee787', fontWeight: 600}" x-text="m.kind === 'user' ? '👤' : '🤖'"></span>
+                      <span style="white-space:pre-wrap;font-size:12px;" x-text="m.text"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <div style="color:#8b949e;font-size:12px;">
+                <div>IP: <code style="font-family:monospace;" x-text="rep.client_ip || '—'"></code></div>
+                <div style="word-break:break-all;">UA: <span x-text="rep.user_agent || '—'"></span></div>
+              </div>
+
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d;color:#8b949e;font-size:12px;" x-text="__('reports.hint')"></div>
+            </div>
+          </template>
         </div>
       </div>
     </main>

@@ -45,6 +45,7 @@ Admin Dashboard (:8085)
 | **🤖 LLM Fallback** | LLM Fallback sidebar | Статус провайдеров LLM, failover цепочка |
 | **🎤 Voice** | Voice sidebar | STT провайдеры, настройки голоса |
 | **📋 Аудит** | Audit sidebar | История изменений конфигурации |
+| **🚩 Жалобы** | Reports sidebar | Жалобы посетителей виджета на ответы: транскрипт, инструменты, ошибки, correlation_id; разбор и отметка «разобрано» (admin) |
 
 ---
 

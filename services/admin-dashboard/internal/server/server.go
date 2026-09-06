@@ -212,6 +212,10 @@ func (s *Server) Router() chi.Router {
 		// Audit log
 		r.Get("/audit", s.auditListHandler)
 
+		// Widget problem reports (proxy to api-service)
+		r.Get("/reports", s.reportsListHandler)
+		r.Post("/reports/{reportID}/status", s.reportStatusHandler)
+
 		// Anti-abuse / rate limit settings
 		r.Get("/abuse-settings", s.abuseSettingsGetHandler)
 		r.Put("/abuse-settings", s.abuseSettingsPutHandler)

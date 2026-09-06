@@ -29,6 +29,7 @@ cat \
   partials/pages/voice.html \
   partials/pages/llm.html \
   partials/pages/audit.html \
+  partials/pages/reports.html \
   partials/app-close.html \
   partials/modals.html \
   partials/tail.html \
