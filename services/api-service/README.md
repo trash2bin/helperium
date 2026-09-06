@@ -14,6 +14,8 @@
 - Пишет полный бэклог взаимодействий (JSONL в `backlog/`)
 - Проксирует SSE-стрим от агента к Web
 
+Как устроен конвейер извлечения tool calls и нормализации ответов модели (стадии, приоритеты, дебаг «странного ответа в бабле») — см. [doc/agents/tool-call-safety-layers.md](../../doc/agents/tool-call-safety-layers.md). Коротко: нативные `message.tool_calls` от LiteLLM → policy-gated текстовый парсер конвертов (только в адаптере) → провайдеро-независимая чистка формы (`agent/answer_normalizer.py`, подключается в `factory.resolve_llm`) → семантика диалога в `AppendOnlyLoop`.
+
 ## Эндпоинты
 
 | Путь | Метод | Описание |

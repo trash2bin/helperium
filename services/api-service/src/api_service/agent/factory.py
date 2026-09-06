@@ -111,7 +111,11 @@ async def resolve_llm(
     Resolution order is scripted development provider, explicitly injected
     client, per-agent configuration, named provider priority, then pool/env.
     The factory owns selection only; LiteLLM owns model/provider routing.
+    Real LLM transports are wrapped in the response-shape middleware so
+    model-specific answer quirks (fabricated tool-call envelopes, single-key
+    answer JSON) are normalized once, at the boundary.
     """
+    from .answer_normalizer import AnswerNormalizer
     from .scripted_provider import create_scripted_provider as _create_scripted
 
     scripted = _create_scripted()
@@ -147,7 +151,9 @@ async def resolve_llm(
 
     if candidates:
         if fallback_enabled and len(candidates) > 1:
-            return FallbackProvider(candidates)
-        return candidates[0]
+            return AnswerNormalizer(FallbackProvider(candidates))
+        return AnswerNormalizer(candidates[0])
 
-    return _test_llm_client or await _resolve_pool_or_env()
+    if _test_llm_client is not None:
+        return _test_llm_client
+    return AnswerNormalizer(await _resolve_pool_or_env())

@@ -1,5 +1,9 @@
 # CHANGELOG.md
 
+## 2026-09-06
+
+- **fix(api):** stop model answer-shape quirks from leaking structured envelopes to widget users via a new provider-boundary middleware (`agent/answer_normalizer.py`, wrapped around real LLM transports in `resolve_llm`): live incidents on gemma4:31b-cloud — a fabricated `Tool Calls: [...]` text envelope (fake call id, caught only when it matched the last tool result verbatim) and a single-key `{"answer": "..."}` JSON wrapper with unicode escapes both reached users as raw `final` content. The middleware rewrites whole-body tool-call markup to an empty round (the loop's existing empty-round contract then regenerates and degrades to the polite fallback) and unwraps single-key answer envelopes (`answer`/`text`/`response`/`message`) to the inner string; native tool calls, data-shaped JSON and plain text pass through untouched, scripted/explicitly injected providers are not wrapped. Also renames provider_pool `complete(req)` to `request` for protocol conformance. **Verification:** failing-first regressions for both incident shapes (`test_loop.py`, `test_answer_normalizer.py`), full api suite 563 passed, ruff/pyright clean, live widget checks: fabricated envelope regenerated to a real product list, `{"answer": ...}` envelope delivered as human-readable text.
+
 ## 2026-09-04
 
 - **feat(api-service):** add an opt-in JSON-fence tool-call parser for ollama gemma: the registry reports tool support = false for gemma4:31b-cloud while its wire response falls back to an exact JSON tool envelope, so LiteLLMProvider now parses a full-response JSON object (optionally fenced, exactly `name`+`arguments`, name must match an advertised tool, arguments must be a dict) into a synthetic `text-call-*` tool_call only when the verified ProviderModelPolicy sets parse_text_tool_calls; everything else stays plain text and default adapter behaviour is unchanged. **Verification:** api-service suite green with parser policy regressions.

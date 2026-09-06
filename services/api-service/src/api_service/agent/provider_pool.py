@@ -93,9 +93,9 @@ class ProviderWorker:
         age = _monotonic() - self._last_healthy
         return age < _HEALTH_INTERVAL_S * 3 and self._consecutive_failures < 3
 
-    async def complete(self, req: CompletionRequest) -> CompletionResponse:
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Delegate to the underlying provider."""
-        return await self.provider_impl.complete(req)
+        return await self.provider_impl.complete(request)
 
 
 def _monotonic() -> float:
@@ -121,14 +121,14 @@ class FallbackProvider:
         self._active_index = 0
         self.model = providers[0].model
 
-    async def complete(self, req: CompletionRequest) -> CompletionResponse:
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
         errors: list[Exception] = []
         provider_count = len(self._providers)
         for offset in range(provider_count):
             index = (self._active_index + offset) % provider_count
             provider = self._providers[index]
             try:
-                response = await provider.complete(req)
+                response = await provider.complete(request)
             except Exception as exc:
                 logger.warning(
                     "[FALLBACK] Provider %s failed; trying next candidate: %s",
@@ -155,7 +155,7 @@ class ProviderPool:
         pool.add_worker(name="mistral", model="mistral/mistral-small", ...)
 
         # On every request:
-        resp = await pool.complete_with_fallback(req)
+        resp = await pool.complete_with_fallback(request)
 
     Workers are checked in the background every ``_HEALTH_INTERVAL_S``
     seconds.  ``complete_with_fallback`` tries workers in a round-robin
@@ -250,15 +250,15 @@ class ProviderPool:
             self._rr_index = (self._rr_index + 1) % len(alive)
         return worker
 
-    async def complete(self, req: CompletionRequest) -> CompletionResponse:
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Call the next alive provider (round-robin)."""
         worker = await self.pick()
         logger.debug("[POOL] Picked worker %s for completion", worker.name)
-        return await worker.complete(req)
+        return await worker.complete(request)
 
     async def complete_with_fallback(
         self,
-        req: CompletionRequest,
+        request: CompletionRequest,
     ) -> CompletionResponse:
         """Try alive workers in order until one succeeds.
 
@@ -279,7 +279,7 @@ class ProviderPool:
             idx = (start + i) % len(alive)
             worker = alive[idx]
             try:
-                return await worker.complete(req)
+                return await worker.complete(request)
             except Exception as exc:
                 logger.warning("[POOL] Worker %s failed: %s", worker.name, exc)
                 errors.append((worker.name, str(exc)))

@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from api_service.agent.answer_normalizer import AnswerNormalizer
 from api_service.agent.loop import (
     AppendOnlyLoop,
     LoopLimits,
@@ -368,6 +369,165 @@ async def test_echo_regeneration_injects_nothing_into_the_transcript() -> None:
     roles = [message["role"] for message in run.transcript.messages]
     assert roles == ["system", "user", "assistant", "tool", "assistant"]
     assert sum(1 for role in roles if role == "system") == 1
+
+
+_TOOL_CALL_MARKUP = (
+    "Tool Calls: [\n"
+    "  {\n"
+    '    "id": "call_filter_bosch_pads",\n'
+    '    "type": "function",\n'
+    '    "function": {\n'
+    '      "name": "search",\n'
+    '      "arguments": {"query": "%колодки%", "is_available": true}\n'
+    "    }\n"
+    "  }\n"
+    "]"
+)
+
+
+@pytest.mark.asyncio
+async def test_fabricated_tool_call_markup_is_not_emitted_as_the_final_user_answer() -> (
+    None
+):
+    """A model that answers with an invented tool-call envelope (live incident
+    on gemma4:31b-cloud: after a real db_search result the next completion was
+    a 'Tool Calls: [...]' text with a fabricated call id) must not leak that
+    markup to the user. Structurally it is not an answer: treat it like an
+    empty round, regenerate, and degrade to the polite fallback at the limit.
+    """
+    raw_result = '{"preview":[{"id":1,"name":"Brake pads BMW E46"}],"total":1}'
+    provider = AnswerNormalizer(
+        ScriptedLLMProvider(
+            [
+                CompletionResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="call-search",
+                            name="search",
+                            arguments={"query": "Bosch"},
+                        )
+                    ]
+                ),
+                CompletionResponse(content=_TOOL_CALL_MARKUP),
+                CompletionResponse(content="Нашёл тормозные колодки Bosch."),
+            ]
+        )
+    )
+    mcp = _MCP({"search": _Result(raw_result)})
+    limits = LoopLimits(
+        max_model_calls=5,
+        max_tool_calls=4,
+        max_context_tokens=10_000,
+        max_empty_responses=2,
+    )
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp, limits=limits), run)
+
+    final_events = [event for event in events if event.type == "final"]
+    assert final_events
+    assert final_events[-1].data["content"] == "Нашёл тормозные колодки Bosch."
+    assert _TOOL_CALL_MARKUP not in final_events[-1].data["content"]
+
+
+@pytest.mark.asyncio
+async def test_bare_fabricated_tool_call_array_is_not_emitted_as_the_final_user_answer() -> (
+    None
+):
+    """Same contract without the 'Tool Calls:' label and inside a code fence."""
+    bare_markup = (
+        "```json\n"
+        '[{"id": "call_1", "type": "function", '
+        '"function": {"name": "search", "arguments": {"query": "pads"}}}]\n'
+        "```"
+    )
+    provider = AnswerNormalizer(
+        ScriptedLLMProvider(
+            [
+                CompletionResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="call-search",
+                            name="search",
+                            arguments={"query": "Bosch"},
+                        )
+                    ]
+                ),
+                CompletionResponse(content=bare_markup),
+                CompletionResponse(content="Fallback answer."),
+            ]
+        )
+    )
+    mcp = _MCP({"search": _Result('{"items":[]}')})
+    limits = LoopLimits(
+        max_model_calls=5,
+        max_tool_calls=4,
+        max_context_tokens=10_000,
+        max_empty_responses=2,
+    )
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp, limits=limits), run)
+
+    final_events = [event for event in events if event.type == "final"]
+    assert final_events
+    assert final_events[-1].data["content"] == "Fallback answer."
+
+
+@pytest.mark.asyncio
+async def test_json_product_list_remains_a_legitimate_final_answer() -> None:
+    """Data-shaped JSON without tool-call envelope keys must still pass."""
+    product_list = '[{"id": 1, "name": "Brake pads"}, {"id": 2, "name": "Disc"}]'
+    provider = AnswerNormalizer(
+        ScriptedLLMProvider([CompletionResponse(content=product_list)])
+    )
+    mcp = _MCP()
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp), run)
+
+    final_events = [event for event in events if event.type == "final"]
+    assert final_events
+    assert final_events[-1].data["content"] == product_list
+
+
+@pytest.mark.asyncio
+async def test_answer_wrapped_in_json_envelope_is_unwrapped_not_leaked_raw() -> None:
+    """Live incident on gemma4:31b-cloud (correlation 3e905808): after a real
+    filter_catalog_product round the model answered with a JSON envelope
+    '{"answer": "..."}' (unicode-escaped) instead of plain text, and the loop
+    emitted the raw JSON to the user. The envelope carries the answer inside:
+    the loop must unwrap it structurally and emit the human-readable string,
+    never the raw envelope.
+    """
+    wrapped = '{"answer": "Артикул FAKE-ARTICLE-999 не найден в каталоге."}'
+    provider = AnswerNormalizer(
+        ScriptedLLMProvider(
+            [
+                CompletionResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="call-search",
+                            name="search",
+                            arguments={"query": "FAKE-ARTICLE-999"},
+                        )
+                    ]
+                ),
+                CompletionResponse(content=wrapped),
+            ]
+        )
+    )
+    mcp = _MCP({"search": _Result('{"preview": [], "total": 0}')})
+    run = _run(provider, mcp)
+
+    events = await _events(_loop(provider, mcp), run)
+
+    final_events = [event for event in events if event.type == "final"]
+    assert final_events
+    assert final_events[-1].data["content"] == (
+        "Артикул FAKE-ARTICLE-999 не найден в каталоге."
+    )
+    assert wrapped not in final_events[-1].data["content"]
 
 
 @pytest.mark.asyncio

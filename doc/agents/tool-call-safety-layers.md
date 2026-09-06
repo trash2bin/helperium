@@ -33,23 +33,40 @@ flowchart LR
 | `ToolCall` | Pydantic `id`, `name`, and object-shaped `arguments` |
 | `LLMProvider` | `complete(CompletionRequest) -> CompletionResponse` |
 
-`LiteLLMProvider` translates LiteLLM response fields into this shape. It rejects malformed native calls: missing IDs or names, invalid JSON argument strings, and non-object arguments are provider errors. It does not enable `add_function_to_prompt` and does not scan `content` for actions.
+`LiteLLMProvider` translates LiteLLM response fields into this shape. It rejects malformed native calls: missing IDs or names, invalid JSON argument strings, and non-object arguments are provider errors. It does not enable `add_function_to_prompt`. The only content inspection it may perform is the opt-in policy-gated text-envelope fallback described below.
 
 `ScriptedLLMProvider` implements the exact same contract for deterministic unit and E2E tests. Its JSONL fixtures model provider responses, not parser input formats.
 
-## What is intentionally unsupported
+## Extraction and normalisation pipeline (stages, priority)
 
-The following content is **final assistant text**, not an executable tool invocation:
+One completion passes four layers in a fixed order. Each layer only sees what the earlier layers produced. Executable calls always originate in stage 1 or 2; stages 3–4 never invent tool calls — they only classify or normalise plain content.
+
+| # | Layer | Where | What it does |
+|---|---|---|---|
+| 1 | Native extraction | LiteLLM inside `LiteLLMProvider.complete` | LiteLLM normalises every provider/subprovider wire format into `message.tool_calls`. This is always tried first and is the only source of executable calls by default. |
+| 2 | Policy text-envelope parser | `LiteLLMProvider._text_tool_call` | Fallback, only when stage 1 returned **zero** calls **and** the verified `ProviderModelPolicy` for this provider/model sets `parse_text_tool_calls=True`. Parses the whole content as one exact `{"name", "arguments"}` JSON object (optionally fenced) whose name is advertised in the request's tool schemas; synthetic ids are `text-call-*`. This is a LiteLLM-adapter concern (models whose calls arrive as text on the LiteLLM wire); a custom transport owns its own equivalent. |
+| 3 | Response-shape middleware | `AnswerNormalizer` (`agent/answer_normalizer.py`), wrapped around real transports in `factory.resolve_llm` | Provider-agnostic content hygiene: content that is *entirely* a fabricated tool-call envelope (`Tool Calls: [...]`, wire-format array, fenced) is rewritten to empty content (stage 4 then counts an empty round); a single-key `{"answer"/"text"/"response"/"message": "<str>"}` envelope is unwrapped to the inner string. Everything else — native calls, data-shaped JSON (product lists, user-requested JSON), plain text — passes through untouched. |
+| 4 | Conversation semantics | `AppendOnlyLoop` | Echo of the last tool result verbatim → empty round (regenerate, no steering text); empty-round limit → standard fallback text; input/output guards; model/tool/context limits. |
+
+Invariants: stages 3–4 never execute anything; data-shaped JSON is a legitimate final answer and is never rewritten; no layer injects model-facing steering text. Whether a model may use tools at all is still decided solely by stages 1–2.
+
+## What is intentionally unsupported (default contract)
+
+Without a verified per-model policy the following content is **final assistant text**, not an executable tool invocation:
 
 ```text
-{"name":"search","arguments":{"query":"Bosch"}}
 <invoke name="search"><query>Bosch</query></invoke>
 ```json
 {"tool_calls":[...]}
 ```
 ```
 
-A provider that emits these encodings may still answer normal chat requests, but it cannot use MCP tools until its LiteLLM integration returns native structured `tool_calls`. This is an intentional trade-off: portability through text parsing is not worth ambiguous execution or a second compatibility runtime.
+Two narrow exceptions are intentional:
+
+- A verified `ProviderModelPolicy` may opt into stage 2: the *entire* response is one exact `{"name", "arguments"}` JSON object (optionally fenced) whose name is advertised — it becomes a real tool call.
+- Stage 3 never executes anything: fabricated `Tool Calls: [...]` markup becomes an empty round, and a single-key answer envelope is unwrapped to text. Data-shaped JSON (e.g. a product list the user asked for) is always preserved verbatim.
+
+A provider that emits other text encodings may still answer normal chat requests, but it cannot use MCP tools until its LiteLLM integration returns native structured `tool_calls` (or the strict stage-2 policy is enabled for it). This is an intentional trade-off: portability through general text parsing is not worth ambiguous execution or a second compatibility runtime.
 
 ## Transcript and result matching
 
@@ -83,14 +100,35 @@ The loop builds an immutable allow-list from `mcp_session.list_tools()` before t
 
 The chat route emits its existing terminal `done` frame after the event stream ends.
 
+## Debugging: a model's answer reaches the user in the wrong shape
+
+Symptom: the widget bubble shows raw JSON, a `Tool Calls: [...]` list, tool data, or another envelope instead of a natural-language answer.
+
+1. **Find the turn.** Take `correlation_id` from the response/log and trace it in `api.log`:
+   ```bash
+   grep -a '<correlation_id>' .data/logs/api.log
+   grep -a 'event_type=final' .data/logs/api.log | tail
+   ```
+   `[SERVER] event_type=final` shows the exact bytes the user received — this is the ground truth of what leaked.
+2. **Identify the model.** `[LLM] completion policy model=... provider=...` lines in the same correlation tell you which adapter and policy served the turn (e.g. `gemma4:31b-cloud` is known to emit both fabricated tool-call envelopes and `{"answer": ...}` wrappers).
+3. **Decide which stage should have caught it.** Compare the leaked bytes against the pipeline above:
+   - whole-body tool-call markup → stage 3 `is_tool_call_markup` (log line: `fabricated tool-call envelope; replacing with an empty round`);
+   - single-key answer wrapper → stage 3 `unwrap_answer_envelope` (log line: `unwrapped single-key answer envelope`);
+   - verbatim copy of the last tool result → stage 4 `_echoes_last_tool_result` (loop);
+   - none of those → a new shape; this is where you look in code.
+4. **Fix at the right layer.** Conversation semantics (echoes, empty rounds, limits) belong to `loop.py`. Pure content-shape quirks belong to `answer_normalizer.py` and must stay provider-agnostic. Wire-level/policy-gated extraction belongs to the adapter (`litellm_provider.py`). Never fix by adding steering text to the transcript.
+5. **Red-first regression.** Reproduce with `ScriptedLLMProvider` in `tests/unit/agent/test_answer_normalizer.py` (shape predicates) or `test_loop.py` (full loop behaviour): craft a `CompletionResponse(content=...)` with the exact leaked bytes, assert the user-visible outcome, watch it fail, then fix. Live-verify only after the unit is green — the incidents of 2026-09-06 were both intermittent and only reproducible deterministically at unit level.
+6. **Guard the boundary.** Any new predicate must keep data-shaped JSON passing through (see `test_json_product_list_remains_a_legitimate_final_answer`) — blocking legitimate JSON answers is a worse failure than the quirk itself.
+
 ## Regression contracts
 
 The current focused contracts are intentionally behavioral rather than parser-implementation tests:
 
 | Test | Guarantees |
 |---|---|
-| `test_loop.py` | Tool results enter the next provider request; IDs and order survive multiple calls; text is never parsed as a tool; invalid tools, failures, limits, and cancellation stop explicitly |
+| `test_loop.py` | Tool results enter the next provider request; IDs and order survive multiple calls; text is never parsed as a tool; invalid tools, failures, limits, and cancellation stop explicitly; fabricated tool-call markup and JSON answer envelopes never reach the user as the final answer |
+| `test_answer_normalizer.py` | Stage-3 predicates: fabricated envelope → empty round, single-key answer envelope → unwrapped, data-shaped JSON and plain text pass through verbatim |
 | `test_orchestrator.py` | Public SSE order, server-resolved tenant scope, and persisted `user → assistant → tool → assistant` transcript |
-| `test_litellm_provider.py` | Native call normalization, malformed-native-call rejection, text finality, current-turn continuation policy, historical-tool cross-turn schemas, and cost propagation |
+| `test_litellm_provider.py` | Native call normalization, malformed-native-call rejection, text finality, policy-gated text-envelope parsing, current-turn continuation policy, historical-tool cross-turn schemas, and cost propagation |
 
-**Last verified:** 2026-09-04 (working tree; uncommitted edits on `2efde0c`) — native structured tool calls remain the only executable provider protocol; text is never parsed as a tool outside a verified per-model policy, verbatim tool-result echoes are never published as the final answer, and model-facing behavior is controlled structurally (schemas, allow-list, validation, limits, regeneration) rather than by steering text. Focused unit suites: `test_loop.py`, `test_litellm_provider.py`, `test_provider_compatibility.py` all green.
+**Last verified:** 2026-09-06 (working tree after `93fa78d` + uncommitted fixes) — native structured tool calls remain the primary executable protocol; the only text-parsing exception is the verified per-model stage-2 policy; fabricated tool-call markup and single-key answer envelopes are contained by the provider-boundary middleware (`AnswerNormalizer`); verbatim tool-result echoes are never published; model-facing behavior stays structural (schemas, allow-list, validation, limits, regeneration), never steering text. Focused suites `test_loop.py`, `test_answer_normalizer.py`, `test_litellm_provider.py`, `test_provider_compatibility.py` green; full api suite 563 passed; isolated Docker E2E 148 passed.

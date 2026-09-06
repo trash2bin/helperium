@@ -280,7 +280,10 @@ class LiteLLMProvider:
         entire response must be a JSON object (optionally in a JSON code fence),
         it must contain only ``name``/``arguments``, and the name must be in the
         tool schemas sent on this request. Argument schema validation remains in
-        the agent loop before MCP dispatch.
+        the agent loop before MCP dispatch. This is a LiteLLM-adapter concern:
+        it compensates models whose tool calls arrive as text on the LiteLLM
+        wire instead of the native field; a custom provider transport would own
+        its own equivalent.
         """
         candidate = content.strip()
         if candidate.startswith("```json") and candidate.endswith("```"):

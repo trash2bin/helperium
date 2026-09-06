@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
+from api_service.agent.answer_normalizer import AnswerNormalizer
 from api_service.agent.litellm_provider import LiteLLMProvider
 from api_service.agent.provider_pool import FallbackProvider
 
@@ -202,9 +203,10 @@ class TestLlmConfigIsFirstPriorityCandidate:
                 provider_priority=["ollama"],
             )
 
-        assert isinstance(result, FallbackProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, FallbackProvider)
         assert result.model == "openai/deepseek-v4-flash"
-        assert [provider.model for provider in result._providers] == [
+        assert [provider.model for provider in result.inner._providers] == [
             "openai/deepseek-v4-flash",
             "minimax-m3:cloud",
         ]
@@ -245,9 +247,10 @@ class TestLlmConfigIsFirstPriorityCandidate:
                 provider_priority=["ollama", "openai", "mistral"],
             )
 
-        assert isinstance(result, FallbackProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, FallbackProvider)
         assert result.model == "anthropic/claude-3"
-        assert [provider.model for provider in result._providers] == [
+        assert [provider.model for provider in result.inner._providers] == [
             "anthropic/claude-3",
             "minimax-m3:cloud",
             "gpt-4o-mini",
@@ -266,7 +269,8 @@ class TestLlmConfigIsFirstPriorityCandidate:
             )
 
         # Should reach pool/env fallback, not crash
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
 
 
 # ── Test: provider_priority resolution ──────────────────────────────────
@@ -303,8 +307,9 @@ class TestProviderPriority:
 
             result = await resolve_llm(provider_priority=["ollama", "openai"])
 
-        assert isinstance(result, FallbackProvider)
-        assert [provider.model for provider in result._providers] == [
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, FallbackProvider)
+        assert [provider.model for provider in result.inner._providers] == [
             "ollama_chat/minimax-m3:cloud",
             "openai/gpt-4o-mini",
         ]
@@ -329,9 +334,10 @@ class TestProviderPriority:
             from api_service.agent.factory import resolve_llm
 
             result = await resolve_llm(provider_priority=["nvidia-nim"])
-        assert isinstance(result, LiteLLMProvider)
-        assert result.api_key == "nvapi-test-only"
-        assert result.api_base == "https://integrate.api.nvidia.com/v1/"
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
+        assert result.inner.api_key == "nvapi-test-only"
+        assert result.inner.api_base == "https://integrate.api.nvidia.com/v1/"
 
     @pytest.mark.asyncio
     async def test_global_fallback_switch_keeps_only_the_primary_candidate(self):
@@ -356,7 +362,8 @@ class TestProviderPriority:
 
             result = await resolve_llm(provider_priority=["ollama", "openai"])
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
         assert result.model == "minimax-m3:cloud"
 
     @pytest.mark.asyncio
@@ -387,7 +394,8 @@ class TestProviderPriority:
 
             result = await resolve_llm(provider_priority=["ollama", "openai"])
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
         assert result.model == "openai/gpt-4o-mini"
 
     @pytest.mark.asyncio
@@ -414,7 +422,8 @@ class TestProviderPriority:
                 provider_priority=["ollama", "nonexistent", "openai"]
             )
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
         assert result.model == "openai/gpt-4o-mini"
 
     @pytest.mark.asyncio
@@ -426,7 +435,8 @@ class TestProviderPriority:
             result = await resolve_llm(provider_priority=[])
 
         # Should reach pool/env fallback
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
 
     @pytest.mark.asyncio
     async def test_provider_priority_all_missing_falls_through(self):
@@ -438,7 +448,8 @@ class TestProviderPriority:
                 provider_priority=["nonexistent1", "nonexistent2"]
             )
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
 
 
 # ── Test: pool / env fallback ───────────────────────────────────────────
@@ -457,7 +468,7 @@ class TestPoolEnvFallback:
 
             result = await resolve_llm()
 
-        assert result is pool_worker
+        assert result.inner is pool_worker
 
     @pytest.mark.asyncio
     async def test_env_fallback_when_pool_empty(self):
@@ -466,7 +477,8 @@ class TestPoolEnvFallback:
 
             result = await resolve_llm()
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
 
 
 # ── Test: llm_config parameter details ──────────────────────────────────
@@ -490,9 +502,10 @@ class TestLlmConfigDetails:
                 },
             )
 
-        assert isinstance(result, LiteLLMProvider)
-        assert result.api_base == "https://custom.example.com"
-        assert result.provider == "mistral"
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
+        assert result.inner.api_base == "https://custom.example.com"
+        assert result.inner.provider == "mistral"
 
     @pytest.mark.asyncio
     async def test_factory_preserves_raw_model_and_provider(self):
@@ -508,10 +521,11 @@ class TestLlmConfigDetails:
                 },
             )
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
         assert result.model == "minimax-m3:cloud"
-        assert result.provider == "ollama"
-        assert result.api_base == "http://localhost:11434"
+        assert result.inner.provider == "ollama"
+        assert result.inner.api_base == "http://localhost:11434"
 
     @pytest.mark.asyncio
     async def test_custom_temperature_and_max_tokens(self):
@@ -529,9 +543,10 @@ class TestLlmConfigDetails:
                 },
             )
 
-        assert isinstance(result, LiteLLMProvider)
-        assert result.temperature == 0.1
-        assert result.max_tokens_thinking == 1024
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
+        assert result.inner.temperature == 0.1
+        assert result.inner.max_tokens_thinking == 1024
 
 
 # ── Test: end-to-end resolution chain ───────────────────────────────────
@@ -571,8 +586,9 @@ class TestEndToEndResolution:
                 provider_priority=["ollama"],
             )
 
-        assert isinstance(result, FallbackProvider)
-        assert [provider.model for provider in result._providers] == [
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, FallbackProvider)
+        assert [provider.model for provider in result.inner._providers] == [
             "openai/deepseek-v4-flash",
             "ollama_chat/minimax-m3:cloud",
         ]
@@ -585,7 +601,8 @@ class TestEndToEndResolution:
 
             result = await resolve_llm()
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
 
     @pytest.mark.asyncio
     async def test_only_provider_priority_no_llm_config(self):
@@ -609,5 +626,6 @@ class TestEndToEndResolution:
 
             result = await resolve_llm(provider_priority=["mistral"])
 
-        assert isinstance(result, LiteLLMProvider)
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
         assert "mistral" in result.model
