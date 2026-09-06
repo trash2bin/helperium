@@ -41,7 +41,10 @@ function buildAssistantRow(
   row.appendChild(node);
   row.appendChild(avatar);
 
-  if (!opts.thinking && opts.report !== false && opts.onAssistantRow) {
+  // Attach at row creation — including the thinking state: the live chat
+  // path streams into this same node, so waiting for a "final" bubble would
+  // leave fresh answers without the flag entirely.
+  if (opts.report !== false && opts.onAssistantRow) {
     opts.onAssistantRow(row, node);
   }
 
