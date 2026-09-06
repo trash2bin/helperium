@@ -152,7 +152,7 @@ async def _buffered_agent_sse_events(
             kind, value = await queue.get()
             if kind == "event":
                 assert value is not None
-                payload = _event_payload(value.type, value.data)
+                payload = _event_payload(value.type, value.data, correlation_id)
                 if payload is not None:
                     yield _sse(payload)
                 continue

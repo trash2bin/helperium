@@ -105,6 +105,23 @@ class TestEventPayloadOther:
         result = _event_payload("error", {"message": "oops"})
         assert result == {"type": "error", "text": "oops"}
 
+    def test_error_with_correlation_id(self):
+        """Agent-loop error events must carry the request correlation id so the
+        widget can echo it back in a problem report (grep-able in api logs)."""
+        result = _event_payload(
+            "error", {"message": "Не удалось получить содержательный ответ."}, "cid-123"
+        )
+        assert result == {
+            "type": "error",
+            "text": "Не удалось получить содержательный ответ.",
+            "correlation_id": "cid-123",
+        }
+
+    def test_error_without_correlation_id_omits_field(self):
+        """correlation_id=None keeps the legacy shape (field omitted)."""
+        result = _event_payload("error", {"message": "oops"}, None)
+        assert result == {"type": "error", "text": "oops"}
+
     def test_unknown_event(self):
         """Unknown event type returns None."""
         result = _event_payload("unknown", {})

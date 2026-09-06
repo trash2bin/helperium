@@ -26,8 +26,16 @@ async def _single_error(text: str, correlation_id: str | None = None):
     yield _sse(payload)
 
 
-def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | None:
-    """Convert internal agent events to the browser-facing SSE payload."""
+def _event_payload(
+    event_type: str,
+    data: AgentEventData,
+    correlation_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Convert internal agent events to the browser-facing SSE payload.
+
+    ``correlation_id`` is attached to terminal error events so the widget can
+    echo it back in a problem report and the operator can grep api-service logs.
+    """
     if event_type in ("tool_call", "tool_result", "final", "error", "done"):
         logger.info(f"[SERVER] event_type={event_type}, data={str(data)[:200]}")
     else:
@@ -62,7 +70,10 @@ def _event_payload(event_type: str, data: AgentEventData) -> dict[str, Any] | No
         return payload
     if event_type == "error":
         text = data.get("message") if isinstance(data, dict) else data
-        return {"type": "error", "text": text}
+        payload: dict[str, Any] = {"type": "error", "text": text}
+        if correlation_id is not None:
+            payload["correlation_id"] = correlation_id
+        return payload
     if event_type == "audio":
         audio_data = data.get("data", "") if isinstance(data, dict) else ""
         return {"type": "audio", "data": audio_data}

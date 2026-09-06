@@ -213,6 +213,28 @@ async def test_disconnect_watcher_is_started_and_stopped() -> None:
 
 
 @pytest.mark.asyncio
+async def test_buffered_stream_error_events_carry_correlation_id() -> None:
+    """Agent-loop error events streamed through the buffered writer must include
+    the request correlation id — the widget reports it back for log grep."""
+    from api_service.server.routes.chat import _buffered_agent_sse_events
+
+    async def source():
+        yield SimpleNamespace(
+            type="error",
+            data={"message": "Не удалось получить содержательный ответ."},
+        )
+
+    received: list[str] = []
+    async for chunk in _buffered_agent_sse_events(source(), "en", "cid-loop-42"):
+        received.append(chunk)
+
+    error_chunks = [c for c in received if '"type": "error"' in c]
+    assert len(error_chunks) == 1
+    assert "cid-loop-42" in error_chunks[0]
+    assert any('"type": "done"' in c for c in received)
+
+
+@pytest.mark.asyncio
 async def test_disconnect_watcher_latch_stops_agent_stream() -> None:
     """Once the watcher latches a disconnect, the buffered SSE stream must
     terminate with a done event instead of hanging on the queue."""
