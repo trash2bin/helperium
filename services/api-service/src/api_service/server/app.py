@@ -128,15 +128,30 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete")
 
 
+# Swagger UI / OpenAPI HTTP routes stay off by default (control-plane hardening,
+# bd508c1): the schema must not be publicly reachable. API_ENABLE_DOCS=1 opts a
+# dev deployment back in; it exposes /docs, /redoc and /openapi.json unauthenticated.
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+_enable_docs = _env_flag("API_ENABLE_DOCS")
+
 app = FastAPI(
     title="Helperium API",
     description="LLM agent orchestration service",
     version="1.1.0",
     lifespan=lifespan,
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
+    docs_url="/docs" if _enable_docs else None,
+    redoc_url="/redoc" if _enable_docs else None,
+    openapi_url="/openapi.json" if _enable_docs else None,
 )
+
+if _enable_docs:
+    logger.warning(
+        "API_ENABLE_DOCS is on: /docs, /redoc and /openapi.json are served "
+        "without authentication. Do not enable this on a public deployment."
+    )
 
 # Prometheus metrics
 init_metrics(app)

@@ -310,6 +310,7 @@ curl -X POST http://localhost:8081/api/agents \
 | `EMBED_DIR` | `<project>/embed/dist/` | Путь к статике embed-виджета (absolute override) |
 | `ENABLE_METRICS` | `true` | Включить Prometheus-метрики |
 | `API_BEARER_TOKEN` | — | Bearer token для API (обязателен в production) |
+| `API_ENABLE_DOCS` | `false` | Opt-in Swagger UI (`/docs`), ReDoc (`/redoc`) и `/openapi.json` на api-service. HTTP-роуты docs отключены по умолчанию с bd508c1 (control-plane hardening): схема не должна быть публично доступна. При включении роуты отдаются **без аутентификации** — только локальная разработка. Контракт без флага: `specs/api.openapi.yaml` + drift-тест `test_openapi_api.py` |
 | `SPENDING_RESERVATIONS_ENABLED` | `false` | Двухфазное reserve/commit-допущение расходов. Не включать: см. `doc/agents/spending-reserve-commit-decision.md` |
 | `SPENDING_LEDGER_PATH` | `<project>/.data/spending-ledger.sqlite3` | SQLite-ledger резерваций |
 | `SPENDING_PRINCIPAL_DEFAULT_BUDGET` | `0` | Бюджет billing principal (account/agent), USD. 0 = без лимита |

@@ -208,11 +208,20 @@ uv run pytest api-service/src/api_service/tests/unit/test_openapi_api.py -v
 uv run pytest rag/tests/unit/test_openapi_spec.py -v
 ```
 
-Тест падает → обновляем spec:
+Тест падает → обновляем spec. HTTP-роут `/openapi.json` у api-service по умолчанию
+выключен (control-plane hardening, opt-in через `API_ENABLE_DOCS` — см.
+[doc/agents/api-contracts.md](../doc/agents/api-contracts.md)), поэтому схема
+генерируется программно, без запущенного сервера:
 
 ```bash
-# 1. Запустить сервис
-# 2. Экспортировать схему
+uv run python -c "import sys, yaml, json; from api_service.server.app import app; yaml.dump(json.loads(json.dumps(app.openapi(), default=str)), sys.stdout, sort_keys=False)" > specs/api.openapi.yaml
+```
+
+Для rag-сервиса аналогично (`from rag_service... app`), либо — при запущенном
+сервисе с включённым роутом:
+
+```bash
+API_ENABLE_DOCS=1 uv run uvicorn api_service.server.app:app --port 8081 &
 curl -s http://127.0.0.1:8081/openapi.json | yu -x . > specs/api.openapi.yaml
 curl -s http://127.0.0.1:8082/openapi.json | yu -x . > specs/rag.openapi.yaml
 ```
