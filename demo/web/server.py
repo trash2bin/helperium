@@ -567,6 +567,12 @@ async def proxy_chat_by_agent(request: Request, agent_name: str):
     return await _proxy_to_api(request, f"/api/chat/{agent_name}", stream=True)
 
 
+@app.post("/api/reports", response_model=None)
+async def proxy_report(request: Request):
+    """Proxy the widget problem-report endpoint (non-SSE JSON POST)."""
+    return await _proxy_to_api(request, "/api/reports", stream=False)
+
+
 # ── Embed widget proxy (from api-service /embed) ──
 
 

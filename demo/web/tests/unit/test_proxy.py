@@ -401,6 +401,30 @@ class TestApiRoutes:
             == "Bearer secret-token-xyz"
         )
 
+    @respx.mock
+    def test_widget_report_post_is_forwarded_to_api_service(self, client):
+        """POST /api/reports (widget problem reports) forwards to api-service."""
+        with patch.object(settings, "api_bearer_token", "secret-token-xyz"):
+            upstream_route = respx.post("http://127.0.0.1:8081/api/reports").mock(
+                return_value=httpx.Response(
+                    201, json={"status": "accepted", "id": "r-1"}
+                )
+            )
+            response = client.post(
+                "/api/reports",
+                json={
+                    "agent": "autoparts-assistant",
+                    "session_id": "s-1",
+                    "message": {"kind": "assistant", "text": "answer"},
+                },
+            )
+
+        assert response.status_code == 201
+        assert response.json() == {"status": "accepted", "id": "r-1"}
+        request = upstream_route.calls.last.request
+        assert request.headers.get("authorization") == "Bearer secret-token-xyz"
+        assert json.loads(request.content)["session_id"] == "s-1"
+
     def test_unknown_api_path_is_not_forwarded_when_bearer_is_configured(self, client):
         with patch.object(settings, "api_bearer_token", "secret-token-xyz"):
             response = client.get("/api/unknown")
