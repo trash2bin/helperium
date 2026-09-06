@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { findMsgNode, isScrolledNearBottom, removeMsgRow, scrollToBottom } from '../src/dom';
+import { parseConfig } from '../src/config';
+import { buildWidget, findMsgNode, isScrolledNearBottom, removeMsgRow, scrollToBottom } from '../src/dom';
 
 describe('findMsgNode', () => {
   it('returns the node itself if it has class at-msg', () => {
@@ -86,5 +87,41 @@ describe('isScrolledNearBottom', () => {
 
   it('returns false for null', () => {
     expect(isScrolledNearBottom(null)).toBe(false);
+  });
+});
+
+describe('buildWidget accessibility', () => {
+  let container: HTMLDivElement;
+
+  function makeConfig(lang: 'ru' | 'en') {
+    const script = document.createElement('script');
+    script.setAttribute('data-agent', 'test-agent');
+    script.setAttribute('data-lang', lang);
+    return parseConfig(script);
+  }
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  it('labels all icon-only buttons with aria-label and title (ru)', () => {
+    const refs = buildWidget(container, makeConfig('ru'));
+
+    expect(refs.trigger.getAttribute('aria-label')).toBe('Открыть чат');
+    expect(refs.trigger.getAttribute('title')).toBe('Открыть чат');
+    expect(refs.closeBtn.getAttribute('aria-label')).toBe('Закрыть чат');
+    expect(refs.sendBtn.getAttribute('aria-label')).toBe('Отправить');
+    expect(refs.micBtn.getAttribute('aria-label')).toBe('Зажмите для записи');
+    expect(refs.textarea.getAttribute('aria-label')).toBeTruthy();
+  });
+
+  it('labels all icon-only buttons with aria-label and title (en)', () => {
+    const refs = buildWidget(container, makeConfig('en'));
+
+    expect(refs.trigger.getAttribute('aria-label')).toBe('Open chat');
+    expect(refs.closeBtn.getAttribute('aria-label')).toBe('Close chat');
+    expect(refs.sendBtn.getAttribute('aria-label')).toBe('Send');
+    expect(refs.micBtn.getAttribute('aria-label')).toBe('Hold to record');
   });
 });

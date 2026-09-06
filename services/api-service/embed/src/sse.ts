@@ -93,6 +93,9 @@ export async function readSSEStream(
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // A proxy timeout or dropped connection can end the stream without a
+  // terminal event; without this flag the bubble would stay in thinking.
+  let sawTerminalEvent = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -129,6 +132,7 @@ export async function readSSEStream(
           break;
 
         case 'final':
+          sawTerminalEvent = true;
           callbacks.onFinal(payload.text || '');
           break;
 
@@ -163,6 +167,7 @@ export async function readSSEStream(
           break;
 
         case 'done':
+          sawTerminalEvent = true;
           if (targetNode.classList.contains('at-error')) return;
           if (!targetNode.dataset.raw?.trim()) {
             callbacks.onFinal(
@@ -182,6 +187,7 @@ export async function readSSEStream(
           break;
 
         case 'error':
+          sawTerminalEvent = true;
           targetNode.classList.remove('at-thinking');
           targetNode.classList.add('at-error');
           targetNode.textContent =
@@ -192,6 +198,17 @@ export async function readSSEStream(
           break;
       }
     }
+  }
+
+  // Stream ended without final/error/done (e.g. proxy timeout): surface
+  // the same fallback the server-side empty `done` uses instead of leaving
+  // the thinking bubble hanging forever.
+  if (!sawTerminalEvent) {
+    callbacks.onError(
+      lang === 'ru'
+        ? 'Не удалось получить ответ.'
+        : 'No response.',
+    );
   }
 }
 

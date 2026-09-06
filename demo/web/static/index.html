@@ -67,8 +67,9 @@
     <div id="openChat" style="display:none"></div>
     <div id="collapseChat" style="display:none"></div>
 
-    <!-- Embed widget — Shadow DOM, independent from app.js -->
-    <script src="/embed/embed.js?v=runtime-agent-switch" data-agent="default">
+    <!-- Embed widget — Shadow DOM, independent from app.js.
+         ?v= is the cache-buster: bump it on every change to embed/dist. -->
+    <script src="/embed/embed.js?v=2026-09-06" data-agent="default">
     </script>
 
     <script src="/static/app.js"></script>

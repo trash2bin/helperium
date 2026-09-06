@@ -31,6 +31,6 @@
     </div>
   </main>
   <footer class="site-footer"><div class="shell footer-grid"><div><a class="brand footer-brand" href="{% url "index" %}"><span class="brand-mark">A</span><span>АВТО<span>ЛИНИЯ</span></span></a><p>Интерактивная демонстрация ассистента для каталогов и товарных баз.</p></div><div><h3>Навигация</h3><a href="{% url "catalog" %}">Каталог</a><a href="{% url "brands_list" %}">Производители</a><a href="{% url "contacts" %}">Контакты</a></div><div><h3>Для demo</h3><p>Заказы не обрабатываются, платёжных данных нет.</p><p class="muted">{{ site_settings.work_hours|default:"Ежедневно, 09:00–20:00" }}</p></div></div><div class="shell footer-bottom">© {% now "Y" %} {{ site_settings.site_name|default:"АВТОЛИНИЯ" }} · Демонстрационный контур</div></footer>
-  {% if assistant_enabled %}<script src="{{ assistant_api_base }}/embed/embed.js" data-agent="{{ assistant_agent }}" data-api-base="{{ assistant_api_base }}" data-title="{{ assistant_title }}" data-accent="#ff6a3d"></script>{% endif %}
+  {% if assistant_enabled %}{% comment %} ?v= — cache-buster: embed.js отдаётся с immutable-кэшем, бампать при любом изменении embed/dist {% endcomment %}<script src="{{ assistant_api_base }}/embed/embed.js?v=2026-09-06" data-agent="{{ assistant_agent }}" data-api-base="{{ assistant_api_base }}" data-title="{{ assistant_title }}" data-accent="#ff6a3d"></script>{% endif %}
 </body>
 </html>

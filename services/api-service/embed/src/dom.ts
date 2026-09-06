@@ -66,6 +66,8 @@ export function buildWidget(host: HTMLDivElement, config: WidgetConfig): UIRefs 
 
   /* ── Trigger Button ── */
   const trigger = el('button', 'at-trigger ' + posClass, ICONS.chat);
+  trigger.setAttribute('aria-label', config.lang === 'ru' ? 'Открыть чат' : 'Open chat');
+  trigger.title = trigger.getAttribute('aria-label') as string;
   host.appendChild(trigger);
 
   /* ── Panel ── */
@@ -87,6 +89,7 @@ export function buildWidget(host: HTMLDivElement, config: WidgetConfig): UIRefs 
   headInfo.appendChild(statusEl);
 
   const closeBtn = el('button', 'at-close', ICONS.close);
+  closeBtn.setAttribute('aria-label', config.lang === 'ru' ? 'Закрыть чат' : 'Close chat');
   head.appendChild(headInfo);
   head.appendChild(closeBtn);
   panel.appendChild(head);
@@ -102,15 +105,18 @@ export function buildWidget(host: HTMLDivElement, config: WidgetConfig): UIRefs 
   const textarea = document.createElement('textarea');
   textarea.rows = 1;
   textarea.placeholder = config.placeholder;
+  textarea.setAttribute('aria-label', config.placeholder);
   textarea.style.height = '38px'; // match button height exactly
 
   const micBtn = el('button', 'at-mic-btn', ICONS.mic);
   micBtn.type = 'button';
-  micBtn.title = config.lang === 'ru' ? 'Зажмите для записи' : 'Hold to record';
+  micBtn.setAttribute('aria-label', config.lang === 'ru' ? 'Зажмите для записи' : 'Hold to record');
+  micBtn.title = micBtn.getAttribute('aria-label') as string;
   // visibility controlled by CSS classes (at-show-mic / at-show-send / at-legacy)
 
   const sendBtn = el('button', 'at-send-btn', ICONS.send);
   sendBtn.type = 'submit';
+  sendBtn.setAttribute('aria-label', config.lang === 'ru' ? 'Отправить' : 'Send');
 
   /* Swap container: holds mic + send, animates between them */
   const isTelegram = config.voiceToggle === 'telegram' && config.voiceInput && hasGetUserMedia();

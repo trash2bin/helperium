@@ -86,7 +86,8 @@ describe('readSSEStream', () => {
     expect(cb.calls.token).toBe(NUM_EVENTS);
     expect(cb.calls.final).toBeUndefined();
     expect(cb.calls.done).toBeUndefined();
-    expect(cb.calls.error).toBeUndefined();
+    // Stream ended without final/done: the premature-close fallback fires.
+    expect(cb.calls.error).toBe(1);
   });
 
   it('passes token text to onToken callback', async () => {
@@ -304,5 +305,51 @@ describe('readSSEStream', () => {
     }, 'ru');
 
     expect(finals).toEqual(['Не удалось получить ответ.']);
+  });
+});
+
+describe('readSSEStream premature close', () => {
+  it('reports onError when the stream ends without a terminal event (en)', async () => {
+    const response = createSSEResponse([{ type: 'token', text: 'partial' }]);
+    const targetNode = makeTargetNode();
+    const cb = noopCallbacks();
+
+    await readSSEStream(response, targetNode, cb, 'en');
+
+    expect(cb.calls.error).toBe(1);
+    expect(cb.calls.final).toBeUndefined();
+    expect(cb.calls.done).toBeUndefined();
+    expect((cb.onError as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('No response.');
+  });
+
+  it('reports the russian fallback when the stream is cut before final (ru)', async () => {
+    const response = createSSEResponse([]);
+    const targetNode = makeTargetNode();
+    targetNode.classList.add('at-thinking');
+    const errors: string[] = [];
+
+    await readSSEStream(response, targetNode, {
+      onToken: () => {},
+      onFinal: () => {},
+      onToolCall: () => {},
+      onAudio: () => {},
+      onDone: () => {},
+      onError: (t) => errors.push(t),
+    }, 'ru');
+
+    expect(errors).toEqual(['Не удалось получить ответ.']);
+  });
+
+  it('does not report onError when a final event arrived before the cut', async () => {
+    const response = createSSEResponse([
+      { type: 'final', text: 'Готовый ответ' },
+    ]);
+    const targetNode = makeTargetNode();
+    const cb = noopCallbacks();
+
+    await readSSEStream(response, targetNode, cb, 'en');
+
+    expect(cb.calls.error).toBeUndefined();
+    expect(cb.calls.final).toBe(1);
   });
 });
