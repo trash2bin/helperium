@@ -1,5 +1,17 @@
 # CHANGELOG.md
 
+## 2026-09-04
+
+- **feat(api-service):** add an opt-in JSON-fence tool-call parser for ollama gemma: the registry reports tool support = false for gemma4:31b-cloud while its wire response falls back to an exact JSON tool envelope, so LiteLLMProvider now parses a full-response JSON object (optionally fenced, exactly `name`+`arguments`, name must match an advertised tool, arguments must be a dict) into a synthetic `text-call-*` tool_call only when the verified ProviderModelPolicy sets parse_text_tool_calls; everything else stays plain text and default adapter behaviour is unchanged. **Verification:** api-service suite green with parser policy regressions.
+- **feat(api-service):** echo-safe agent loop + MCP discovery fast-fail: MCPClient.list_tools records discovery failure and AppendOnlyLoop finishes with a retryable dependency_unavailable before spending a model turn on an empty tool list, and a verbatim echo of the last tool result counts as an empty round (regenerate from the existing transcript, EMPTY_RESPONSE fallback at the limit) so raw tool JSON can no longer leak to the user — both enforced structurally, with no model-facing steering text. **Verification:** api-service suite green with discovery-failure, echo-regeneration and append-only transcript regressions.
+- **feat(demo):** wire the Helperium widget natively into the autoparts storefront: the :8000 storefront loads /embed/embed.js and calls the host-published api-service directly (no Docker DNS names in the browser), bootstrap gains dsn_host/dsn_port so the registered read-only DSN stays reachable from host data-service, dev.sh exports HELPERIUM_WIDGET_*/CORS allow-list in native mode, and demo/web gets an explicit /api/agents proxy plus cache-busting embed version. **Verification:** native stack chat smoke on the storefront widget.
+- **chore(pi):** refresh .pi/APPEND_SYSTEM.md to a short contract-style tool list with project guard rails (no push, no tenant credentials through external MCP servers) and drop codemode references from setup docs. **Verification:** agent-only change, no runtime impact.
+- **docs(assets):** move all documentation screenshots to doc/images/, update README image references, add storefront-widget and SQLite-tenant-onboarding screenshots, and tighten demo/README.md to the native-mode default (storefront bootstrapped as a read-only tenant with the embedded widget). **Verification:** docs paths check green.
+
+## 2026-09-02
+
+- **chore(infra):** make loopback-only Postgres and Grafana credentials overridable via environment variables while preserving development defaults, keeping the healthcheck and developer database hint aligned with Compose; overrides and persistent-volume password behaviour documented. **Verification:** local compose up with default and overridden credentials.
+
 ## 2026-09-01
 
 - **fix(mcp-gateway):** bound per-IP rate-limit buckets with LRU eviction via MCP_RATE_LIMIT_MAX_IPS (default 10000): scanner traffic could previously grow one bucket per source IP with no cap and no 429; evicted IPs cold-start with a fresh burst like any first-time visitor, and a hard reject was deliberately avoided because the limiter sits before auth. **Verification:** mcp-gateway build+test+vet green incl. new eviction/cap/env tests; isolated Docker E2E 148 passed.
