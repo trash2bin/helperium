@@ -51,6 +51,8 @@ func WriteSpecToFile(spec map[string]any, filePath string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
+	// Финальный \n держит файл стабильным между перегенерациями и git-diff.
+	data = append(data, '\n')
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("write spec: %w", err)
 	}
