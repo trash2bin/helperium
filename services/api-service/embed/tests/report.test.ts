@@ -237,6 +237,71 @@ describe('attachReportButton', () => {
     expect(restoredBtn.disabled).toBe(true);
   });
 
+  it('a fresh live answer is not dimmed by an earlier reported live answer', async () => {
+    // Regression: live rows attach in the thinking state with empty raw text,
+    // so a stale attach-time key made every new live answer share one
+    // "reported" mark and go dim right after any earlier report.
+    const deps = makeDeps();
+    const live = (text: string) => {
+      const messages = document.createElement('div');
+      messages.className = 'at-messages';
+      const row = document.createElement('div');
+      row.className = 'at-msg-row';
+      const node = document.createElement('div');
+      node.className = 'at-msg at-assistant at-thinking';
+      node.dataset.raw = '';
+      row.appendChild(node);
+      messages.appendChild(row);
+      document.body.appendChild(messages);
+      attachReportButton(deps, node, row);
+      // Stream finalizes: the bubble gets its final raw text.
+      node.classList.remove('at-thinking');
+      node.dataset.raw = text;
+      return { row, node };
+    };
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'accepted', id: 'r1' }), { status: 201 }),
+    );
+
+    const first = live('Первый ответ');
+    const firstBtn = first.row.querySelector('button.at-report-btn') as HTMLButtonElement;
+    firstBtn.click();
+    const form = document.querySelector('.at-report-form') as HTMLElement;
+    (form.querySelector('.at-report-submit') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(firstBtn.classList.contains('at-reported')).toBe(true));
+
+    const second = live('Второй ответ');
+    const secondBtn = second.row.querySelector('button.at-report-btn') as HTMLButtonElement;
+    expect(secondBtn.classList.contains('at-reported')).toBe(false);
+    expect(secondBtn.disabled).toBe(false);
+  });
+
+  it('recalculates the reported state when a live answer finalizes as an error', async () => {
+    const deps = makeDeps();
+    markReported(deps.config, reportedKey('error', 'Сервис недоступен.'));
+
+    const messages = document.createElement('div');
+    messages.className = 'at-messages';
+    const row = document.createElement('div');
+    row.className = 'at-msg-row';
+    const node = document.createElement('div');
+    node.className = 'at-msg at-assistant at-thinking';
+    node.dataset.raw = '';
+    row.appendChild(node);
+    messages.appendChild(row);
+    document.body.appendChild(messages);
+    attachReportButton(deps, node, row);
+    const btn = row.querySelector('button.at-report-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+
+    // SSE error handler finalizes the bubble as an error bubble.
+    node.classList.remove('at-thinking');
+    node.classList.add('at-error');
+    node.textContent = 'Сервис недоступен.';
+    await vi.waitFor(() => expect(btn.disabled).toBe(true));
+  });
+
   it('opening the form on another message closes the previous form', () => {
     const deps = makeDeps();
     const shared = document.createElement('div');

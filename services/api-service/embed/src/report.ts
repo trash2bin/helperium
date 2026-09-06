@@ -215,11 +215,23 @@ export function attachReportButton(
   btn.setAttribute('aria-label', label);
   btn.title = label;
 
-  const key = reportedKey('assistant', node.dataset.raw || '');
-  if (isReported(config, key)) {
-    btn.classList.add('at-reported');
-    btn.disabled = true;
-  }
+  // The reported-state key must track the message's final content: during the
+  // live path the row is attached in the thinking state with an empty raw text,
+  // so a key computed once here would be shared by every live answer. Refresh
+  // whenever the bubble's content-bearing attributes change (streaming chunks,
+  // final text, error class) — mutation callbacks run after the batch settles.
+  const refreshState = (): void => {
+    const ctx = collectReportContext(node);
+    if (isReported(config, reportedKey(ctx.kind, ctx.text))) {
+      btn.classList.add('at-reported');
+      btn.disabled = true;
+    } else {
+      btn.classList.remove('at-reported');
+      btn.disabled = false;
+    }
+  };
+  refreshState();
+  new MutationObserver(refreshState).observe(node, { attributes: true });
 
   btn.addEventListener('click', () => {
     if (!btn.classList.contains('at-reported')) {
@@ -301,7 +313,9 @@ function openReportForm(
           'aria-label',
           ru ? 'Жалоба отправлена' : 'Report sent',
         );
-        markReported(deps.config, reportedKey('assistant', node.dataset.raw || ''));
+        // Mark with the key derived from the reported context itself, not the
+        // attach-time snapshot: by submit time the bubble has its final text.
+        markReported(deps.config, reportedKey(ctx.kind, ctx.text));
 
         const done = document.createElement('div');
         done.className = 'at-report-done';
