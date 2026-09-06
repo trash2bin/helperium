@@ -66,6 +66,7 @@ def retry_category(exc: Exception) -> RetryCategory | None:
             BadGatewayError,
             InternalServerError,
             ServiceUnavailableError,
+            asyncio.TimeoutError,
         ),
     ):
         return "transient"
@@ -166,7 +167,12 @@ class CompletionRetryExecutor:
 
             on_attempt()
             try:
-                return await call(min(provider_timeout, remaining))
+                # wait_for is the enforcement backstop: the transport may
+                # ignore the passed timeout (hung DNS/TLS) and never return.
+                attempt_timeout = min(provider_timeout, remaining)
+                return await asyncio.wait_for(
+                    call(attempt_timeout), timeout=attempt_timeout
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

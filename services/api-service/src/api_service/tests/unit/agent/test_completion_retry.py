@@ -296,3 +296,49 @@ async def test_cancellation_during_backoff_stops_before_second_attempt() -> None
         )
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_hung_attempt_is_cancelled_at_the_deadline() -> None:
+    """A physical attempt that ignores its timeout argument (hung DNS/TLS)
+    must be cancelled within the retry budget instead of blocking the agent
+    loop forever."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def call(_timeout: float) -> None:
+        nonlocal attempts
+        attempts += 1
+        started.set()
+        await release.wait()
+
+    executor = _executor(max_attempts=3, max_elapsed_seconds=0.05)
+    attempts = 0
+    exhausted: list[tuple[str, str]] = []
+
+    task = asyncio.ensure_future(
+        executor.run(
+            call,
+            provider_timeout=120.0,
+            model="openai/test",
+            provider="test",
+            on_attempt=lambda: None,
+            on_retry=lambda _category, _delay: None,
+            on_exhausted=lambda category, reason: exhausted.append((category, reason)),
+            on_suppressed=lambda _reason: None,
+        )
+    )
+    try:
+        done, pending = await asyncio.wait({task}, timeout=1.0)
+        assert not pending, "hung attempt blocked past the retry deadline"
+        with pytest.raises(asyncio.TimeoutError):
+            task.result()
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    assert started.is_set()
+    assert attempts == 1
+    assert exhausted == [("transient", "deadline")]
