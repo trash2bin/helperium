@@ -217,6 +217,8 @@ OpenTelemetry; отсутствующие пакеты не ломают сер�
 | `abuse_blocked_total` | Counter | `reason` | Блокировки анти-абуза |
 | `embed_widget_requests_total` | Counter | `endpoint` | Запросы к /embed/* |
 | `backlog_records_total` | Counter | `type` | Всего бэклог-задач (turn_start, llm_call, tool_call, tool_result) |
+| `reports_total` | Counter | `status` | Жалобы из виджета, принятые в стор (`accepted`) |
+| `report_store_errors_total` | Counter | — | Ошибки записи жалобы в SQLite |
 | `mcp_tool_timeouts_total` | Counter | `tenants` | MCP tool-вызовы, упёршиеся в hard deadline (сигнал zombie-эскалации) |
 | `mcp_connection_quarantines_total` | Counter | `tenants` | Принудительно закрытые zombie-подозрительные соединения |
 | `mcp_reconnects_total` | Counter | `tenants` | MCP reconnects после неудачного вызова |

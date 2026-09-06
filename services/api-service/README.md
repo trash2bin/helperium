@@ -57,6 +57,9 @@
 | `/admin/llm-config` | GET | Глобальная LLM-конфигурация |
 | `/api/voice-config` | GET | Voice config (STT) |
 | `/api/voice-config` | PUT | Обновить voice config |
+| `/api/reports` | POST | Public: жалоба посетителя на ответ виджета (сохраняется для разбора в админке) |
+| `/admin/reports` | GET | Список жалоб (query: limit, status=new\|reviewed) |
+| `/admin/reports/{id}/status` | POST | Отметить жалобу разобранной (`{"status":"reviewed"}`) |
 
 ## Per-Agent LLM Config
 
@@ -261,7 +264,22 @@ curl -X POST http://localhost:8081/api/agents \
 - **sessionStorage** — история сессии сохраняется при перезагрузке
 - **Enter** — отправить, **Shift+Enter** — новая строка
 - **Tool call индикатор** — 🔧 показывает какие инструменты вызывает
+- **Пожаловаться** — флажок ⚑ на каждом ответе: отправляет жалобу с транскриптом сессии, инструментами, последней ошибкой и correlation_id в `POST /api/reports` (разбор — страница «Жалобы» в admin-dashboard)
 - **Адаптивность** — на мобильных на весь экран
+
+### Кнопка «Пожаловаться»
+
+Каждое сообщение ассистента (включая error-баблы) имеет icon-only флажок с
+`aria-label`. Клик открывает инлайн-форму с необязательным комментарием
+(≤1000 символов). Payload хранится на сервере verbatim — **он никогда не
+подаётся в LLM**, поэтому жалоба не может steer'ить модель. Жалоба не
+участвует в anti-abuse квоте сессии (не списывает user turns); abuse-защита —
+отдельный per-IP rate limit `REPORTS_RATE_LIMIT` (по умолчанию `5/minute`) и
+строгие caps DTO (`extra=forbid`). «Пожалованные» баблы запоминаются в
+sessionStorage (`at_reported_<agent>`) и переживают восстановление истории.
+На стороне сервера к жалобе добавляются `correlation_id` запроса, IP и
+User-Agent (форензика) и `session_key` вида `agent:{name}:{session_id}` для
+поиска по backlog-файлу и логам.
 
 ## Переменные окружения
 
@@ -287,6 +305,9 @@ curl -X POST http://localhost:8081/api/agents \
 | `BACKLOG_DIR` | `./backlog` | Директория бэклогов |
 | `BACKLOG_RETENTION_DAYS` | `30` | Дней хранения бэклогов |
 | `BACKLOG_MODE` | `full` | `full` — всё пишется, `errors` — только ошибки, `off` — ничего не пишется |
+| `REPORTS_DB_PATH` | `<project_root>/.data/reports.sqlite3` | Путь к SQLite с жалобами из виджета |
+| `REPORTS_RETENTION_DAYS` | `0` | Дней хранения жалоб (0 — хранить всё) |
+| `REPORTS_RATE_LIMIT` | `5/minute` | Per-IP rate limit публичного `POST /api/reports` |
 | `DEMO_HISTORY_TURNS` | `8` | Кол-во ходов в контексте |
 | `DEMO_HISTORY_CONTENT_CHARS` | `6000` | Макс. символов в истории |
 | `DEMO_REQUEST_TIMEOUT` | `600` | Таймаут запросов к LLM (сек) |
