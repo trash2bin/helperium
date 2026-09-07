@@ -1,5 +1,5 @@
 // i18n.test.ts — tests for translation module
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
@@ -49,10 +49,9 @@ describe('i18n — translation coverage', () => {
 
   it('all domain files use only known translation keys', () => {
     const domainsDir = resolve(__dirname, '../src/domains');
-    const domainFiles = [
-      'abuse.ts', 'agents.ts', 'audit.ts', 'auth.ts', 'config.ts',
-      'emergency.ts', 'llm.ts', 'rag.ts', 'tenants.ts', 'tools.ts', 'voice.ts',
-    ];
+    const domainFiles = readdirSync(domainsDir)
+      .filter(f => f.endsWith('.ts'))
+      .sort();
 
     const usedKeys: string[] = [];
     for (const file of domainFiles) {

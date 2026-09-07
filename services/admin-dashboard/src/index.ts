@@ -36,7 +36,7 @@ type AnyRecord = Record<string, any>;
 
 const EXPECTED_DOMAINS = [
   'auth', 'tenants', 'config', 'tools', 'rag', 'agents',
-  'abuse', 'emergency', 'llm', 'voice', 'audit',
+  'abuse', 'emergency', 'llm', 'voice', 'audit', 'reports',
 ];
 
 // ── dashboard() — Alpine component factory ──
