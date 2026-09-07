@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dir: [services/data-service, services/mcp-gateway]
+        dir: [services/data-service, services/mcp-gateway, services/admin-dashboard, services/helperium-go]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -135,6 +135,39 @@ jobs:
         #       Full JSON log saved via tee for inspection.
         run: go test ./... -count=1 -timeout 180s -json 2>&1 | tee /tmp/gotest-json.log
         working-directory: ${{ matrix.dir }}
+
+  test-embed:
+    name: Embed widget tests + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm ci
+        working-directory: services/api-service/embed
+      - name: Run widget tests
+        run: npm test
+        working-directory: services/api-service/embed
+      - name: Build widget bundle
+        run: bash build.sh
+        working-directory: services/api-service/embed
+
+  test-admin-js:
+    name: Admin dashboard JS tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm ci
+        working-directory: services/admin-dashboard/tests
+      - name: Run vitest suites
+        run: npm test
+        working-directory: services/admin-dashboard/tests
 
   test-e2e:
     name: E2E tests (no LLM)

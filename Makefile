@@ -28,6 +28,7 @@ ci-lint-go:
 ci-test-go:
 	go test ./services/data-service/... -count=1 -timeout 180s
 	go test ./services/mcp-gateway/... -count=1 -timeout 180s
+	go test ./services/helperium-go/... -count=1 -timeout 180s
 
 ci-lint-js:
 	@echo "=== JS lint (biome) ==="
@@ -35,6 +36,8 @@ ci-lint-js:
 	@echo "✅ JS lint OK"
 
 ci-admin:
+	@echo "=== Admin dashboard Go tests ==="
+	cd services/admin-dashboard && go test ./...
 	@echo "=== Admin dashboard JS tests ==="
 	cd services/admin-dashboard && go build -o bin/admin-dashboard ./cmd/server/
 	cd services/admin-dashboard/tests && npm test
