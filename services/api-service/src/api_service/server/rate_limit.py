@@ -16,19 +16,23 @@ reports_rate_limit = os.environ.get("REPORTS_RATE_LIMIT", "5/minute")
 
 
 def get_client_ip(request: Request) -> str:
-    """Return the original client IP forwarded by the private ingress chain.
+    """Return the client IP vouched for by the private ingress chain.
 
     api-service is not exposed directly in the Compose deployment: requests
     arrive only through Caddy or demo-web.  Those trusted internal proxies
-    preserve ``X-Forwarded-For``; without it, SlowAPI would rate-limit every
-    public visitor as the proxy container's single bridge-network address.
+    overwrite or append to ``X-Forwarded-For``, so the rightmost entry is the
+    only one the trusted hop vouched for — earlier entries are
+    client-controlled and must not become the limiter key.  Without the
+    header, SlowAPI would rate-limit every public visitor as the proxy
+    container's single bridge-network address.
     """
 
     forwarded_for = request.headers.get("x-forwarded-for", "")
     if forwarded_for:
-        client_ip = forwarded_for.split(",", 1)[0].strip()
-        if client_ip:
-            return client_ip
+        for entry in reversed(forwarded_for.split(",")):
+            client_ip = entry.strip()
+            if client_ip:
+                return client_ip
     client = request.client
     return client.host if client else "127.0.0.1"
 

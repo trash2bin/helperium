@@ -73,26 +73,32 @@ def test_web_proxy_preserves_upstream_not_found_status() -> None:
     _assert_single_http_body_framing(response)
 
 
-def test_rate_limit_is_scoped_to_forwarded_visitor_ip() -> None:
-    """One abusive visitor must not exhaust another visitor's chat bucket."""
+def test_rate_limit_survives_rotated_spoofed_forwarded_for() -> None:
+    """Rotating a spoofed X-Forwarded-For must not open a fresh limiter bucket.
 
-    missing_agent = f"missing-rate-limit-{uuid.uuid4().hex}"
-    abusive_ip = f"198.18.1.{uuid.uuid4().int % 200 + 1}"
-    independent_ip = f"198.18.2.{uuid.uuid4().int % 200 + 1}"
+    Regression for the spoofable per-IP key: the web proxy overwrites the
+    client header with the real peer address and the API limiter trusts only
+    that entry, so every request below lands in the same bucket no matter
+    which spoofed source each request claims.  Prior tests may already have
+    consumed part of the shared per-minute budget, so the loop only requires
+    a 429 to eventually arrive, not at an exact index.
+    """
 
-    statuses = [
-        _chat_via_web(agent=missing_agent, client_ip=abusive_ip).status_code
-        for _ in range(31)
-    ]
+    missing_agent = f"missing-spoof-xff-{uuid.uuid4().hex}"
 
-    assert statuses[:30] == [404] * 30, statuses
-    assert statuses[30] == 429, statuses
+    statuses = []
+    for i in range(45):
+        spoofed_ip = f"198.18.{i // 250}.{i % 250 + 1}"
+        status = _chat_via_web(agent=missing_agent, client_ip=spoofed_ip).status_code
+        if status == 429:
+            break
+        statuses.append(status)
+        assert status == 404, statuses
 
-    limited = _chat_via_web(agent=missing_agent, client_ip=abusive_ip)
-    assert limited.status_code == 429, limited.text[:500]
-    assert limited.headers.get("retry-after"), limited.headers
-    _assert_single_http_body_framing(limited)
+    assert status == 429, statuses
 
-    independent = _chat_via_web(agent=missing_agent, client_ip=independent_ip)
-    assert independent.status_code == 404, independent.text[:500]
-    _assert_single_http_body_framing(independent)
+    # A yet-unseen spoofed address must stay inside the exhausted bucket.
+    rotated = _chat_via_web(agent=missing_agent, client_ip="198.18.66.66")
+    assert rotated.status_code == 429, rotated.text[:500]
+    assert rotated.headers.get("retry-after"), rotated.headers
+    _assert_single_http_body_framing(rotated)

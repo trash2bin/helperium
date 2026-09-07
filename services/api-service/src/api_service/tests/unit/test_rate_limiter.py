@@ -123,11 +123,47 @@ class TestRateLimitResponse:
 class TestRateLimitClientIP:
     """The limiter must distinguish visitors behind the internal proxy."""
 
-    def test_uses_first_forwarded_for_address(self):
+    def test_uses_rightmost_forwarded_for_address(self):
+        """Only the entry the trusted ingress hop vouched for may be the key."""
+
         from api_service.server.rate_limit import get_client_ip
 
         request = _request(
             headers=[(b"x-forwarded-for", b"198.51.100.10, 172.18.0.7")],
+            client_ip="172.18.0.7",
+        )
+
+        assert get_client_ip(request) == "172.18.0.7"
+
+    def test_first_forwarded_for_entry_cannot_spoof_the_key(self):
+        """A client-supplied first entry must never become the limiter key."""
+
+        from api_service.server.rate_limit import get_client_ip
+
+        request = _request(
+            headers=[(b"x-forwarded-for", b"6.6.6.6, 203.0.113.9")],
+            client_ip="172.18.0.7",
+        )
+
+        assert get_client_ip(request) == "203.0.113.9"
+
+    def test_skips_blank_entries_when_searching_rightmost(self):
+        from api_service.server.rate_limit import get_client_ip
+
+        request = _request(
+            headers=[(b"x-forwarded-for", b"6.6.6.6, ")],
+            client_ip="172.18.0.7",
+        )
+
+        assert get_client_ip(request) == "6.6.6.6"
+
+    def test_single_forwarded_entry_is_the_vouched_client(self):
+        """With one entry the trusted proxy wrote the real client address."""
+
+        from api_service.server.rate_limit import get_client_ip
+
+        request = _request(
+            headers=[(b"x-forwarded-for", b"198.51.100.10")],
             client_ip="172.18.0.7",
         )
 

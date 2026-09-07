@@ -59,8 +59,12 @@ async def test_stream_proxy_forwards_upstream_rate_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_proxy_preserves_forwarded_client_ip() -> None:
-    """The API limiter must receive the visitor IP, not only the proxy peer."""
+async def test_proxy_replaces_client_forwarded_for_with_peer_ip() -> None:
+    """A client-supplied X-Forwarded-For must never reach api-service.
+
+    The chat/report per-IP limiters and report forensics key off the header,
+    so the trusted edge proxy always rewrites it with the real TCP peer.
+    """
 
     request = Request(
         {
@@ -83,4 +87,30 @@ async def test_proxy_preserves_forwarded_client_ip() -> None:
 
     headers = await _get_proxy_headers(request)
 
-    assert headers["x-forwarded-for"] == "198.51.100.10, 172.18.0.7"
+    assert headers["x-forwarded-for"] == "172.18.0.7"
+
+
+@pytest.mark.asyncio
+async def test_proxy_sets_forwarded_for_from_peer_without_client_header() -> None:
+    """Visitors without the header still get their own limiter bucket."""
+
+    request = Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api/chat/demo-agent",
+            "raw_path": b"/api/chat/demo-agent",
+            "query_string": b"",
+            "headers": [],
+            "client": ("203.0.113.5", 12345),
+            "server": ("testserver", 80),
+        },
+        receive=_receive,
+    )
+
+    headers = await _get_proxy_headers(request)
+
+    assert headers["x-forwarded-for"] == "203.0.113.5"

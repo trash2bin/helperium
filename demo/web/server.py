@@ -89,9 +89,14 @@ async def _get_proxy_headers(request: Request) -> dict[str, str]:
     correlation_id = request.headers.get("x-correlation-id") or getattr(
         request.state, "correlation_id", None
     )
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        headers["x-forwarded-for"] = forwarded_for
+    # demo-web — доверенный край для браузерного трафика: реальный клиент —
+    # это TCP-peer соединения. Клиентский X-Forwarded-For не должен доходить
+    # до api-service: per-IP лимиты chat/reports и форензика репортов
+    # ключуются по нему, поэтому заголовок всегда перезаписывается адресом
+    # пира, а не пересылается.
+    client = request.client
+    if client and client.host:
+        headers["x-forwarded-for"] = client.host
 
     if correlation_id:
         headers["x-correlation-id"] = correlation_id
