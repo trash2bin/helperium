@@ -174,7 +174,7 @@ describe('attachReportButton', () => {
     sessionStorage.clear();
   });
 
-  it('creates an aria-labelled flag inside a bubble line', () => {
+  it('creates an aria-labelled flag as a sibling of the bubble', () => {
     const deps = makeDeps();
     const { row, node } = makeRow('Ответ');
 
@@ -183,10 +183,11 @@ describe('attachReportButton', () => {
     const btn = row.querySelector('button.at-report-btn') as HTMLButtonElement;
     expect(btn).not.toBeNull();
     expect(btn.getAttribute('aria-label')).toBe('Пожаловаться на этот ответ');
-    expect(node.closest('.at-bubble-line')).not.toBeNull();
-    expect(btn.closest('.at-bubble-line')).toBe(node.closest('.at-bubble-line'));
-    // Flag is a sibling of the bubble, not a child — error text overwrites stay safe.
+    // Flag is a sibling of the bubble inside the row, not a child — error
+    // textContent overwrites on the bubble stay safe.
     expect(node.contains(btn)).toBe(false);
+    expect(row.contains(btn)).toBe(true);
+    expect(btn.parentElement).toBe(row);
   });
 
   it('uses the English label for lang=en', () => {

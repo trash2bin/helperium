@@ -28,6 +28,11 @@ services/admin-dashboard/bin/*
 .pi/nvidia-skills/
 fixtures.json
 TECHNICAL_DOC.md
+
+# Working artifacts: not committed by convention (see AGENTS.md)
+.zcode/
+audit-plan-*.md
+audit-report-*.md
 .agent_memory.json
 backlog/
 bench-backlog/

@@ -83,6 +83,7 @@
 /* Assistant: left-aligned, frosted glass */
 .at-msg.at-assistant {
   align-self: flex-start;
+  position: relative;
   background: var(--glass-bg);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);

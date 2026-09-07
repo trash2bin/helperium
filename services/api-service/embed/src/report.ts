@@ -239,18 +239,14 @@ export function attachReportButton(
     }
   });
 
-  const line = document.createElement('div');
-  line.className = 'at-bubble-line';
-  const parent = node.parentNode;
-  if (parent) {
-    parent.insertBefore(line, node);
-    line.appendChild(node);
-    line.appendChild(btn);
+  // Place the flag inside the row, next to the bot avatar. messages.ts builds
+  // each row as [bubble, avatar]; we keep that order and only insert the flag
+  // before the bubble so it sits at the very left of the row — visually a
+  // small icon next to the AI badge.
+  if (row.firstChild) {
+    row.insertBefore(btn, row.firstChild);
   } else {
-    // No parent yet (row not mounted): keep structure valid anyway.
-    row.insertBefore(line, row.firstChild);
-    line.appendChild(node);
-    line.appendChild(btn);
+    row.appendChild(btn);
   }
 }
 
@@ -261,19 +257,96 @@ function openReportForm(
   btn: HTMLButtonElement,
 ): void {
   const ru = deps.config.lang === 'ru';
+  const panelEl = row.closest('.at-panel');
   const messagesEl = row.closest('.at-messages');
-  const existing = messagesEl?.querySelector('.at-report-form');
+  // Remove any leftover modal anywhere inside the panel/messages — there can
+  // only be one open at a time. Fall back to the closest at-root so the lookup
+  // still works when the row is mounted without an at-panel wrapper (e.g.
+  // lightweight unit-test mounts).
+  const existing =
+    panelEl?.querySelector('.at-report-overlay') ||
+    messagesEl?.querySelector('.at-report-overlay') ||
+    row.closest('.at-root')?.querySelector('.at-report-overlay');
   if (existing) existing.remove();
 
+  const ctx = collectReportContext(node);
+
+  // ── Backdrop overlay (fills the widget panel, blurs the chat underneath)
+  const overlay = document.createElement('div');
+  overlay.className = 'at-report-overlay';
+  overlay.setAttribute('role', 'presentation');
+
+  // ── Centred modal card
+  const modal = document.createElement('div');
+  modal.className = 'at-report-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute(
+    'aria-labelledby',
+    'at-report-modal-title',
+  );
+
+  const head = document.createElement('div');
+  head.className = 'at-report-modal-head';
+
+  const icon = document.createElement('div');
+  icon.className = 'at-report-modal-icon';
+  icon.innerHTML = ICONS.flag;
+
+  const titleWrap = document.createElement('div');
+  const title = document.createElement('h3');
+  title.className = 'at-report-modal-title';
+  title.id = 'at-report-modal-title';
+  title.textContent = ru ? 'Пожаловаться на этот ответ' : 'Report this answer';
+
+  const hint = document.createElement('p');
+  hint.className = 'at-report-modal-hint';
+  hint.textContent = ru
+    ? 'Опишите проблему — мы передадим отзыв оператору. Ответ модели и контекст диалога уйдут вместе с жалобой.'
+    : 'Tell us what went wrong — we pass the report to the operator along with the answer and surrounding chat.';
+
+  titleWrap.appendChild(title);
+  titleWrap.appendChild(hint);
+  head.appendChild(icon);
+  head.appendChild(titleWrap);
+
+  // Quoted snippet of the answer so the user always knows which message they
+  // are flagging, even after scrolling back.
+  const quoteLabel = document.createElement('p');
+  quoteLabel.className = 'at-report-modal-quote-label';
+  quoteLabel.textContent = ru ? 'Ответ ассистента' : 'Assistant answer';
+
+  const quote = document.createElement('blockquote');
+  quote.className = 'at-report-modal-quote';
+  const snippet = String(ctx.text || '').trim();
+  quote.textContent =
+    snippet.length > 280 ? snippet.slice(0, 277) + '…' : snippet;
+
+  // ── Form (legacy class names preserved for test/contract surface)
   const form = document.createElement('div');
   form.className = 'at-report-form';
 
   const input = document.createElement('textarea');
   input.className = 'at-report-input';
-  input.rows = 2;
+  input.rows = 3;
   input.maxLength = MAX_COMMENT;
-  input.placeholder = ru ? 'Что не так? (необязательно)' : "What's wrong? (optional)";
+  input.placeholder = ru ? 'Что не так с этим ответом? (необязательно)' : "What's wrong with this answer? (optional)";
   input.setAttribute('aria-label', input.placeholder);
+
+  const counter = document.createElement('div');
+  counter.className = 'at-report-counter';
+  const updateCounter = (): void => {
+    const left = MAX_COMMENT - input.value.length;
+    counter.textContent = ru
+      ? `Осталось ${left} символов`
+      : `${left} characters left`;
+    counter.classList.toggle(
+      'at-report-counter-warn',
+      left < MAX_COMMENT * 0.1,
+    );
+  };
+  input.addEventListener('input', updateCounter);
+  updateCounter();
 
   const actions = document.createElement('div');
   actions.className = 'at-report-actions';
@@ -291,22 +364,50 @@ function openReportForm(
   actions.appendChild(cancel);
   actions.appendChild(submit);
   form.appendChild(input);
+  form.appendChild(counter);
   form.appendChild(actions);
-  row.parentNode?.insertBefore(form, row.nextSibling);
-  input.focus();
 
-  cancel.addEventListener('click', () => form.remove());
+  modal.appendChild(head);
+  modal.appendChild(quoteLabel);
+  modal.appendChild(quote);
+  modal.appendChild(form);
+  overlay.appendChild(modal);
+
+  // Mount the modal inside the widget panel so the absolute overlay fills it.
+  // Fallback: append to the messages list (still scoped to the widget root).
+  const mount = panelEl || messagesEl || row.closest('.at-root');
+  if (!mount) return;
+  mount.appendChild(overlay);
+  input.focus({ preventScroll: true });
+
+  // ── Close handlers: Cancel button, Esc key, click outside the modal card.
+  const close = (): void => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  };
+  cancel.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  document.addEventListener('keydown', onKey);
 
   submit.addEventListener('click', () => {
     const comment = input.value.slice(0, MAX_COMMENT);
-    const ctx = collectReportContext(node);
     submit.disabled = true;
     submit.textContent = ru ? 'Отправка…' : 'Sending…';
-    form.querySelector('.at-report-error')?.remove();
+    cancel.disabled = true;
+    input.disabled = true;
+    modal.querySelector('.at-report-error')?.remove();
 
     submitReport(deps, ctx, comment)
       .then(() => {
-        form.remove();
+        close();
         btn.classList.add('at-reported');
         btn.disabled = true;
         btn.setAttribute(
@@ -327,6 +428,8 @@ function openReportForm(
       })
       .catch(() => {
         submit.disabled = false;
+        cancel.disabled = false;
+        input.disabled = false;
         submit.textContent = ru ? 'Отправить' : 'Send';
         const error = document.createElement('div');
         error.className = 'at-report-error';
