@@ -23,6 +23,13 @@ services:
 
   data-service:
     user: "1000:1000"
+    # GitHub runners have a colder/slower filesystem than local Docker Desktop.
+    # Keep production defaults unchanged while allowing CI startup to settle.
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     volumes:
       - ci_data_service_app:/data/app:ro
       - ci_e2e_db:/e2e/db
