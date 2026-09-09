@@ -150,6 +150,17 @@ func main() {
 	}
 
 	// ── Bootstrap the default tenant from the config file ──
+	// A fresh deployment has no persisted tenant JSON yet; the configured
+	// datasource must still be registered so /health and the default API work.
+	if _, exists := store.GetTenant("default"); !exists {
+		bootstrapCtx, bootstrapCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if _, addErr := store.AddTenant(bootstrapCtx, "default", cfg, absCfgPath); addErr != nil {
+			bootstrapCancel()
+			slog.Error("bootstrap default tenant", "error", addErr)
+			os.Exit(1)
+		}
+		bootstrapCancel()
+	}
 	adapter, _ := registry.Get(string(cfg.DataSource.Driver))
 	adminCtx := &server.AdminContext{
 		ConfigPath: absCfgPath,
