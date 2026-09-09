@@ -63,7 +63,12 @@ func main() {
 	tracing.Setup("data-service")
 	defer tracing.Shutdown()
 
-	// ── Discover-режим: прочитать схему, сгенерировать конфиг и выйти ──
+	// ── Swagger / OpenAPI opt-in (как в api-service) ──
+	// По умолчанию отключено — схема API не должна быть публично доступна.
+	// Включается переменной DOCS_ENABLED=1 (или DS_DOCS_ENABLED=1 для обратной совместимости).
+	enableDocs := os.Getenv("DOCS_ENABLED") == "1" || os.Getenv("DS_DOCS_ENABLED") == "1"
+
+	// ── Discover-режим ──
 	if *discoverFlag || os.Getenv("DS_DISCOVER") != "" {
 		if err := runDiscover(); err != nil {
 			slog.Error("discover failed", "error", err)
@@ -112,12 +117,10 @@ func main() {
 		tenantsDir = filepath.Join(filepath.Dir(absCfgPath), "..", ".data", "tenants")
 	}
 
-	// ── TenantStore: multi-tenant foundation (фаза 3.7) ──
+	// ── TenantStore: multi-tenant foundation ──
 	store := server.NewTenantStore(registry, tenantsDir)
 
-	// ── Загружаем все сохранённые tenants из файловой системы ──
-	// Это позволяет tenant'ам, добавленным через admin API или agent-db register,
-	// пережить рестарт data-service.
+	// ── Загружаем все сохранённые tenants ──
 	entries, err := os.ReadDir(tenantsDir)
 	if err != nil {
 		slog.Info("tenants directory not found — creating", "dir", tenantsDir)
@@ -147,26 +150,13 @@ func main() {
 	}
 
 	// ── Bootstrap the default tenant from the config file ──
-
-	// Build admin router (requires introspection adapter)
 	adapter, _ := registry.Get(string(cfg.DataSource.Driver))
 	adminCtx := &server.AdminContext{
 		ConfigPath: absCfgPath,
 	}
 	adminRouter := store.BuildAdminRouter(adapter, absCfgPath, adminCtx, cfg)
 
-	// ── Hot reload: fsnotify on config-file ──
-	// Now we only reload if a specific tenant is requested or through admin API.
-	// But we can still watch the initial config file and reload it as a specific tenant 'default-bootstrap'
-	// Or simply remove this if we want strictly Admin API managed tenants.
-	// For backward compatibility with the a single-file start, let's add it as a tenant.
-	bctx, bcancel := context.WithTimeout(context.Background(), 30*time.Second)
-	if _, err := store.AddTenant(bctx, "default", cfg, absCfgPath); err != nil {
-		slog.Error("bootstrap initial tenant", "error", err)
-		// We continue, but the system starts empty or with this error
-	}
-	bcancel()
-
+	// ── Hot reload ──
 	go watchConfig(absCfgPath, func() {
 		rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer rcancel()
@@ -182,11 +172,17 @@ func main() {
 	rootRouter.Use(tracing.Middleware)
 	rootRouter.Use(server.StructuredLoggingMiddleware)
 	rootRouter.Use(server.TenantIDMiddleware("X-Tenant-ID"))
-	// Глобальный лимит одновременных запросов (cfg.Server.MaxConcurrent / DS_MAX_CONCURRENT).
 	rootRouter.Use(server.ThrottleMiddleware(server.ResolveMaxConcurrent(cfg)))
 	rootRouter.Get("/metrics", promhttp.Handler().ServeHTTP)
 
-	// Mount admin endpoints separately to avoid routing conflicts
+	// ── Swagger / OpenAPI (opt-in via DOCS_ENABLED=1) ──
+	if enableDocs {
+		rootRouter.Get("/docs", server.SwaggerHandler)
+		rootRouter.Get("/openapi.json", server.NewOpenAPIHandler(store, store.HasAdmin()))
+		slog.Info("Swagger UI enabled", "path", "/docs")
+	}
+
+	// Mount admin endpoints
 	rootRouter.Mount("/admin", adminRouter)
 	rootRouter.Mount("/", store)
 
@@ -224,6 +220,7 @@ func main() {
 		"port", port,
 		"driver", cfg.DataSource.Driver,
 		"config", absCfgPath,
+		"docs_enabled", enableDocs,
 	)
 
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {

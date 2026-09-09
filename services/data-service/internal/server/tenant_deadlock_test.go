@@ -117,6 +117,7 @@ func TestServeHTTP_NestedMCPschema_NoDeadlock(t *testing.T) {
 
 // TestServeHTTP_OpenAPI_NestedResolve_NoDeadlock — то же для /openapi.json.
 func TestServeHTTP_OpenAPI_NestedResolve_NoDeadlock(t *testing.T) {
+	os.Setenv("DOCS_ENABLED", "1")
 	ts := newTestTenantStore(t)
 	cfg := newInMemoryConfig(t)
 	inst, err := ts.AddTenant(context.Background(), "openapi-tenant", cfg, "")

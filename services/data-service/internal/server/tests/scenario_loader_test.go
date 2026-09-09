@@ -56,6 +56,8 @@ func loadScenario(t testing.TB, dir string) (*config.Config, *sql.DB) {
 // buildTestRouter creates a httptest.Server from config + *sql.DB.
 func buildTestRouter(t testing.TB, cfg *config.Config, db *sql.DB) *httptest.Server {
 	t.Helper()
+	// Включаем Swagger / OpenAPI для тестов
+	os.Setenv("DOCS_ENABLED", "1")
 	adapter := &testSQLite{db: db}
 	store := server.NewTenantStore(datasource.NewDefaultRegistry(), "")
 	router, err := server.NewRouterFromConfig(store, cfg, adapter)

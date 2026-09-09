@@ -100,6 +100,10 @@ func NewTenantStore(registry *datasource.Registry, tenantsDir string) *TenantSto
 
 // TenantConfigPath returns the filesystem path for persisting this tenant's config.
 // Uses TenantsDir/{id}.json. Creates the directory if needed.
+func (ts *TenantStore) HasAdmin() bool {
+	return ts.hasAdmin
+}
+
 func (ts *TenantStore) TenantConfigPath(id string) string {
 	if ts.TenantsDir == "" {
 		return ""
@@ -313,12 +317,6 @@ func (ts *TenantStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch path {
 	case "/health":
 		ts.multiTenantHealthHandler(w, r)
-		return
-	case "/docs":
-		SwaggerHandler(w, r)
-		return
-	case "/openapi.json":
-		NewOpenAPIHandler(ts, ts.hasAdmin)(w, r)
 		return
 	}
 

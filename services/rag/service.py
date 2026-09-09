@@ -130,12 +130,17 @@ async def lifespan(app: FastAPI):
     otel_shutdown()
 
 
+enable_docs = os.environ.get("API_ENABLE_DOCS") == "1"
+
 app = FastAPI(
     title="RAG Service",
     description="HTTP API for RAG pipeline (indexing and semantic search)",
     version="1.1.0",
     lifespan=lifespan,
     swagger_ui_parameters={"tryItOutEnabled": True},
+    docs_url="/docs" if enable_docs else None,
+    redoc_url="/redoc" if enable_docs else None,
+    openapi_url="/openapi.json" if enable_docs else None,
 )
 
 

@@ -73,12 +73,15 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 		r.Use(TenantIDMiddleware(tenantHeader))
 	}
 
-	// System endpoints (always available)
-	r.Get("/docs", SwaggerHandler)
-	r.Get("/openapi.json", NewOpenAPIHandler(ts, false))
-
 	// MCP-манифест — единственный source of truth для mcp-gateway
 	r.Get("/mcp/manifest", handlers.MCPManifestHandler(cfg))
+
+	// Swagger / OpenAPI (opt-in via DOCS_ENABLED=1 or DS_DOCS_ENABLED=1)
+	// Эти эндпоинты нужны для тестов и локальной отладки; в проде отключены по умолчанию.
+	if os.Getenv("DOCS_ENABLED") == "1" || os.Getenv("DS_DOCS_ENABLED") == "1" {
+		r.Get("/docs", SwaggerHandler)
+		r.Get("/openapi.json", NewOpenAPIHandler(ts, false))
+	}
 
 	// MCP-схема — обселиченное описание БД для LLM-агента
 	// (требуется предварительный introspect через POST /admin/config/rewrite)
