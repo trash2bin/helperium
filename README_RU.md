@@ -14,7 +14,7 @@ Self-hosted AI-агент, который подключается к чужой
 
 | Витрина с виджетом | Админ-панель |
 |---|---|
-| ![Витрина](doc/images/autoparts-storefront-widget.png) | ![Админ-панель](doc/images/autoparts-helperium.png) |
+| ![Витрина с виджетом](doc/images/autoparts-storefront-widget.png) | ![Админ-панель: жалобы](doc/images/admin-reports.png) |
 
 Примеры вопросов, которые этот агент отвечает корректно:
 
@@ -36,18 +36,18 @@ Helperium откроется на <http://127.0.0.1:8080>, витрина на <
 
 ```text
 Сайт → <script src="/embed/embed.js"> → POST /api/chat/{agent} → api-service
-                                                              │
-                                                              ▼
-                                                   LLM (Ollama / OpenAI / Mistral / любой OpenAI-совместимый)
-                                                              │
-                                                              ▼ MCP tool call
-                                                         mcp-gateway :8083
-                                                              │
-                                                              ▼
-                                                         data-service :8084
-                                                              │
-                                                              ▼
-                                                  SQL-база клиента (read-only)
+ │
+ ▼
+ LLM (Ollama / OpenAI / Mistral / любой OpenAI-совместимый)
+ │
+ ▼ MCP tool call
+ mcp-gateway :8083
+ │
+ ▼
+ data-service :8084
+ │
+ ▼
+ SQL-база клиента (read-only)
 ```
 
 | Сервис | Порт | Роль |
@@ -81,22 +81,30 @@ ollama pull qwen2.5:0.5b
 ./infra/scripts/dev.sh start
 ```
 
-Другой провайдер вместо Ollama: добавьте в `.env` пару переменных `{ИМЯ}_API_KEY` + `{ИМЯ}_MODEL` (например, `OPENAI_API_KEY` + `OPENAI_MODEL`, или `MISTRAL_API_KEY` + `MISTRAL_MODEL`), Helperium подхватит их автоматически. Затем выберите этот провайдер при создании агента в админке.
+В `.env` задайте сильный `ADMIN_TOKEN` до запуска — без него админ-панель (`:8085`) не откроется.
+
+Дефолтная модель — Ollama на `http://127.0.0.1:11434` с `qwen2.5:0.5b`. Любой другой провайдер регистрируется одинаково: пара `{ПРЕФИКС}_API_KEY` + `{ПРЕФИКС}_MODEL` в `.env` (шаблон: [`.env.example`](.env.example)) автоматически импортируется как провайдер — `MISTRAL_API_KEY` даёт mistral, `OPENAI_API_KEY` openai, `ANTHROPIC_API_KEY` anthropic, плюс любой другой префикс, который поддерживает LiteLLM. Провайдеры и fallback-порядок на каждого агента управляются в админке; рестарт подхватывает новую пару:
+
+```bash
+OPENAI_API_KEY=<токен> OPENAI_MODEL=openai/gpt-4o-mini ./infra/scripts/dev.sh restart
+```
+
+Как устроены регистрация и fallback-цепочка: [гайд api-service](services/api-service/README.md).
 
 Дальше:
 
 - демо-интерфейс: <http://127.0.0.1:8080>
 - админ-панель: <http://127.0.0.1:8085>
 
-Swagger UI (`/docs`) по умолчанию выключен: схема API не должна быть публично доступна (см. [`doc/agents/api-contracts.md`](doc/agents/api-contracts.md)). Контракт — [`specs/api.openapi.yaml`](specs/api.openapi.yaml); для локальной отладки включается переменной `API_ENABLE_DOCS=1` в `.env`.
+Swagger UI (`/docs`) по умолчанию выключен: схема API не должна быть публично доступна (см. [`doc/agents/api-contracts.md`](doc/agents/api-contracts.md)). Контракт - [`specs/api.openapi.yaml`](specs/api.openapi.yaml); для локальной отладки включается переменной `API_ENABLE_DOCS=1` в `.env` (для api-service и rag-service); у data-service свой флаг `DOCS_ENABLED=1`.
 
 Дальше подключите базу через админку (см. «Подключение своей базы»), и агент готов отвечать на вопросы.
 
 ## Docker
 
 ```bash
-./infra/scripts/compose.sh up -d                                    # локальный стек
-./infra/scripts/compose.sh --profile prod up -d                     # + Caddy HTTPS
+./infra/scripts/compose.sh up -d # локальный стек
+./infra/scripts/compose.sh --profile prod up -d # + Caddy HTTPS
 ./infra/scripts/compose.sh --profile rag --profile monitoring up -d # + RAG и мониторинг
 ```
 
@@ -132,12 +140,12 @@ Wildcard `*` в `CORS_ALLOW_ORIGINS` нельзя. Без Bearer ключа prod
 
 ```html
 <script src="https://your-helperium.example/embed/embed.js"
-        data-agent="shop-assistant"
-        data-api-base="https://your-helperium.example"
-        data-title="Помощник по товарам"
-        data-greeting="Чем помочь?"
-        data-accent="#0f766e"
-        data-position="right">
+ data-agent="shop-assistant"
+ data-api-base="https://your-helperium.example"
+ data-title="Помощник по товарам"
+ data-greeting="Чем помочь?"
+ data-accent="#0f766e"
+ data-position="right">
 </script>
 ```
 
@@ -148,18 +156,28 @@ Wildcard `*` в `CORS_ALLOW_ORIGINS` нельзя. Без Bearer ключа prod
 - русский и английский UI, автодетект по браузеру
 - текстовый и голосовой ввод (есть Telegram-style hold-to-talk)
 - кнопка жалобы рядом с каждым ответом ассистента открывает модальное окно с цитатой ответа и полем комментария, жалоба идёт в `POST /api/reports` и попадает оператору в админку
-- один виджет на страницу; ключи сессии изолированы по `data-agent`, что позволяет менять агента без конфликта истории
+- ключи сессии изолированы по `data-agent`, что позволяет менять агента без конфликта истории; при необходимости на одной странице живут несколько виджетов — у каждого свой Shadow DOM-хост
 - 14+ атрибутов кастомизации через `data-*`
 
 Виджет шлёт запросы на `POST /api/chat/{agent}`. Какой у агента scope tenant'ов и какие у него инструменты, решает сервер, а не браузер. В ответ приходит поток SSE-событий: `tool_call` → `tool_result` → `final` → `done`. Текст в `final` уже прошёл через output guard, это не поток токенов, а буферизованный ответ, его можно сразу рендерить.
 
-Если посетителю кажется, что ответ неверный или бестактный, он нажимает красный флажок в углу бабла — открывается модальное окно с цитатой ответа и полем комментария:
+Если посетителю кажется, что ответ неверный или бестактный, он нажимает красный флажок в углу бабла - открывается модальное окно с цитатой ответа и полем комментария:
 
 | Ответ с флажком | Модал жалобы |
 |---|---|
 | ![Флажок жалобы на бабле](doc/images/widget-report-flag.png) | ![Модальное окно жалобы](doc/images/widget-report-dialog.png) |
 
 Полная спецификация атрибутов и CSP в [`services/api-service/embed/README.md`](services/api-service/embed/README.md).
+
+### Реальная витрина с Django
+
+Виджет встроен в `demo/autoparts-store` - Django-магазин с каталогом на 1 700 000+ запчастей, корзиной и оформлением заказов. БД читается через `data-service` под отдельной ролью `helperium_autoparts_ro` (без `INSERT/UPDATE/DELETE`). На скрине - ответ на «привет у вас есть запчасти на мою камри?».
+
+![Django-витрина с виджетом](doc/images/autoparts-storefront-django.png)
+
+| Пример крупным планом | Форма жалобы на ответ от ИИ |
+|---|---|
+| ![Ответ с флажком](doc/images/widget-report-flag.png) | ![Модал жалобы](doc/images/widget-report-dialog.png) |
 
 ---
 
@@ -172,6 +190,7 @@ Wildcard `*` в `CORS_ALLOW_ORIGINS` нельзя. Без Bearer ключа prod
 | ![Инструменты](doc/images/admin-tools.png) **Тулы** | Какие MCP-инструменты опубликованы для конкретной базы |
 | ![RAG](doc/images/admin-rag.png) **RAG** | Загрузка справочников и FAQ, индексация в ChromaDB |
 | ![Anti-Abuse](doc/images/admin-antiabuse.png) **Anti-Abuse** | Частота запросов, интервалы, размеры сообщений, обращения в сессии |
+| ![Жалобы](doc/images/admin-reports.png) **Жалобы** | Проблемные ответы, отправленные посетителями через виджет; correlation ID, цитата ответа, транскрипт сессии |
 
 RAG опционален. Если `rag-service` не поднят, шлюз просто не регистрирует RAG-инструменты, агент продолжает отвечать по SQL. Если поднят, агент может искать по загруженным документам и по базе в одном диалоге.
 
@@ -204,7 +223,7 @@ RAG опционален. Если `rag-service` не поднят, шлюз п�
 ## Разработка
 
 ```bash
-make ci                                 # полный local CI (lint+tests+docs)
+make ci # полный local CI (lint+tests+docs)
 make ci-test-py / ci-test-go / ci-test-embed / ci-admin / ci-docs
 ```
 
@@ -225,7 +244,7 @@ make ci-test-py / ci-test-go / ci-test-embed / ci-admin / ci-docs
 
 **Итог последнего прогона: 83.7% корректных ответов** (40 успешных, 1 частично, 2 с неверным фактом, 6 служебных сбоев из 49). Прогон повторён дважды на одних и тех же данных с одинаковым результатом.
 
-Модель: **Nemotron-3.5-lightning-30b** через NVIDIA NIM. Это небольшая и далеко не самая сильная модель из доступных; более способные модели (GPT-4, Claude, большие DeepSeek) показывают заметно лучше. Точку измерения берём намеренно пониже, чтобы видеть реальный запас прочности архитектуры, а не потолок конкретной модели. Полный прогон на benchmark-провайдере стоит около $9 (~$0.18 на вопрос).
+Модель: **Nemotron-3.5-lightning-30b** через NVIDIA NIM. Это небольшая и далеко не самая сильная модель из доступных; более способные модели (GPT-4, Claude, большие DeepSeek) показывают заметно лучше. Точку измерения берём намеренно пониже, чтобы видеть реальный запас прочности архитектуры, а не потолок конкретной модели. Один turn — полный вопрос с 2–3 вызовами инструментов и ответом — расходует в среднем ~11 000 токенов (~3 вызова LLM), по типовым ценам облачных API это меньше цента за вопрос.
 
 Дорога к 83.7% прошла через правки кода, а не подбор промптов: добавили универсальный фильтр `db_filter`, научили его понимать и системные имена полей, и те, что модель видит в описании схемы; стали принимать `limit="1"` строкой; нормализовали Unicode-дефисы в номерах заказов (`АП‑100004`); зафиксировали сид генерации тестовых данных. Подробный разбор каждой правки и история прогонов: [`doc/benchmark/core-benchmark.md`](doc/benchmark/core-benchmark.md) и [`doc/benchmark/runs/README.md`](doc/benchmark/runs/README.md). Как поднять бенч локально и написать свои кейсы: [`doc/benchmark/README.md`](doc/benchmark/README.md).
 

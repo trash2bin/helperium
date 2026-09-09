@@ -1,39 +1,56 @@
-# Agent: Self-Hosted AI Platform
+# Helperium
 
 ![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8?logo=go)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi)
 ![LiteLLM](https://img.shields.io/badge/LiteLLM-FF6F00)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker)
-![Tests](https://img.shields.io/badge/Tests-1100%2B-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-reported%20by%20CI-brightgreen)
 ![License](https://img.shields.io/badge/License-MPL%202.0-blue)
 
 🇷🇺 [Читать на русском](README_RU.md)
 
-Self-hosted AI agent platform for any organization with a SQL database. An online shop connects its product catalog — visitors ask "find me a laptop under 1000$". A university connects its student database — students ask "what's my schedule for tomorrow?". A logistics company connects its warehouse DB — operators ask "where is order #4421?".
+Self-hosted AI agent platform for any organization with a SQL database. An online shop connects its product catalog - a store owner asks "how are orders distributed across statuses?" and the agent runs three MCP tool calls (discover the schema, filter each status), then answers "delivered: 4, shipped: 2" in 10 seconds, with the catalog never leaving the shop's read-only PostgreSQL role. A university's student records or a logistics company's warehouse DB connects the same way.
 
 No code per database. No sending proprietary data to third-party clouds.
 
+## Contents
+
+[Overview](#overview) · [Quick Start](#quick-start) · [Screenshots](#screenshots) · [Core Capabilities](#core-capabilities) · [Architecture](#architecture) · [Security Model](#security-model) · [Deployment](#deployment) · [Testing and CI](#testing-and-ci) · [Embedded Widget](#embedded-widget) · [About the docs](#about-the-docs) · [License](#license-and-commercial-support)
+
+## Quick Start
+
+```bash
+git clone https://github.com/trash2bin/helperium
+cd helperium
+cp .env.example .env
+uv sync
+ollama pull qwen2.5:0.5b
+./infra/scripts/dev.sh start
+open http://127.0.0.1:8080
+```
+
+Set a strong `ADMIN_TOKEN` in `.env` before starting — the admin dashboard (`:8085`) stays locked without it. Docker deployment, production profiles, and LLM provider registration: [Deployment](#deployment).
+
 ## Overview
 
-Any business with a SQL database — an online shop, a university, a logistics company, a hospital — can connect it to Helperium. The platform introspects the schema, auto-generates tools, and exposes an AI agent that answers end-user questions in real time.
-
-Unlike static RAG systems that require manual re-indexing, this platform queries the live database in read-only mode. The business owner controls exactly which tables, columns, and operations are visible to the agent through an administrative dashboard. The LLM layer can be deployed locally on GPU-equipped hardware or routed through any OpenAI-compatible provider.
+Unlike static RAG systems that require manual re-indexing, every answer is built at question time: Helperium introspects the connected schema, auto-generates the tool surface from it, and the agent queries live data in read-only mode. The business owner decides which tables, columns, and operations the agent can see, from an administrative dashboard. The LLM layer runs locally on GPU-equipped hardware or routes through any OpenAI-compatible provider. How the services split this work: [Architecture](#architecture).
 
 ## Screenshots
 
-
-| Demo Web — chat with agent & data tables | Admin Dashboard — dashboard & tenant list |
+| Storefront with widget | Admin Dashboard - problem reports |
 |---|---|
-| ![Demo Web UI](doc/images/demo-web-ui.png) | ![Admin Dashboard](doc/images/admin-dashboard.png) |
+| ![Storefront with widget](doc/images/autoparts-storefront-widget.png) | ![Admin Dashboard - problem reports](doc/images/admin-reports.png) |
 
-| API Swagger (api-service) | RAG Swagger (rag-service) |
-|---|---|
-| ![API Swagger](doc/images/api-swagger.png) | ![RAG Swagger](doc/images/rag-swagger.png) |
+The storefront in the first column is not part of the platform: `demo/autoparts-store` is a self-contained Django demo shipped in the repo so the widget has a real-looking shop to live on. It runs its own stack behind its own Caddy, connects to Helperium as a regular tenant, and processes no payments. How to run and deploy it: [its README](demo/autoparts-store/README.md).
+
+| Django storefront with the embedded widget |
+|---|
+| ![Django storefront with widget](doc/images/autoparts-storefront-django.png) |
 
 ### Admin Panels
 
-| Tenants list | Tenant config — entities & endpoints |
+| Tenants list | Tenant config - entities & endpoints |
 |---|---|
 | ![Admin Tenants](doc/images/admin-tenants.png) | ![Admin Config](doc/images/admin-config.png) |
 
@@ -45,92 +62,117 @@ Unlike static RAG systems that require manual re-indexing, this platform queries
 |---|---|
 | ![Admin RAG](doc/images/admin-rag.png) | ![Admin Anti-Abuse](doc/images/admin-antiabuse.png) |
 
-| Data Service Swagger UI | MCP Gateway Debug Playground |
-|---|---|
-| ![Data Service Swagger](doc/images/data-swagger.png) | ![MCP Debug](doc/images/mcp-debug.png) |
-
 ### Monitoring
 
-| Grafana Dashboard (12 panels) — full-page overview of all service metrics |
+| Grafana Dashboard (32 panels) - full-page overview of all service metrics |
 |---|
 | ![Grafana Overview](doc/images/grafana-overview.png) |
 
 ## Core Capabilities
 
-- **Live SQL introspection.** Connects to SQLite or PostgreSQL. Auto-generates entity-level tools (`grep_*`, `filter_*`, `schema_*`, `get_*`, `count_*`, `distinct_*`) and custom query tools from the schema. No code changes required when the database structure evolves.
-- **Read-only by default.** All write operations are blocked at the MCP gateway layer. Write tools exist as an opt-in capability but are disabled by default and require explicit admin approval before they appear in the agent's tool manifest.
-- **Domain-agnostic.** Works with any schema — product catalogs, student records, patient data, inventory, orders. The agent adapts to whatever tables and columns it finds.
+- **Live SQL introspection.** Connects to SQLite or PostgreSQL. Rescanning a schema regenerates the tool surface, so database changes need no code changes. What the model sees is `filter_{entity}` per entity plus six consolidated tools (`db_map`, `db_describe`, `db_search`, `db_filter`, `db_get`, `db_related`); `get_*`, `count_*`, and `distinct_*` exist but stay off until enabled per tenant in `LLMToolPolicy`.
+- **Read-only by default.** Write endpoints are filtered out when the tenant config is built, so they never reach the MCP manifest and the model cannot call what it cannot see. The mechanism is in [Security Model](#security-model).
+- **Domain-agnostic.** Works with any schema - product catalogs, student records, patient data, inventory, orders. The agent adapts to whatever tables and columns it finds.
 - **Hybrid retrieval.** Combines live SQL queries with vector search over uploaded documents (PDF, TXT, MD, DOCX). Documents are chunked, embedded, and cached. Re-embedding pipelines handle updates without full re-indexing.
-- **Embeddable widget.** A single `<script>` tag injects a Shadow DOM-isolated chat widget into any website. Zero dependencies, configurable accent colors, SSE streaming with token-by-token rendering.
-- **Administrative control.** Per-tenant configuration: toggle entities on/off, rename fields for business context, rewrite descriptions for the agent, enable or disable individual endpoints, set LLM provider and model per client, configure spending limits and anti-abuse guardrails.
-- **Observability.** Prometheus metrics and a 12-panel Grafana dashboard covering request rates, LLM calls by model, tool invocations, token usage, RAG search rates, cache hit ratios, and active SSE sessions.
+- **Embeddable widget.** One `<script>` tag, no framework on the host side, no CSS conflicts. Details in [Embedded Widget](#embedded-widget).
+- **Administrative control.** Per tenant: toggle entities on/off, rename fields for business context, rewrite the descriptions the agent reads, enable or disable individual endpoints, pick the LLM provider and model per client, set anti-abuse guardrails.
+- **Observability.** Prometheus metrics on every service feed a Grafana dashboard; `correlation_id` ties a visitor session together across services.
 
 ## Architecture
 
-The platform consists of six independent HTTP services. They communicate over REST and SSE to enable horizontal scaling across multiple machines. In single-machine deployments, they function as a cohesive monolith over localhost without containerization overhead.
+The platform started as a single FastAPI app that talked to Postgres and OpenAI. Two things forced it apart: the read-only tenant requirement, where one customer database user can never touch another customer's tables even by mistake, and the LLM provider churn, where every model has a slightly different tool-calling dialect. Splitting the services gave both constraints a place to live.
 
 ```
-                      rag:8082 (Python, document search) -> ChromaDB
-                        ^
-                        | HTTP
-                        |
 Browser (Embed Widget → POST /api/chat/{name}
-  JS script, Shadow DOM)   |
-                           v
-                    api:8081 (FastAPI + LiteLLM) → SSE stream ← Widget
-                           |
-                           | call_tool() via SSE (JSON-RPC)
-                           v
-              mcp-gateway:8083 (Go, MCP SSE/JSON-RPC)
-                           |
-                           | HTTP
-                           v
-              data-service:8084 (Go, config-driven CRUD)
-                           |
-                           | SQL (prepared statements, read-only by default)
-                           v
-                    Client DB (SQLite / PostgreSQL)
+ JS script, Shadow DOM)
+ |
+ v
+ api:8081 (FastAPI + LiteLLM) → SSE stream → Widget
+ |
+ | call_tool() via Streamable HTTP /mcp
+ v
+ mcp-gateway:8083 (Go, MCP server)
+ |\
+ | \-- HTTP --> rag:8082 (Python, ChromaDB) - optional,
+ |              document tools served through the gateway
+ |
+ | HTTP (admin API) + /mcp (MCP client)
+ v
+ data-service:8084 (Go, config-driven query)
+ |
+ | SQL (prepared statements, read-only by default)
+ v
+ Client DB (SQLite / PostgreSQL)
 ```
 
-**Admin Dashboard** (:8085, Go/Alpine.js) — управление tenant'ами, агентами, конфигами.
-Ходит напрямую в api-service и data-service, минуя mcp-gateway.
+### The request path
 
-**demo/web** (:8080) — **только для локальной разработки**, не production entry point.
+A visitor's browser loads the embed widget from api-service. The widget opens `POST /api/chat/{agent}` and gets back an SSE stream. **The widget bypasses demo/web entirely** - `demo/web` is a development convenience, not an entry point.
 
-**demo/autoparts-store** — FOREIGN: копия внешнего Django-магазина автозапчастей (Django 5 / PG 16, 1.7M товаров, дерево категорий, JSONB `car_applicability`/`characteristics`). Реалистичная БД для бенчей/демо. Автономен, helperium подключается к его PostgreSQL как к tenant. Не модифицировать — см. `demo/autoparts-store/README.foreign.md`.
+For each turn, api-service calls the LLM via LiteLLM and parses native `tool_calls` from the response. Text is treated as final assistant text by default: a reply that merely looks like a tool call is not executed unless it came back as a structured field, which keeps a misbehaving model from talking itself into a write. The one exception is a strict compatibility parser that a verified provider/model policy may opt into, for models that emit an exact tool call as fenced JSON instead of using the native field. Every tool call is then a Streamable HTTP request to `mcp-gateway /mcp` with `X-Tenant-ID` taken from the agent's server-stored config - the browser never sets tenant scope. mcp-gateway validates the API key, the origin allow-list, and the tenant scope, then routes to data-service over its internal HTTP API.
 
-**Note:** data-service is **not** a semantic search engine. It provides three search strategies — `grep` (multi-token AND text search, regex), `filter` (field-based with `field__gt`, `__like`, `__in` operators), and `schema` (metadata discovery with distinct values and numeric ranges) — plus custom_queries (pre-approved SELECT statements configured per tenant). LLM decides which tool to call and with which parameters. The LLM tool surface is **N per-entity `filter_{entity}`** (field names live in the tool schema) **+ 6 consolidated `db_*`** (`db_map`, `db_describe`, `db_search`, `db_filter`, `db_get`, `db_related` via `/q/*`) — see [services/data-service/README.md#mcp-тулы](services/data-service/README.md#mcp-тулы).
+data-service resolves the tenant's adapter (Postgres or SQLite), runs the tool, and returns structured rows. The result flows back through the gateway, into the LLM, and out as a `final` SSE event. **The `final` event is buffered and inspected by the output guard before the widget sees it** - the widget never renders a partial answer, only a guarded complete one. The same `correlation_id` is threaded through every event in the chain.
 
-- **Mechanical workloads** (MCP gateway, admin dashboard, data-service) are written in Go for throughput and full async concurrency.
-- **AI workloads** (agent orchestration, LLM integration, embed widget serving, RAG, embeddings) are written in Python using FastAPI, LiteLLM, and Sentence Transformers.
+We chose SSE over WebSocket because the chat stream is one-way (server to client) and SSE traverses HTTP/2, CDNs, and reverse proxies without an upgrade handshake.
 
-### Multi-tenant isolation
+The [api-service guide](services/api-service/README.md) covers the chat loop and SSE events. Cross-service wiring and the `X-Tenant-ID` propagation rules are not in any single service README - they live in the [api-flow doc](doc/api-flow.md) and the [api-contracts doc](doc/agents/api-contracts.md).
 
-Three layers of isolation are enforced and verified in CI:
+### The data layer
 
-| Layer    | Mechanism                                  |
-| -------- | ------------------------------------------ |
-| Data     | Separate SQLite files or PG schemas        |
-| Tools    | MCP tools registered with tenant ID in closure |
-| Consumer | `X-Tenant-ID` header propagated through the stack |
+data-service exposes three search strategies - `grep` (multi-token AND text with regex), `filter` (field-based with `field__gt`, `__like`, `__in` operators), and `schema` (metadata discovery with distinct values and numeric ranges) - plus `custom_queries`, which are pre-approved `SELECT` statements configured per tenant. Those names are the service's own query surface; the model is never handed them, only the generated tools listed under [Core Capabilities](#core-capabilities).
 
-Composite mode allows a single SSE session to route across N tenants with prefixed tool names (`{tenantID}__tool_name`) for conflict-free resolution. Different agents can be assigned to different sections of a site (e.g., one agent for unauthenticated visitors, another for logged-in customers with access to order history).
+Isolation is enforced at the PostgreSQL role, not only at the application layer. Each tenant gets a dedicated role with only `CONNECT`, `USAGE` on the schema, and `SELECT` on the catalog tables. The writer credentials never leave the database server; only the read-only DSN reaches data-service. The original design had a single `read_only: true` config flag at the adapter layer, and we had to abandon it: an LLM that knows `UPDATE` is valid SQL will eventually call `UPDATE` in a `custom_query`, and the adapter-level flag was the wrong place to draw the line. Per-tenant roles fix it at the database, where SQL permissions are the same on every connection and every query.
 
-**Important:** The demo/web service (:8080) is **not** the real entry point. The embed widget (`embed.js`) communicates directly with api-service (:8081), bypassing demo/web entirely. The admin dashboard (:8085) talks to api-service and data-service directly. demo/web is a remanent of the MVP era, kept for local development convenience.
+SQLite tenants get the same isolation a different way: a per-tenant file, opened by data-service with a connection that has no write privilege on the OS layer. The adapter is the same; the transport differs.
 
-### Infrastructure flexibility
+The [data-service guide](services/data-service/README.md) covers the adapter layout, endpoints, and config generation; the per-strategy detail it defers to lives in the [search-strategies doc](doc/agents/search-strategies.md).
 
-- **LLM providers.** Any OpenAI-compatible endpoint: local Ollama, Mistral, OpenAI, Anthropic, or self-hosted models on private GPU infrastructure.
-- **Embeddings.** Remote API calls or local inference via Sentence Transformers.
-- **Vector storage.** ChromaDB is the default. The architecture supports replacement with pgvector or Qdrant based on deployment requirements.
-- **Databases.** SQLite for zero-config local development and single-tenant deployments. PostgreSQL for production multi-tenant environments. Extending to MySQL/MariaDB/MSSQL requires only adding a `database/sql` driver in the data service; the query builder is generic.
+### Admin, web, and observability
+
+**Admin Dashboard** (`:8085`, Go backend + Alpine.js) manages tenant lifecycle, agents, abuse settings, RAG, and the reports review page. It talks to api-service and data-service directly via authenticated admin API; it does not pass through mcp-gateway. RBAC is `admin` vs `viewer` (viewer is a read-only token with no write or reload capability). Service guide: [admin-dashboard README](services/admin-dashboard/README.md).
+
+**rag** (`:8082`, Python, ChromaDB) is optional and reaches the agent only through the gateway: when the service responds to its health check, mcp-gateway registers `search_documents`, `list_documents`, and `get_rag_context`; when it is down, those tools are absent and the agent keeps answering from SQL alone. Embeddings are local via Sentence Transformers or remote via any OpenAI-compatible endpoint; ChromaDB is the vector store.
+
+**Prometheus metrics** on every service (request count, SSE event count, tool-call latency, LLM call latency, abuse counters) feed a 32-panel Grafana dashboard covering request rates, LLM calls by model, tool invocations, token usage, RAG search rates, cache hit ratios, and active SSE sessions; see the [monitoring doc](doc/monitoring.md). Structured logs carry a `correlation_id` from the widget's `X-Correlation-ID` header through api-service, mcp-gateway, and data-service, so a single visitor session traces end to end. An OTel exporter is a drop-in; no service code changes are required.
+
+### Stack and operations
+
+- **Python 3.12-3.13** for AI workloads: api-service, rag, embed widget serving, demo/web. FastAPI, Pydantic v2, LiteLLM, Sentence Transformers, ChromaDB client.
+- **Go 1.26** for mechanical workloads: mcp-gateway, data-service, admin-dashboard backend. `net/http`, `pgx/v5`, `sqlx`, the official MCP SDK, one Go module per service.
+- **SQLite** for zero-config local development and single-tenant deployments; **PostgreSQL 16+** for production multi-tenant.
+- **Docker Compose** with profile-based E2E (`infra/scripts/compose.sh --profile test`) that swaps in test-only secure MCP/API credentials and explicit `MCP_ALLOWED_ORIGINS`.
+
+Run scripts: [dev.sh](infra/scripts/dev.sh) (native dev), [compose.sh](infra/scripts/compose.sh) (Docker). Anti-abuse counters (`max_user_turns_per_session`, `min_interval_ms`, message size, rate per IP) are server-side per session and the browser cannot reset them; the admin dashboard owns the persisted policy.
+
+### API surfaces and debug tooling
+
+Every service in the chat path exposes an OpenAPI schema (api, rag, data, gateway), and the gateway has a debug playground for firing tool calls at a tenant by hand.
+
+| API Swagger (api-service) | RAG Swagger (rag-service) |
+|---|---|
+| ![API Swagger](doc/images/api-swagger.png) | ![RAG Swagger](doc/images/rag-swagger.png) |
+
+| Data Service Swagger UI | MCP Gateway Debug Playground |
+|---|---|
+| ![Data Service Swagger](doc/images/data-swagger.png) | ![MCP Debug](doc/images/mcp-debug.png) |
+
+The Swagger UI pages are opt-in via environment variables and unauthenticated when enabled, so they are for local work only: `API_ENABLE_DOCS=1` for api-service, `API_ENABLE_DOCS=1` for rag-service, `DOCS_ENABLED=1` for data-service. The gateway debug playground answers behind `MCP_API_KEY`. The contract without the flag: [`specs/api.openapi.yaml` contract](specs/api.openapi.yaml).
 
 ## Security Model
 
-- **Read-only enforcement.** Write operations are blocked at the data-service level (config flag `read_only: true`). The MCP gateway simply doesn't register write tools when read_only is active. Write-endpoints are never auto-generated; data access is read-only by construction.
-- **Test-Driven Development.** CI pipeline enforces a failing-test-first workflow. Test counts are not hardcoded in documentation; the pipeline reports current coverage dynamically.
-- **Pentest coverage.** A security checklist is maintained in [`doc/agents/security-isolation.md`](doc/agents/security-isolation.md) (see also `doc/agents/anti-abuse.md`, `doc/agents/tool-call-safety-layers.md`).
-- **Tenant isolation.** Verified at three layers under concurrent load in end-to-end tests.
+- **Read-only enforcement.** The data-service router skips write endpoints (`POST`/`PUT`/`PATCH`/`DELETE`) when the tenant's `read_only` flag is `true`, so the MCP manifest only contains read tools. An admin who needs writes flips the flag per tenant and registers the write endpoint explicitly.
+- **Output guard.** The `final` answer is buffered and inspected before the widget ever sees it, so the widget renders only a guarded complete reply; the flow is described in [The request path](#the-request-path).
+- **Pentest coverage.** A security checklist is maintained in the [security-isolation doc](doc/agents/security-isolation.md) (see also anti-abuse and tool-call safety layers in the same `doc/agents/` directory).
+- **Tenant isolation.** Three layers are enforced and verified in CI under concurrent load:
+
+ | Layer | Mechanism |
+ | --- | --- |
+ | Data | Per-tenant SQLite files or per-tenant PostgreSQL role with `SELECT`-only grants |
+ | Tools | MCP tools registered with tenant ID in closure; the gateway never accepts tenant scope from the browser |
+ | Consumer | `X-Tenant-ID` header propagated from api-service to mcp-gateway; api-service resolves tenant from the server-stored agent config |
+
+ Composite mode lets a single SSE session route across N tenants with prefixed tool names (`{tenantID}__tool_name`) for conflict-free resolution.
+- **Abuse limits.** Rate per IP, `min_interval_ms`, message size, and `max_user_turns_per_session` are enforced server-side per session and cannot be reset by the browser; the mechanism and the persisted policy are covered in [Stack and operations](#stack-and-operations) and the [anti-abuse doc](doc/agents/anti-abuse.md).
 - **Widget hardening.** The embed endpoint sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and long-lived immutable cache headers for static assets. Content Security Policy requirements are documented for host sites.
 
 ## Deployment
@@ -138,30 +180,24 @@ Composite mode allows a single SSE session to route across N tenants with prefix
 ### Docker Compose (recommended for production)
 
 ```bash
-docker compose up -d                              # dev (7 services)
-docker compose --profile prod up -d               # + Caddy HTTPS termination
-docker compose --profile monitoring up -d         # + Prometheus + Grafana
+docker compose up -d # dev (6 core services)
+docker compose --profile prod up -d # + Caddy HTTPS termination
+docker compose --profile monitoring up -d # + Prometheus + Grafana
 ```
 
-All `.data/` paths are configurable via environment variables and mounted as volumes. The `prod` profile includes Caddy for automatic HTTPS.
+All `.data/` paths are configurable via environment variables and mounted as volumes. The `prod` profile includes Caddy for automatic HTTPS. Server setup, widget embedding on a real domain, and release checks are step-by-step in the [RUNBOOK](doc/RUNBOOK.md).
 
 ### Local development (macOS / Linux)
 
-The platform runs without Docker overhead via a shell script:
+The platform runs without Docker overhead via a shell script; the clone-and-start commands are in [Quick Start](#quick-start).
+
+Default LLM is Ollama at `http://127.0.0.1:11434` with `qwen2.5:0.5b`. Any other provider registers the same way: a `{PREFIX}_API_KEY` + `{PREFIX}_MODEL` pair in `.env` (template: [.env.example](.env.example)) is auto-imported as a provider - `MISTRAL_API_KEY` gives you mistral, `OPENAI_API_KEY` openai, `ANTHROPIC_API_KEY` anthropic, and any other prefix LiteLLM supports. The admin dashboard then manages providers and per-agent fallback order; restart picks up a new pair:
 
 ```bash
-git clone https://github.com/trash2bin/helperium
-cd helperium
-uv sync
-./infra/scripts/dev.sh start
-open http://127.0.0.1:8080
+OPENAI_API_KEY=<token> OPENAI_MODEL=openai/gpt-4o-mini ./infra/scripts/dev.sh restart
 ```
 
-Default LLM is Ollama at `http://127.0.0.1:11434` with `qwen2.5:0.5b`. Switch providers via environment variables:
-
-```bash
-MISTRAL_API_KEY=<token> MISTRAL_MODEL=mistral-medium ./infra/scripts/dev.sh restart
-```
+How registration and the fallback chain work: [api-service guide](services/api-service/README.md).
 
 ### Local full demo with the external auto-parts storefront
 
@@ -173,8 +209,8 @@ manual local demo, use the explicit opt-in flag:
 cp demo/autoparts-store/.env.dev.example demo/autoparts-store/.env
 # Replace both password placeholders in demo/autoparts-store/.env.
 ./infra/scripts/dev.sh start --with-autoparts
-open http://127.0.0.1:8080  # Helperium dev web
-open http://127.0.0.1:8000  # external auto-parts storefront
+open http://127.0.0.1:8080 # Helperium dev web
+open http://127.0.0.1:8000 # external auto-parts storefront
 ```
 
 The flag starts the storefront through its own Compose stack. Its two database
@@ -184,24 +220,15 @@ it, and `./infra/scripts/dev.sh stop` intentionally does **not** stop it. In
 this explicit opt-in path, the bootstrap provisions the PostgreSQL `SELECT`-only
 role and registers/rewrites tenant `autoparts` before MCP/API start.
 
-### CLI for data management and testing
+### CLI for test data, E2E, and the benchmark
 
-```bash
-uv run agent-db materialize university --force     # create test DB from scenario
-uv run agent-db tenant register university         # register a tenant
-uv run agent-db tenant list                        # list active tenants
-uv run agent-db e2e --tenants default,shop         # full E2E pipeline
-uv run agent-db e2e-full                           # data + mcp + chat
-uv run agent-db e2e-mcp-composite                  # composite multi-tenant MCP
-uv run agent-rag-ingest import ~/lecture.pdf -d <discipline-id>
-uv run agent-rag-ingest search "quantum computing"
-```
+Test data, end-to-end runs, and the answer-quality benchmark live in `agent-db`, a Python module with a single CLI: it materializes a test database from a scenario, registers it as a tenant, drives the E2E pipelines, and runs the benchmark. `uv run agent-db --help` lists the commands; the [agent-db README](services/agent-db/README.md) is the reference.
 
 ## Testing and CI
 
-The test suite covers unit, integration, and end-to-end scenarios across both Go and Python services. GitHub Actions runs four jobs: `lint-python`, `test-python`, `lint-go`, `test-go`. Pre-commit hooks enforce linting locally before push. The `make ci` target simulates the full pipeline locally.
+The test suite covers unit, integration, and end-to-end scenarios across both Go and Python services. GitHub Actions runs lint and test jobs for Python, Go, the embed widget, and the admin dashboard JS, plus a documentation link check. Pre-commit hooks enforce linting locally before push, and `make ci` simulates the full pipeline on a workstation.
 
-Test counts are dynamic and reported by the pipeline. Run `make ci` locally or check the CI report for the current count. Key test areas:
+Test counts are reported by the pipeline rather than hardcoded in docs. Key test areas:
 
 - `data-service`: CRUD, schema introspection, read-only enforcement
 - `rag`: chunking, embeddings, re-embedding pipeline
@@ -212,37 +239,32 @@ Test counts are dynamic and reported by the pipeline. Run `make ci` locally or c
 
 ## Embedded Widget
 
-A single `<script>` tag injects a Shadow DOM-isolated chat widget into any website. SSE streaming, configurable accent colors, zero dependencies.
+Drop one `<script>` tag into any page and the chat appears, styled inside a Shadow DOM so it cannot fight the host's CSS. Streaming over SSE, no dependencies on the host side.
 
 ```html
 <script src="https://your-server.com/embed/embed.js"
-        data-agent="shop-assistant"
-        data-api-base="https://your-server.com"
-        data-title="Assistant"
-        data-accent="#0f766e"
-        data-position="right"
-        data-greeting="How can I help?">
+ data-agent="shop-assistant"
+ data-api-base="https://your-server.com"
+ data-title="Assistant"
+ data-accent="#0f766e"
+ data-position="right"
+ data-greeting="How can I help?">
 </script>
 ```
 
-Widget state is isolated via Shadow DOM — no CSS conflicts with the host site. Multiple independent widgets on one page are supported. Configuration is done entirely through `data-*` attributes (14+ parameters: size, position, colors, placeholder, header).
+Widget state never leaks to the host page, and session keys are scoped per `data-agent`, so you can switch agents without history conflicts; several widgets can even live on one page, each with its own Shadow DOM host. Configuration is done entirely through `data-*` attributes (14+ parameters: size, position, colors, placeholder, header).
 
-**Note:** The widget sends requests directly to the api-service at `POST /api/chat/{agent}` (text) and `POST /api/chat/voice` (audio). It does **not** pass through demo/web. Tenant resolution happens server-side from the agent's stored configuration. Voice recording supports both Telegram-style hold-to-record (default) and classic toggle mode.
+Every assistant answer carries a report flag. A visitor who thinks the answer is wrong or out of line opens a dialog with the answer quoted and a comment field; the report lands at `POST /api/reports` and reaches the operator in the admin dashboard with its `correlation_id` and session transcript.
 
-See [`services/api-service/embed/README.md`](services/api-service/embed/README.md) for full documentation on the SSE protocol, CSP requirements, CSS variable customization, and multi-widget configurations.
+| Answer with flag | Report dialog |
+|---|---|
+| ![Answer with flag](doc/images/widget-report-flag.png) | ![Report dialog](doc/images/widget-report-dialog.png) |
 
-## Documentation
+The widget talks to api-service directly at `POST /api/chat/{agent}` (text) and `POST /api/chat/voice` (audio); voice recording supports both Telegram-style hold-to-record (default) and classic toggle mode. The [embed widget README](services/api-service/embed/README.md) has the full attribute list, SSE protocol, CSP requirements, CSS variables, and multi-widget configurations.
 
-| Document | Description |
-| -------- | ----------- |
-| [`AGENTS.md`](AGENTS.md) | Technical project passport: architecture, service map, testing, CI |
-| [`doc/FINAL_TASK.md`](doc/FINAL_TASK.md) | Migration plan and readiness criteria for pre-final version |
-| [`doc/RUNBOOK.md`](doc/RUNBOOK.md) | Internal deployment cheat sheet: server setup, widget embedding, monitoring |
-| [`doc/PENTEST-CHEK.md`](doc/PENTEST-CHEK.md) | Security checklist and coverage status per attack vector |
-| [`doc/monitoring.md`](doc/monitoring.md) | Prometheus metrics, Grafana dashboard, tracing (Tempo/Loki/OTel), troubleshooting |
-| [`.env.example`](.env.example) | All environment variables documented |
+## About the docs
 
-Service-level READMEs are located in each service directory (`services/data-service/`, `services/mcp-gateway/`, `services/admin-dashboard/`, `services/rag/`, `services/api-service/`, `demo/web/`).
+The linked docs - `AGENTS.md`, `doc/`, the service guides - are written in Russian and generated by an AI agent from the codebase itself: they exist as that agent's working references, not as polished manuals. Code, tables, and API paths inside them stay language-neutral.
 
 ## License and Commercial Support
 
@@ -251,23 +273,3 @@ The core platform is available under the Mozilla Public License 2.0 (MPL 2.0). Y
 **Commercial modifications of the platform itself** (custom features, bespoke integrations, white-label versions) are controlled by the maintainer. Contact us for enterprise licensing, SLA-backed support, and custom development.
 
 The project also uses a [Contributor License Agreement](CLA.md). Contributions submitted via pull requests may be used by the maintainer in any form, including commercial and proprietary distributions. At the maintainer's discretion, contributors may be granted commercial usage rights as a reward for their involvement in the project.
-
-For enterprise deployment assistance, custom integrations, and security audits — commercial services are available.
-# CI trigger
-
-## Public auto-parts demo
-
-The repository also contains an **independent public storefront demo** in `demo/autoparts-store`. It is intentionally separate from the core Helperium Compose stack: Django runs behind its own Caddy ingress, PostgreSQL has no host-published port, and the Helperium widget is opt-in after a tenant and agent have been registered.
-
-The demo keeps its synthetic catalogue generator unchanged. Before deployment, copy `.env.public.example` to `.env.public`, generate both secrets, set the real domain and start the isolated stack:
-
-```bash
-cd demo/autoparts-store
-cp .env.public.example .env.public
-# Edit DEMO_DOMAIN, ACME_EMAIL, DJANGO_SECRET_KEY, STORE_DB_PASSWORD,
-# DJANGO_ALLOWED_HOSTS and DJANGO_CSRF_TRUSTED_ORIGINS.
-docker compose --env-file .env.public -f docker-compose.public.yml up -d --build
-curl -fsS https://<demo-domain>/healthz/
-```
-
-Caddy terminates TLS and redirects HTTP to HTTPS. The PostgreSQL service is internal-only; do not add a host port. The storefront does not process payments, and `DEMO_ORDER_SUBMISSIONS=false` keeps order-form data from being persisted. See [the public-demo section of the runbook](doc/RUNBOOK.md#public-auto-parts-demo) for release and verification steps.

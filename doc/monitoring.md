@@ -467,3 +467,14 @@ docker-compose -f infra/docker-compose.yml --profile monitoring --profile tracin
 ```
 
 **Last verified:** 2026-08-18 (working tree after `6cdb51f`) — Streamable HTTP gateway metrics, lifecycle-backed active sessions label and Grafana queries reviewed locally.
+
+### Генератор нагрузки для скриншотов дашборда
+
+`infra/scripts/load_gen.py` — утилита для создания синтетического трафика, чтобы панели Grafana ожили без реальных посетителей. Запускает MCP-воркеры (держат Streamable HTTP `/mcp` сессию и крутят tool calls `db_map`, `db_describe`, `db_search`, `db_filter`, `db_get`) и HTTP-воркеры (бьют в grep-эндпоинт tenant'а data-service и `/health` api-service).
+
+```bash
+# требует поднятого стека и зарегистрированного tenant'а
+python3 infra/scripts/load_gen.py --duration 900 --tenant autoparts
+```
+
+Переменные окружения: `MCP_URL`, `DATA_URL`, `API_URL`, `TENANT`, `MCP_API_KEY` (дефолт `ci-mcp-token` для локального dev-стека).

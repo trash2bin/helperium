@@ -1,5 +1,5 @@
 # docker compose — core services + optional profiles
-# Dev:   docker compose up -d (запускает 7 core-сервисов)
+# Dev:   docker compose up -d (запускает 6 core-сервисов)
 # Prod:  docker compose --profile prod up -d (с Caddy HTTPS)
 
 x-restart: &restart
