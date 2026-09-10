@@ -1,12 +1,10 @@
-# Helperium — проектный гид
-
-Этот файл — **навигация и операционный контракт**, а не дневник разработки. Датированные аудиты, benchmark runs и исполненные планы сохраняются как evidence в `doc/`; их выводы не заменяют проверку текущего кода и тестов.
+AGENTS.md — **навигация и операционный контракт**, а не дневник разработки. Датированные аудиты, benchmark runs и исполненные планы сохраняются как evidence в `doc/`; их выводы не заменяют проверку текущего кода и тестов.
 
 ## Назначение и границы
 
 Helperium — self-hosted платформа, которая подключает клиентскую SQL-базу в **read-only** режиме, интроспектирует схему и предоставляет LLM-агенту tenant-scoped MCP-инструменты. Встраиваемый чат отвечает по живым данным; администратор управляет tenant-конфигурацией, агентами и policy.
 
-`demo/autoparts-store` — автономный поддерживаемый demo consumer, а не часть production runtime Helperium. Его код и deployment-конфигурацию можно менять для security, integration design и воспроизводимости; не останавливай, не seed'ируй и не очищай его контейнеры или PostgreSQL без отдельного прямого разрешения. Он должен подключаться как обычный demo tenant с отдельными read-only credentials.
+`demo/autoparts-store` — автономный поддерживаемый demo consumer, а не часть production runtime Helperium (но используется в публичном демо). Его код и deployment-конфигурацию можно менять для security, integration design и воспроизводимости; не останавливай, не seed'ируй и не очищай его контейнеры или PostgreSQL без отдельного прямого разрешения. Он должен подключаться как обычный demo tenant.
 
 | Контур | Порт | Роль |
 |---|---:|---|
@@ -22,7 +20,7 @@ Helperium — self-hosted платформа, которая подключае�
 
 ```text
 Embed widget → api-service → LLM/orchestrator → MCPClient
-  → mcp-gateway /mcp → data-service → tenant DB
+  → mcp-gateway /mcp → data-service ( or RAG) → tenant DB
   → SSE (tool_call/tool_result/final/error/done) → widget
 ```
 
@@ -44,9 +42,11 @@ Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding и
 
 ## Как работать с репозиторием
 
-Сначала прочитай релевантный маршрут ниже, затем используй graph/codebase memory, если он доступен, и подтверди связи кодом или tests. Если graph service недоступен, используй targeted `git grep`, service README и test suite — не делай предположений по старому audit text.
+Сначала прочитай релевантный маршрут ниже (или похожий), затем используй graph/codebase memory/grep/find, и подтверди связи кодом или tests. Используй services READMEs и test suite — не делай предположений по старому audit text.
 
-Меняй контракт API, schema, tenant model или public tool surface только после явного подтверждения пользователя. Обычные bug fixes, безопасная documentation hygiene, broken links и isolated test regressions можно исправлять самостоятельно. Каждый подтверждённый defect получает regression test; каждый code change проходит ближайший targeted suite и, если затронуты сервисные границы, Docker E2E.
+Меняй контракт API, schema, tenant model или public tool surface только после явного подтверждения пользователя. Обычные bug fixes, безопасная documentation hygiene, broken links и isolated test regressions можно исправлять самостоятельно. Каждый подтверждённый defect получает regression test; каждый code change проходит ближайший targeted suite и, если затронуты сервисные границы, Docker E2E
+
+При нахождении бага и особенно уязвимости безопасности **сначала test** потом рабочий код (тест обязан падать!).
 
 | Задача | Начать с |
 |---|---|
@@ -62,6 +62,7 @@ Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding и
 | Остатки демо-аудита / follow-up | `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md` → локальный untracked todo-файл в корне репозитория (рабочий список для агента-исполнителя, в git не входит) |
 | Operations / monitoring | `doc/agents/operations.md` → `doc/monitoring.md` → `infra/scripts/dev.sh` |
 | Product/demo readiness | Current code + recent CI/E2E evidence, затем dated audits (`doc/archive/product-demo-readiness-audit-2026-08-28-head-53a3172.md`, `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md`, `doc/archive/widget-demo-readiness-2026-09-01-head-f094429.md`) and `doc/archive/remediation-plan-2026-08-18.md` as historical context |
+| Остальное | по примеру по названию .md файла искать и только потом искать и править код/ошибку |
 
 ## Проверка
 
@@ -92,7 +93,7 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
   ./infra/scripts/compose.sh --profile test down -v
 ```
 
-Не трогай `autoparts-store-*`. Shared `infra_helperium-net` может остаться, если им пользуется заранее поднятый `infra-rag-1` или внешний storefront.
+Не трогай `autoparts-store-*` это отдельный демо с виджетом и своей бд на pg. Shared `infra_helperium-net` может остаться, если им пользуется заранее поднятый `infra-rag-1` или внешний storefront.
 
 ## Документация и артефакты
 
@@ -100,7 +101,6 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
 
 `CHANGELOG.md` пополняется **одной краткой записью на commit**. Не используй его как рабочие заметки или полный отчёт тестового прогона. Verification markers в документах описывают commit, на котором текст сверялся; при содержательной правке обновляй marker и ссылку на актуальный test evidence.
 
-Безопасно удалять generated caches, `__pycache__`, `.pytest_cache`, `.ruff_cache`, coverage, `.DS_Store`, build binaries и SQLite `-wal`/`-shm` sidecars после остановки использующих их процессов. Не удаляй без отдельной проверки `.data`, session/provider stores, benchmark reports, Hugging Face cache, RAG state или external demo data: они могут быть намеренно сохранёнными runtime/evidence artifacts.
 
 ### Полный каталог для discoverability
 
@@ -115,6 +115,4 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
 | Benchmark archives | `doc/archive/2026-08-05-data-service-audit.md` |
 | Product/audit archives | `doc/archive/2026-08-01-data-service-refactor-audit.md`, `doc/archive/product-readiness-audit-2026-08-18-head-14d3758.md`, `doc/archive/production-resilience-audit-2026-08-18-head-bd5adb5.md`, `doc/archive/product-demo-readiness-audit-2026-08-28-head-53a3172.md`, `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md`, `doc/archive/widget-demo-readiness-2026-09-01-head-f094429.md`, `doc/archive/remediation-plan-2026-08-18.md` |
 
-## Current verification baseline
-
-**Last verified:** 2026-08-20 (working tree following `e839d6c`). Full local `make ci` passed; the API suite passed **375 tests** with the same 38 pre-existing pytest marker warnings, and Pyright passed with no errors. The current security-critical session quota has one explicit public contract: `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS`. It counts durable accepted ingress user turns, not transcript messages, and it is the same accepted-at marker used by `min_interval_ms`; provider/tool failure never refunds it. The retired `max_messages_per_session` / `ABUSE_MAX_MESSAGES` names have no compatibility alias. Admin global/per-agent JSON decoding, direct agent DTO validation and persisted admin config loading reject stale unknown fields; a stale global policy fails startup/reload instead of silently falling back to weaker defaults. The typed SDK `AbuseConfigOverride` is `extra=forbid`, and API/admin OpenAPI plus dashboard bindings expose only the new field. `SessionStore` remains a domain facade over `SessionRepository`/`SQLiteSessionRepository`; legacy transcript history backfills before the first accepted turn. Native runtime restarted all six Helperium services healthy. Live admin `GET /api/abuse-settings` returned `max_user_turns_per_session=50` without the old key; legacy PUT returned `400`; acknowledged `POST /api/admin/abuse-config/reload` returned `status=applied`. The seeded `autoparts` read-only tenant completed a fresh MiniMax `db_search → tool_result → final` turn under the renamed runtime. The trusted-data invariant and `AppendOnlyLoop` context telemetry remain as verified in `9e85526`; their system-level declaration is defence-in-depth, not a hard prompt-injection boundary. This proves local core, MCP transport, live fallback, explicit user-turn quota contract, no-alias migration, admin apply and core regression coverage; it does **not** replace broader LLM quality/benchmark coverage, browser acceptance on a deployed domain, edge/WAF validation, alerting/rollback game day, multi-instance shared abuse state, a full RAG/prompt-injection assessment, behavioural anomaly detection after untrusted results, or a reserve/commit spending design bound to a named agent/account rather than tenant ID. The CI E2E workflow now starts long-lived dependencies detached and runs `e2e` as the only terminal container: `ci-state-init` may exit successfully without aborting the stack. Explicit `CORS_ALLOW_ORIGINS=http://localhost:8080` prevents a runner `.env` wildcard from masking the fail-closed CORS regression. A clean Docker profile completed all 137 E2E tests under this lifecycle; only CI volumes/containers were removed, while the external storefront was untouched.
+Коммит происходит только по скиллу, а также перед коммитом работает pre-commit, который способен править файлы тем самым раняя git commit. Файлы убираются из индекса и их стоит заново git add.
