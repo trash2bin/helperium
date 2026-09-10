@@ -192,7 +192,7 @@ uv run --package agent-db python -m agent_db.bench.smoke_scripted
 6. **DB reseeded seed=42** — fixture была пере-сидирована другим seed (139→144, 74→83); reseed canonical устранил mismatch между fixture и ground truth. На текущем canonical DB: 30 brands / 117 categories / 407 products / 6 orders.
 7. **`is_promo` rejected from filterable fields** — в live DB все продукты `is_promo=false`; добавление в filterable fields дало бы 0-result ответы в promo cases (ground truth использует `label IN ('sale','promo')` → 49). Revertнутo; error message явно указывает на `label`.
 
-Current plateau: **83.7%** за два последовательных live NIM прогона. Оставшиеся gap без model-specific hardcode: transliteration AP↔АП (order_number exact match), `is_promo=true` vs `label`, и 3 in-flight per-case ошибки. Платформенные фиксы выше — универсальны и останутся для следующих моделей.
+Current plateau: **81.6%** (commit `9982c40`, 2026-09-11, NVIDIA build API) и **83.7%** (два последовательных локальных NIM прогона). Оставшиеся gap без model-specific hardcode: transliteration AP↔АП (order_number exact match), `is_promo=true` vs `label`, и инфра-сбои NVIDIA API. Платформенные фиксы выше — универсальны и останутся для следующих моделей.
 
 В `{session_id}.bench.jsonl` сохраняется **полный trace**: question, final_text, SSE-события (`tool_call`/`tool_result`), метрики backlog. `agent_{agent}_{session}.jsonl` является копией исходного backlog-файла api-service. В `final_text` добавлен в backlog `turn_end`, поэтому ретро-анализ без SSE возможен (обрезается до 2000 символов).
 
@@ -256,4 +256,4 @@ uv run --package agent-db pytest tests/test_bench_core.py -q
 
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — artifact cleanup: removed historical sections, baseline, evaluator-фиксы.
+**Last verified:** 2026-09-11 (commit `9982c40`) — benchmark rerun: 81.6% pass rate on fresh HEAD.

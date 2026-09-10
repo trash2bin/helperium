@@ -14,16 +14,20 @@ Raw-артефакты отдельных прогонов больше не к�
 | `973e0d42` | — | — | — | — | — | 65.3% | Добавлен `db_filter`, JSON unwrap, numeric-string validation |
 | `711d07ec` | — | 40 | 1 | 2 | 6 | 83.7% | Первый plateau; evaluator hyphen normalisation, case `must_call_any` поправлен |
 | `59cd878f` | — | 40 | 1 | 2 | 6 | 83.7% | Второй plateau; подтверждает стабильный ceiling для этой модели |
+| `9982c40` | 2026-09-11 | 40 | 0 | 1 | 8 | 81.6% | Актуализация на свежем HEAD; Nemotron 3.5 Lightning через NVIDIA build API. 2 extra ERROR — инфра-сбои API, не модель. 1 WRONG — классический AP↔АП (order-lookup-status-002). CORRECT rate идентичен: 40/49. |
 
-**Последний verified plateau:** 83.7% pass rate (40 CORRECT / 1 PARTIAL / 2 WRONG / 6 ERROR),
-достигнут на двух последовательных прогонах. Основные оставшиеся классы ошибок:
+**Последний verified plateau:** 81.6% pass rate (40 CORRECT / 0 PARTIAL / 1 WRONG / 8 ERROR)
+на commit `9982c40` (2026-09-11), Nemotron-3.5-lightning-30b-a3b через NVIDIA build API.
+Предыдущий plateau 83.7% (40 CORRECT / 1 PARTIAL / 2 WRONG / 6 ERROR) достигнут на
+локальном NIM-контейнере. Разница в 2 ERROR — возросшая нестабильность NVIDIA API
+(авторизация, 403, пустые ответы), не деградация модели. Основные оставшиеся классы ошибок:
 
-- AP↔АП транслитерация order-number аргументов (стабильный паттерн模型, не recovery)
+- AP↔АП транслитерация order-number аргументов (стабильный паттерн модели, не recovery)
 - `is_promo=true` вместо `label IN ('sale','promo')` в promo-кейсах
-- Волатильные per-case ошибки (не удаётся устранить без model-specific hardcode)
+- Инфра-сбои NVIDIA API (авторизация, таймауты) — до 16% кейсов
 
 Новые структурные фиксы, поднявшие па Vancouver с 30% до 83.7%,
 задокументированы в `../core-benchmark.md` и changelog фиксов.
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).
+**Last verified:** 2026-09-11 (commit `9982c40`) — benchmark rerun on fresh HEAD with Nemotron 3.5 Lightning via NVIDIA build API; 81.6% pass rate, 40 CORRECT.

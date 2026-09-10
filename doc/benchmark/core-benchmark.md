@@ -14,6 +14,8 @@ retrieval, answer delivery, галлюцинации, отказ, стоимос
 - реальные прогоны: polza/deepseek-v4-flash (3 кейса PASS, cost ≈ $0.18/кейс)
 - полный прогон 49 кейсов на NIM Nemotron-3.5-lightning-30b: **plateau 83.7%**
   (40 CORRECT / 1 PARTIAL / 2 WRONG / 6 ERROR, два последовательных прогона)
+- актуальный прогон на commit `9982c40` (2026-09-11): **81.6%** через NVIDIA build API
+  (40 CORRECT / 0 PARTIAL / 1 WRONG / 8 ERROR); +2 ERROR — инфра-сбои API, не модель
 - tool surface: 6 db_* tools (~4.8KB manifest), per-entity filter_* не используется
   при `strategy=schema`; `db_filter` покрывает все 35 filter-кейсов через field-reference
   operator syntax (`field__op=value`, `field__gt_field=other_field`)
@@ -123,12 +125,12 @@ Ground-truth `{question, expected}` против tool_results + final_text:
     использует `label IN ('sale','promo')`. Добавление `is_promo` в filterable fields
     дало бы ложные 0-result ответы — revertнутo; error message явно указывает на `label`.
 
-### Remaining ceiling (plateau 83.7%)
+### Remaining ceiling (plateau 81.6%-83.7%)
 - **AP↔АП transliteration** (`filter_catalog_order({order_number:"AP-100005"})`):
   модель систематически переводит кириллицу `АП` в латиницу `AP` → exact miss.
 - **`is_promo=true`** вместо `label IN ('sale','promo')` в 2 promo-кейсах.
-- **Волатильные per-case ошибки** (oil filter wrong category, Bosch pads over-search,
-  ZZ-000-NOPE missing refusal marker, EXT-01401 FALSE_UNCERTAINTY).
+- **Инфра-сбои NVIDIA build API** (403, пустые ответы) — до 16% кейсов на облачном API;
+  на локальном NIM-контейнере было 12% (6/49). Модель не виновата.
 
 ## Кейсы: 49 active / 51 с историей
 
@@ -216,4 +218,4 @@ verdict = PARTIAL
 
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — artifact cleanup: removed revision section, Last verified, simplified case descriptions.
+**Last verified:** 2026-09-11 (commit `9982c40`) — benchmark rerun: 81.6% pass rate on Nemotron 3.5 Lightning via NVIDIA build API.

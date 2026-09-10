@@ -1,5 +1,9 @@
 # CHANGELOG.md
 
+## 2026-09-11
+
+- **bench:** rerun on fresh HEAD (`9982c40`) — Nemotron-3.5-lightning-30b-a3b через NVIDIA build API, 49 кейсов, 81.6% pass rate (40 CORRECT / 0 PARTIAL / 1 WRONG / 8 ERROR). CORRECT rate идентичен предыдущему plateau 83.7% (40/49); +2 ERROR — инфра-сбои NVIDIA build API (403, пустые ответы), не деградация модели. 1 WRONG — классический AP↔АП transliteration. Документация обновлена: `doc/benchmark/runs/README.md`, `doc/benchmark/core-benchmark.md`, `doc/benchmark/README.md`, `services/agent-db/agent_db/bench/README.md`, `README_RU.md`.
+
 ## 2026-09-10
 
 - **security(deps):** dependency audit remediation — `uv lock --upgrade` sweeps 38 of 46 known CVEs (46→8, remaining 8 are chromadb 1.5.9 with no upstream fix, deferred by owner): aiohttp 3.14.1→3.14.3 (6), cryptography 49.0.0→50.0.1 (2), httpx2 2.10.0→2.12.0 (3), pillow 12.2.0→12.3.0, setuptools 81.0.0→84.0.0, transformers 5.9.0→5.17.0, accelerate 1.13.0→1.15.0; the audit also uncovered a latent resolution trap — with `unsafe-first-match` and the pytorch-cpu index listed first, full re-resolutions pulled stale copies of shared deps from the PyTorch mirror (urllib3 2.7.0→1.26.13 with 16 CVEs, setuptools→78.1.0) — documented with the verified `explicit = true` quirk (breaks the torch source pin → PyPI CUDA build + triton) in new `doc/dependency-index-traps.md` (registered in the AGENTS.md routing table), short comment left in `pyproject.toml`; lock diff verified head-to-head: 114 upgrades, 0 downgrades, torch/torchvision stay `+cpu` from the CPU index, triton absent. **Verification:** `uv audit` = 8 advisories (chromadb only); head-vs-current lock version diff script: 0 downgrades; full `make ci` green.
