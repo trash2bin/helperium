@@ -58,6 +58,7 @@ Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding и
 | Security assessment | `doc/PENTEST-CHEK.md` → `doc/agents/security-isolation.md` → `doc/agents/tool-call-safety-layers.md` |
 | Cross-service HTTP/CORS | `doc/api-flow.md` → `doc/agents/http-clients.md` → `doc/agents/api-contracts.md` |
 | CI, local failures и E2E | `doc/agents/testing-guide.md` → `doc/agents/ci-cd.md` → `Makefile` |
+| Зависимости / uv lock / аудит CVE | `doc/dependency-index-traps.md` → `pyproject.toml` → `Makefile` (ci-audit, ci-e2e) |
 | Benchmark / answer quality | `doc/benchmark/README.md` → `doc/benchmark/core-benchmark.md` → `doc/benchmark/runs/README.md` |
 | Остатки демо-аудита / follow-up | `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md` → локальный untracked todo-файл в корне репозитория (рабочий список для агента-исполнителя, в git не входит) |
 | Operations / monitoring | `doc/agents/operations.md` → `doc/monitoring.md` → `infra/scripts/dev.sh` |

@@ -42,7 +42,7 @@ dev = [
     "pytest-mock>=3.14.0",
     "respx>=0.21.0",
     "freezegun>=1.5.0",
-    "ruff>=0.7.0",
+    "ruff>=0.7.0,<=0.15.18",
     "pyyaml>=6.0",  # тесты OpenAPI-спецификаций (test_openapi_api.py, test_openapi_spec.py)
     "fakeredis>=2.36.2",
     "pre-commit>=4.6.0",
@@ -100,3 +100,6 @@ index-strategy = "unsafe-first-match"
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+# НЕ добавлять explicit = true (ломает torch-пин, тянет CUDA+triton) и
+# учитывать ловушку unsafe-first-match при полной перерезолвке lock.
+# Подробности: doc/dependency-index-traps.md
