@@ -75,8 +75,9 @@ func TestSchemaForLLM_HintsAreDomainNeutral(t *testing.T) {
 	}
 }
 
-// Фаза 2.5 приёмка (деконсолидация filter): число MCP-тулов = N filter_* + 5 db_*.
-// filter деконсолидирован (имена полей нужны модели прямо в схеме тула),
+// Приёмка консолидации: число MCP-тулов = N filter_* + 6 db_*.
+// filter_{entity} деконсолидирован (имена полей нужны модели прямо в схеме тула);
+// db_filter — консолидированный на /q/filter (динамические поля без схемы);
 // остальные db_* — константны.
 func TestMCPTools_ConstantCount(t *testing.T) {
 	for _, n := range []int{1, 10, 100} {

@@ -480,7 +480,8 @@ func TestValidateArgs_AcceptsNumericStrings(t *testing.T) {
 	}
 }
 
-func TestValidateArgs_RejectsNegativeNumbers(t *testing.T) {	params := []config.EndpointParam{
+func TestValidateArgs_RejectsNegativeNumbers(t *testing.T) {
+	params := []config.EndpointParam{
 		{Name: "limit", Type: config.ParamTypeInt},
 	}
 	args := map[string]any{"limit": -1}
@@ -553,12 +554,12 @@ func TestValidateArgs_DbFilterAcceptsDynamicFieldOps(t *testing.T) {
 		{Name: "limit", Type: config.ParamTypeInt},
 	}
 	args := map[string]any{
-		"entity":     "catalog_product",
-		"price__lt":  2000,
-		"status":     "new",
-		"is active":  true,
-		"brand ID":   "5",
-		"limit":      float64(10),
+		"entity":    "catalog_product",
+		"price__lt": 2000,
+		"status":    "new",
+		"is active": true,
+		"brand ID":  "5",
+		"limit":     float64(10),
 	}
 	errs := validateArgs(args, params)
 	if len(errs) > 0 {

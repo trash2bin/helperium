@@ -100,7 +100,7 @@ type Strategy interface {
 ### GrepStrategy
 
 Multi-token AND по полям, OR между полями. Лимиты: `maxRegexLen=200` (ReDoS), `maxTokens=10`, `maxPatternLen=500`.
-Параметры: `pattern` (required), `limit` (1-100, default 10), `fields`, `ignore_case`, `invert`, `regex`, `offset`, `format`, `sort_by` (последние не в JSON Schema).
+JSON Schema: `pattern` (required), `limit` (1-100, default 10), `fields`, `sort_by`, `format`. HTTP-only (не в схеме): `ignore_case`, `invert`, `regex`, `offset`.
 
 ### FilterStrategy
 
@@ -384,4 +384,4 @@ ADMIN_TOKEN=secret .venv/bin/python -m pytest tests/e2e/test_data_isolation.py -
 
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).
+**Last verified:** 2026-09-10 (working tree, audit sweep) — GrepStrategy.ToolParams sort_by/format added, FilterStrategy.ToolParams sort_by/format added; 6 db_* consolidated tools cross-checked against configgen/mcp.go.

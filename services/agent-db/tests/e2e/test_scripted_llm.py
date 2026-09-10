@@ -381,7 +381,7 @@ class TestScriptedPipeline:
     # ── v5 тулсёрфейс ──
 
     def test_v5_tool_chain(self, scripted_server):
-        """v5-тулы доступны через MCP без LLM: db_map → filter_auto_parts.
+        """v5-тулы доступны через MCP без LLM: прямые mcp_call к db_map и filter_auto_parts.
 
         Тело выполняет прямые mcp_call к консолидированным db_* тулам и
         пер-энтити filter_{entity} (без оркестратора) — проверяет доступность

@@ -36,6 +36,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from helperium_sdk.settings import settings
 
 from api_service.agent import mcp_client as mcp_client_module
 from api_service.agent.mcp_client import (
@@ -44,8 +45,6 @@ from api_service.agent.mcp_client import (
     _SessionProxy,
     _TenantConnection,
 )
-from helperium_sdk.settings import settings
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -709,12 +708,26 @@ class TestMCPClientInvariants:
                 self.aclose = AsyncMock()
                 self._never = asyncio.Event()
 
-            def stream(self, *a: object, **kw: object) -> "HangingStream":
+            def build_request(self, *a: object, **kw: object) -> object:
+                # httpx2 >= 2.12 calls build_request() before stream();
+                # return a dummy request — stream() hangs anyway.
+                return object()
+
+            async def send(self, request: object, **kw: object) -> HangingStream:
+                # mcp stream_within_origin() uses client.send(stream=True) and
+                # then inspects response.status_code/aclose BEFORE aenter —
+                # so hang here instead of returning a fake response.
+                await self._never.wait()
+                raise AssertionError("unreachable: hang never releases")
+
+            def stream(self, *a: object, **kw: object) -> HangingStream:
                 return HangingStream(self._never)
 
         class HangingStream:
             def __init__(self, never: asyncio.Event) -> None:
                 self._never = never
+                # mcp stream_within_origin() reads next_request for redirects
+                self.next_request = None
 
             async def __aenter__(self):
                 await self._never.wait()

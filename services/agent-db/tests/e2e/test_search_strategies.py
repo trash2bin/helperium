@@ -312,7 +312,7 @@ class TestAutoShopStrategies:
         tool_names = [t.get("name") for t in tools]
 
         # Должны быть консолидированные db_* тулы (v5)
-        for db_tool in ("db_map", "db_describe", "db_search", "db_get", "db_related"):
+        for db_tool in ("db_map", "db_describe", "db_search", "db_filter", "db_get", "db_related"):
             assert db_tool in tool_names, (
                 f"{db_tool} not found in tools: {tool_names}"
             )
@@ -561,7 +561,7 @@ class TestClinicStrategies:
         tool_names = [t.get("name") for t in tools]
 
         # Консолидированные db_* тулы (v5)
-        for db_tool in ("db_map", "db_describe", "db_search", "db_get", "db_related"):
+        for db_tool in ("db_map", "db_describe", "db_search", "db_filter", "db_get", "db_related"):
             assert db_tool in tool_names, f"{db_tool} not found: {tool_names}"
 
         # Пер-энтити filter_{entity}

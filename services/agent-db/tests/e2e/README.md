@@ -98,18 +98,19 @@ assert result.success
 
 Поддерживает multi-tenant (composite) через `tenant_ids="a,b"` → префикс `{tenantID}__`.
 
-### Тулсёрфейс v5 (для справки)
+### Тулсёрфейс (для справки)
 
 | Strategy | MCP tool | Параметры |
 |---|---|---|
 | map | `db_map` | — |
 | describe | `db_describe` | entity |
-| search | `db_search` | entity, pattern (required), limit, fields |
+| search | `db_search` | entity, pattern (required), limit, fields, sort_by, format |
+| filter (консолид.) | `db_filter` | entity (required) + динамические поля top-level (`price__lt`, `status__in`, ...), limit, sort_by, format |
 | get | `db_get` | entity, id |
 | related | `db_related` | entity, id, relation |
-| filter | `filter_{entity}` | поля по IsFilterableField + `__gt/__lt/__gte/__lte/__like/__in/__neq` |
+| filter (пер-энтити) | `filter_{entity}` | поля по IsFilterableField + `__gt/__lt/__gte/__lte/__like/__in/__neq`, limit, sort_by, format |
 
-`db_filter` НЕ существует; `grep_*/schema_*` per-entity НЕ эмитятся (консолидированы).
+6 консолидированных `db_*` (включая `db_filter` на `/q/filter`) эмитятся всегда; `filter_{entity}` — только при наличии filter-endpoint. `grep_*/schema_*` per-entity НЕ эмитятся (консолидированы).
 
 ## Написание нового теста
 

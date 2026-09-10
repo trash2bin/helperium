@@ -534,8 +534,8 @@ func TestFilterStrategy_ToolParams(t *testing.T) {
 		"price", "price__gt", "price__gte", "price__lt", "price__lte", "price__in",
 		"active", "active__in",
 		"category", "category__like", "category__in",
-		"limit"}
-	unexpected := []string{"offset", "sort_by", "format", "id"}
+		"limit", "sort_by", "format"}
+	unexpected := []string{"offset", "id"}
 	for _, name := range expected {
 		if !paramNames[name] {
 			t.Errorf("Missing param: %s", name)
@@ -953,14 +953,20 @@ func TestFilterStrategy_ToolParams_NoFilterableFields(t *testing.T) {
 	s := NewFilterStrategy("id", "name")
 	params := s.ToolParams(entity)
 
-	// Должен быть только limit — других полей нет
-	if len(params) != 1 {
-		t.Errorf("Expected only limit param for entity with no filterable fields, got %d: %v", len(params), params)
+	// Нет filterable-полей — остаются только limit, sort_by, format.
+	if len(params) != 3 {
+		t.Errorf("Expected only limit/sort_by/format params for entity with no filterable fields, got %d: %v", len(params), params)
 	}
-	if len(params) > 0 && params[0].Name != "limit" {
-		t.Errorf("Expected only 'limit' param, got %q", params[0].Name)
+	names := make(map[string]bool, len(params))
+	for _, p := range params {
+		names[p.Name] = true
 	}
-	t.Logf("entity with only noise fields → %d params (just limit)", len(params))
+	for _, want := range []string{"limit", "sort_by", "format"} {
+		if !names[want] {
+			t.Errorf("Expected %q param, got params: %v", want, params)
+		}
+	}
+	t.Logf("entity with only noise fields → %d params (limit, sort_by, format)", len(params))
 }
 
 // =============================================================================

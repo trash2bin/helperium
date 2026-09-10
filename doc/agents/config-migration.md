@@ -344,7 +344,7 @@ type Endpoint struct {
 | `"filter"` | `search.NewFilterStrategy()` | Field-based c компараторами `field__gt`, `field__like`, `field__in` |
 | `"schema"` | `search.NewSchemaStrategy()` | Discovery: мета-информация о сущности (distinct, min/max, count) |
 
-**v4 changes:** `search` и `simple` стратегии удалены. **Фаза 2/2.5 (LLM-поверхность):** консолидированные `db_*` (`db_map`/`db_describe`/`db_search`/`db_get`/`db_related` через `/q/*`) + пер-энтити `filter_{entity}`. Текстовый поиск — `db_search`, точная фильтрация — `filter_{entity}` (поля в схеме тула). `grep_{entity}`/`schema_{entity}` как MCP-тулы не эмитятся.
+**v4 changes:** `search` и `simple` стратегии удалены. **LLM-поверхность:** консолидированные `db_*` (`db_map`/`db_describe`/`db_search`/`db_filter`/`db_get`/`db_related` через `/q/*`) + пер-энтити `filter_{entity}`. Текстовый поиск — `db_search`, точная фильтрация — `filter_{entity}` (поля в схеме тула) или консолидированный `db_filter` (`/q/filter`, динамические поля без схемы). `grep_{entity}`/`schema_{entity}` как MCP-тулы не эмитятся; `sort_by`/`format` в JSON Schema (ранее HTTP-only).
 
 ### Routing logic (endpoint_builder.go)
 
@@ -501,4 +501,4 @@ go run ./data-service/cmd/server/ --config specs/config.example.json
 | `doc/agents/tenant-lifecycle.md` | How configs are created and persisted |
 | `doc/agents/search-strategies.md` | Detailed description of each strategy (grep, filter, schema) |
 ---
-**Last verified:** 2026-08-09 (HEAD `be9a991`) — миграция конфигов и стратегии сверены с кодом
+**Last verified:** 2026-09-10 (working tree, audit sweep) — 5→6 db_* (db_filter added), sort_by/format promoted to JSON Schema; cross-checked against data-service/configgen READMEs.

@@ -65,7 +65,7 @@ func TestExtractIntent_Hydrate_RoundTrip(t *testing.T) {
 				ResultMapping: map[string]config.ResultMappingField{},
 			},
 		},
-		Auth:          &config.AuthConfig{Strategy: config.AuthStrategyHeader},
+		Auth: &config.AuthConfig{Strategy: config.AuthStrategyHeader},
 		Stats: &config.StatsConfig{Counters: []config.Counter{
 			{Name: "products_total", Entity: "products"},
 			{Name: "products_expensive", Entity: "products", Filter: "price > 1000"},
@@ -253,8 +253,8 @@ func TestRewrite_NewEntityFromSchemaDrift_WithoutRowFilter_RejectsConfig(t *test
 	// 3. Rewrite-путь как в tenant_admin.go: ExtractIntent → Hydrate → Validate.
 	newCfg := Hydrate(ExtractIntent(initial), schemaAfter)
 	if err := newCfg.Validate(); err == nil {
-		t.Error("SECURITY: rewrite with new entity 'orders' WITHOUT row_filter must be REJECTED. "+
-			"Fail-closed expected: header-auth requires row_filter for every entity. "+
+		t.Error("SECURITY: rewrite with new entity 'orders' WITHOUT row_filter must be REJECTED. " +
+			"Fail-closed expected: header-auth requires row_filter for every entity. " +
 			"Silently activating this config would 403 all /orders requests in production.")
 	}
 }

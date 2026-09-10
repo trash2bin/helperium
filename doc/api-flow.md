@@ -84,7 +84,7 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 | `Call(ctx, endpoint, params)` | GET `/{endpoint}/count?field__gt=...` | HTTP | **Count with field__op filters** |
 
 **Strategy endpoints:**
-- MCP manifest генерирует `grep_*`, `filter_*`, `schema_*` тулы через `configgen.GenerateMCPTools()` вместе с `get_*`, `count_*`, `distinct_*`.
+- MCP manifest генерирует `filter_*` (пер-энтити, поля в схеме тула) + 6 консолидированных `db_*` (`db_map`, `db_describe`, `db_search`, `db_filter`, `db_get`, `db_related`) через `configgen.GenerateMCPTools()`. `grep_*`/`schema_*` пер-энтити не эмитятся (консолидированы); `get_*`/`count_*`/`distinct_*` — opt-in (`LLMToolPolicy`, default false).
 - Каждый strategy-тул в манифесте содержит `Endpoint` (например `"catalog_product/grep"`), который mcp-gateway использует в `Call()`.
 - Параметры тулов (required `pattern`, field filters, types) генерируют сами стратегии через `Strategy.ToolParams()`, а не берутся из `cfg.MCPTools[].params`.
 
@@ -189,10 +189,10 @@ Browser
   ├── POST /api/chat (SSE) ──→ demo-web ──→ api-service:8081
   │                                               │
   │                                               ├── MCP Streamable HTTP `/mcp` ──→ mcp-gateway:8083 ──→ data-service:8084
-  │                                               │       grep_* tools   → GET /{entity}/grep?pattern=...
-  │                                               │       filter_* tools → GET /{entity}/filter?field__gt=...
-  │                                               │       schema_* tools → GET /{entity}/schema
-  │                                               │       count_* tools  → GET /{entity}/count?field__gt=...
+  │                                               │       db_search → GET /q/search?entity=&pattern=...
+  │                                               │       db_filter → GET /q/filter?entity=&field__gt=...
+  │                                               │       filter_{entity} → GET /{entity}/filter?field__gt=...
+  │                                               │       db_describe → GET /q/describe?entity=
   │                                               │
   │                                               └── HTTP ──→ rag:8082
   │
@@ -204,13 +204,13 @@ Browser
 ### Strategy endpoint flow (detail)
 
 ```
-LLM → tool_call("grep_catalog_product", {pattern: "brake pads", limit: 10})
+LLM → tool_call("db_search", {entity: "catalog_product", pattern: "brake pads", limit: 10})
   │
   └── api-service MCPClient → `/mcp` Streamable HTTP (MCP `tools/call`)
         │
         └── mcp-gateway (tools.go) → validates required params, resolves endpoint from toolDef.Endpoint
               │
-              └── httpClient.GetData() → GET /catalog_product/grep?pattern=brake+pads&limit=10
+              └── httpClient.GetData() → GET /q/search?entity=catalog_product&pattern=brake+pads&limit=10
                     │
                     └── data-service strategy_handler.go → search.NewGrepStrategy().ParseRequest()
                           │
@@ -219,13 +219,13 @@ LLM → tool_call("grep_catalog_product", {pattern: "brake pads", limit: 10})
 
 **Пример с filter:**
 ```
-LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 1000, limit: 10})
+LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 1000, limit: 10, sort_by: "-price"})
   │
   └── api-service MCPClient → `/mcp` Streamable HTTP (MCP `tools/call`)
         │
         └── mcp-gateway (tools.go) → validates required params
               │
-              └── httpClient.GetData() → GET /catalog_product/filter?category=Brakes&price__gte=1000&limit=10
+              └── httpClient.GetData() → GET /catalog_product/filter?category=Brakes&price__gte=1000&limit=10&sort_by=-price
                     │
                     └── data-service strategy_handler.go → search.NewFilterStrategy().ParseRequest()
                           │
@@ -247,4 +247,4 @@ LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 100
 
 > **Прим.:** admin-dashboard использует общие `DATA_SERVICE_URL` / `API_SERVICE_URL` / `RAG_SERVICE_URL` (`cmd/server/main.go:36-38`), а не отдельные `ADMIN_DASHBOARD_*`.
 ---
-**Last verified:** 2026-08-20 (commit `0337712`) — маршруты, порты, Streamable HTTP lifecycle и explicit Python SDK `initialize`-compatible negotiation сверены с кодом; full local CI и live tenant-scoped MCP E2E прошли перед push readiness check.
+**Last verified:** 2026-09-10 (working tree, audit sweep) — tool examples updated: grep_* → db_search (/q/search), filter flow updated with sort_by; consolidated db_* surface + per-entity filter_{entity} cross-checked against data-service/configgen READMEs.

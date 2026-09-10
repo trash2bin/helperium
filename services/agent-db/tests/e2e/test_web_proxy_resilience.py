@@ -7,11 +7,18 @@ rate limiter inside the Compose network.
 
 from __future__ import annotations
 
+import os
 import uuid
 
+import pytest
 import requests
 
 from tests.e2e.helpers import api_service_url, demo_web_url
+
+
+def _running_native_stack() -> bool:
+    """True under native `dev.sh e2e` (it exports E2E_DB_DIR; CI containers do not)."""
+    return bool(os.environ.get("E2E_DB_DIR"))
 
 
 def _assert_single_http_body_framing(response: requests.Response) -> None:
@@ -82,7 +89,18 @@ def test_rate_limit_survives_rotated_spoofed_forwarded_for() -> None:
     which spoofed source each request claims.  Prior tests may already have
     consumed part of the shared per-minute budget, so the loop only requires
     a 429 to eventually arrive, not at an exact index.
+
+    Compose-network-only premise: the API must recognize the web proxy as a
+    trusted proxy (container-network peer). Under the native `dev.sh e2e`
+    stack every request arrives from 127.0.0.1, which is not a trusted proxy
+    peer, so the spoofed header is honored and no 429 can ever arrive — the
+    scenario this regression targets cannot be reproduced natively.
     """
+    if _running_native_stack():
+        pytest.skip(
+            "rate-limit proxy trust is a Compose-network scenario; "
+            "native dev.sh e2e stack has no trusted-proxy peer (covered in CI)"
+        )
 
     missing_agent = f"missing-spoof-xff-{uuid.uuid4().hex}"
 

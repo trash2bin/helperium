@@ -71,6 +71,7 @@ func (b *Builder) BuildGetByID(entity Entity, idValue any) (Query, error) {
 func (b *Builder) isPostgres() bool {
 	return strings.Contains(b.adapter.TranslatePlaceholder(1), "$")
 }
+
 // Поддерживает LIKE-поиск для string-полей и exact match для int/float/bool.
 // Поддерживает limit/offset для пагинации.
 //

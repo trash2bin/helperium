@@ -65,7 +65,7 @@ mcp-gateway: buildTools() — строит toolDefs из cfg.MCPTools
     └── registerOne() — регистрирует каждый tool с Required/InputSchema
 ```
 
-### Какие тулы генерируются (Фаза 2/2.5 — N filter_* + 5 db_*)
+### Какие тулы генерируются (N filter_* + 6 db_*)
 
 | MCP Tool | Тип | Description source |
 |---|---|---|
@@ -73,6 +73,7 @@ mcp-gateway: buildTools() — строит toolDefs из cfg.MCPTools
 | `db_map` | Consolidated (/q/map) | `GenerateSchemaForLLM` — карта БД + workflow hints |
 | `db_describe` | Consolidated (/q/describe) | `SchemaStrategy.ToolDescription()` |
 | `db_search` | Consolidated (/q/search) | `GrepStrategy.ToolDescription()` |
+| `db_filter` | Consolidated (/q/filter) | `GenerateConsolidatedMCPTools` — entity + динамические поля top-level |
 | `db_get` | Consolidated (/q/get) | GetByIDHandler (fail-closed tenant, id из поиска) |
 | `db_related` | Consolidated (/q/related) | RelatedHandler (один FK-хоп, tenant+лимит) |
 | `get_{entity}`/`count_{entity}`/`distinct_{entity}` | Opt-in (`LLMToolPolicy`, default false) | configgen inline |
@@ -160,4 +161,4 @@ LLM вызывает: grep_product({pattern: "", regex: false})
 
 Подробнее о стратегиях поиска: [search-strategies.md](search-strategies.md)
 ---
-**Last verified:** 2026-08-20 (commit `0337712`) — единственный Streamable HTTP `/mcp`, Python SDK v2 forced to the `initialize`-compatible `mode="legacy"` negotiation, required-production auth, Origin policy, fixed direct-chat authority, tenant-scoped handlers, composite tools и cross-scope session rejection сверены deterministic E2E и live native MCP turns.
+**Last verified:** 2026-09-10 (working tree, audit sweep) — 5→6 db_* (db_filter added), sort_by/format in JSON Schema; tool table cross-checked against current configgen/mcp.go.

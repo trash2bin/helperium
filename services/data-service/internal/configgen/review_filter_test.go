@@ -14,8 +14,8 @@ func TestReview_FilterNumericFKGap(t *testing.T) {
 			{Name: "orders", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "int"},
-					{Name: "product_id", Type: "int"},   // FK
-					{Name: "customer_id", Type: "int"},  // FK
+					{Name: "product_id", Type: "int"},  // FK
+					{Name: "customer_id", Type: "int"}, // FK
 					{Name: "price", Type: "float"},
 					{Name: "status", Type: "string"},
 				}},

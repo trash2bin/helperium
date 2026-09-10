@@ -183,10 +183,18 @@ func (s *FilterStrategy) ToolParams(entity config.Entity) []config.EndpointParam
 		})
 	}
 
-	// Limit param (offset, sort_by, format still work in ParseRequest but are not in schema)
+	// Pagination and formatting params
 	params = append(params, config.EndpointParam{
 		Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: &f,
 		Description: "Max results (1-100, default: 20).",
+	})
+	params = append(params, config.EndpointParam{
+		Name: "sort_by", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
+		Description: "Sort field. '-' = DESC (e.g., -price).",
+	})
+	params = append(params, config.EndpointParam{
+		Name: "format", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
+		Description: "'compact' | 'full' | 'count'. Default: compact.",
 	})
 
 	return params

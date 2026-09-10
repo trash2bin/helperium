@@ -3,14 +3,14 @@
 Tests that:
 1. MCP Session opens successfully and returns endpoint URL
 2. Tools are listed for each tenant
-3. Each tenant can call its own tool (v5 consolidated db_* surface)
+3. Each tenant can call its own tool (consolidated db_* surface)
 4. Cross-tenant tool call is blocked (isolation)
 5. Non-existent tool returns error
 
-Tool surface (v5, see .data/e2e_revision_ground_truth.md):
-- 5 consolidated db_* tools: db_map, db_describe, db_search, db_get, db_related
+Tool surface (v6, see .data/e2e_revision_ground_truth.md):
+- 6 consolidated db_* tools: db_map, db_describe, db_search, db_filter, db_get, db_related
 - per-entity filter_{entity} (only when a filter endpoint exists)
-- db_filter does NOT exist; get_*/count_*/distinct_* NOT emitted by default
+- get_*/count_*/distinct_* NOT emitted by default
 
 Does NOT require LLM. Requires data-service (:8084) + mcp-gateway (:8083) running.
 """
@@ -57,8 +57,9 @@ def setup_module(module):
 
     # NOTE: the "mcp_tools" key in these configs is IGNORED by data-service —
     # the MCP manifest is regenerated from endpoints via GenerateMCPTools
-    # (runtime/handlers/mcp_manifest.go). v5 emits only the 5 consolidated
-    # db_* tools + per-entity filter_{entity} when a filter endpoint exists.
+    # (runtime/handlers/mcp_manifest.go). The consolidated surface is the
+    # 6 db_* tools (incl. db_filter on /q/filter) + per-entity filter_{entity}
+    # when a filter endpoint exists.
     uni_config = {
         "data_source": {"driver": "sqlite", "dsn": str(_DB_A), "read_only": True},
         "entities": [
@@ -134,7 +135,7 @@ def _is_error(result) -> bool:
 
 
 def test_mcp_uni_tool_db_map():
-    """University tenant can call db_map (v5 consolidated tool)."""
+    """University tenant can call db_map (consolidated tool)."""
     result = mcp_call("db_map", {}, tenant_ids=_TENANT_A)
     assert result, f"MCP db_map failed: {result.error}"
     assert not _is_error(result), f"db_map returned isError: {_result_text(result)[:200]}"

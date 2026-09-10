@@ -15,21 +15,21 @@ Generic MCP (Model Context Protocol) сервер на Go. Заменил Python
 ```
 
 - Stateful Streamable HTTP handler создаётся для одного уже разрешённого tenant scope
-- Инструменты без префикса: `grep_products`, `filter_products`, `get_products`
+- Инструменты без префикса: `db_search`, `db_filter`, `db_get`, `filter_{entity}`
 - Включён, когда `X-Tenant-ID` содержит **один** tenant
 
 ### Composite Multi-Tenant Mode
 
 ```text
 X-Tenant-ID: tenant-a               → инструменты без префикса
-X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__grep_products, tenant-b__grep_products
+X-Tenant-ID: tenant-a,tenant-b      → composite: tenant-a__db_search, tenant-b__db_search
 ```
 
 Режим включается автоматически, когда `X-Tenant-ID` содержит несколько tenant'ов через запятую.
 `createCompositeServer()` загружает конфиги всех tenant'ов и регистрирует инструменты с префиксом `{tenantID}__`.
 
 **Изоляция через closure:** `makeHandler(td, client, tenantID)` — tenantID зашит в closure.
-Инструмент `tenant-a__grep_products` всегда идёт в data-service с `X-Tenant-ID: tenant-a`,
+Инструмент `tenant-a__db_search` всегда идёт в data-service с `X-Tenant-ID: tenant-a`,
 даже если клиент подменит заголовок.
 
 **Кэш handler-а:** `streamableTenantRegistry` переиспользует stateful Streamable HTTP handler для exact ordered tenant set; число scopes ограничено `MCP_MAX_STREAMABLE_TENANT_SCOPES`. Один composite scope допускает не более `MCP_MAX_TENANTS_PER_SCOPE` unique tenant IDs; duplicate IDs получают `400`.
@@ -235,4 +235,4 @@ MCP_API_KEY="$MCP_API_KEY" MCP_ALLOWED_ORIGINS="$MCP_ALLOWED_ORIGINS" \
 
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).
+**Last verified:** 2026-09-10 (working tree, audit sweep) — tool examples updated to db_* consolidated surface (per-entity grep_*/get_* no longer emitted); db_filter added.

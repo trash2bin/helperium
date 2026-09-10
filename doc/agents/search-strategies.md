@@ -103,10 +103,10 @@ type Condition struct {
 
 Multi-token AND внутри поля, OR между полями. Лимиты — см. сводно в разделе [Лимиты](#лимиты-сводно).
 
-`ToolParams()` — `pattern` (required), `limit` (1-100, default 10), `fields`.
+`ToolParams()` — `pattern` (required), `limit` (1-100, default 10), `fields`, `sort_by`, `format`.
 `ParseRequest()` — проверка длины `pattern` и `regex`.
 
-HTTP-параметры (не все в JSON Schema): `pattern`, `ignore_case`, `fields`, `invert`, `regex`, `limit`, `offset`, `format`, `sort_by`.
+JSON Schema: `pattern`, `limit`, `fields`, `sort_by`, `format`. HTTP-only (работают в `ParseRequest`, в схеме нет): `ignore_case`, `invert`, `regex`, `offset`.
 
 Tenant isolation: `tenant_id` нельзя искать.
 
@@ -116,7 +116,7 @@ Tenant isolation: `tenant_id` нельзя искать.
 
 Лимиты — см. сводно в разделе [Лимиты](#лимиты-сводно).
 
-`ToolParams()` — поля через `config.IsFilterableField()` (см. FieldRules в configgen/README.md).
+`ToolParams()` — поля через `config.IsFilterableField()` (см. FieldRules в configgen/README.md) + системные `limit`, `sort_by`, `format` (offset — HTTP-only, в схеме нет).
 
 `ParseRequest()` :165. Операторы (HTTP-параметр `{field}__op`):
 
@@ -204,8 +204,9 @@ Tenant isolation: `tenant_id` нельзя искать.
 
 | Strategy | MCP tool | Параметры |
 |---|---|---|
-| grep | `db_search` (`/q/search?entity=&pattern=`) | entity (string, не enum), pattern (required), limit, fields |
-| filter | `filter_{entity}` (пер-энтити, `/{entity}/filter`) | поля по IsFilterableField + операторы (`price__gt`, `__like`, `__in`), limit |
+| grep | `db_search` (`/q/search?entity=&pattern=`) | entity (string, не enum), pattern (required), limit, fields, sort_by, format |
+| filter (консолид.) | `db_filter` (`/q/filter?entity=`) | entity (required) + динамические поля top-level (`price__lt`, `status__in`, ...), limit, sort_by, format |
+| filter (пер-энтити) | `filter_{entity}` (`/{entity}/filter`) | поля по IsFilterableField + операторы (`price__gt`, `__like`, `__in`), limit, sort_by, format |
 | schema | `db_describe` (`/q/describe?entity=`) | entity |
 | map | `db_map` (`/q/map`) | — |
 | get | `db_get` (`/q/get?entity=&id=`) | entity, id |
@@ -232,4 +233,4 @@ go test ./data-service/internal/runtime/handlers/ -run TestTenantFilter -v   # t
 - `doc/api-flow.md` — HTTP-матрица
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure: removed historical prose from tenant isolation section.
+**Last verified:** 2026-09-10 (working tree, audit sweep) — db_filter added to consolidated table, sort_by/format promoted to JSON Schema; GrepStrategy.ToolParams updated.

@@ -52,9 +52,6 @@ func BenchmarkBuildGetByID(b *testing.B) {
 	}
 }
 
-
-
-
 // BenchmarkBuildCustomQuery — сборка кастомного запроса
 func BenchmarkBuildCustomQuery(b *testing.B) {
 	adapter := &benchmarkAdapter{}

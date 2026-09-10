@@ -294,18 +294,18 @@ func TestStatsHandler_RowFilterUnknownColumn_SkipsBadCounter(t *testing.T) {
 	builder := runtime.NewBuilder(adapter)
 
 	ctx := &handlers.Context{
-		DB:       adapter,
-		Adapter:  adapter,
-		Builder:  builder,
-		Resolver: resolver,
-		URLParam: func(_ *http.Request, _ string) string { return "" },
+		DB:           adapter,
+		Adapter:      adapter,
+		Builder:      builder,
+		Resolver:     resolver,
+		URLParam:     func(_ *http.Request, _ string) string { return "" },
 		TenantIDFunc: func(_ *http.Request) string { return "tenant-a" },
 		// RowFilter ссылается на tenant_id, которой НЕТ в таблице customers.
 		// audit_log — БЕЗ RowFilter (healthy counter).
 		Auth: &config.AuthConfig{
 			Strategy: config.AuthStrategyHeader,
 			RowFilters: []config.RowFilter{
-				{Entity: "customer", Where: `"tenant_id" = :tenant_id`}, // битый: tenant_id нет в customers
+				{Entity: "customer", Where: `"tenant_id" = :tenant_id`},  // битый: tenant_id нет в customers
 				{Entity: "audit_log", Where: `"tenant_id" = :tenant_id`}, // healthy: есть
 			},
 		},
@@ -315,7 +315,7 @@ func TestStatsHandler_RowFilterUnknownColumn_SkipsBadCounter(t *testing.T) {
 		Stats: &config.StatsConfig{
 			Counters: []config.Counter{
 				{Name: "customers_with_tenant", Entity: "customer"}, // битый (нет tenant_id) → 0 или skip
-				{Name: "audit_total", Entity: "audit_log"},         // healthy → 3
+				{Name: "audit_total", Entity: "audit_log"},          // healthy → 3
 			},
 		},
 	}

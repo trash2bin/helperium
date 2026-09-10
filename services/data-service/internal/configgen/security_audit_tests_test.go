@@ -18,7 +18,9 @@ import (
 
 // ═══════════════════════════════════════════════════════════════════════
 // P0-2: FK-навигация — v4 намеренно НЕ генерирует _by_ тулы.
-//       PASS-гард: навигация для LLM идёт через filter_{child}(fk=...).
+//
+//	PASS-гард: навигация для LLM идёт через filter_{child}(fk=...).
+//
 // ═══════════════════════════════════════════════════════════════════════
 //
 // В v4 relationship-тулы (_by_) НАМЕРЕННО удалены (commit 1de916e: «LLM must
@@ -28,11 +30,11 @@ import (
 // капа 1000 строк (navigation.go:71), поддерживает __in.
 //
 // Поэтому этот тест PASS-гардит ПРАВИЛЬНОЕ поведение:
-//   1. REST-эндпоинт /parents/{id}/children существует (custom_query) —
-//      но НЕ экспонируется LLM как отдельный тул
-//   2. Вместо него у LLM есть filter_children(parent_id=...) — тул с
-//      FK-параметром, через который агент навигирует по связи
-//   3. Никакой тул с именем *_by_* не создаётся (нет коллизий имён)
+//  1. REST-эндпоинт /parents/{id}/children существует (custom_query) —
+//     но НЕ экспонируется LLM как отдельный тул
+//  2. Вместо него у LLM есть filter_children(parent_id=...) — тул с
+//     FK-параметром, через который агент навигирует по связи
+//  3. Никакой тул с именем *_by_* не создаётся (нет коллизий имён)
 func TestGenerateMCPTools_NavigationEndpointsHaveTools(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
@@ -207,7 +209,7 @@ func TestDefaultSkipRules_FalsePositiveOnBusinessTable(t *testing.T) {
 			return // бизнес-таблица на месте — хорошо
 		}
 	}
-	t.Errorf("P1-4: business table 'documents' (contracts) silently skipped by DefaultSkipRules. "+
+	t.Errorf("P1-4: business table 'documents' (contracts) silently skipped by DefaultSkipRules. " +
 		"No warning, entity missing from config.")
 }
 
@@ -235,7 +237,7 @@ func TestFieldRules_StableAcrossMultipleRewriteCycles(t *testing.T) {
 
 	// intent с отключённым searchable.block_image
 	intent := &TenantIntent{
-		DataSource:                   config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
+		DataSource:                     config.DataSourceConfig{Driver: "sqlite", DSN: ":memory:"},
 		DisabledDefaultSearchableRules: []string{"searchable.block_image"},
 	}
 
@@ -507,7 +509,7 @@ func TestBuildNavigationEndpoints_SchemaQualifiedFK_Skipped(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("P2-10: no navigation endpoint for schema-qualified FK "+
+		t.Errorf("P2-10: no navigation endpoint for schema-qualified FK " +
 			"(public.brands ← public.products). FK navigation silently lost for multi-schema PG.",
 		)
 	}

@@ -25,9 +25,11 @@ def auto_shop():
 
 
 def test_v5_has_db_tools(auto_shop):
-    """5 консолидированных db_* инструментов."""
+    """6 консолидированных db_* инструментов."""
     names = [x["name"] for x in auto_shop.tools()]
-    for db_tool in ["db_map", "db_describe", "db_search", "db_get", "db_related"]:
+    for db_tool in [
+        "db_map", "db_describe", "db_search", "db_filter", "db_get", "db_related",
+    ]:
         assert db_tool in names, f"missing {db_tool}: {names}"
 
 

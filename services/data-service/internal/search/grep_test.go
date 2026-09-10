@@ -683,8 +683,8 @@ func TestGrepStrategy_ToolParams(t *testing.T) {
 		paramNames[p.Name] = true
 	}
 
-	// Only 3 params: pattern (required), limit, fields
-	expected := []string{"pattern", "limit", "fields"}
+	// 5 params: pattern (required), limit, fields, sort_by, format
+	expected := []string{"pattern", "limit", "fields", "sort_by", "format"}
 	for _, name := range expected {
 		if !paramNames[name] {
 			t.Errorf("Missing param: %s", name)
@@ -692,7 +692,7 @@ func TestGrepStrategy_ToolParams(t *testing.T) {
 	}
 
 	// Should NOT have removed params
-	removed := []string{"ignore_case", "invert", "regex", "format", "offset", "sort_by"}
+	removed := []string{"ignore_case", "invert", "regex", "offset"}
 	for _, name := range removed {
 		if paramNames[name] {
 			t.Errorf("Expected removed param: %s", name)

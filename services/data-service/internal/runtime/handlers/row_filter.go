@@ -17,9 +17,9 @@ import (
 type tenantDenyReason int
 
 const (
-	tenantDenyNone tenantDenyReason = iota // deny=false: изоляция не требуется/есть
-	tenantDenyMissingTenantID              // header-auth, но X-Tenant-ID пуст (ошибка запроса → 400)
-	tenantDenyMissingRowFilter             // header-auth, tenant_id есть, но entity не покрыта row_filter (ошибка конфига → 403)
+	tenantDenyNone             tenantDenyReason = iota // deny=false: изоляция не требуется/есть
+	tenantDenyMissingTenantID                          // header-auth, но X-Tenant-ID пуст (ошибка запроса → 400)
+	tenantDenyMissingRowFilter                         // header-auth, tenant_id есть, но entity не покрыта row_filter (ошибка конфига → 403)
 )
 
 // tenantFilter возвращает готовый WHERE-фрагмент с переведёнными плейсхолдерами

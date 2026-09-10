@@ -14,8 +14,8 @@ import (
 //
 // Фаза 2 (консолидация) + Фаза 2.5 (деконсолидация filter):
 //   - N пер-энтити filter_{entity} (поля в схеме тула) — живой REST /{entity}/filter
-//   - 5 консолидированных db_* (db_map, db_describe, db_search, db_get, db_related)
-//     через /q/* диспетчер.
+//   - 6 консолидированных db_* (db_map, db_describe, db_search, db_filter,
+//     db_get, db_related) через /q/* диспетчер.
 //
 // Остальные per-entity тулы (grep_*, schema_*) не эмитятся.
 //

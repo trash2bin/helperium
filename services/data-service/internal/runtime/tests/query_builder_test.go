@@ -150,7 +150,6 @@ func TestBuildGetByID_UnknownEntity(t *testing.T) {
 	}
 }
 
-
 // TestBuildFind_LikeEscapingWorksEndToEnd — поведенческая проверка фикса
 // LIKE-экранирования: значение с литеральными %/_ должно находиться ТОЛЬКО
 // при работающей ESCAPE-клаузе (без неё в SQLite \ — литерал, % остаётся
@@ -197,8 +196,6 @@ func TestBuildFilter_LikeEscapingWorksEndToEnd(t *testing.T) {
 		t.Errorf("expected exactly 1 row (literal %%/_), got %d", count)
 	}
 }
-
-
 
 func TestBuildCustomQuery(t *testing.T) {
 	adapter, cleanup := newTestAdapter(t)

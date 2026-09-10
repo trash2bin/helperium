@@ -8,9 +8,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-
-
-
 type testDB struct {
 	db *sql.DB
 }

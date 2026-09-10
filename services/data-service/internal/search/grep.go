@@ -86,8 +86,7 @@ func (s *GrepStrategy) ToolDescription(entity config.Entity) string {
 			"  pattern='invoice', limit=5  -> first 5 results\n"+
 			"  pattern='john', fields='first_name,last_name' -> search those fields only\n"+
 			"\n"+
-			"SQLite note: Cyrillic search is case-sensitive - try capitalized form.\n"+
-			"See doc for: ignore_case, invert, regex, format, offset, sort_by (not in JSON Schema)",
+			"SQLite note: Cyrillic search is case-sensitive - try capitalized form.",
 		entity.Name,
 	)
 }
@@ -103,6 +102,10 @@ func (s *GrepStrategy) ToolParams(entity config.Entity) []config.EndpointParam {
 			Description: "Max results (1-100, default: 10)."},
 		{Name: "fields", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
 			Description: "Comma-separated field names to search. Default: all string fields. Example: 'first_name,last_name'"},
+		{Name: "sort_by", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
+			Description: "Sort field. '-' = DESC (e.g., -price)."},
+		{Name: "format", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
+			Description: "'compact' | 'full' | 'count'. Default: compact."},
 	}
 	return params
 }

@@ -1,4 +1,4 @@
-.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs
+.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs ci-e2e
 
 ci-lint-py:
 	uv run ruff check services/api-service/src/
@@ -19,6 +19,8 @@ ci-test-py:
 	PYTHONPATH=$(PWD) uv run -- python -m pytest demo/web/tests/ demo/tests/ -v --tb=short
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/rag/tests/unit/ -v --tb=short
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/helperium-sdk/tests/ -v --tb=short
+	PYTHONPATH=$(PWD) uv run -- python -m pytest services/agent-db/tests/contract/ -v --tb=short
+	PYTHONPATH=$(PWD)/scripts uv run -- python -m pytest scripts/test_cleanup_stale_tenants.py -v --tb=short
 
 ci-lint-go:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
@@ -56,6 +58,24 @@ ci-docs:
 	python3 infra/scripts/check_docs_paths.py
 	python3 infra/scripts/test_check_docs_paths.py
 	@echo "✅ Documentation paths OK"
+
+# Full E2E pass: rebuilds test-profile Docker images (prevents SDK-in-image
+# vs mounted-code drift — the 'DemoSettings has no attribute X' class of
+# failures), runs the Docker SDK contract test, then the native E2E suite.
+# Not part of default `make ci` (requires Docker + stops dev services via
+# `dev.sh e2e-up`). Run before any demo: make ci-e2e
+ci-e2e:
+	@echo "=== E2E: rebuild test-profile images ==="
+	./infra/scripts/compose.sh --profile test build
+	@echo "=== E2E: start test profile ==="
+	./infra/scripts/dev.sh e2e-up
+	@echo "=== E2E: contract tests (image vs code SDK version) ==="
+	@echo "    (CONTRACT_STRICT=1: preconditions are FAILURES here, not skips —"
+	@echo "     an E2E pass that silently skips the drift control is worthless)"
+	CONTRACT_STRICT=1 PYTHONPATH=$$(pwd) uv run -- python -m pytest services/agent-db/tests/contract/ -v --tb=short
+	@echo "=== E2E: native suite ==="
+	./infra/scripts/dev.sh e2e
+	@echo "✅ E2E passed"
 
 build-embed:
 	cd services/api-service/embed && bash build.sh
