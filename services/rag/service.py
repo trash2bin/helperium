@@ -319,7 +319,16 @@ async def upload_document(
     и передаёт в пайплайн импорта (парсинг → чанкинг → эмбеддинг → индексация).
     """
     upload_dir = tempfile.mkdtemp(prefix="rag-upload-")
-    save_path = os.path.join(upload_dir, file.filename or "uploaded_document")
+    # Sanitize filename: strip directory components (path traversal), then
+    # reject names that collapse to the upload dir itself — open() on them
+    # raises IsADirectoryError (unhandled 500) instead of a clean 422.
+    safe_filename = os.path.basename(file.filename or "uploaded_document")
+    if safe_filename in ("", ".", ".."):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid filename",
+        )
+    save_path = os.path.join(upload_dir, safe_filename)
 
     try:
         content = await file.read()

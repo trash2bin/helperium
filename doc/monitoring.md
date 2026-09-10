@@ -92,8 +92,10 @@ Go (data, mcp, admin) ──┘                          │
 ```
 
 **Graceful degradation:** если otel-collector не запущен — сервисы работают,
-ошибки логируются как `WARNING`; `OTEL_ENABLED=false` полностью отключает
-OpenTelemetry; отсутствующие пакеты не ломают сервис.
+ошибки логируются как `WARNING`; `OTEL_ENABLED=false` или `OTEL_SDK_DISABLED=true`
+полностью отключают OpenTelemetry (SDK проверяет обе переменные — при выключенном
+экспорте в CI/тестах шум «Transient error ... :4318» не возникает); отсутствующие
+пакеты не ломают сервис.
 
 ---
 
@@ -308,6 +310,7 @@ log_config). Если `trace_id` пустой — `OTEL_ENABLED=false` или з
 | Переменная | По умолчанию | Описание |
 |---|---|---|
 | `OTEL_ENABLED` | `true` | Отключить tracing (`false`) |
+| `OTEL_SDK_DISABLED` | — | Официальная OTel-переменная; `true` полностью отключает SDK (тот же эффект, что `OTEL_ENABLED=false`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP HTTP endpoint |
 | `OTEL_SERVICE_NAME` | `helperium-{service_name}` | Имя сервиса в Tempo |
 
@@ -466,7 +469,7 @@ docker-compose -f infra/docker-compose.yml up -d
 docker-compose -f infra/docker-compose.yml --profile monitoring --profile tracing up -d
 ```
 
-**Last verified:** 2026-08-18 (working tree after `6cdb51f`) — Streamable HTTP gateway metrics, lifecycle-backed active sessions label and Grafana queries reviewed locally.
+**Last verified:** 2026-09-10 (working tree, audit sweep) — OTEL_SDK_DISABLED added to env table + graceful-degradation note; load_gen db_filter tool reference cross-checked.
 
 ### Генератор нагрузки для скриншотов дашборда
 

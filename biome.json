@@ -8,7 +8,8 @@
 			"services/admin-dashboard/src/**/*.ts",
 			"services/admin-dashboard/tests/**/*.{ts,js}",
 			"demo/web/static/**/*.js",
-			"!**/dist/**"
+			"!**/dist/**",
+			"!**/static/alpine.min.js"
 		]
 	},
 	"javascript": {

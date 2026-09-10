@@ -53,6 +53,14 @@ def setup_opentelemetry(service_name: str) -> bool:
         _tracer_provider = None
         return False
 
+    # Official OTel spec var: OTEL_SDK_DISABLED=true disables the whole SDK.
+    # Without this check, CI/dev runs without an OTLP collector on :4318
+    # produce 'Transient error ... Connection refused' export noise.
+    if os.environ.get("OTEL_SDK_DISABLED", "").lower() in ("true", "1", "yes"):
+        logger.info("OpenTelemetry tracing disabled via OTEL_SDK_DISABLED=true")
+        _tracer_provider = None
+        return False
+
     try:
         from opentelemetry import trace
         from opentelemetry.sdk.trace import TracerProvider

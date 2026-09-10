@@ -8,6 +8,10 @@ import pytest
 
 from api_service.agent_repository import SqliteAgentRepository
 
+# Silence OpenTelemetry export noise: no OTLP collector runs during unit tests.
+# Must be set before api_service/helperium_sdk import tracing.
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+os.environ.setdefault("OTEL_ENABLED", "false")
 
 # ── Shared data ──
 
@@ -71,10 +75,10 @@ def _isolate_runtime_artifacts(tmp_path_factory):
     for key, value in monkeypatched:
         os.environ[key] = value
     # Reset lazy singletons so repositories re-resolve the throwaway paths.
-    import api_service.server.deps as deps
     from helperium_sdk.settings import settings
 
     from api_service.reports import reset_report_store
+    from api_service.server import deps
     from api_service.spending import reset_spending_singletons
 
     deps._agent_store = None
