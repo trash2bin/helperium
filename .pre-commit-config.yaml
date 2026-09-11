@@ -29,6 +29,15 @@ repos:
 
   - repo: local
     hooks:
+      - id: golangci-lint-fmt
+        name: golangci-lint fmt
+        entry: bash -c '$(go env GOPATH)/bin/golangci-lint fmt ./services/data-service/... ./services/mcp-gateway/...'
+        language: system
+        types: [go]
+        pass_filenames: false
+
+  - repo: local
+    hooks:
       - id: go-vet-data
         name: go vet (data-service)
         entry: bash -c 'cd services/data-service && go vet ./...'

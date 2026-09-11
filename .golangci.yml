@@ -1,4 +1,9 @@
 version: "2"
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
 linters:
   default: none
   enable:
@@ -7,7 +12,6 @@ linters:
     - unused
     - ineffassign
     - govet
-    - gofmt
   settings:
     errcheck:
       exclude-functions:
