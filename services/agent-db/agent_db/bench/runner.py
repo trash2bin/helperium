@@ -495,7 +495,7 @@ class BenchmarkRunner:
         parsed = last_parsed
 
         # Read backlog metrics for this session
-        backlog_data = parse_backlog_data(self.backlog_dir, sid)
+        backlog_data = parse_backlog_data(self.backlog_dir, sid, agent_name=self.agent_name)
 
         run = RunResult(
             session_id=sid,

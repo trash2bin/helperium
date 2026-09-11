@@ -52,10 +52,21 @@ uv run --package agent-db python -m agent_db.bench run \
     --agent-name autoparts-assistant \
     --tenant-id autoparts \
     --api-url http://127.0.0.1:8081 \
-    --admin-token secret \
+    --admin-token <API_BEARER_TOKEN> \
     --backlog-dir ./backlog \
     --bench-log-dir ./bench-backlog \
     --delay 2.5          # пауза между кейсами (rate limit api-service: 30/мин)
+
+# --admin-token: нужен API_BEARER_TOKEN (токен аутентификации api-service),
+#    НЕ ADMIN_TOKEN (токен data-service/admin-dashboard). Узнать:
+#      ps eww -p $(pgrep -f api-service) | tr ' ' '\n' | grep API_BEARER
+#
+# --backlog-dir: должен указывать на каталог, куда api-service пишет backlog.
+#    По умолчанию api-service пишет в <проект>/backlog (НЕ .data/backlog).
+#    Если backlog не находится — метрики (tokens/duration/cost) будут нулевые.
+#
+# --cases-file: путь относительно корня проекта (если запуск из корня),
+#    т.е. agent_db/bench/cases/autoparts.json, не ./cases/autoparts.json.
 
 # Per-question timeout defaults to 300s. Pass --timeout explicitly only when a
 # controlled experiment needs a different client-side wait budget.
@@ -226,7 +237,7 @@ DB_HOST=127.0.0.1 DB_PORT=5434 uv run manage.py shell < seed_fixture.py
 
 1. **`db_search`/`filter_*` возвращают `{id, name}` превью + `total`/`returned`** — полные поля видны только через `db_get`. Для lookup-по-цене агент должен: `filter` → `db_get(id)`. Кейсы это отражают (`must_call_any` включает `db_get`).
 2. **Пустой результат = `{"empty_hint": {...}}`** (не `{"preview":[]}`) — evaluator распознаёт `empty_hint` как «пусто».
-3. **Backlog-файл** называется `agent:{agent}:{client_session}.jsonl` — парсер ищет по подстроке `session_id` в имени.
+3. **Backlog-файл** называется `agent:{agent}:{uuid}.jsonl` (серверный UUID) или `agent:{agent}:{client_session}.jsonl` (при матчинге клиентского session_id). Парсер ищет по подстроке `session_id` в имени файла, а при неудаче — по agent_name (самый свежий файл с первой записью `session_id: agent:{agent}:*`).
 4. **Числа-коды** (`EXT-01392`, `АП-100005`) НЕ считаются галлюцинацией (извлекаются только standalone-числа 2+ цифр).
 5. **Проценты** («скидка ~20%») — вычисленные моделью, НЕ галлюцинация (исключаются из проверки).
 6. **Rate limit api-service** — `CHAT_RATE_LIMIT` (default 30/мин). Бенч добавляет `--delay 2.5` + retry на 429.

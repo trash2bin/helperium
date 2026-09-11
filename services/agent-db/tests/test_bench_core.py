@@ -1422,6 +1422,16 @@ def _write_backlog(tmp_path: Path, session_id: str, records: list[dict]) -> Path
     return p
 
 
+def _write_backlog_uuid(tmp_path: Path, agent_name: str, server_session_id: str, records: list[dict]) -> Path:
+    """Simulate api-service backlog file naming: agent:<agent>:<uuid>.jsonl."""
+    p = tmp_path / f"agent_{agent_name}_{server_session_id}.jsonl"
+    content = ""
+    for r in records:
+        content += json.dumps(r, ensure_ascii=False, indent=2) + "\n---===---\n"
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
 class TestBacklogParser:
     def test_find_api_service_runtime_backlog_dir(self, tmp_path, monkeypatch):
         project = tmp_path / "project"
@@ -1444,6 +1454,74 @@ class TestBacklogParser:
         )
         found = find_backlog_file(tmp_path, "bench-abc123")
         assert found == p
+
+    def test_find_backlog_file_by_agent_fallback(self, tmp_path):
+        """When client session_id is not in filename (UUID naming),
+        agent-based fallback finds the most recent file."""
+        from agent_db.bench.backlog_parser import find_backlog_file_by_agent
+        # simulate api-service naming: agent:autoparts-assistant:<uuid>
+        p = _write_backlog_uuid(
+            tmp_path,
+            "autoparts-assistant",
+            "08f073c2-6e48-41a5-ba53-e3fd4b1aba47",
+            [
+                {"session_id": "agent:autoparts-assistant:08f073c2-6e48-41a5-ba53-e3fd4b1aba47"},
+                {"type": "turn_end", "duration_ms": 500, "total_tokens": 100},
+            ],
+        )
+        # client session_id won't match
+        assert find_backlog_file(tmp_path, "bench-00000000") is None
+        # agent name fallback finds it
+        found = find_backlog_file_by_agent(tmp_path, "autoparts-assistant")
+        assert found == p
+
+    def test_find_backlog_file_with_agent_name_param(self, tmp_path):
+        """find_backlog_file with agent_name falls back to agent search."""
+        p = _write_backlog_uuid(
+            tmp_path,
+            "autoparts-assistant",
+            "08f073c2-6e48-41a5-ba53-e3fd4b1aba47",
+            [
+                {"session_id": "agent:autoparts-assistant:08f073c2-6e48-41a5-ba53-e3fd4b1aba47"},
+                {"type": "turn_end", "duration_ms": 500, "total_tokens": 100},
+            ],
+        )
+        # client session_id won't match, but agent_name fallback kicks in
+        found = find_backlog_file(tmp_path, "bench-00000000", agent_name="autoparts-assistant")
+        assert found == p
+
+    def test_parse_backlog_with_agent_fallback(self, tmp_path):
+        """parse_backlog_data with agent_name finds turn_end in UUID-named files."""
+        _write_backlog_uuid(
+            tmp_path,
+            "autoparts-assistant",
+            "08f073c2-6e48-41a5-ba53-e3fd4b1aba47",
+            [
+                {"session_id": "agent:autoparts-assistant:08f073c2-6e48-41a5-ba53-e3fd4b1aba47"},
+                {
+                    "type": "turn_end",
+                    "duration_ms": 500,
+                    "total_prompt_tokens": 100,
+                    "total_completion_tokens": 50,
+                    "total_tokens": 150,
+                    "total_cost": 0.005,
+                    "llm_calls": 2,
+                    "tool_calls": 3,
+                    "tool_errors": 0,
+                    "empty_results": 0,
+                    "empty_rounds": 0,
+                    "iterations": 2,
+                    "outcome": "final",
+                },
+            ],
+        )
+        bd = parse_backlog_data(tmp_path, "bench-00000000", agent_name="autoparts-assistant")
+        assert bd is not None
+        assert bd.duration_ms == 500
+        assert bd.total_tokens == 150
+        assert bd.total_cost == 0.005
+        assert bd.llm_calls == 2
+        assert bd.outcome == "final"
 
     def test_parse_turn_end(self, tmp_path):
         _write_backlog(
@@ -2092,6 +2170,49 @@ class TestBenchmarkRunGuard:
         assert replacement.run_uuid != context.run_uuid
         assert replacement.run_dir.parent == tmp_path / "artifacts-b" / "runs"
         second.finalize(status="completed")
+
+    def test_stale_lock_auto_cleans_when_holder_pid_is_dead(self, tmp_path, monkeypatch):
+        """If the lock holder PID no longer exists, acquire() cleans and proceeds."""
+        from agent_db.bench import run_guard as rg_mod
+
+        first = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28182/",
+            lock_root=tmp_path / "backlog",
+            artifact_root=tmp_path / "artifacts-a",
+        )
+        context = first.acquire()
+
+        # Simulate a dead PID: overwrite lock with a non-existent PID
+        lock_path = context.lock_path
+        non_existent_pid = 99999
+        # ensure the PID really doesn't exist (on macOS, max PID < 99998 usually)
+        holder_payload = {
+            "api_url": "http://127.0.0.1:28182/",
+            "host": "test",
+            "pid": non_existent_pid,
+            "run_uuid": "dead-run",
+            "started_at": "2020-01-01T00:00:00",
+        }
+        lock_path.write_text(json.dumps(holder_payload), encoding="utf-8")
+
+        # Release our context so we don't self-deadlock
+        first._context = None
+        # Remove our lock (the forged one replaces it)
+        # Actually the lock_path already has the forged content, so just proceed.
+
+        # Now a new guard should auto-clean and acquire
+        second = BenchmarkRunGuard(
+            api_url="http://127.0.0.1:28182/",
+            lock_root=tmp_path / "backlog",
+            artifact_root=tmp_path / "artifacts-b",
+        )
+        try:
+            new_context = second.acquire()
+            assert new_context.run_uuid != "dead-run"
+            second.finalize(status="completed")
+        finally:
+            # Cleanup: the forged lock is already gone, so just nop
+            pass
 
     def test_cli_creates_uuid_evidence_and_releases_lock(self, tmp_path, monkeypatch):
         cases_path = tmp_path / "cases.json"

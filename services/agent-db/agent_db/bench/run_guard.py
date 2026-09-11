@@ -117,6 +117,38 @@ class BenchmarkRunGuard:
             payload["report_path"] = str(report_path)
         return payload
 
+    @staticmethod
+    def _pid_is_alive(pid: int) -> bool:
+        """Return True if a process with the given PID exists on this machine."""
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return False
+        return True
+
+    @staticmethod
+    def _clean_stale_lock(lock_path: Path, holder: dict[str, Any]) -> bool:
+        """Remove a stale lock file whose holder PID is dead.
+
+        Returns True if the lock was cleaned (stale), False if holder is still alive.
+        """
+        holder_pid = holder.get("pid")
+        if isinstance(holder_pid, int) and not BenchmarkRunGuard._pid_is_alive(holder_pid):
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Removing stale benchmark lock (holder pid %s is dead): %s",
+                holder_pid,
+                lock_path,
+            )
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            return True
+        return False
+
     @property
     def context(self) -> BenchmarkRunContext:
         if self._context is None:
@@ -134,6 +166,9 @@ class BenchmarkRunGuard:
             descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError as exc:
             holder = self._read_json(lock_path)
+            if self._clean_stale_lock(lock_path, holder):
+                # Stale lock cleaned — retry acquisition
+                return self.acquire()
             holder_run_uuid = holder.get("run_uuid", "unknown")
             holder_pid = holder.get("pid", "unknown")
             raise BenchmarkRunInProgressError(

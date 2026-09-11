@@ -174,6 +174,13 @@ def run_cmd(
         typer.echo(
             f"✅ Preflight OK: API healthy, agent '{preflight['agent_name']}' reachable"
         )
+        # ETA estimate (conservative: ~30s/case + delay)
+        eta_sec_per_case = 30.0 + delay
+        eta_total_min = round(len(cases) * eta_sec_per_case / 60, 1)
+        typer.echo(
+            f"Estimated runtime: ~{len(cases)} cases × ~{eta_sec_per_case:.0f}s"
+            f" ≈ {eta_total_min} min"
+        )
 
         runs = []
         evals = []
@@ -186,6 +193,13 @@ def run_cmd(
             eval_res = evaluator.evaluate(case, run_res)
             runs.append(run_res)
             evals.append(eval_res)
+            if not quiet:
+                elapsed = time.monotonic() - t_start
+                remaining = max(0, (len(cases) - i) * ((elapsed / i) + delay))
+                typer.echo(
+                    f"  ↳ {eval_res.verdict.value}  |  elapsed: {elapsed:.0f}s"
+                    f"  |  ETA: {remaining / 60:.0f} min"
+                )
             # Respect api-service rate limit (CHAT_RATE_LIMIT, default 30/min)
             if i < len(cases) and delay > 0:
                 time.sleep(delay)
