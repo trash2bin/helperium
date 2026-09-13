@@ -2,6 +2,7 @@
 
 ## 2026-09-13
 
+- **fix(sdk):** test_seedgen_validation.py: REPO_ROOT parents[3]→parents[4] + PYTHONPATH для rag flat-layout пакета — тест снова находит корень репозитория. **Verification:** sdk suite 86 passed.
 - **docs:** README/RUNBOOK quickstarts генерируют два DISTINCT секрета для MCP_API_KEY и MCP_CLIENT_API_KEY (по контракту; раньше один и тот же секрет в оба поля), памятки и RU-версия синхронизированы. **Verification:** make ci-docs green.
 - **feat(monitoring):** Prometheus скрейпит все 5 сервисов с Bearer-токенами из credentials-файлов (compose передаёт 4 токена, ipam-подсеть уже зафиксирована); entrypoint-wrapper fail-closed: без любого токена старт запрещён, FATAL печатает имя отсутствующей переменной, файлы 0600 — токены не попадают ни в compose, ни в репозиторий; doc/monitoring.md обновлён под новую схему auth. **Verification:** prometheus-контейнер стартует только с полным набором токенов; monitoring-профиль проверен.
 - **fix(api):** при включённом fallback resolve_llm добавляет здорового worker ProviderPool последней ступенью после named-кандидатов (dedupe по credential-free identity, глобальный switch store.get_fallback_enabled() уважается) — мёртвый pinned-провайдер (nvidia_nim timeouts) больше не убивает виджет при живом пуле. **Verification:** новый test_pool_fallback_dead_provider.py; api suite 612 passed.
