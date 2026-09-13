@@ -370,9 +370,14 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     environment:
-      # Scrape token for bearer-protected /metrics; written to credentials_file
-      # by the entrypoint wrapper below (kept out of repo/config by design).
+      # Scrape tokens for bearer-protected /metrics; written to credentials
+      # files by the entrypoint wrapper below (kept out of repo/config by
+      # design). All four are required — otherwise prometheus refuses to start
+      # (fail-closed, pentest M1).
       API_BEARER_TOKEN: ${API_BEARER_TOKEN:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      MCP_API_KEY: ${MCP_API_KEY:-}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./docker/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro

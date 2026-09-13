@@ -13,6 +13,13 @@
 
 > Единый док по мониторингу (метрики, PromQL, панели Grafana, алерты). Карта доков — в [AGENTS.md](../AGENTS.md) §Карта документации.
 
+> ⚠️ **Auth на /metrics (pentest M1):** все сервисные `/metrics` защищены bearer-токеном
+> (fail-closed: без токена — 401/403). Мониторинговая инфраструктура прокидывает
+> токены через `entrypoint-wrapper.sh` из env: `API_BEARER_TOKEN` (api),
+> `ADMIN_TOKEN` (data-service + admin-dashboard), `MCP_API_KEY` (mcp-gateway),
+> `ADMIN_API_TOKEN` (rag). Без любого из них Prometheus не стартует (fail-closed).
+> RAG дополнительно принимает `X-Admin-Token: <ADMIN_API_TOKEN>`.
+
 ## Быстрый старт
 
 ```bash
@@ -371,8 +378,9 @@ flowchart TD
 
 ### Метрика не растёт
 ```bash
-curl -s http://127.0.0.1:8081/metrics | grep -E '^[a-z]'
-curl -s 'http://127.0.0.1:8084/metrics?tenant=default' | grep data_requests_total
+# /metrics защищены токенами (M1): передай bearer соответствующего сервиса
+curl -s -H "Authorization: Bearer $API_BEARER_TOKEN" http://127.0.0.1:8081/metrics | grep -E '^[a-z]'
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" 'http://127.0.0.1:8084/metrics?tenant=default' | grep data_requests_total
 # В Prometheus: http://127.0.0.1:9090/graph?g0.expr=rate(data_requests_total[1m])
 ```
 
