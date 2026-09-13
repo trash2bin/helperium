@@ -12,6 +12,7 @@ type AdapterToQuery struct {
 func (a *AdapterToQuery) TranslatePlaceholder(index int) string {
 	return a.Inner.TranslatePlaceholder(index)
 }
+
 func (a *AdapterToQuery) QuoteIdentifier(name string) string { return a.Inner.QuoteIdentifier(name) }
 
 // QuoteString escapes LIKE special chars '%', '_' and the escape char itself

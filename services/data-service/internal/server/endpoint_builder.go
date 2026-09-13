@@ -115,8 +115,10 @@ func NewRouterFromConfig(ts *TenantStore, cfg *config.Config, adapter runtime.Ad
 		handlers.RespondJSON(w, http.StatusOK, result)
 	})
 
-	// Prometheus metrics — доступно всегда, без аутентификации
-	r.Handle("/metrics", promhttp.Handler())
+	// Prometheus metrics — под тем же Bearer ADMIN_TOKEN, что и /admin/*
+	// (pentest M1). Топ-левел /metrics уже закрыт в main.go; тут страховка
+	// для того же пути в составе tenant-роутера.
+	r.With(AdminAuthMiddleware).Handle("/metrics", promhttp.Handler())
 
 	// /admin/* — admin endpoints are mounted EXCLUSIVELY via TenantStore.BuildAdminRouter()
 	// in main.go (rootRouter.Mount("/admin", adminRouter)). The per-tenant router from

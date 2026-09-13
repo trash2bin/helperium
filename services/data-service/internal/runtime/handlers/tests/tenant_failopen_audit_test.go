@@ -76,7 +76,8 @@ func customerEntity() runtime.Entity {
 }
 
 func newTenantCtx(adapter *testAdapter, builder *runtime.Builder, resolver *runtime.EntityResolver,
-	rowFilters []config.RowFilter) *handlers.Context {
+	rowFilters []config.RowFilter,
+) *handlers.Context {
 	return &handlers.Context{
 		DB:       adapter,
 		Adapter:  adapter,

@@ -166,7 +166,7 @@ func TestAutoparts_Generate(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	tmpFile := t.TempDir() + "/autoparts-generated.json"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	t.Logf("config written to %s (%d bytes)", tmpFile, len(data))

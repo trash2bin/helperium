@@ -92,11 +92,11 @@ func TestTenantStore_DeleteTenantConfig(t *testing.T) {
 	ts.TenantsDir = tenantsDir
 
 	configPath := filepath.Join(tenantsDir, "to-delete.json")
-	if err := os.WriteFile(configPath, []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	schemaPath := filepath.Join(tenantsDir, "to-delete.schema.json")
-	if err := os.WriteFile(schemaPath, []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(schemaPath, []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

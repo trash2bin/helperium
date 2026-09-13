@@ -146,36 +146,55 @@ func TestGenerate_FullSchema(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "groups", PrimaryKey: []string{"id"},
+			{
+				Name: "groups", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "string"}, {Name: "name", Type: "string"}, {Name: "speciality", Type: "string"},
-				}},
-			{Name: "students", PrimaryKey: []string{"id"},
+				},
+			},
+			{
+				Name: "students", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
-					{Name: "id", Type: "string"}, {Name: "name", Type: "string"},
-					{Name: "group_id", Type: "string"}, {Name: "course", Type: "int"},
-				}},
-			{Name: "teachers", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{
-					{Name: "id", Type: "string"}, {Name: "name", Type: "string"},
-					{Name: "disciplines_json", Type: "json"},
-				}},
-			{Name: "disciplines", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{
-					{Name: "id", Type: "string"}, {Name: "name", Type: "string"},
-					{Name: "description", Type: "string"},
-				}},
-			{Name: "grades", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{
-					{Name: "id", Type: "string"}, {Name: "student_id", Type: "string"},
-					{Name: "discipline_id", Type: "string"}, {Name: "grade", Type: "string"},
-					{Name: "date", Type: "date"},
-				}},
-			{Name: "schedule", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{
-					{Name: "id", Type: "string"}, {Name: "day", Type: "string"},
+					{Name: "id", Type: "string"},
+					{Name: "name", Type: "string"},
 					{Name: "group_id", Type: "string"},
-				}},
+					{Name: "course", Type: "int"},
+				},
+			},
+			{
+				Name: "teachers", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "string"},
+					{Name: "name", Type: "string"},
+					{Name: "disciplines_json", Type: "json"},
+				},
+			},
+			{
+				Name: "disciplines", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "string"},
+					{Name: "name", Type: "string"},
+					{Name: "description", Type: "string"},
+				},
+			},
+			{
+				Name: "grades", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "string"},
+					{Name: "student_id", Type: "string"},
+					{Name: "discipline_id", Type: "string"},
+					{Name: "grade", Type: "string"},
+					{Name: "date", Type: "date"},
+				},
+			},
+			{
+				Name: "schedule", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{
+					{Name: "id", Type: "string"},
+					{Name: "day", Type: "string"},
+					{Name: "group_id", Type: "string"},
+				},
+			},
 		},
 	}
 
@@ -1016,13 +1035,15 @@ func TestGenerate_WithFieldRules(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "products", PrimaryKey: []string{"id"},
+			{
+				Name: "products", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "int"},
 					{Name: "name", Type: "string"},
 					{Name: "rating", Type: "float"},
 					{Name: "internal_note", Type: "string"},
-				}},
+				},
+			},
 		},
 	}
 
@@ -1063,13 +1084,15 @@ func TestGenerate_DisabledFieldRules(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "products", PrimaryKey: []string{"id"},
+			{
+				Name: "products", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "int"},
 					{Name: "name", Type: "string"},
 					{Name: "price", Type: "float"},
 					{Name: "brand_id", Type: "int"},
-				}},
+				},
+			},
 		},
 	}
 

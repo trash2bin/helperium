@@ -10,6 +10,7 @@ import (
 // Local proxies keep call sites unchanged.
 
 func DefaultFilterableFieldRules() []config.FieldRule { return config.DefaultFilterableFieldRules() }
+
 func DefaultSearchableFieldRules() []config.FieldRule { return config.DefaultSearchableFieldRules() }
 func DefaultEnumFieldRules() []config.FieldRule       { return config.DefaultEnumFieldRules() }
 

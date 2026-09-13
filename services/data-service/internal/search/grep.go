@@ -96,16 +96,26 @@ func (s *GrepStrategy) ToolParams(entity config.Entity) []config.EndpointParam {
 	t := true
 
 	params := []config.EndpointParam{
-		{Name: "pattern", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &t,
-			Description: "Search query. REQUIRED. Example: 'blue widget', 'invoice', 'john smith'."},
-		{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: &f,
-			Description: "Max results (1-100, default: 10)."},
-		{Name: "fields", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
-			Description: "Comma-separated field names to search. Default: all string fields. Example: 'first_name,last_name'"},
-		{Name: "sort_by", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
-			Description: "Sort field. '-' = DESC (e.g., -price)."},
-		{Name: "format", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
-			Description: "'compact' | 'full' | 'count'. Default: compact."},
+		{
+			Name: "pattern", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &t,
+			Description: "Search query. REQUIRED. Example: 'blue widget', 'invoice', 'john smith'.",
+		},
+		{
+			Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: &f,
+			Description: "Max results (1-100, default: 10).",
+		},
+		{
+			Name: "fields", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
+			Description: "Comma-separated field names to search. Default: all string fields. Example: 'first_name,last_name'",
+		},
+		{
+			Name: "sort_by", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
+			Description: "Sort field. '-' = DESC (e.g., -price).",
+		},
+		{
+			Name: "format", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &f,
+			Description: "'compact' | 'full' | 'count'. Default: compact.",
+		},
 	}
 	return params
 }

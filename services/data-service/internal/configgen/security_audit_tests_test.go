@@ -39,17 +39,23 @@ func TestGenerateMCPTools_NavigationEndpointsHaveTools(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "parents", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{{Name: "id", Type: "string"}}},
-			{Name: "children", PrimaryKey: []string{"id"},
+			{
+				Name: "parents", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{{Name: "id", Type: "string"}},
+			},
+			{
+				Name: "children", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "string"},
 					{Name: "parent_id", Type: "string"},
 				},
 				ForeignKeys: []datasource.ForeignKey{
-					{Name: "fk_children_parent", Columns: []string{"parent_id"},
-						ReferencedTable: "parents", ReferencedColumns: []string{"id"}},
-				}},
+					{
+						Name: "fk_children_parent", Columns: []string{"parent_id"},
+						ReferencedTable: "parents", ReferencedColumns: []string{"id"},
+					},
+				},
+			},
 		},
 	}
 
@@ -124,8 +130,10 @@ func TestGenerate_DoesNotMutateInput(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "items", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{{Name: "id", Type: "string"}}},
+			{
+				Name: "items", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{{Name: "id", Type: "string"}},
+			},
 		},
 	}
 
@@ -149,8 +157,10 @@ func TestGenerate_ConcurrentSafe(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "items", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{{Name: "id", Type: "string"}}},
+			{
+				Name: "items", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{{Name: "id", Type: "string"}},
+			},
 		},
 	}
 	shared := &config.Config{
@@ -192,13 +202,15 @@ func TestDefaultSkipRules_FalsePositiveOnBusinessTable(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "documents", PrimaryKey: []string{"id"},
+			{
+				Name: "documents", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "int"},
 					{Name: "contract_number", Type: "string"},
 					{Name: "customer_id", Type: "int"},
 					{Name: "signed_at", Type: "date"},
-				}},
+				},
+			},
 		},
 	}
 	cfg := Generate(schema, &config.Config{
@@ -225,13 +237,15 @@ func TestFieldRules_StableAcrossMultipleRewriteCycles(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "products", PrimaryKey: []string{"id"},
+			{
+				Name: "products", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "int"},
 					{Name: "name", Type: "string"},
 					{Name: "price", Type: "int"},
 					{Name: "image_url", Type: "string"},
-				}},
+				},
+			},
 		},
 	}
 
@@ -364,7 +378,8 @@ func TestDefaultRules_BlocksSensitiveColumnNames(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "users", PrimaryKey: []string{"id"},
+			{
+				Name: "users", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "int"},
 					{Name: "name", Type: "string"},
@@ -372,7 +387,8 @@ func TestDefaultRules_BlocksSensitiveColumnNames(t *testing.T) {
 					{Name: "ssn", Type: "string"},
 					{Name: "api_key", Type: "string"},
 					{Name: "secret_token", Type: "string"},
-				}},
+				},
+			},
 		},
 	}
 	cfg := Generate(schema, &config.Config{
@@ -442,20 +458,30 @@ func TestTableToEntity_CompositeFK_LoggedAsSkipped(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "students", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{{Name: "id", Type: "int"}}},
-			{Name: "courses", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{{Name: "id", Type: "int"}}},
-			{Name: "enrollments", PrimaryKey: []string{"student_id", "course_id"},
+			{
+				Name: "students", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{{Name: "id", Type: "int"}},
+			},
+			{
+				Name: "courses", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{{Name: "id", Type: "int"}},
+			},
+			{
+				Name: "enrollments", PrimaryKey: []string{"student_id", "course_id"},
 				Columns: []datasource.Column{
 					{Name: "student_id", Type: "int"}, {Name: "course_id", Type: "int"},
 				},
 				ForeignKeys: []datasource.ForeignKey{
-					{Name: "fk_enroll_student", Columns: []string{"student_id"},
-						ReferencedTable: "students", ReferencedColumns: []string{"id"}},
-					{Name: "fk_enroll_course", Columns: []string{"course_id"},
-						ReferencedTable: "courses", ReferencedColumns: []string{"id"}},
-				}},
+					{
+						Name: "fk_enroll_student", Columns: []string{"student_id"},
+						ReferencedTable: "students", ReferencedColumns: []string{"id"},
+					},
+					{
+						Name: "fk_enroll_course", Columns: []string{"course_id"},
+						ReferencedTable: "courses", ReferencedColumns: []string{"id"},
+					},
+				},
+			},
 		},
 	}
 	cfg := Generate(schema, &config.Config{
@@ -482,17 +508,23 @@ func TestBuildNavigationEndpoints_SchemaQualifiedFK_Skipped(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "postgres",
 		Tables: []datasource.Table{
-			{Name: "public.brands", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{{Name: "id", Type: "int"}}},
-			{Name: "public.products", PrimaryKey: []string{"id"},
+			{
+				Name: "public.brands", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{{Name: "id", Type: "int"}},
+			},
+			{
+				Name: "public.products", PrimaryKey: []string{"id"},
 				Columns: []datasource.Column{
 					{Name: "id", Type: "int"},
 					{Name: "brand_id", Type: "int"},
 				},
 				ForeignKeys: []datasource.ForeignKey{
-					{Name: "fk_products_brand", Columns: []string{"brand_id"},
-						ReferencedTable: "public.brands", ReferencedColumns: []string{"id"}},
-				}},
+					{
+						Name: "fk_products_brand", Columns: []string{"brand_id"},
+						ReferencedTable: "public.brands", ReferencedColumns: []string{"id"},
+					},
+				},
+			},
 		},
 	}
 	cfg := Generate(schema, &config.Config{

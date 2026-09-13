@@ -29,6 +29,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -124,7 +125,7 @@ func main() {
 	entries, err := os.ReadDir(tenantsDir)
 	if err != nil {
 		slog.Info("tenants directory not found — creating", "dir", tenantsDir)
-		if mkErr := os.MkdirAll(tenantsDir, 0755); mkErr != nil {
+		if mkErr := os.MkdirAll(tenantsDir, 0o755); mkErr != nil {
 			slog.Warn("failed to create tenants directory", "error", mkErr)
 		}
 	} else {
@@ -184,7 +185,9 @@ func main() {
 	rootRouter.Use(server.StructuredLoggingMiddleware)
 	rootRouter.Use(server.TenantIDMiddleware("X-Tenant-ID"))
 	rootRouter.Use(server.ThrottleMiddleware(server.ResolveMaxConcurrent(cfg)))
-	rootRouter.Get("/metrics", promhttp.Handler().ServeHTTP)
+	// Pentest M1: /metrics требует Bearer ADMIN_TOKEN (как /admin/*).
+	// Fail-closed: без ADMIN_TOKEN эндпоинт отвечает 401 (AdminAuthMiddleware).
+	rootRouter.Get("/metrics", metricsHandler().ServeHTTP)
 
 	// ── Swagger / OpenAPI (opt-in via DOCS_ENABLED=1) ──
 	if enableDocs {
@@ -198,11 +201,7 @@ func main() {
 	rootRouter.Mount("/", store)
 
 	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8084"
-	}
-
-	addr := fmt.Sprintf(":%s", port)
+	addr := addrFromPort(port)
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -227,8 +226,19 @@ func main() {
 		}
 	}()
 
+	// ── Read surface startup guard (pentest C1) ──
+	// Wildcard / non-loopback bind with no ADMIN_TOKEN means the
+	// unauthenticated read surface (/q/*, /mcp/*, /health) is reachable from
+	// every network peer. Loopback is the documented native-dev boundary, so
+	// only warn here — inside a container a wildcard bind is expected and the
+	// exposure boundary is the published port mapping.
+	for _, warning := range listenSafetyWarnings(addr, os.Getenv("ADMIN_TOKEN")) {
+		slog.Warn(warning)
+	}
+
 	slog.Info("data-service starting",
 		"port", port,
+		"addr", addr,
 		"driver", cfg.DataSource.Driver,
 		"config", absCfgPath,
 		"docs_enabled", enableDocs,
@@ -240,6 +250,57 @@ func main() {
 	}
 
 	slog.Info("data-service stopped")
+}
+
+// addrFromPort нормализует значение PORT в listen-адрес. Исторический
+// дефолт — `:<port>` (все интерфейсы, нужно внутри контейнера). Native dev
+// и любой инстанс на хосте передают `host:port` (например
+// 127.0.0.1:8084), чтобы не выставлять read-поверхность наружу.
+// metricsHandler возвращает /metrics за AdminAuthMiddleware (pentest M1):
+// метрики отдают tenant-лейблы, счётчики rate-limit и длительности LLM-вызовов,
+// поэтому endpoint требует тот же Bearer ADMIN_TOKEN, что и /admin/*.
+// Fail-closed: без ADMIN_TOKEN — 401.
+func metricsHandler() http.Handler {
+	return server.AdminAuthMiddleware(promhttp.Handler())
+}
+
+func addrFromPort(port string) string {
+	if port == "" {
+		port = "8084"
+	}
+	if strings.Contains(port, ":") {
+		return port
+	}
+	return ":" + port
+}
+
+// listenSafetyWarnings возвращает предупреждения для заявленного
+// listen-адреса: wildcard/non-loopback bind без ADMIN_TOKEN — это
+// неаутентифицированная read-поверхность на всех интерфейсах.
+func listenSafetyWarnings(addr string, adminToken string) []string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return []string{fmt.Sprintf("⚠️  Cannot parse listen addr %q: %v", addr, err)}
+	}
+	if adminToken == "" && !isLoopbackHost(host) {
+		return []string{
+			fmt.Sprintf("⚠️  Listening on %s with no ADMIN_TOKEN: the read surface (/q/*, /mcp/*, /health) is unauthenticated "+
+				"and reachable from any network peer. Bind to 127.0.0.1 for local dev or set a strong ADMIN_TOKEN.", addr),
+		}
+	}
+	return nil
+}
+
+// isLoopbackHost — пустой host (wildcard ":port") и все non-loopback
+// адреса считаются не-loopback.
+func isLoopbackHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	return net.ParseIP(host).IsLoopback()
 }
 
 // runDiscover открывает БД по env, интроспектирует схему и выводит конфиг в stdout.

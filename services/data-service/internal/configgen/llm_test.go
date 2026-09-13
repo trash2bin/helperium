@@ -127,8 +127,10 @@ func TestMCPTools_EntityIsPlainStringNotEnum(t *testing.T) {
 	schema := &datasource.Schema{
 		Driver: "sqlite",
 		Tables: []datasource.Table{
-			{Name: "products", PrimaryKey: []string{"id"},
-				Columns: []datasource.Column{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}}},
+			{
+				Name: "products", PrimaryKey: []string{"id"},
+				Columns: []datasource.Column{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
+			},
 		},
 	}
 	cfg := Generate(schema, &config.Config{

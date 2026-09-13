@@ -16,15 +16,34 @@ func TestSchemaForLLMCompact_Size(t *testing.T) {
 	productCols := []datasource.Column{{Name: "id", Type: "int"}}
 	productFields := []config.EntityField{{Name: "id", Column: "id", Type: config.FieldTypeInt, PrimaryKey: &tPK}}
 	wide := []struct{ name, typ string }{
-		{"article", "string"}, {"name", "string"}, {"slug", "string"}, {"oem_number", "string"},
-		{"description", "string"}, {"short_description", "string"}, {"dimensions", "string"},
-		{"image", "string"}, {"label", "string"}, {"supplier", "string"}, {"country_of_origin", "string"},
-		{"seo_title", "string"}, {"seo_description", "string"},
-		{"is_available", "bool"}, {"is_popular", "bool"}, {"is_new", "bool"}, {"is_bestseller", "bool"},
-		{"is_promo", "bool"}, {"is_active", "bool"},
-		{"price", "float"}, {"old_price", "float"}, {"quantity", "int"}, {"weight_kg", "float"},
-		{"warranty_months", "int"}, {"views_count", "int"}, {"ordering", "int"},
-		{"brand_id", "int"}, {"category_id", "int"},
+		{"article", "string"},
+		{"name", "string"},
+		{"slug", "string"},
+		{"oem_number", "string"},
+		{"description", "string"},
+		{"short_description", "string"},
+		{"dimensions", "string"},
+		{"image", "string"},
+		{"label", "string"},
+		{"supplier", "string"},
+		{"country_of_origin", "string"},
+		{"seo_title", "string"},
+		{"seo_description", "string"},
+		{"is_available", "bool"},
+		{"is_popular", "bool"},
+		{"is_new", "bool"},
+		{"is_bestseller", "bool"},
+		{"is_promo", "bool"},
+		{"is_active", "bool"},
+		{"price", "float"},
+		{"old_price", "float"},
+		{"quantity", "int"},
+		{"weight_kg", "float"},
+		{"warranty_months", "int"},
+		{"views_count", "int"},
+		{"ordering", "int"},
+		{"brand_id", "int"},
+		{"category_id", "int"},
 	}
 	ftOf := func(t string) config.FieldType {
 		switch t {
@@ -52,11 +71,13 @@ func TestSchemaForLLMCompact_Size(t *testing.T) {
 			config.Entity{Name: name, Table: name, IDColumn: "id", Fields: fields}
 	}
 	tables := []datasource.Table{
-		{Name: "catalog_product", PrimaryKey: []string{"id"}, Columns: productCols,
+		{
+			Name: "catalog_product", PrimaryKey: []string{"id"}, Columns: productCols,
 			ForeignKeys: []datasource.ForeignKey{
 				{Columns: []string{"brand_id"}, ReferencedTable: "catalog_brand", ReferencedColumns: []string{"id"}},
 				{Columns: []string{"category_id"}, ReferencedTable: "catalog_category", ReferencedColumns: []string{"id"}},
-			}},
+			},
+		},
 	}
 	entities := []config.Entity{{Name: "catalog_product", Table: "catalog_product", IDColumn: "id", Fields: productFields}}
 	narrow := []struct {

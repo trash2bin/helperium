@@ -157,9 +157,11 @@ type testQuerierAdapter struct {
 func (a *testQuerierAdapter) TranslatePlaceholder(index int) string {
 	return "?"
 }
+
 func (a *testQuerierAdapter) QuoteIdentifier(name string) string {
 	return `"` + name + `"`
 }
+
 func (a *testQuerierAdapter) QuoteString(s string) string {
 	escaped := ""
 	for _, c := range s {

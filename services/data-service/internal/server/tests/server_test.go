@@ -179,19 +179,29 @@ func testConfig(t *testing.T) *config.Config {
 			{Method: "GET", Path: "/health", Op: "builtin_health"},
 			{Method: "GET", Path: "/stats", Op: "builtin_stats"},
 			{Method: "GET", Path: "/students/{id}", Op: "get_by_id", Entity: "student"},
-			{Method: "GET", Path: "/students/search", Op: "custom_query", QueryID: "students_search",
-				Params: []config.EndpointParam{{Name: "search", In: "query", Required: boolPtr(true)}}},
-			{Method: "GET", Path: "/students/{id}/grades", Op: "custom_query", QueryID: "student_grades",
-				Params: []config.EndpointParam{{Name: "id", In: "path", Required: boolPtr(true)}}},
-			{Method: "GET", Path: "/groups/{id}/schedule", Op: "custom_query", QueryID: "group_schedule",
-				Params: []config.EndpointParam{{Name: "id", In: "path", Required: boolPtr(true)}}},
+			{
+				Method: "GET", Path: "/students/search", Op: "custom_query", QueryID: "students_search",
+				Params: []config.EndpointParam{{Name: "search", In: "query", Required: boolPtr(true)}},
+			},
+			{
+				Method: "GET", Path: "/students/{id}/grades", Op: "custom_query", QueryID: "student_grades",
+				Params: []config.EndpointParam{{Name: "id", In: "path", Required: boolPtr(true)}},
+			},
+			{
+				Method: "GET", Path: "/groups/{id}/schedule", Op: "custom_query", QueryID: "group_schedule",
+				Params: []config.EndpointParam{{Name: "id", In: "path", Required: boolPtr(true)}},
+			},
 			{Method: "GET", Path: "/grades", Op: "custom_query", QueryID: "all_grades"},
 			{Method: "GET", Path: "/schedule", Op: "custom_query", QueryID: "all_schedule"},
 			{Method: "GET", Path: "/disciplines", Op: "custom_query", QueryID: "disciplines_all"},
-			{Method: "GET", Path: "/teachers/search", Op: "custom_query", QueryID: "teachers_search",
-				Params: []config.EndpointParam{{Name: "search", In: "query", Required: boolPtr(true)}}},
-			{Method: "GET", Path: "/students/{id}/disciplines", Op: "custom_query", QueryID: "student_disciplines",
-				Params: []config.EndpointParam{{Name: "id", In: "path", Required: boolPtr(true)}}},
+			{
+				Method: "GET", Path: "/teachers/search", Op: "custom_query", QueryID: "teachers_search",
+				Params: []config.EndpointParam{{Name: "search", In: "query", Required: boolPtr(true)}},
+			},
+			{
+				Method: "GET", Path: "/students/{id}/disciplines", Op: "custom_query", QueryID: "student_disciplines",
+				Params: []config.EndpointParam{{Name: "id", In: "path", Required: boolPtr(true)}},
+			},
 		},
 		CustomQueries: map[string]config.CustomQuery{
 			"student_grades": {

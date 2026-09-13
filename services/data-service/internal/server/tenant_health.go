@@ -5,7 +5,9 @@ package server
 import (
 	"context"
 	"net/http"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,16 +118,39 @@ type tenantHealthSnapshot struct {
 }
 
 // multiTenantHealthHandler serves GET /health with per-tenant status.
+//
+// Pentest M2: без валидного Bearer ADMIN_TOKEN наружу отдаётся только
+// агрегированный статус и общий счётчик tenant'ов. Полное перечисление
+// (id/driver/entities — инвентаризация целей для атакующего) доступно
+// только авторизованным админам. /health остаётся public (200), но без
+// деталей.
 func (ts *TenantStore) multiTenantHealthHandler(w http.ResponseWriter, r *http.Request) {
 	health := ts.HealthCheck(r.Context())
 
-	// Backward-compatible single-tenant response
+	if !healthAdminAuthorized(r) {
+		overall := computeOverallStatus(health)
+		statusCode := http.StatusOK
+		if overall == "unhealthy" {
+			statusCode = http.StatusServiceUnavailable
+		}
+		// Single healthy tenant keeps the legacy {"status":"ok"} shape.
+		if len(health) == 1 && overall == "healthy" {
+			handlers.RespondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
+		handlers.RespondJSON(w, statusCode, map[string]any{
+			"status":        overall,
+			"tenants_count": len(health),
+		})
+		return
+	}
+
+	// Authorized: backward-compatible full per-tenant detail.
 	if len(health) == 1 && health[0].Status == "healthy" {
 		handlers.RespondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
 
-	// Multi-tenant / degraded response
 	overall := computeOverallStatus(health)
 	statusCode := http.StatusOK
 	if overall == "unhealthy" {
@@ -136,6 +161,19 @@ func (ts *TenantStore) multiTenantHealthHandler(w http.ResponseWriter, r *http.R
 		"status":  overall,
 		"tenants": health,
 	})
+}
+
+// healthAdminAuthorized — валидный Bearer ADMIN_TOKEN, дающий право видеть
+// полное перечисление tenant'ов в /health (та же семантика токена, что и
+// AdminAuthMiddleware; /admin/* остаётся middleware-bound).
+func healthAdminAuthorized(r *http.Request) bool {
+	token := os.Getenv("ADMIN_TOKEN")
+	if token == "" {
+		return false
+	}
+	auth := r.Header.Get("Authorization")
+	provided, ok := strings.CutPrefix(auth, "Bearer ")
+	return ok && provided == token
 }
 
 func computeOverallStatus(health []TenantHealth) string {

@@ -150,6 +150,7 @@ type mockPlaceholderAdapter struct {
 func (m *mockPlaceholderAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return nil, nil
 }
+
 func (m *mockPlaceholderAdapter) QuoteIdentifier(name string) string {
 	return `"` + name + `"`
 }

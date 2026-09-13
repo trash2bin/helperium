@@ -70,7 +70,7 @@ func TestRegenerateAndPersistTenantConfig_NoSchema_Fallback(t *testing.T) {
 func TestRegenerateAndPersistTenantConfig_CorruptSchema_Fallback(t *testing.T) {
 	ts := NewTenantStore(datasource.NewDefaultRegistry(), "")
 	ts.TenantsDir = t.TempDir()
-	if err := os.WriteFile(ts.TenantSchemaPath("t-corrupt"), []byte("{invalid json"), 0644); err != nil {
+	if err := os.WriteFile(ts.TenantSchemaPath("t-corrupt"), []byte("{invalid json"), 0o644); err != nil {
 		t.Fatalf("write corrupt schema: %v", err)
 	}
 

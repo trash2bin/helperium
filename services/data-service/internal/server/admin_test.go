@@ -69,7 +69,7 @@ func TestArchiveCurrentConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.json")
 	initial := `{"version": 1, "data_source": {"driver": "sqlite", "dsn": ":memory:"}}`
-	if err := os.WriteFile(configFile, []byte(initial), 0644); err != nil {
+	if err := os.WriteFile(configFile, []byte(initial), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

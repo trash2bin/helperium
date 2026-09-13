@@ -413,6 +413,7 @@ func TestTenantAdmin_DiscoverHandler_NoTenant(t *testing.T) {
 func TestTenantAdmin_DiscoverHandler_NilAdapter(t *testing.T) {
 	t.Skip("Discover handler requires a non-nil introspect adapter; needs test infrastructure")
 }
+
 func TestTenantAdmin_AddTenant_ReadOnlySQLite_AutoDatabaseLevelDSN(t *testing.T) {
 	ctx := t.Context()
 	dbPath := filepath.Join(t.TempDir(), "customer.db")

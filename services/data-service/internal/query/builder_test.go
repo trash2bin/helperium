@@ -39,7 +39,7 @@ func TestBuild_Eq(t *testing.T) {
 	plan := QueryPlan{
 		From: `"customers"`,
 		Where: []Condition{
-			Condition{Field: `"id"`, Operator: OpEq, Value: 42},
+			{Field: `"id"`, Operator: OpEq, Value: 42},
 		},
 	}
 
@@ -62,7 +62,7 @@ func TestBuild_Eq_Postgres(t *testing.T) {
 	plan := QueryPlan{
 		From: `"customers"`,
 		Where: []Condition{
-			Condition{Field: `"id"`, Operator: OpEq, Value: 42},
+			{Field: `"id"`, Operator: OpEq, Value: 42},
 		},
 	}
 
@@ -85,7 +85,7 @@ func TestBuild_Like(t *testing.T) {
 	plan := QueryPlan{
 		From: `"customers"`,
 		Where: []Condition{
-			Condition{Field: `"email"`, Operator: OpLike, Value: "%example.com"},
+			{Field: `"email"`, Operator: OpLike, Value: "%example.com"},
 		},
 	}
 
@@ -108,7 +108,7 @@ func TestBuild_Like_EscapesWildcards(t *testing.T) {
 	plan := QueryPlan{
 		From: `"items"`,
 		Where: []Condition{
-			Condition{Field: `"name"`, Operator: OpLike, Value: "100%_complete"},
+			{Field: `"name"`, Operator: OpLike, Value: "100%_complete"},
 		},
 	}
 
@@ -131,7 +131,7 @@ func TestBuild_ILike_SQLite(t *testing.T) {
 	plan := QueryPlan{
 		From: `"customers"`,
 		Where: []Condition{
-			Condition{Field: `"email"`, Operator: OpILike, Value: "%Example.COM"},
+			{Field: `"email"`, Operator: OpILike, Value: "%Example.COM"},
 		},
 	}
 
@@ -156,7 +156,7 @@ func TestBuild_ILike_Postgres(t *testing.T) {
 	plan := QueryPlan{
 		From: `"customers"`,
 		Where: []Condition{
-			Condition{Field: `"email"`, Operator: OpILike, Value: "%Example.COM"},
+			{Field: `"email"`, Operator: OpILike, Value: "%Example.COM"},
 		},
 	}
 
@@ -180,7 +180,7 @@ func TestBuild_In(t *testing.T) {
 	plan := QueryPlan{
 		From: `"orders"`,
 		Where: []Condition{
-			Condition{Field: `"status"`, Operator: OpIn, Values: []any{"active", "pending"}},
+			{Field: `"status"`, Operator: OpIn, Values: []any{"active", "pending"}},
 		},
 	}
 
@@ -203,7 +203,7 @@ func TestBuild_In_Postgres(t *testing.T) {
 	plan := QueryPlan{
 		From: `"orders"`,
 		Where: []Condition{
-			Condition{Field: `"status"`, Operator: OpIn, Values: []any{"active", "pending"}},
+			{Field: `"status"`, Operator: OpIn, Values: []any{"active", "pending"}},
 		},
 	}
 
@@ -226,9 +226,9 @@ func TestBuild_MultipleWhereWithAnd(t *testing.T) {
 	plan := QueryPlan{
 		From: `"products"`,
 		Where: []Condition{
-			Condition{Field: `"category"`, Operator: OpEq, Value: "electronics"},
-			Condition{Field: `"price"`, Operator: OpGt, Value: 100},
-			Condition{Field: `"stock"`, Operator: OpLt, Value: 50},
+			{Field: `"category"`, Operator: OpEq, Value: "electronics"},
+			{Field: `"price"`, Operator: OpGt, Value: 100},
+			{Field: `"stock"`, Operator: OpLt, Value: 50},
 		},
 	}
 
@@ -343,11 +343,11 @@ func TestBuild_Neq_Lt_Gt_Gte_Lte(t *testing.T) {
 	plan := QueryPlan{
 		From: `"t"`,
 		Where: []Condition{
-			Condition{Field: `"a"`, Operator: OpNeq, Value: 1},
-			Condition{Field: `"b"`, Operator: OpLt, Value: 2},
-			Condition{Field: `"c"`, Operator: OpGt, Value: 3},
-			Condition{Field: `"d"`, Operator: OpLte, Value: 4},
-			Condition{Field: `"e"`, Operator: OpGte, Value: 5},
+			{Field: `"a"`, Operator: OpNeq, Value: 1},
+			{Field: `"b"`, Operator: OpLt, Value: 2},
+			{Field: `"c"`, Operator: OpGt, Value: 3},
+			{Field: `"d"`, Operator: OpLte, Value: 4},
+			{Field: `"e"`, Operator: OpGte, Value: 5},
 		},
 	}
 
@@ -370,7 +370,7 @@ func TestBuild_Between(t *testing.T) {
 	plan := QueryPlan{
 		From: `"products"`,
 		Where: []Condition{
-			Condition{Field: `"price"`, Operator: OpBetween, Values: []any{10, 100}},
+			{Field: `"price"`, Operator: OpBetween, Values: []any{10, 100}},
 		},
 	}
 
@@ -417,7 +417,7 @@ func TestBuild_Regexp_SQLite(t *testing.T) {
 	plan := QueryPlan{
 		From: `"items"`,
 		Where: []Condition{
-			Condition{Field: `"code"`, Operator: OpRegex, Value: "^ABC"},
+			{Field: `"code"`, Operator: OpRegex, Value: "^ABC"},
 		},
 	}
 
@@ -440,7 +440,7 @@ func TestBuild_Regexp_Postgres(t *testing.T) {
 	plan := QueryPlan{
 		From: `"items"`,
 		Where: []Condition{
-			Condition{Field: `"code"`, Operator: OpRegex, Value: "^ABC"},
+			{Field: `"code"`, Operator: OpRegex, Value: "^ABC"},
 		},
 	}
 
@@ -463,7 +463,7 @@ func TestBuild_NotLike(t *testing.T) {
 	plan := QueryPlan{
 		From: `"items"`,
 		Where: []Condition{
-			Condition{Field: `"name"`, Operator: OpNotLike, Value: "%test"},
+			{Field: `"name"`, Operator: OpNotLike, Value: "%test"},
 		},
 	}
 
@@ -490,7 +490,7 @@ func TestBuildCount(t *testing.T) {
 	plan := QueryPlan{
 		From: `"customers"`,
 		Where: []Condition{
-			Condition{Field: `"status"`, Operator: OpEq, Value: "active"},
+			{Field: `"status"`, Operator: OpEq, Value: "active"},
 		},
 		Order: []OrderClause{
 			{Field: `"id"`, Desc: true},
@@ -539,8 +539,8 @@ func TestBuildCount_PostgresPlaceholders(t *testing.T) {
 	plan := QueryPlan{
 		From: `"customers"`,
 		Where: []Condition{
-			Condition{Field: `"status"`, Operator: OpEq, Value: "active"},
-			Condition{Field: `"age"`, Operator: OpGt, Value: 18},
+			{Field: `"status"`, Operator: OpEq, Value: "active"},
+			{Field: `"age"`, Operator: OpGt, Value: 18},
 		},
 	}
 
@@ -613,7 +613,7 @@ func TestBuild_In_Empty(t *testing.T) {
 	plan := QueryPlan{
 		From: `"t"`,
 		Where: []Condition{
-			Condition{Field: `"x"`, Operator: OpIn},
+			{Field: `"x"`, Operator: OpIn},
 		},
 	}
 
@@ -887,7 +887,7 @@ func TestRenderConditions_Empty(t *testing.T) {
 func TestRenderConditions_SingleCondition(t *testing.T) {
 	eng := NewEngine(sqliteAdapter{})
 	phIdx := 1
-	conds := []Condition{Condition{Field: `"status"`, Operator: OpEq, Value: "active"}}
+	conds := []Condition{{Field: `"status"`, Operator: OpEq, Value: "active"}}
 	where, args, err := eng.RenderConditions(conds, "AND", &phIdx)
 	if err != nil {
 		t.Fatalf("RenderConditions: unexpected error: %v", err)
@@ -907,9 +907,9 @@ func TestRenderConditions_MultipleConditions(t *testing.T) {
 	eng := NewEngine(sqliteAdapter{})
 	phIdx := 1
 	conds := []Condition{
-		Condition{Field: `"category"`, Operator: OpEq, Value: "electronics"},
-		Condition{Field: `"price"`, Operator: OpGt, Value: 100},
-		Condition{Field: `"stock"`, Operator: OpLt, Value: 50},
+		{Field: `"category"`, Operator: OpEq, Value: "electronics"},
+		{Field: `"price"`, Operator: OpGt, Value: 100},
+		{Field: `"stock"`, Operator: OpLt, Value: 50},
 	}
 	where, args, err := eng.RenderConditions(conds, "AND", &phIdx)
 	if err != nil {
@@ -932,8 +932,8 @@ func TestRenderConditions_Postgres(t *testing.T) {
 	eng := NewEngine(postgresAdapter{})
 	phIdx := 1
 	conds := []Condition{
-		Condition{Field: `"status"`, Operator: OpEq, Value: "active"},
-		Condition{Field: `"age"`, Operator: OpGt, Value: 18},
+		{Field: `"status"`, Operator: OpEq, Value: "active"},
+		{Field: `"age"`, Operator: OpGt, Value: 18},
 	}
 	where, args, err := eng.RenderConditions(conds, "AND", &phIdx)
 	if err != nil {
@@ -953,8 +953,8 @@ func TestRenderConditions_CustomSeparator(t *testing.T) {
 	eng := NewEngine(sqliteAdapter{})
 	phIdx := 1
 	conds := []Condition{
-		Condition{Field: `"a"`, Operator: OpEq, Value: 1},
-		Condition{Field: `"b"`, Operator: OpEq, Value: 2},
+		{Field: `"a"`, Operator: OpEq, Value: 1},
+		{Field: `"b"`, Operator: OpEq, Value: 2},
 	}
 	where, args, err := eng.RenderConditions(conds, "OR", &phIdx)
 	if err != nil {
@@ -973,7 +973,7 @@ func TestRenderConditions_CustomSeparator(t *testing.T) {
 func TestRenderConditions_WithInOp(t *testing.T) {
 	eng := NewEngine(sqliteAdapter{})
 	phIdx := 1
-	conds := []Condition{Condition{Field: `"status"`, Operator: OpIn, Values: []any{"active", "pending"}}}
+	conds := []Condition{{Field: `"status"`, Operator: OpIn, Values: []any{"active", "pending"}}}
 	where, args, err := eng.RenderConditions(conds, "AND", &phIdx)
 	if err != nil {
 		t.Fatalf("RenderConditions: unexpected error: %v", err)
@@ -994,7 +994,7 @@ func TestRenderConditions_WithInOp(t *testing.T) {
 func TestRenderConditions_WithILike_SQLite(t *testing.T) {
 	eng := NewEngine(sqliteAdapter{})
 	phIdx := 1
-	conds := []Condition{Condition{Field: `"name"`, Operator: OpILike, Value: "%test"}}
+	conds := []Condition{{Field: `"name"`, Operator: OpILike, Value: "%test"}}
 	where, args, err := eng.RenderConditions(conds, "AND", &phIdx)
 	if err != nil {
 		t.Fatalf("RenderConditions: unexpected error: %v", err)
@@ -1013,7 +1013,7 @@ func TestRenderConditions_WithILike_SQLite(t *testing.T) {
 func TestRenderConditions_WithILike_Postgres(t *testing.T) {
 	eng := NewEngine(postgresAdapter{})
 	phIdx := 1
-	conds := []Condition{Condition{Field: `"email"`, Operator: OpILike, Value: "%example.com"}}
+	conds := []Condition{{Field: `"email"`, Operator: OpILike, Value: "%example.com"}}
 	where, args, err := eng.RenderConditions(conds, "AND", &phIdx)
 	if err != nil {
 		t.Fatalf("RenderConditions: unexpected error: %v", err)

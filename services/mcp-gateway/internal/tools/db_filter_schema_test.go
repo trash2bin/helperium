@@ -33,10 +33,14 @@ func TestDbFilter_InputSchemaPermitsDynamicFieldOps(t *testing.T) {
 		Name:     "db_filter",
 		Endpoint: "/q/filter",
 		Params: []config.EndpointParam{
-			{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &required,
-				Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
-			{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt,
-				Description: "Max results (1-100, default: 10). Use 1 for pure count questions."},
+			{
+				Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: &required,
+				Description: "Entity name (from db_map, canonical e.g. catalog_product).",
+			},
+			{
+				Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt,
+				Description: "Max results (1-100, default: 10). Use 1 for pure count questions.",
+			},
 		},
 	}
 

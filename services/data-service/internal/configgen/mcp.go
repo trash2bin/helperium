@@ -168,8 +168,10 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 				"Use BEFORE searching when unsure about field names or valid values. " +
 				"No guessing: see actual values first.",
 			Params: []config.EndpointParam{
-				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
+				{
+					Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map, canonical e.g. catalog_product).",
+				},
 			},
 		},
 		{
@@ -179,14 +181,22 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 			Description: "PRIMARY text search across an entity. Search here FIRST instead of guessing ids. " +
 				"Finds records by words/phrases in searchable fields (see db_map).",
 			Params: []config.EndpointParam{
-				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
-				{Name: "pattern", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Search query. Example: 'blue widget'."},
-				{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: ptrBool(false),
-					Description: "Max results (1-100, default: 10)."},
-				{Name: "fields", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
-					Description: "Comma-separated field names to search. Default: all searchable fields."},
+				{
+					Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map, canonical e.g. catalog_product).",
+				},
+				{
+					Name: "pattern", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Search query. Example: 'blue widget'.",
+				},
+				{
+					Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: ptrBool(false),
+					Description: "Max results (1-100, default: 10).",
+				},
+				{
+					Name: "fields", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
+					Description: "Comma-separated field names to search. Default: all searchable fields.",
+				},
 			},
 		},
 		{
@@ -217,10 +227,14 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 				"WHEN: you have an exact value or numeric range (price, status, availability, id from a previous search).\n" +
 				"WHEN NOT: do not guess values — call db_describe first to see valid values.",
 			Params: []config.EndpointParam{
-				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
-				{Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: ptrBool(false),
-					Description: "Max results (1-100, default: 10). Use 1 for pure count questions."},
+				{
+					Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map, canonical e.g. catalog_product).",
+				},
+				{
+					Name: "limit", In: config.ParamInQuery, Type: config.ParamTypeInt, Required: ptrBool(false),
+					Description: "Max results (1-100, default: 10). Use 1 for pure count questions.",
+				},
 			},
 		},
 		{
@@ -229,12 +243,18 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 			Endpoint:    "/q/get",
 			Description: dbGetDesc,
 			Params: []config.EndpointParam{
-				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
-				{Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Parent record id."},
-				{Name: "relation", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
-					Description: "FK column name (from db_map relations). Optional if entity has one relation."},
+				{
+					Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map, canonical e.g. catalog_product).",
+				},
+				{
+					Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Parent record id.",
+				},
+				{
+					Name: "relation", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
+					Description: "FK column name (from db_map relations). Optional if entity has one relation.",
+				},
 			},
 		},
 		{
@@ -245,12 +265,18 @@ func GenerateConsolidatedMCPTools(displayPrefixes []string, customPlurals map[st
 				"Use to navigate relations shown in db_map (e.g. orders for a customer). " +
 				"One query, no JOINs.",
 			Params: []config.EndpointParam{
-				{Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Entity name (from db_map, canonical e.g. catalog_product)."},
-				{Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
-					Description: "Parent record id."},
-				{Name: "relation", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
-					Description: "FK column name (from db_map relations). Optional if entity has one relation."},
+				{
+					Name: "entity", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Entity name (from db_map, canonical e.g. catalog_product).",
+				},
+				{
+					Name: "id", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(true),
+					Description: "Parent record id.",
+				},
+				{
+					Name: "relation", In: config.ParamInQuery, Type: config.ParamTypeString, Required: ptrBool(false),
+					Description: "FK column name (from db_map relations). Optional if entity has one relation.",
+				},
 			},
 		},
 	}

@@ -38,9 +38,11 @@ type mockConn struct{}
 func (m *mockConn) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return nil, nil
 }
+
 func (m *mockConn) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return nil
 }
+
 func (m *mockConn) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return nil, nil
 }
@@ -55,6 +57,7 @@ func (m *mockAdapterForConn) TranslatePlaceholder(idx int) string { return "$3" 
 func (m *mockAdapterForConn) Connect(ctx context.Context, dsn string) (datasource.Conn, error) {
 	return &mockConn{}, nil
 }
+
 func (m *mockAdapterForConn) Introspect(ctx context.Context, conn datasource.Conn) (*datasource.Schema, error) {
 	return nil, nil
 }

@@ -530,11 +530,13 @@ func TestFilterStrategy_ToolParams(t *testing.T) {
 		paramNames[p.Name] = true
 	}
 
-	expected := []string{"name", "name__like", "name__in", "description", "description__like", "description__in",
+	expected := []string{
+		"name", "name__like", "name__in", "description", "description__like", "description__in",
 		"price", "price__gt", "price__gte", "price__lt", "price__lte", "price__in",
 		"active", "active__in",
 		"category", "category__like", "category__in",
-		"limit", "sort_by", "format"}
+		"limit", "sort_by", "format",
+	}
 	unexpected := []string{"offset", "id"}
 	for _, name := range expected {
 		if !paramNames[name] {
@@ -851,18 +853,22 @@ func TestFilterStrategy_IsFilterableField_NoiseExcluded(t *testing.T) {
 	}
 
 	// Должны быть
-	for _, name := range []string{"name", "name__in", "description", "price", "price__gt",
+	for _, name := range []string{
+		"name", "name__in", "description", "price", "price__gt",
 		"category_id", "category_id__in", "brand_id", "brand_id__in",
-		"is_available", "is_available__in", "limit"} {
+		"is_available", "is_available__in", "limit",
+	} {
 		if !paramNames[name] {
 			t.Errorf("Missing expected param: %s", name)
 		}
 	}
 
 	// Не должны быть
-	for _, name := range []string{"seo_title", "seo_description", "views_count",
+	for _, name := range []string{
+		"seo_title", "seo_description", "views_count",
 		"weight_kg", "dimensions", "image", "created_at",
-		"is_popular", "is_new", "warranty_months"} {
+		"is_popular", "is_new", "warranty_months",
+	} {
 		if paramNames[name] {
 			t.Errorf("Noise field should be excluded: %s", name)
 		}

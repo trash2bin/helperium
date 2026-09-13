@@ -308,5 +308,7 @@ func TestScenario_BigTestseed_NoPanicsOnRandomQueries(t *testing.T) {
 }
 
 // _ компилирует httptest алиас чтобы не было неиспользуемых imports warning
-var _ = httptest.NewServer
-var _ = fmt.Sprintf
+var (
+	_ = httptest.NewServer
+	_ = fmt.Sprintf
+)

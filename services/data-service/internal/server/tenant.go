@@ -120,7 +120,7 @@ func (ts *TenantStore) SaveTenantConfig(id string, cfg *config.Config) string {
 	if ts.TenantsDir == "" {
 		return ""
 	}
-	if err := os.MkdirAll(ts.TenantsDir, 0755); err != nil {
+	if err := os.MkdirAll(ts.TenantsDir, 0o755); err != nil {
 		slog.Warn("save config: failed to create tenants directory", "tenant", id, "error", err)
 		return ""
 	}
@@ -144,7 +144,7 @@ func (ts *TenantStore) SaveTenantConfig(id string, cfg *config.Config) string {
 		slog.Warn("save config: temp write error", "tenant", id, "error", err)
 		return ""
 	}
-	if err := tmp.Chmod(0644); err != nil {
+	if err := tmp.Chmod(0o644); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		slog.Warn("save config: chmod error", "tenant", id, "error", err)
@@ -185,7 +185,7 @@ func (ts *TenantStore) SaveTenantSchema(id string, schema *datasource.Schema) {
 	if ts.TenantsDir == "" || schema == nil {
 		return
 	}
-	if err := os.MkdirAll(ts.TenantsDir, 0755); err != nil {
+	if err := os.MkdirAll(ts.TenantsDir, 0o755); err != nil {
 		slog.Warn("save schema: failed to create tenants directory", "tenant", id, "error", err)
 		return
 	}
@@ -209,7 +209,7 @@ func (ts *TenantStore) SaveTenantSchema(id string, schema *datasource.Schema) {
 		slog.Warn("save schema: temp write error", "tenant", id, "error", err)
 		return
 	}
-	if err := tmp.Chmod(0644); err != nil {
+	if err := tmp.Chmod(0o644); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		slog.Warn("save schema: chmod error", "tenant", id, "error", err)

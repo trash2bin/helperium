@@ -75,7 +75,6 @@ func TestRegistryEvictsIdleScopeAtCapacity(t *testing.T) {
 	clk.advance(registryIdleEvictionTTL + time.Minute)
 
 	handler, err := registry.handlerFor([]string{"tenant-b"})
-
 	if err != nil {
 		t.Fatalf("handlerFor() error = %v, want nil after idle eviction", err)
 	}

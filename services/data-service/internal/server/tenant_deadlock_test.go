@@ -22,7 +22,7 @@ func writeConfigForTest(t *testing.T, path string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o644)
 }
 
 // TestServeHTTP_NestedMCPschema_NoDeadlock — регресс deadlock'а при вложенном

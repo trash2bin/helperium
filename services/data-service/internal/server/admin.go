@@ -133,13 +133,13 @@ func archiveCurrentConfig(configPath string) error {
 	}
 
 	versionsDir := filepath.Join(filepath.Dir(configPath), "config_versions")
-	if err := os.MkdirAll(versionsDir, 0755); err != nil {
+	if err := os.MkdirAll(versionsDir, 0o755); err != nil {
 		return fmt.Errorf("create versions dir: %w", err)
 	}
 
 	ts := time.Now().UTC().Format("2006-01-02T150405")
 	archivePath := filepath.Join(versionsDir, fmt.Sprintf("config.%s.json", ts))
-	if err := os.WriteFile(archivePath, data, 0644); err != nil {
+	if err := os.WriteFile(archivePath, data, 0o644); err != nil {
 		return fmt.Errorf("write archive: %w", err)
 	}
 
