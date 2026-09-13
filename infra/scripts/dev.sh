@@ -249,7 +249,21 @@ start_autoparts_store() {
   # container and Helperium tenant config are the source of truth.  This keeps
   # --with-autoparts idempotent and avoids trying to create a second database
   # against the same preserved volume.
-  if [ "$(docker inspect -f '{{.State.Running}}' autoparts-store-storefront-db-1 2>/dev/null)" = "true" ] \
+  #
+  # The storefront compose pins container_name: autoparts-db, so that is the
+  # canonical name; the historical default-derived names are accepted for
+  # robustness. Without the pinned name here the reuse check always failed,
+  # re-ran the bootstrap container without the DSN host overrides and
+  # overwrote the tenant DSN with a Docker-network hostname unreachable from
+  # the native data-service (pentest 2026-09-13 finding).
+  autoparts_db_running=false
+  for candidate in autoparts-db autoparts-store-storefront-db-1 autoparts-store_storefront-db_1; do
+    if [ "$(docker inspect -f '{{.State.Running}}' "$candidate" 2>/dev/null)" = "true" ]; then
+      autoparts_db_running=true
+      break
+    fi
+  done
+  if [ "$autoparts_db_running" = "true" ] \
     && [ -f "$PROJECT_ROOT/.data/tenants/autoparts.json" ] \
     && command -v nc >/dev/null 2>&1 \
     && nc -z 127.0.0.1 5434 >/dev/null 2>&1; then
