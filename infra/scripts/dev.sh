@@ -326,6 +326,18 @@ cmd_start() {
     export MCP_CLIENT_API_KEY="$MCP_API_KEY"
     echo "ℹ️  Native dev: MCP_CLIENT_API_KEY defaults to MCP_API_KEY for local service auth."
   fi
+  # Secure-by-default (pentest C1): when the operator's .env carries the safe
+  # example defaults (MCP_REQUIRE_AUTH=true + empty keys) or no key at all,
+  # mint an ephemeral loopback-only gateway key for this process tree. The
+  # gateway then runs authenticated even locally; the key is printed once so
+  # manual MCP clients can log in. The E2E profile overrides credentials after
+  # this block with its own isolated values.
+  if [ "${MCP_E2E_PROFILE:-false}" != "true" ] && [ -z "${MCP_API_KEY:-}" ]; then
+    export MCP_API_KEY="dev-$(openssl rand -hex 16)"
+    export MCP_CLIENT_API_KEY="$MCP_API_KEY"
+    export MCP_REQUIRE_AUTH=true
+    echo "🔑 Native dev: generated ephemeral gateway key for this process tree (MCP_API_KEY=$MCP_API_KEY)."
+  fi
   # The dashboard rejects equal admin and viewer tokens. Keep the source .env
   # untouched, but make the local process tree operable with a distinct viewer
   # token. Deployment configuration must define distinct values explicitly.
@@ -464,17 +476,27 @@ cmd_start() {
         # The RAG project currently has a flat package layout at services/rag.
         # Add its parent only for this native process so `python -m rag.service`
         # resolves deterministically without a user-managed PYTHONPATH workaround.
-        extra_env="RAG_PORT=$RAG_PORT PYTHONPATH=$PROJECT_ROOT/services${PYTHONPATH:+:$PYTHONPATH}"
+        extra_env="RAG_PORT=$RAG_PORT RAG_IMPORT_ROOT=$PROJECT_ROOT/.data/rag-imports PYTHONPATH=$PROJECT_ROOT/services${PYTHONPATH:+:$PYTHONPATH}"
+        # RAG admin ops (/documents/import|upload|delete, /admin/*) require
+        # X-Admin-Token = ADMIN_API_TOKEN (fail-closed, pentest C2). Default to
+        # ADMIN_TOKEN like .env.example does; keep dev dashboard upload working.
+        if [ -n "${ADMIN_API_TOKEN:-$ADMIN_TOKEN}" ]; then
+          extra_env="ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-$ADMIN_TOKEN} $extra_env"
+        fi
         ;;
       data)
-        extra_env="PORT=$DATA_PORT TENANTS_DIR=$PROJECT_ROOT/.data/tenants"
+        # Loopback bind (pentest C1): the read surface (/q/*, /mcp/*) has no
+        # auth, so native dev must not expose it on all interfaces.
+        extra_env="PORT=127.0.0.1:$DATA_PORT TENANTS_DIR=$PROJECT_ROOT/.data/tenants"
         # ADMIN_TOKEN — если задан в .env, прокидываем в data-service для /admin/* эндпоинтов
         if [ -n "${ADMIN_TOKEN:-}" ]; then
           extra_env="$extra_env ADMIN_TOKEN=$ADMIN_TOKEN"
         fi
         ;;
       mcp)
-        extra_env="MCP_PORT=$MCP_PORT DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT LOG_LEVEL=info"
+        # MCP_HOST=127.0.0.1 — см. pentest C1: gateway без auth (MCP_DEV)
+        # не должен слушать все интерфейсы в native dev.
+        extra_env="MCP_PORT=$MCP_PORT MCP_HOST=127.0.0.1 DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT LOG_LEVEL=info"
         if [ "$MCP_DEV" = "true" ]; then
           extra_env="MCP_DEV=true $extra_env"
         fi
@@ -503,7 +525,7 @@ cmd_start() {
         fi
         ;;
       web) extra_env="DEMO_API_HOST=127.0.0.1 DEMO_API_PORT=$API_PORT DEMO_WEB_PORT=$WEB_PORT DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT" ;;
-      admin) extra_env="LISTEN_ADDR=:$ADMIN_PORT ADMIN_TOKEN=$ADMIN_TOKEN VIEWER_TOKEN=$VIEWER_TOKEN DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT API_SERVICE_URL=http://127.0.0.1:$API_PORT LOG_LEVEL=$LOG_LEVEL LOG_FORMAT=$LOG_FORMAT" ;;
+      admin) extra_env="LISTEN_ADDR=127.0.0.1:$ADMIN_PORT ADMIN_TOKEN=$ADMIN_TOKEN VIEWER_TOKEN=$VIEWER_TOKEN DATA_SERVICE_URL=http://127.0.0.1:$DATA_PORT RAG_SERVICE_URL=http://127.0.0.1:$RAG_PORT API_SERVICE_URL=http://127.0.0.1:$API_PORT LOG_LEVEL=$LOG_LEVEL LOG_FORMAT=$LOG_FORMAT" ;;
     esac
 
     echo "  🚀 Starting $svc..."
