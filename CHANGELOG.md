@@ -1,5 +1,8 @@
 # CHANGELOG.md
 
+## 2026-09-13
+- **doc(security):** add `doc/archive/pentest-live-2026-09-12.md` — evidence-снимок живого пентеста демо-контура: 2 Critical / 2 High / 3 Medium (слив api-ключей агентов через демо-прокси и админку, обход per-session rate limit ротацией session_id, XFF-spoofing per-IP лимитов, неавторизованные /metrics и /health-инвентарь, платформенные тулы в MCP tool-surface, RAG path-import как arbitrary file read, bind/exposure hardening). Исправления — последующими коммитами. **Verification:** секретов в отчёте нет (только demo-данные).
+
 ## 2026-09-11
 
 - **bench:** rerun on fresh HEAD (`9982c40`) — Nemotron-3.5-lightning-30b-a3b через NVIDIA build API, 49 кейсов, 81.6% pass rate (40 CORRECT / 0 PARTIAL / 1 WRONG / 8 ERROR). CORRECT rate идентичен предыдущему plateau 83.7% (40/49); +2 ERROR — инфра-сбои NVIDIA build API (403, пустые ответы), не деградация модели. 1 WRONG — классический AP↔АП transliteration. Документация обновлена: `doc/benchmark/runs/README.md`, `doc/benchmark/core-benchmark.md`, `doc/benchmark/README.md`, `services/agent-db/agent_db/bench/README.md`, `README_RU.md`.
