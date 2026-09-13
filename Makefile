@@ -7,6 +7,7 @@ ci-lint-py:
 
 ci-audit:
 	-uv audit --preview-features audit-command
+	-go install golang.org/x/vuln/cmd/govulncheck@latest
 	@echo ""
 	@echo "=== Go vulncheck (services/data-service) ==="
 	cd services/data-service && $$(go env GOPATH)/bin/govulncheck ./... 2>&1 | grep -E '(No vulnerabilities|Your code is affected|error)' || true
