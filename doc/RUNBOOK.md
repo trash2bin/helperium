@@ -96,7 +96,7 @@ curl http://localhost:8081/health    # → {"status":"ok"}
 # Prometheus: http://localhost:9090
 ```
 
-Each service exposes `/metrics` by default.
+Each core service (api, rag, mcp-gateway, data, admin) exposes bearer-protected `/metrics`; the dev-only `web` proxy does not.
 
 ---
 
@@ -315,7 +315,7 @@ curl http://localhost:8081/health    # → {"status":"ok"}
 # Prometheus: http://localhost:9090
 ```
 
-Каждый сервис отдаёт `/metrics` по умолчанию.
+Каждый core-сервис (api, rag, mcp-gateway, data, admin) отдаёт `/metrics` за bearer-токеном; у dev-only `web`-прокси метрик нет.
 
 ---
 
