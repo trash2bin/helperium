@@ -52,20 +52,25 @@ class AbuseConfig:
     max_repeated_count: int = 3  # repeated identical message threshold
 
     # User-Agent filtering
+    # Curated bot markers are matched as case-insensitive SUBSTRINGS of the
+    # header: "Mozilla/5.0 (compatible; curl/8.4.0)" must be blocked exactly
+    # like a bare "curl/8.4.0". Markers are specific enough (all carry a
+    # product suffix or distinctive token) that no real browser UA contains
+    # them. Do not re-anchor these with '^'.
     blocked_user_agents: list[str] = field(
         default_factory=lambda: [
-            r"^curl/",
-            r"^wget/",
-            r"^python-requests",
-            r"^Go-http-client",
-            r"^Java/",
-            r"^libwww",
-            r"^LWP",
-            r"^WWW-Mechanize",
-            r"^scrapy",
-            r"^Python-urllib",
-            r"^axios/",
-            r"^PostmanRuntime",
+            r"curl/",
+            r"wget/",
+            r"python-requests",
+            r"go-http-client",
+            r"java/",
+            r"libwww",
+            r"lwp",
+            r"www-mechanize",
+            r"scrapy",
+            r"python-urllib",
+            r"axios/",
+            r"postmanruntime",
         ]
     )
     block_empty_user_agent: bool = True

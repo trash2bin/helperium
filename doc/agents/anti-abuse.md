@@ -24,7 +24,7 @@ Chat routes применяют coarse per-IP limit (`CHAT_RATE_LIMIT`, по ум
 | Control | Runtime source | Default | Семантика |
 |---|---|---:|---|
 | Сообщение | `ABUSE_MAX_MSG_LENGTH` | 2000 chars | Слишком длинный input отклоняется до LLM. |
-| User-Agent | `block_empty_user_agent`, blocked patterns | enabled | Пустой и configured automation UA отклоняются до LLM. |
+| User-Agent | `block_empty_user_agent`, blocked patterns | enabled | Пустой и automation UA отклоняются до LLM. Паттерны — курированные маркеры (`curl/`, `python-requests`, …) и матчатся как case-insensitive ПОДСТРОКА: `Mozilla/5.0 (compatible; curl/8.4.0)` блокируется так же, как голый `curl/` (регрессия пентеста 2026-09-13). |
 | Повтор текста | `max_repeated_count` | 3 | Четвёртый identical input в rolling window блокируется. |
 | Интервал | `min_interval_ms` | 1000 ms | Считается от timestamp **принятого ingress user turn**, а не от завершения LLM/SSE или flattened transcript. |
 | Session user-turn quota | `max_user_turns_per_session` / `ABUSE_MAX_USER_TURNS` | 50 | Число принятых **user turns**. Assistant и tool messages quota не расходуют. |

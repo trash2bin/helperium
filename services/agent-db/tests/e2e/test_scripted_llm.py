@@ -515,3 +515,159 @@ class TestScriptedPipeline:
                 "final_text": "", "errors": [f"HTTP {resp.status_code}"], "status_messages": [],
             }
         return parse_sse_stream(resp, idle_timeout=20)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Pentest 2026-09-13 security regressions (scripted, no real LLM)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _blocked_marker(text: str) -> bool:
+    lowered = text.lower()
+    return "blocked" in lowered or "заблокирован" in lowered
+
+
+class TestDisguisedBotUserAgents:
+    """L1: curated bot markers must match anywhere in the User-Agent header.
+
+    The historical blocklist anchored every pattern with '^', so
+    "Mozilla/5.0 (compatible; curl/8.4.0)" sailed through the abuse gate.
+    """
+
+    def _post(self, api_url: str, agent_name: str, user_agent: str) -> requests.Response:
+        return requests.post(
+            f"{api_url}/api/chat/{agent_name}",
+            json={"message": "probe", "session_id": f"e2e-ua-{uuid.uuid4().hex[:8]}"},
+            headers={"Content-Type": "application/json", "User-Agent": user_agent},
+            timeout=30,
+            stream=True,
+        )
+
+    def test_disguised_curl_is_blocked(self, scripted_server):
+        api_url, agent_name, _, _ = scripted_server
+        resp = self._post(api_url, agent_name, "Mozilla/5.0 (compatible; curl/8.4.0)")
+        body = resp.text
+        assert _blocked_marker(body), (
+            f"disguised curl reached the agent route: HTTP {resp.status_code} {body[:300]}"
+        )
+
+    def test_disguised_python_requests_is_blocked(self, scripted_server):
+        api_url, agent_name, _, _ = scripted_server
+        resp = self._post(
+            api_url, agent_name, "Mozilla/5.0 (compatible; python-requests/2.31)"
+        )
+        assert _blocked_marker(resp.text), resp.text[:300]
+
+    def test_plain_curl_control_is_blocked(self, scripted_server):
+        """Control: the un-disguised marker was blocked before and must stay blocked."""
+        api_url, agent_name, _, _ = scripted_server
+        resp = self._post(api_url, agent_name, "curl/8.4.0")
+        assert _blocked_marker(resp.text), resp.text[:300]
+
+
+class TestSessionCapability:
+    """M1: session_id is a capability, not just a transcript key.
+
+    A client that did not create (or does not own) a session must not be able
+    to append to its transcript. The first response of a new session issues a
+    capability token (SSE ``session`` event + ``X-Session-Token`` header);
+    reusing the session_id without that token must be rejected.
+    """
+
+    def _chat_raw(
+        self,
+        api_url: str,
+        agent_name: str,
+        session_id: str | None,
+        *,
+        token: str | None = None,
+        message: str = "привет",
+    ) -> dict:
+        headers = {"Content-Type": "application/json", "User-Agent": "HelperiumE2E/1.0"}
+        if token:
+            headers["X-Session-Token"] = token
+        body: dict = {"message": message}
+        if session_id is not None:
+            body["session_id"] = session_id
+        resp = requests.post(
+            f"{api_url}/api/chat/{agent_name}",
+            json=body,
+            headers=headers,
+            timeout=30,
+            stream=True,
+        )
+        if resp.status_code != 200:
+            return {
+                "status": resp.status_code,
+                "text": resp.text[:300],
+                "events": [],
+                "session_token": None,
+            }
+        events = parse_sse_stream(resp, idle_timeout=20)
+        issued = resp.headers.get("X-Session-Token")
+        for ev in events["events"]:
+            if ev.get("type") == "session" and ev.get("session_token"):
+                issued = ev["session_token"]
+        return {"status": resp.status_code, **events, "session_token": issued}
+
+    def test_new_session_issues_capability_token(self, scripted_server):
+        api_url, agent_name, _, _ = scripted_server
+        result = self._chat_raw(api_url, agent_name, f"e2e-cap-{uuid.uuid4().hex[:8]}")
+        assert result["status"] == 200, result.get("text")
+        assert result["session_token"], (
+            f"no capability token issued: header/event missing, events={result['events'][:3]}"
+        )
+
+    def test_missing_session_id_is_rejected(self, scripted_server):
+        api_url, agent_name, _, _ = scripted_server
+        result = self._chat_raw(api_url, agent_name, None)
+        text = str(result.get("text", "")) + " ".join(
+            str(ev) for ev in result["events"]
+        )
+        assert result["status"] == 400, (
+            f"chat without session_id must be HTTP 400, got {result['status']}: {text[:200]}"
+        )
+        assert "missing session_id" in text.lower(), text[:300]
+
+    def test_hijack_without_token_is_rejected(self, scripted_server):
+        api_url, agent_name, _, _ = scripted_server
+        session_id = f"e2e-cap-{uuid.uuid4().hex[:8]}"
+        owner = self._chat_raw(api_url, agent_name, session_id, message="первое")
+        assert owner["status"] == 200, owner.get("text")
+
+        thief = self._chat_raw(api_url, agent_name, session_id, token=None)
+        text = str(thief.get("text", "")) + " ".join(str(ev) for ev in thief["events"])
+        assert thief["status"] == 401, (
+            f"hijack without token was accepted: {thief['status']} {text[:200]}"
+        )
+
+    def test_hijack_with_wrong_token_is_rejected(self, scripted_server):
+        api_url, agent_name, _, _ = scripted_server
+        session_id = f"e2e-cap-{uuid.uuid4().hex[:8]}"
+        owner = self._chat_raw(api_url, agent_name, session_id, message="первое")
+        assert owner["status"] == 200, owner.get("text")
+        assert owner["session_token"], "owner did not receive a capability token"
+
+        thief = self._chat_raw(
+            api_url, agent_name, session_id, token="forged-token-value"
+        )
+        text = str(thief.get("text", "")) + " ".join(str(ev) for ev in thief["events"])
+        assert thief["status"] == 401, (
+            f"forged token was accepted: {thief['status']} {text[:200]}"
+        )
+
+    def test_valid_token_continues_session(self, scripted_server):
+        api_url, agent_name, _, _ = scripted_server
+        session_id = f"e2e-cap-{uuid.uuid4().hex[:8]}"
+        owner = self._chat_raw(api_url, agent_name, session_id, message="первое")
+        assert owner["status"] == 200, owner.get("text")
+        assert owner["session_token"], "owner did not receive a capability token"
+
+        again = self._chat_raw(
+            api_url, agent_name, session_id, token=owner["session_token"]
+        )
+        text = " ".join(str(ev) for ev in again["events"])
+        assert again["status"] == 200, again.get("text")
+        assert not any("session token" in str(ev).lower() for ev in again["errors"]), (
+            f"valid token rejected: {again['errors']}"
+        )

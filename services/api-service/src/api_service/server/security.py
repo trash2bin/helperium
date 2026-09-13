@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 
 from .rate_limit import get_client_ip
@@ -24,12 +25,23 @@ def _get_lang_from_request(request) -> str:
     return "ru" if accept.startswith("ru") else "en"
 
 
+def _retry_after_seconds(retry_after: float) -> int:
+    """Whole seconds for the Retry-After header/message (RFC 7231).
+
+    A sub-second wait (e.g. 0.6s) must never be announced as "0": the value
+    is truncated only by buggy clients, so round up and keep the minimum at
+    one second.
+    """
+    return max(1, math.ceil(retry_after))
+
+
 def _make_error_message(request, retry_after: float) -> str:
     """Build localized rate-limit error message."""
     lang = _get_lang_from_request(request)
+    seconds = _retry_after_seconds(retry_after)
     if lang == "ru":
-        return f"Слишком много запросов. Повторите через {int(retry_after)}с."
-    return f"Too many requests. Retry after {retry_after:.0f}s."
+        return f"Слишком много запросов. Повторите через {seconds}с."
+    return f"Too many requests. Retry after {seconds}s."
 
 
 async def check_abuse(request, session_id, message, agent_abuse_config=None):
@@ -57,7 +69,7 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
             _single_error(msg),
             media_type="text/event-stream",
             status_code=429,
-            headers={"Retry-After": str(int(retry_after))},
+            headers={"Retry-After": str(_retry_after_seconds(retry_after))},
         )
 
     allowed, ctx = token_bucket.allow(safe_id, ip, user_agent)
@@ -74,7 +86,7 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
             _single_error(msg),
             media_type="text/event-stream",
             status_code=429,
-            headers={"Retry-After": str(int(retry_after))},
+            headers={"Retry-After": str(_retry_after_seconds(retry_after))},
         )
 
     state = await asyncio.to_thread(session_store.abuse_state, safe_id)
