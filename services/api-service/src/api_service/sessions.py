@@ -84,6 +84,22 @@ class SessionStore:
         with self._lock:
             return self._repository.abuse_state(session_id)
 
+    def session_token_hash(self, session_id: str) -> str | None:
+        """Return the stored capability-token hash for a session (normalized)."""
+        session_id = self.normalize_session_id(session_id)
+        with self._lock:
+            return self._repository.read_session_token_hash(session_id)
+
+    def bind_session_token(self, session_id: str, token_hash: str) -> str:
+        """Bind a capability-token hash and return the hash actually stored.
+
+        Binding never overwrites an existing hash, so the caller can detect a
+        lost concurrent-bind race and withhold the plaintext token.
+        """
+        session_id = self.normalize_session_id(session_id)
+        with self._lock:
+            return self._repository.bind_session_token(session_id, token_hash)
+
     @staticmethod
     def normalize_session_id(session_id: str) -> str:
         normalized = str(session_id or "").strip()

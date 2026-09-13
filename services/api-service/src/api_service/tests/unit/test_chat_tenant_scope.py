@@ -138,19 +138,17 @@ async def test_named_agent_uses_persisted_composite_scope_not_request_header() -
         tenant_header="attacker-tenant",
     )
 
+    # get_agent_store() is evaluated eagerly inside chat_agent_handler; a
+    # MagicMock store keeps the test away from the developer's real
+    # agents.sqlite while the real asyncio.to_thread runs every call (the
+    # session-capability calls land in the shared FakeChatSessionStore from
+    # the unit conftest).
+    store = MagicMock()
+    store.get_agent.return_value = persisted_agent
+
     with (
         patch("api_service.server.routes.chat.get_agent", return_value=agent),
-        # get_agent_store() is evaluated eagerly before the (mocked)
-        # asyncio.to_thread call; patch it so the test never opens the
-        # developer's real agents.sqlite.
-        patch(
-            "api_service.server.routes.chat.get_agent_store",
-            return_value=MagicMock(),
-        ),
-        patch(
-            "api_service.server.routes.chat.asyncio.to_thread",
-            new=AsyncMock(return_value=persisted_agent),
-        ),
+        patch("api_service.server.routes.chat.get_agent_store", return_value=store),
         patch(
             "api_service.server.routes.chat.check_abuse",
             new_callable=AsyncMock,

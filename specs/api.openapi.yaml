@@ -1516,7 +1516,6 @@ components:
         session_id:
           type: string
           title: Session Id
-          default: default
         agent:
           anyOf:
           - type: string
@@ -1530,6 +1529,7 @@ components:
       type: object
       required:
       - audio
+      - session_id
       title: Body_chat_voice_endpoint_api_chat_voice_post
     ChatMessage:
       properties:

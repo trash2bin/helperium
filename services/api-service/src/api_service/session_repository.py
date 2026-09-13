@@ -31,6 +31,10 @@ class SessionRepository(Protocol):
 
     def abuse_state(self, session_id: str) -> SessionAbuseState: ...
 
+    def read_session_token_hash(self, session_id: str) -> str | None: ...
+
+    def bind_session_token(self, session_id: str, token_hash: str) -> str: ...
+
 
 def create_sqlite_connection(db_path: str | Path) -> sqlite3.Connection:
     """Create one SQLite connection with the session-store invariants."""
@@ -137,6 +141,52 @@ class SQLiteSessionRepository:
             state = self._backfill_legacy_state(conn, session_id)
         return state
 
+    def read_session_token_hash(self, session_id: str) -> str | None:
+        """Return the stored capability-token hash for a session, if any."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT session_token_hash FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        value = row["session_token_hash"]
+        return value if isinstance(value, str) and value else None
+
+    def bind_session_token(self, session_id: str, token_hash: str) -> str:
+        """Bind a capability-token hash to a session without overwriting.
+
+        Creates the session row when missing and fills an empty hash. A
+        session that already carries a hash keeps it — the caller that lost
+        this race generated a token that must never be handed out. Returns
+        the hash that is actually stored.
+        """
+        now = time.time()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO sessions(
+                    session_id, created_at, updated_at, session_token_hash
+                ) VALUES(?, ?, ?, ?)
+                ON CONFLICT(session_id) DO NOTHING
+                """,
+                (session_id, now, now, token_hash),
+            )
+            conn.execute(
+                """
+                UPDATE sessions
+                SET session_token_hash = ?
+                WHERE session_id = ? AND session_token_hash IS NULL
+                """,
+                (token_hash, session_id),
+            )
+            row = conn.execute(
+                "SELECT session_token_hash FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        stored = row["session_token_hash"] if row else None
+        return stored if isinstance(stored, str) and stored else token_hash
+
     def _init_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(
@@ -173,6 +223,8 @@ class SQLiteSessionRepository:
                 )
             if "last_user_turn_at" not in columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN last_user_turn_at REAL")
+            if "session_token_hash" not in columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN session_token_hash TEXT")
 
     @staticmethod
     def _ensure_session(conn: sqlite3.Connection, session_id: str, now: float) -> None:

@@ -3,6 +3,7 @@
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,6 +32,41 @@ UPDATED_LLM = {
 
 
 # ── Fixtures ──
+
+
+class FakeChatSessionStore:
+    """Hermetic stand-in for the SQLite-backed chat session store.
+
+    Chat routes read/bind a session capability token on every request; unit
+    tests must neither touch the developer's real session DB nor depend on
+    its state. The fake patches only ``api_service.server.routes.chat`` —
+    transcript writes go through the orchestrator's own session_store
+    reference and anti-abuse tests patch ``security.session_store`` at their
+    own seam.
+    """
+
+    def __init__(self) -> None:
+        self._token_hashes: dict[str, str] = {}
+
+    def session_token_hash(self, session_id: str) -> str | None:
+        return self._token_hashes.get(session_id)
+
+    def bind_session_token(self, session_id: str, token_hash: str) -> str:
+        return self._token_hashes.setdefault(session_id, token_hash)
+
+    def abuse_state(self, session_id: str) -> SimpleNamespace:  # noqa: ARG002
+        return SimpleNamespace(user_turn_count=1, last_user_turn_at=None)
+
+    def accept_user_turn(self, session_id: str, accepted_at: float) -> None:  # noqa: ARG002
+        return None
+
+
+@pytest.fixture(autouse=True)
+def hermetic_chat_session_store(monkeypatch):
+    """Route every chat-route session call to :class:`FakeChatSessionStore`."""
+    monkeypatch.setattr(
+        "api_service.server.routes.chat.session_store", FakeChatSessionStore()
+    )
 
 
 @pytest.fixture

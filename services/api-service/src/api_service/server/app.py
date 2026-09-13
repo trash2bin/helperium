@@ -211,7 +211,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Tenant-ID", "X-Correlation-ID"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Tenant-ID",
+        "X-Correlation-ID",
+        "X-Session-Token",
+    ],
+    # The widget reads the session capability token (and correlation id) from
+    # cross-origin responses; without expose-headers browsers hide them.
+    expose_headers=["X-Correlation-ID", "X-Session-Token"],
 )
 
 # Custom middleware

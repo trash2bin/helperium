@@ -25,6 +25,8 @@
 | `/api/chat/voice` | POST | Public voice SSE chat; без named agent использует только `DEFAULT_TENANT_ID` |
 | `/api/chat/{name}` | POST | SSE-чат с именованным агентом; `tenant_ids` только из persisted Agent Store |
 | `/api/session/history` | GET | История сессии (query params: session_id, agent_name) |
+
+> **Session capability (pentest 2026-09-13):** `session_id` в чате обязателен; первая реплика новой сессии выдаёт capability-токен (SSE-событие `session` + заголовок `X-Session-Token`), повторное использование `session_id` без валидного `X-Session-Token` отклоняется с 401. Голосовой эндпоинт применяет тот же гейт; `/api/session/history` и `/api/backlog/*` закрыты bearer-токеном.
 | `/api/backlog` | GET | Список бэклогов |
 | `/api/backlog/{id}` | GET | Детали бэклога |
 | `/api/backlog/stats/{session_id}` | GET | Статистика сессии (токены, cost, ошибки) |

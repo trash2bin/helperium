@@ -17,11 +17,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatRequest(BaseModel):
-    """Request to start or continue a chat."""
+    """Request to start or continue a chat.
+
+    ``session_id`` is required and must be unique per visitor conversation:
+    the server binds every session to a one-time capability token
+    (``X-Session-Token``), so reusing a predictable or shared id — the old
+    ``"default"`` fallback merged all session-less clients into one
+    transcript — is rejected once that session exists.
+    """
 
     message: str = Field(..., min_length=1, description="Text message from the user")
-    session_id: str | None = Field(
-        default="default", description="Session ID for history persistence"
+    session_id: str = Field(
+        ...,
+        min_length=1,
+        description="Session ID for history persistence; issued a capability token on first use",
     )
 
 

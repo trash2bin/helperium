@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from helperium_sdk.settings import settings
+from pydantic import ValidationError
 
 from ..rate_limit import rate_limit, limiter
 from api_service.http_models import ChatRequest, VoiceAgentConfig
@@ -23,10 +24,17 @@ from api_service.audio.voice_config import (
     resolve_voice_config,
 )
 from api_service.audio.stt_engine import STTEngine
+from api_service.sessions import session_store
 from ..deps import get_agent, get_agent_store
 from api_service.log_config import correlation_id_var
 from ..sse import _sse, _single_error, _event_payload, _get_lang
 from ..security import check_abuse
+from ..session_capability import (
+    SESSION_TOKEN_HEADER,
+    generate_session_token,
+    hash_session_token,
+    token_matches,
+)
 from ..tenant_authority import direct_chat_profile, direct_chat_scope, named_agent_scope
 
 logger = logging.getLogger("api_service.server")
@@ -44,6 +52,131 @@ def _backend_stream_interrupted_message(lang: str) -> str:
     if lang == "ru":
         return "Соединение с сервисом данных прервано. Пожалуйста, попробуйте ещё раз."
     return "The data service connection was interrupted. Please try again."
+
+
+async def _reject_session_hijack(
+    request: Request, effective_session_id: str, correlation_id: str
+) -> tuple[str | None, StreamingResponse | None]:
+    """Reject a request that reuses a token-protected session without it.
+
+    Returns ``(stored_hash, error_response)``. ``error_response`` is set when
+    the session is token-protected and the request does not present a valid
+    token. Runs BEFORE the anti-abuse gate: an unauthenticated request must
+    neither burn the victim's rate-limit budget nor mutate accepted-turn
+    state. Sessions without a stored hash (new, or created before capability
+    tokens existed) pass here and receive a minted token after the abuse gate.
+    """
+    stored_hash = await asyncio.to_thread(
+        session_store.session_token_hash, effective_session_id
+    )
+    if stored_hash is None:
+        return None, None
+    presented = request.headers.get(SESSION_TOKEN_HEADER)
+    if token_matches(stored_hash, presented):
+        return stored_hash, None
+    logger.warning(
+        "[CHAT] session capability rejected (correlation_id=%s)", correlation_id
+    )
+    return stored_hash, StreamingResponse(
+        _single_error(
+            "Invalid or missing session token for this session.", correlation_id
+        ),
+        media_type="text/event-stream",
+        status_code=401,
+    )
+
+
+async def _mint_session_token(effective_session_id: str) -> str | None:
+    """Bind a fresh capability token to a session that has none yet.
+
+    Returns the plaintext token for the client, or None when a concurrent
+    request won the bind race — a token that is not the stored one must never
+    be handed out, because it would be rejected on the next turn.
+    """
+    token = generate_session_token()
+    stored_hash = await asyncio.to_thread(
+        session_store.bind_session_token,
+        effective_session_id,
+        hash_session_token(token),
+    )
+    if stored_hash != hash_session_token(token):
+        return None
+    return token
+
+
+def _missing_session_error(correlation_id: str) -> StreamingResponse:
+    return StreamingResponse(
+        _single_error("Missing session_id.", correlation_id),
+        media_type="text/event-stream",
+        status_code=400,
+    )
+
+
+async def _capability_sse_response(
+    source_factory: Callable[[], AsyncIterator[Any]],
+    *,
+    lang: str,
+    correlation_id: str,
+    session_id: str,
+    stored_hash: str | None,
+    effective_session_id: str,
+    watcher: _DisconnectWatch,
+) -> StreamingResponse:
+    """Build the chat SSE response with the session capability handshake.
+
+    Mints the capability token only after the abuse gate (a rate-limited
+    client must not lose a token it never received), emits it as the first
+    ``session`` event plus the ``X-Session-Token`` header, then streams the
+    buffered agent producer with the terminal-event semantics shared by all
+    chat paths.
+    """
+    minted_token = (
+        None
+        if stored_hash is not None
+        else await _mint_session_token(effective_session_id)
+    )
+    chat_sessions_total.inc()
+
+    async def events():
+        correlation_id_var.set(correlation_id)
+        if minted_token:
+            yield _sse(
+                {
+                    "type": "session",
+                    "session_id": session_id,
+                    "session_token": minted_token,
+                }
+            )
+        try:
+            async for payload in _buffered_agent_sse_events(
+                source_factory(), lang, correlation_id, disconnect_check=watcher.check
+            ):
+                yield payload
+            chat_messages_total.labels(status="sent").inc()
+        finally:
+            await watcher.stop()
+
+    headers = {"X-Session-Token": minted_token} if minted_token else None
+    return StreamingResponse(events(), media_type="text/event-stream", headers=headers)
+
+
+def _parse_chat_request(
+    body: Any, correlation_id: str
+) -> ChatRequest | StreamingResponse:
+    """Parse the chat body, naming session_id problems explicitly.
+
+    ``session_id`` is a required model field: a request without one must be
+    rejected at the door instead of silently joining a shared transcript.
+    """
+    try:
+        return ChatRequest(**body)
+    except ValidationError as exc:
+        if any(error.get("loc") == ("session_id",) for error in exc.errors()):
+            return _missing_session_error(correlation_id)
+        return StreamingResponse(
+            _single_error("Invalid request body.", correlation_id),
+            media_type="text/event-stream",
+        )
 
 
 class _DisconnectWatch:
@@ -197,12 +330,15 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
 
     try:
         body = await request.json()
-        chat_req = ChatRequest(**body)
     except Exception:
         return StreamingResponse(
             _single_error("Invalid request body.", correlation_id),
             media_type="text/event-stream",
         )
+    parsed = _parse_chat_request(body, correlation_id)
+    if isinstance(parsed, StreamingResponse):
+        return parsed
+    chat_req = parsed
 
     message = chat_req.message
     session_id = chat_req.session_id
@@ -217,26 +353,27 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
             _single_error("Empty message.", correlation_id),
             media_type="text/event-stream",
         )
-    if not session_id:
-        return StreamingResponse(
-            _single_error("Missing session_id.", correlation_id),
-            media_type="text/event-stream",
-        )
+
+    effective_session_id = f"direct:{session_id}"
+
+    # Session capability first: no anti-abuse accounting for unauthenticated
+    # reuse of someone else's session id.
+    stored_hash, hijack_error = await _reject_session_hijack(
+        request, effective_session_id, correlation_id
+    )
+    if hijack_error is not None:
+        return hijack_error
 
     abuse_result = await check_abuse(request, session_id, message)
     if abuse_result is not None:
         return abuse_result
 
-    effective_session_id = f"direct:{session_id}"
-    chat_sessions_total.inc()
     lang = _get_lang(request)
-
     watcher = _DisconnectWatch(request)
     watcher.start()
 
-    async def events():
-        correlation_id_var.set(correlation_id)
-        source = get_agent().stream_events(
+    return await _capability_sse_response(
+        lambda: get_agent().stream_events(
             message,
             session_id=effective_session_id,
             tenant_ids=tenant_ids,
@@ -251,17 +388,14 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
                 if settings.direct_chat_agent
                 else "account:default"
             ),
-        )
-        try:
-            async for payload in _buffered_agent_sse_events(
-                source, lang, correlation_id, disconnect_check=watcher.check
-            ):
-                yield payload
-            chat_messages_total.labels(status="sent").inc()
-        finally:
-            await watcher.stop()
-
-    return StreamingResponse(events(), media_type="text/event-stream")
+        ),
+        lang=lang,
+        correlation_id=correlation_id,
+        session_id=session_id,
+        stored_hash=stored_hash,
+        effective_session_id=effective_session_id,
+        watcher=watcher,
+    )
 
 
 # ── Voice Chat ──────────────────────────────────────────────────────────
@@ -272,7 +406,7 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
 async def chat_voice_endpoint(
     request: Request,
     audio: UploadFile = File(...),
-    session_id: str = Form("default"),
+    session_id: str = Form(...),
     agent: str | None = Form(None),
     lang: str | None = Form(None),
 ) -> StreamingResponse:
@@ -366,7 +500,13 @@ async def chat_voice_endpoint(
         effective_session_id = f"direct:{session_id}"
 
     request_lang = lang or _get_lang(request)
-    chat_sessions_total.inc()
+
+    # Session capability gate, same contract as the text endpoints.
+    stored_hash, hijack_error = await _reject_session_hijack(
+        request, effective_session_id, correlation_id
+    )
+    if hijack_error is not None:
+        return hijack_error
 
     # Same anti-abuse gate as the text and named-agent paths: session quota,
     # duplicate-message and UA checks all apply to transcribed voice input.
@@ -399,9 +539,8 @@ async def chat_voice_endpoint(
     # Buffered producer, same as the text and named-agent paths: MCP transport
     # cancellation must not kill the SSE writer, and every producer failure is
     # classified into a terminal error + done pair.
-    async def events():
-        correlation_id_var.set(correlation_id)
-        source = get_agent().stream_events(
+    return await _capability_sse_response(
+        lambda: get_agent().stream_events(
             user_message=text,
             session_id=effective_session_id,
             tenant_ids=tenant_ids,
@@ -411,17 +550,14 @@ async def chat_voice_endpoint(
             provider_priority=provider_priority,
             correlation_id=correlation_id,
             disconnect_check=watcher.check,
-        )
-        try:
-            async for payload in _buffered_agent_sse_events(
-                source, request_lang, correlation_id, disconnect_check=watcher.check
-            ):
-                yield payload
-            chat_messages_total.labels(status="sent").inc()
-        finally:
-            await watcher.stop()
-
-    return StreamingResponse(events(), media_type="text/event-stream")
+        ),
+        lang=request_lang,
+        correlation_id=correlation_id,
+        session_id=session_id,
+        stored_hash=stored_hash,
+        effective_session_id=effective_session_id,
+        watcher=watcher,
+    )
 
 
 # ── Chat by agent name ─────────────────────────────────────────────────
@@ -442,12 +578,15 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
 
     try:
         body = await request.json()
-        chat_req = ChatRequest(**body)
     except Exception:
         return StreamingResponse(
             _single_error("Invalid request body.", correlation_id),
             media_type="text/event-stream",
         )
+    parsed = _parse_chat_request(body, correlation_id)
+    if isinstance(parsed, StreamingResponse):
+        return parsed
+    chat_req = parsed
 
     message = chat_req.message
     session_id = chat_req.session_id
@@ -462,11 +601,16 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
             _single_error("Empty message.", correlation_id),
             media_type="text/event-stream",
         )
-    if not session_id:
-        return StreamingResponse(
-            _single_error("Missing session_id.", correlation_id),
-            media_type="text/event-stream",
-        )
+
+    effective_session_id = f"agent:{name}:{session_id}"
+
+    # Session capability first: no anti-abuse accounting for unauthenticated
+    # reuse of someone else's session id.
+    stored_hash, hijack_error = await _reject_session_hijack(
+        request, effective_session_id, correlation_id
+    )
+    if hijack_error is not None:
+        return hijack_error
 
     agent_abuse_config = agent.get("abuse_config")
     abuse_result = await check_abuse(request, session_id, message, agent_abuse_config)
@@ -476,16 +620,12 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     provider_priority = agent.get("provider_priority") or None
     resolved_llm_config = agent.get("llm_config")
 
-    effective_session_id = f"agent:{name}:{session_id}"
-    chat_sessions_total.inc()
     lang = _get_lang(request)
-
     watcher = _DisconnectWatch(request)
     watcher.start()
 
-    async def events():
-        correlation_id_var.set(correlation_id)
-        source = get_agent().stream_events(
+    return await _capability_sse_response(
+        lambda: get_agent().stream_events(
             user_message=message,
             session_id=effective_session_id,
             tenant_ids=tenant_ids,
@@ -496,14 +636,11 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
             correlation_id=correlation_id,
             disconnect_check=watcher.check,
             principal_id=f"agent:{name}",
-        )
-        try:
-            async for payload in _buffered_agent_sse_events(
-                source, lang, correlation_id, disconnect_check=watcher.check
-            ):
-                yield payload
-            chat_messages_total.labels(status="sent").inc()
-        finally:
-            await watcher.stop()
-
-    return StreamingResponse(events(), media_type="text/event-stream")
+        ),
+        lang=lang,
+        correlation_id=correlation_id,
+        session_id=session_id,
+        stored_hash=stored_hash,
+        effective_session_id=effective_session_id,
+        watcher=watcher,
+    )
