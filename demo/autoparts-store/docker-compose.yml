@@ -25,7 +25,10 @@ services:
         python manage.py seed_data
       "
     environment:
-      DJANGO_DEBUG: "true"
+      # Pentest 2026-09-13 (M2): no service — including one-shot init jobs —
+      # runs with DJANGO_DEBUG=true; DEBUG pages dump settings and secrets.
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-autoparts-dev-secret-change-me}
       DB_HOST: db
       DB_NAME: ${STORE_DB_NAME:-autoparts}
       DB_USER: ${STORE_DB_USER:-autoparts}
@@ -60,11 +63,28 @@ services:
   web:
     build: .
     container_name: autoparts-web
-    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    # Pentest 2026-09-13 (M2): serve with the production-grade stack
+    # (gunicorn via the image CMD pattern), never the Django dev server.
+    # collectstatic runs at start because the `.:/app` bind mount shadows the
+    # staticfiles baked into the image and whitenoise's manifest storage
+    # requires them when DJANGO_DEBUG=false.
+    command: >
+      sh -c "
+        python manage.py collectstatic --noinput &&
+        gunicorn config.wsgi:application --bind 0.0.0.0:8000
+          --workers 3 --threads 2 --timeout 60
+          --access-logfile - --error-logfile -
+      "
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      DJANGO_DEBUG: "true"
+      DJANGO_DEBUG: "false"
+      # Local dev secret; override DJANGO_SECRET_KEY in the environment for
+      # anything reachable beyond loopback (see docker-compose.public.yml).
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-autoparts-dev-secret-change-me}
+      # Loopback-only plain HTTP demo: Secure-cookie defaults would break
+      # CSRF/session flows in browsers that refuse Secure cookies over http.
+      DJANGO_SECURE_COOKIES: "false"
       DB_HOST: db
       DB_NAME: ${STORE_DB_NAME:-autoparts}
       DB_USER: ${STORE_DB_USER:-autoparts}
