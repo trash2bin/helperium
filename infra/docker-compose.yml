@@ -160,6 +160,10 @@ services:
       - MCP_GATEWAY_URL=http://mcp-gateway:8083
       - MCP_STREAMABLE_HTTP_URL=http://mcp-gateway:8083/mcp
       - MCP_CLIENT_API_KEY=${MCP_CLIENT_API_KEY:-}
+      # Pentest H3: only peers on helperium-net (web proxy, dashboard, e2e)
+      # may set X-Forwarded-For; everyone else is keyed by socket IP. The
+      # subnet is fixed in the networks section below.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-172.28.0.0/16}
       - DEFAULT_TENANT_ID=${DEFAULT_TENANT_ID:-default}
       - DIRECT_CHAT_AGENT=${DIRECT_CHAT_AGENT:-}
       - DB_PATH=/data/app/university.db
@@ -519,3 +523,12 @@ volumes:
 networks:
   helperium-net:
     driver: bridge
+    # Fixed subnet (pentest H3): the api-service TRUSTED_PROXIES default is
+    # this block, so the only peers allowed to supply X-Forwarded-For are
+    # containers on this network (web proxy, admin dashboard, e2e). Keep this
+    # subnet free of any published-host collisions: host -> published-port
+    # traffic appears as the network gateway IP (172.28.0.1), which is inside
+    # the block, so loopback publishes remain the local-only residual surface.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -276,6 +276,16 @@ def main() -> None:
         host=settings.api_host,
         port=settings.api_port,
         reload=False,
+        # Pentest H3: uvicorn's default proxy_headers=True rewrites
+        # request.client from X-Forwarded-For for any peer in the default
+        # forwarded_allow_ips ("127.0.0.1"). That lets a client on the host
+        # spoof the limiter key even though server-side get_client_ip only
+        # trusts TRUSTED_PROXIES. Disable uvicorn's header rewrite entirely:
+        # request.client is always the raw socket peer and get_client_ip is
+        # the single authority on X-Forwarded-For (compose sets
+        # TRUSTED_PROXIES to the helperium-net CIDR for the web proxy hop).
+        proxy_headers=False,
+        forwarded_allow_ips=[],
     )
 
 
