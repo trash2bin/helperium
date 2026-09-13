@@ -80,6 +80,8 @@ func TestCORSAllowOrigin_Default(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	// Reflect-single-origin contract: ACAO is only sent to a listed Origin.
+	req.Header.Set("Origin", "http://localhost:8080")
 	router.ServeHTTP(w, req)
 
 	got := w.Header().Get("Access-Control-Allow-Origin")
@@ -95,6 +97,7 @@ func TestCORSAllowOrigin_Custom(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Origin", "https://example.com")
 	router.ServeHTTP(w, req)
 
 	got := w.Header().Get("Access-Control-Allow-Origin")
@@ -110,6 +113,7 @@ func TestCORSAllowOrigin_Empty(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Origin", "http://localhost:8080")
 	router.ServeHTTP(w, req)
 
 	got := w.Header().Get("Access-Control-Allow-Origin")

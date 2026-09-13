@@ -232,18 +232,33 @@ func (s *Server) Router() chi.Router {
 // ── Middleware ──
 
 // corsMiddleware разрешает CORS для dev-режима.
-// Origin читается из CORS_ALLOW_ORIGINS env var (по умолчанию "http://localhost:8080").
-// Wildcard "*" запрещён контрактом AGENTS.md («API CORS»): публичные embed-домены
-// перечисляются явно через запятую, fail-closed fallback — только localhost.
+// CORS_ALLOW_ORIGINS — список разрешённых origin через запятую
+// (по умолчанию "http://localhost:8080"). Контракт reflect-single-origin:
+// в Access-Control-Allow-Origin отражается ровно тот origin запроса, который
+// есть в списке; для остальных (включая отсутствие Origin) заголовок не
+// отправляется. Wildcard "*" запрещён контрактом AGENTS.md («API CORS»),
+// а эхо всего списка — невалидное значение по CORS-спеке и утечка конфига
+// (регрессия пентеста 2026-09-13).
 func corsMiddleware(next http.Handler) http.Handler {
-	origin := os.Getenv("CORS_ALLOW_ORIGINS")
-	if origin == "" {
-		origin = "http://localhost:8080"
+	allowedRaw := os.Getenv("CORS_ALLOW_ORIGINS")
+	if allowedRaw == "" {
+		allowedRaw = "http://localhost:8080"
+	}
+	allowed := make(map[string]struct{})
+	for _, candidate := range strings.Split(allowedRaw, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" && candidate != "*" {
+			allowed[candidate] = struct{}{}
+		}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Tenant-ID, X-Correlation-ID")
+		origin := r.Header.Get("Origin")
+		if _, ok := allowed[origin]; ok {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Tenant-ID, X-Correlation-ID")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
