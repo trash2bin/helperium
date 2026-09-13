@@ -99,6 +99,16 @@ def _provider_identity(config: dict) -> tuple[str, str, str]:
     )
 
 
+def _worker_identity(worker: LiteLLMProvider) -> tuple[str, str, str]:
+    """Credential-free identity of an already-built provider, used to dedupe
+    a pool worker against the named candidates before appending it."""
+    return (
+        worker.provider or "",
+        worker.model,
+        (worker.api_base or "").rstrip("/"),
+    )
+
+
 async def resolve_llm(
     *,
     llm_client: Any | None = None,
@@ -150,6 +160,22 @@ async def resolve_llm(
             candidate_identities.add(identity)
 
     if candidates:
+        # Named candidates are preferred, but they must not be the last word
+        # at execution time: keep a healthy ProviderPool worker as the final
+        # fallback rung so a pinned-but-dead provider (the live nvidia_nim
+        # outage: three timeouts, widget dead, pool untouched) still answers
+        # through the pool. The global fallback switch disables this
+        # last-resort rung exactly like it disables named fallbacks.
+        if fallback_enabled:
+            try:
+                pool_worker = await _pool.get_any_worker()
+            except Exception:  # noqa: BLE001 — pool health must not break resolution
+                pool_worker = None
+            if pool_worker is not None:
+                identity = _worker_identity(pool_worker)
+                if identity not in candidate_identities:
+                    candidates.append(pool_worker)
+                    candidate_identities.add(identity)
         if fallback_enabled and len(candidates) > 1:
             return AnswerNormalizer(FallbackProvider(candidates))
         return AnswerNormalizer(candidates[0])

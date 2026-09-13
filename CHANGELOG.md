@@ -2,6 +2,7 @@
 
 ## 2026-09-13
 
+- **fix(api):** при включённом fallback resolve_llm добавляет здорового worker ProviderPool последней ступенью после named-кандидатов (dedupe по credential-free identity, глобальный switch store.get_fallback_enabled() уважается) — мёртвый pinned-провайдер (nvidia_nim timeouts) больше не убивает виджет при живом пуле. **Verification:** новый test_pool_fallback_dead_provider.py; api suite 612 passed.
 - **fix(autoparts):** дефолт HELPERIUM_AGENT в public-compose autoparts-demo → autoparts-assistant — консистентно с локальным compose и dev.sh; README фиксирует требование наличия агента в store. **Verification:** storefront поднимается с агентом autoparts-assistant.
 - **fix(embed):** greeting/placeholder дефолты языко-зависимы (ru: «Чем могу помочь?»/«Задайте вопрос…», en: «How can I help?»/«Ask a question...») — раньше это были единственные англо-хардкоды при embed с data-title/data-accent без явного greeting; dist пересобран, кэш-бастер демо-страницы поднят. **Verification:** новый lang-greeting-placeholder.test.ts; embed suite 115 passed.
 - **feat(dev):** dev.sh hardening: data/mcp/admin-сервисы биндятся на 127.0.0.1, эфемерный MCP_API_KEY минтится при старте (MCP_REQUIRE_AUTH=true форсируется; под MCP_E2E_PROFILE пропускается), RAG_IMPORT_ROOT заперт в .data/rag-imports; autoparts-контейнеры только стартуются, никогда не останавливаются. **Verification:** локальный dev-прогон; E2E-профиль не задет.
