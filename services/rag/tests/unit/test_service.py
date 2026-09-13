@@ -5,6 +5,15 @@ from unittest.mock import MagicMock, patch
 from rag.service import app, state
 from helperium_sdk.rag.models import Document, RagSearchResult
 
+ADMIN_TEST_TOKEN = "test-admin-token"
+
+
+@pytest.fixture(autouse=True)
+def _rag_admin_token():
+    """Pentest C2: mutating /documents/* endpoints require X-Admin-Token."""
+    with patch("rag.service.ADMIN_API_TOKEN", ADMIN_TEST_TOKEN):
+        yield
+
 
 @pytest.fixture(autouse=True)
 async def mock_state():
@@ -98,9 +107,10 @@ async def test_list_documents_success(mock_state):
 
 
 @pytest.mark.asyncio
-async def test_import_document_success(mock_state):
+async def test_import_document_success(mock_state, tmp_path, monkeypatch):
     """Проверка успешного импорта документа."""
     pipeline, _ = mock_state
+    monkeypatch.setenv("RAG_IMPORT_ROOT", str(tmp_path))
 
     mock_doc = Document(
         id="doc_new",
@@ -118,7 +128,8 @@ async def test_import_document_success(mock_state):
     ) as ac:
         response = await ac.post(
             "/documents/import",
-            json={"path": "new.txt", "discipline_id": "d1", "title": "New Doc"},
+            json={"path": str(tmp_path / "new.txt"), "discipline_id": "d1", "title": "New Doc"},
+            headers={"X-Admin-Token": ADMIN_TEST_TOKEN},
         )
 
     assert response.status_code == 201
@@ -128,9 +139,10 @@ async def test_import_document_success(mock_state):
 
 
 @pytest.mark.asyncio
-async def test_import_document_not_found(mock_state):
+async def test_import_document_not_found(mock_state, tmp_path, monkeypatch):
     """Проверка обработки FileNotFoundError при импорте."""
     pipeline, _ = mock_state
+    monkeypatch.setenv("RAG_IMPORT_ROOT", str(tmp_path))
     pipeline.import_document.side_effect = FileNotFoundError("File not found on disk")
 
     async with AsyncClient(
@@ -138,7 +150,8 @@ async def test_import_document_not_found(mock_state):
     ) as ac:
         response = await ac.post(
             "/documents/import",
-            json={"path": "missing.txt", "discipline_id": "d1", "title": "Title"},
+            json={"path": str(tmp_path / "missing.txt"), "discipline_id": "d1", "title": "Title"},
+            headers={"X-Admin-Token": ADMIN_TEST_TOKEN},
         )
 
     assert response.status_code == 404
@@ -164,7 +177,11 @@ async def test_delete_document_success(mock_state):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        response = await ac.post("/documents/delete", json={"document_id": "doc_del"})
+        response = await ac.post(
+            "/documents/delete",
+            json={"document_id": "doc_del"},
+            headers={"X-Admin-Token": ADMIN_TEST_TOKEN},
+        )
 
     assert response.status_code == 200
     data = response.json()
@@ -187,7 +204,11 @@ async def test_delete_document_not_found(mock_state):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        response = await ac.post("/documents/delete", json={"document_id": "ghost"})
+        response = await ac.post(
+            "/documents/delete",
+            json={"document_id": "ghost"},
+            headers={"X-Admin-Token": ADMIN_TEST_TOKEN},
+        )
 
     assert response.status_code == 200
     assert response.json()["deleted"] is None

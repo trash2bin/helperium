@@ -50,10 +50,20 @@ class RagClient:
         self,
         base_url: str | None = None,
         timeout: float = RAG_HTTP_TIMEOUT,
+        admin_token: str | None = None,
     ):
         self.base_url = base_url or RAG_SERVICE_URL
         self.timeout = timeout
+        # Pentest C2: mutating document endpoints /documents/import|upload|delete
+        # require X-Admin-Token (fail-closed). Pass ADMIN_API_TOKEN here when
+        # calling them.
+        self.admin_token = admin_token
         self._client: httpx.AsyncClient | None = None
+
+    def _admin_headers(self) -> dict[str, str]:
+        if self.admin_token:
+            return {"X-Admin-Token": self.admin_token}
+        return {}
 
     async def __aenter__(self) -> "RagClient":
         self._client = httpx.AsyncClient(timeout=self.timeout)
@@ -112,12 +122,19 @@ class RagClient:
             payload["title"] = title
 
         response = await self.client.post(
-            self._build_url("/documents/import"), json=payload
+            self._build_url("/documents/import"),
+            json=payload,
+            headers=self._admin_headers(),
         )
         if response.status_code == 404:
             raise FileNotFoundError(f"Document not found: {path}")
         elif response.status_code == 422:
             raise ValueError(f"Invalid document: {response.text}")
+        elif response.status_code == 403:
+            raise PermissionError(
+                f"RAG rejected the request (403): configure admin_token on RagClient "
+                f"matching the RAG ADMIN_API_TOKEN: {response.text}"
+            )
         response.raise_for_status()
         data = response.json()
         return DocumentImportResult(
@@ -137,8 +154,15 @@ class RagClient:
             payload["document_id"] = document_id
 
         response = await self.client.post(
-            self._build_url("/documents/delete"), json=payload
+            self._build_url("/documents/delete"),
+            json=payload,
+            headers=self._admin_headers(),
         )
+        if response.status_code == 403:
+            raise PermissionError(
+                f"RAG rejected the request (403): configure admin_token on RagClient "
+                f"matching the RAG ADMIN_API_TOKEN: {response.text}"
+            )
         response.raise_for_status()
         return response.json()
 
@@ -184,12 +208,18 @@ class RagClientSync:
         self,
         base_url: str | None = None,
         timeout: float = RAG_HTTP_TIMEOUT,
+        admin_token: str | None = None,
     ):
         self.base_url = base_url or RAG_SERVICE_URL
         self.timeout = timeout
+        self.admin_token = admin_token
 
     def _build_client(self) -> RagClient:
-        return RagClient(base_url=self.base_url, timeout=self.timeout)
+        return RagClient(
+            base_url=self.base_url,
+            timeout=self.timeout,
+            admin_token=self.admin_token,
+        )
 
     def health(self) -> dict[str, Any]:
         return asyncio.run(self._build_client().health())

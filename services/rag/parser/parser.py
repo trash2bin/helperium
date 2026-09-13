@@ -16,6 +16,12 @@ from rag._types import PageDict
 logger = logging.getLogger(__name__)
 
 
+# Простые текстовые форматы — читаем напрямую.
+# Без .json/.py (pentest C2): документная база не должна читать
+# runtime-конфиги и исходники как plain text.
+PLAIN_TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".csv"}
+
+
 class DocumentParser:
     """Извлекает текст из файлов постранично."""
 
@@ -41,7 +47,7 @@ class DocumentParser:
         suffix = source_path.suffix.lower()
 
         # Простые текстовые форматы — читаем напрямую
-        if suffix in {".txt", ".md", ".markdown", ".csv", ".json", ".py"}:
+        if suffix in PLAIN_TEXT_SUFFIXES:
             return [{"page": None, "text": source_path.read_text(encoding="utf-8")}]
 
         # PDF и другие сложные форматы — через Docling

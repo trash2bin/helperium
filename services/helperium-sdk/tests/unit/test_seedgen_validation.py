@@ -14,13 +14,14 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 SEED_PATH = REPO_ROOT / "specs" / "fixtures" / "seed.json"
 
 
@@ -166,6 +167,16 @@ def test_seedgen_dry_run_produces_valid_structure():
     3. Количество сгенерированных записей соответствует CLI-аргументам.
     """
     out_path = Path("/tmp/test_seed_validation.json")
+    # rag is a flat-layout workspace package (importable as `rag` only when
+    # the `services/` parent dir is on sys.path — same trick the rag
+    # Dockerfile uses: PYTHONPATH=/app/services). The editable install does
+    # not provide this, so mirror the runbook here.
+    seedgen_env = dict(os.environ)
+    seedgen_env["PYTHONPATH"] = (
+        str(REPO_ROOT / "services")
+        + os.pathsep
+        + seedgen_env.get("PYTHONPATH", "")
+    )
     try:
         result = subprocess.run(
             [
@@ -182,6 +193,7 @@ def test_seedgen_dry_run_produces_valid_structure():
                 str(out_path),
             ],
             cwd=REPO_ROOT,
+            env=seedgen_env,
             capture_output=True,
             text=True,
             timeout=30,

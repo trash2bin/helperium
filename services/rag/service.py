@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import tempfile
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Awaitable
 from uuid import uuid4
@@ -270,13 +271,21 @@ async def list_documents(req: ListDocumentsRequest) -> ListDocumentsResponse:
     summary="Импорт документа",
     description="Загружает файл в RAG-индекс, разбивает на чанки и индексирует векторы.",
 )
-async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
+async def import_document(
+    request: Request, req: ImportDocumentRequest
+) -> ImportDocumentResponse:
+    # Pentest C2: mutating endpoints — admin-token fail-closed.
+    _check_admin_token(request)
+    # Path-based import is confined to RAG_IMPORT_ROOT; with no root configured
+    # the endpoint is disabled (use /documents/upload). This closes
+    # unauthenticated arbitrary-file-read of server paths.
+    source_path = _confine_import_path(req.path)
     try:
         # Долгая операция: парсинг + embedding + ChromaDB + SQLite — в thread pool
         with rag_import_duration.time():
             result = await run_in_threadpool(
                 state.get_pipeline().import_document,
-                path=req.path,
+                path=str(source_path),
                 discipline_id=req.discipline_id,
                 discipline_name=req.discipline_name,
                 title=req.title,
@@ -307,6 +316,7 @@ async def import_document(req: ImportDocumentRequest) -> ImportDocumentResponse:
     description="Принимает multipart-файл, сохраняет во временную директорию и импортирует в RAG-индекс.",
 )
 async def upload_document(
+    request: Request,
     file: UploadFile = File(
         ..., description="Файл документа (PDF, DOCX, TXT, MD, HTML)"
     ),
@@ -318,6 +328,8 @@ async def upload_document(
     Принимает файл через multipart/form-data, сохраняет во временную директорию
     и передаёт в пайплайн импорта (парсинг → чанкинг → эмбеддинг → индексация).
     """
+    # Pentest C2: mutating endpoints — admin-token fail-closed.
+    _check_admin_token(request)
     upload_dir = tempfile.mkdtemp(prefix="rag-upload-")
     # Sanitize filename: strip directory components (path traversal), then
     # reject names that collapse to the upload dir itself — open() on them
@@ -369,7 +381,11 @@ async def upload_document(
     summary="Удаление документа",
     description="Удаляет документ и его векторы из индекса по пути или ID. Идемпотентно.",
 )
-async def delete_document(req: DeleteDocumentRequest) -> DeleteDocumentResponse:
+async def delete_document(
+    request: Request, req: DeleteDocumentRequest
+) -> DeleteDocumentResponse:
+    # Pentest C2: mutating endpoints — admin-token fail-closed.
+    _check_admin_token(request)
     if not req.path and not req.document_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -487,7 +503,10 @@ async def context(req: ContextRequest) -> ContextResponse:
     description="Экспорт метрик RAG-сервиса в формате Prometheus.",
     include_in_schema=False,
 )
-async def metrics():
+async def metrics(request: Request):
+    # Pentest M1: /metrics закрыт токеном (X-Admin-Token или Bearer) —
+    # метрики отдают tenant-лейблы и статистику.
+    _check_metrics_token(request)
     return Response(
         content=generate_latest(REGISTRY),
         media_type="text/plain; version=0.0.4; charset=utf-8",
@@ -514,6 +533,65 @@ def _check_admin_token(request: Request) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing X-Admin-Token",
         )
+
+
+def _check_metrics_token(request: Request) -> None:
+    """Токен для /metrics (pentest M1): X-Admin-Token или Authorization: Bearer.
+
+    Метрики отдают tenant-лейблы и статистику RAG — это разведка для
+    атакующего, поэтому endpoint закрыт тем же ADMIN_API_TOKEN, что и
+    admin-эндпоинты (fail-closed: без токена — 403). Bearer поддерживается
+    для стандартного authorization-блока prometheus.yml (credentials_file),
+    X-Admin-Token — для curl/скриптов.
+    """
+    if not ADMIN_API_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ADMIN_API_TOKEN is not configured — /metrics is disabled",
+        )
+    token = request.headers.get("X-Admin-Token", "")
+    if token == ADMIN_API_TOKEN:
+        return
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer ") and auth[len("Bearer "):] == ADMIN_API_TOKEN:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Invalid or missing admin token for /metrics",
+    )
+
+
+def _confine_import_path(path: str) -> Path:
+    """Ограничить path-based import корнем RAG_IMPORT_ROOT (pentest C2).
+
+    Путь резолвится (expanduser + symlink-safe resolve); результат обязан
+    лежать внутри корня. Без настроенного корня path-based import выключен
+    (используйте /documents/upload).
+    """
+    root = os.environ.get("RAG_IMPORT_ROOT", "").strip()
+    if not root:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Server-side path import is disabled: set RAG_IMPORT_ROOT to the "
+                "directory documents are imported from, or use /documents/upload"
+            ),
+        )
+    root_path = Path(root).expanduser().resolve()
+    source_path = Path(path).expanduser().resolve()
+    try:
+        source_path.relative_to(root_path)
+    except ValueError:
+        # Sanitised: ни запрошенный путь, ни серверный root в публичную ошибку не
+        # попадают — они раскрывают filesystem layout (pentest C2 follow-up).
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Import path resolves outside RAG_IMPORT_ROOT; refusing to read it. "
+                "Place the document inside the configured import root"
+            ),
+        )
+    return source_path
 
 
 @app.get(
