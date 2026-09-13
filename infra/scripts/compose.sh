@@ -32,6 +32,11 @@ if [[ "$test_profile" == true ]]; then
   export MCP_ALLOWED_ORIGINS="${MCP_TEST_ALLOWED_ORIGINS:-http://localhost:8080}"
   export MCP_RATE_LIMIT_RPS="${MCP_TEST_RATE_LIMIT_RPS:-1000}"
   export MCP_RATE_LIMIT_BURST="${MCP_TEST_RATE_LIMIT_BURST:-1000}"
+  # Pentest H2 per-IP chat budget: the e2e container is a single client IP
+  # running the whole chat suite, so the production default (1 rps / burst 20)
+  # would 429 mid-run. Raised like MCP_RATE_LIMIT above, E2E-only.
+  export ABUSE_IP_RPS="${ABUSE_TEST_IP_RPS:-1000}"
+  export ABUSE_IP_BURST="${ABUSE_TEST_IP_BURST:-1000}"
   export API_BEARER_TOKEN="${API_TEST_BEARER_TOKEN:-ci-api-control-token}"
   # Fixed test-only Fernet key so the api ENCRYPTION_KEY fail-fast policy is
   # exercised (E2E creates agents with llm_config); never use in production.

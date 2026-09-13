@@ -75,26 +75,28 @@ class AbuseConfig:
     emergency_preset: str = "normal"
 
 
+def _int_env(key: str, default: int) -> int:
+    v = os.environ.get(key)
+    if v is not None:
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            pass
+    return default
+
+
+def _float_env(key: str, default: float) -> float:
+    v = os.environ.get(key)
+    if v is not None:
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            pass
+    return default
+
+
 def load_abuse_config() -> AbuseConfig:
     """Load AbuseConfig from environment variables (falling back to defaults)."""
-
-    def _int_env(key: str, default: int) -> int:
-        v = os.environ.get(key)
-        if v is not None:
-            try:
-                return int(v)
-            except (ValueError, TypeError):
-                pass
-        return default
-
-    def _float_env(key: str, default: float) -> float:
-        v = os.environ.get(key)
-        if v is not None:
-            try:
-                return float(v)
-            except (ValueError, TypeError):
-                pass
-        return default
 
     return AbuseConfig(
         rps=_float_env("ABUSE_RPS", 1.0),
@@ -103,6 +105,19 @@ def load_abuse_config() -> AbuseConfig:
         min_interval_ms=_int_env("ABUSE_MIN_INTERVAL_MS", 1000),
         max_user_turns_per_session=_int_env("ABUSE_MAX_USER_TURNS", 50),
         max_repeated_count=_int_env("ABUSE_MAX_REPEATED", 3),
+    )
+
+
+def load_ip_bucket_config() -> AbuseConfig:
+    """Global per-IP budget (pentest H2): independent of session_id.
+
+    Unlike per-session ABUSE_RPS/ABUSE_BURST, this bucket is shared across all
+    sessions and agents for one client IP, so rotating session_id cannot mint
+    fresh budgets. Only the rps/burst fields are meaningful.
+    """
+    return AbuseConfig(
+        rps=_float_env("ABUSE_IP_RPS", 1.0),
+        burst=_int_env("ABUSE_IP_BURST", 20),
     )
 
 
@@ -133,6 +148,19 @@ class TokenBucket:
         Returns (allowed, context) where context dict may contain 'retry_after'.
         """
         key = self._key(session_id, ip, user_agent)
+        return self._allow_key(key)
+
+    def allow_ip(self, ip: str) -> tuple[bool, dict]:
+        """Global per-IP budget (pentest H2): keyed on IP only.
+
+        Independent from allow() so session_id/user-agent rotation cannot mint
+        fresh buckets. Shares the same eviction/cap machinery (key namespace
+        "ip:<ip>"). Returns (allowed, context).
+        """
+        return self._allow_key(f"ip:{ip}")
+
+    def _allow_key(self, key: str) -> tuple[bool, dict]:
+        """Shared bucket logic for allow() and allow_ip()."""
         now = time.monotonic()
 
         with self._lock:

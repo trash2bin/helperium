@@ -40,6 +40,26 @@ async def check_abuse(request, session_id, message, agent_abuse_config=None):
     ip = get_client_ip(request)
     safe_id = session_id or "unknown"
 
+    # Pentest H2: global per-IP budget first — independent of session_id, so
+    # rotating session_id cannot mint fresh buckets. Runs before the per-session
+    # bucket: it is the cheap, global guard against distributed-ish abuse from
+    # a single source IP.
+    ip_allowed, ip_ctx = live.get_ip_bucket().allow_ip(ip)
+    if not ip_allowed:
+        retry_after = ip_ctx.get("retry_after", 1.0)
+        logger.warning(
+            "[ABUSE] per-IP limit rejected ip=%s retry_after=%.1fs",
+            ip,
+            retry_after,
+        )
+        msg = _make_error_message(request, retry_after)
+        return StreamingResponse(
+            _single_error(msg),
+            media_type="text/event-stream",
+            status_code=429,
+            headers={"Retry-After": str(int(retry_after))},
+        )
+
     allowed, ctx = token_bucket.allow(safe_id, ip, user_agent)
     if not allowed:
         retry_after = ctx.get("retry_after", 1.0)

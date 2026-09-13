@@ -14,7 +14,13 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from helperium_sdk.settings import settings
-from .anti_abuse import AbuseConfig, AntiAbuseChecker, TokenBucket, load_abuse_config
+from .anti_abuse import (
+    AbuseConfig,
+    AntiAbuseChecker,
+    TokenBucket,
+    load_abuse_config,
+    load_ip_bucket_config,
+)
 
 logger = logging.getLogger("api_service.abuse_live")
 
@@ -118,6 +124,9 @@ class LiveAbuseProvider:
             self._full_config.to_anti_abuse_config()
         )
         self._token_bucket = TokenBucket(self._full_config.to_anti_abuse_config())
+        # Pentest H2: global per-IP budget, independent of session_id and
+        # per-agent overrides (rotating session_id must not reset it).
+        self._ip_bucket = TokenBucket(load_ip_bucket_config())
         self._agent_enforcers: dict[str, tuple[AntiAbuseChecker, TokenBucket]] = {}
         self._rwlock = threading.RLock()
 
@@ -177,6 +186,11 @@ class LiveAbuseProvider:
         with self._rwlock:
             return self._token_bucket
 
+    def get_ip_bucket(self) -> TokenBucket:
+        """Global per-IP budget (pentest H2) — shared across sessions/agents."""
+        with self._rwlock:
+            return self._ip_bucket
+
     def get_enforcers(
         self, agent_abuse_config: dict | None = None
     ) -> tuple[AntiAbuseChecker, TokenBucket]:
@@ -201,6 +215,7 @@ class LiveAbuseProvider:
             anti_cfg = self._full_config.to_anti_abuse_config()
             self._anti_abuse_checker = AntiAbuseChecker(anti_cfg)
             self._token_bucket = TokenBucket(anti_cfg)
+            self._ip_bucket = TokenBucket(load_ip_bucket_config())
             self._agent_enforcers = {}
             logger.info("Abuse config reloaded from %s", self._config_path)
         return self.get_config()

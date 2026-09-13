@@ -195,6 +195,11 @@ services:
       - AGENT_MAX_EMPTY_ROUNDS=${AGENT_MAX_EMPTY_ROUNDS:-3}
       - BACKLOG_RETENTION_DAYS=${BACKLOG_RETENTION_DAYS:-30}
       - CHAT_RATE_LIMIT=${CHAT_RATE_LIMIT:-30/minute}
+      # Pentest H2: global per-IP chat budget, independent of session_id.
+      # Empty keeps the code defaults (1 rps / burst 20); compose.sh exports
+      # high values only for --profile test.
+      - ABUSE_IP_RPS=${ABUSE_IP_RPS:-}
+      - ABUSE_IP_BURST=${ABUSE_IP_BURST:-}
       # Public embed origins must be explicitly configured by the deployer.
       # Falling back to localhost keeps an omitted setting fail-secure.
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost:8080}
