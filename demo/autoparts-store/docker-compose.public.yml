@@ -72,7 +72,12 @@ services:
       # /api/chat to the internal HELPERIUM_API_UPSTREAM. A docker-internal
       # default (api:8081) would be rendered into user browsers and fail.
       HELPERIUM_API_BASE: ${HELPERIUM_API_BASE:-}
-      HELPERIUM_AGENT: ${HELPERIUM_AGENT:-autoparts-demo}
+      # The agent named by HELPERIUM_AGENT must exist in the Helperium
+      # agent store (api-service seeds only the "default" agent; demo agents
+      # are operator-created via the admin API/dashboard). The default points
+      # at the demo agent used by the local compose — do not invent a new
+      # name here, or the public widget resolves to a 404.
+      HELPERIUM_AGENT: ${HELPERIUM_AGENT:-autoparts-assistant}
       HELPERIUM_WIDGET_TITLE: Помощник по подбору
       DEMO_ORDER_SUBMISSIONS: ${DEMO_ORDER_SUBMISSIONS:-false}
       DJANGO_SECURE_SSL_REDIRECT: "false"

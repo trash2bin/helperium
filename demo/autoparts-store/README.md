@@ -184,6 +184,14 @@ keeps the safe opt-in `false`, while `docker-compose.public.yml` defaults to
 tenant bootstrap succeeds. Keep the example value until the public tenant,
 agent and embed origins are actually configured.
 
+The widget resolves `/api/agents/{HELPERIUM_AGENT}/widget-config`, so the
+agent named by `HELPERIUM_AGENT` must exist in the Helperium agent store
+(api-service seeds only `default`; demo agents are operator-created in the
+admin dashboard). The public Compose default is `autoparts-assistant`, the
+same agent the local Compose uses — if the public deployment provisions its
+own agent, set `HELPERIUM_AGENT` to that exact store name and create the
+agent before enabling the widget.
+
 The public Compose bootstrap is mandatory: after migrations and seed, it creates
 or rotates `helperium_autoparts_ro`, grants only `CONNECT`, schema `USAGE` and
 `SELECT` on the seven catalog tables, and registers/re-writes tenant `autoparts`
