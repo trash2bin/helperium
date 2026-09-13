@@ -2,6 +2,7 @@
 
 ## 2026-09-13
 
+- **chore(specs):** перегенерированы api.openapi.json/yaml под новую контроль-плейн поверхность: маскирование api-ключей агентов + X-Full-Keys, per-IP abuse budget, TRUSTED_PROXIES. **Verification:** соответствие сгенерированной схеме; make ci green.
 - **chore:** .gitignore: TODO-*.md (локальные рабочие заметки агента, по конвенции не коммитятся) и /storefront-*.png (ad-hoc скриншоты в корне). **Verification:** git check-ignore; рабочее дерево без мусора.
 - **fix(ci):** go install govulncheck@latest в ci-audit отказоустойчив (префикс -, как у соседнего uv audit) — сетевой сбой или обновление Go больше не роняет цель аудита. **Verification:** make ci-audit green.
 - **fix(sdk):** test_seedgen_validation.py: REPO_ROOT parents[3]→parents[4] + PYTHONPATH для rag flat-layout пакета — тест снова находит корень репозитория. **Verification:** sdk suite 86 passed.

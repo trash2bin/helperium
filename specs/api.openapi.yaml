@@ -125,6 +125,14 @@ paths:
       summary: Create Agent Endpoint
       operationId: create_agent_endpoint_api_agents_post
       parameters:
+      - name: X-Full-Keys
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Full-Keys
       - name: authorization
         in: header
         required: false
@@ -156,6 +164,14 @@ paths:
       summary: List Agents Endpoint
       operationId: list_agents_endpoint_api_agents_get
       parameters:
+      - name: X-Full-Keys
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Full-Keys
       - name: authorization
         in: header
         required: false
@@ -188,6 +204,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: X-Full-Keys
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Full-Keys
       - name: authorization
         in: header
         required: false
@@ -219,6 +243,14 @@ paths:
         schema:
           type: string
           title: Name
+      - name: X-Full-Keys
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Full-Keys
       - name: authorization
         in: header
         required: false
