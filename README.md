@@ -180,6 +180,17 @@ The Swagger UI pages are opt-in via environment variables and unauthenticated wh
 ### Docker Compose (recommended for production)
 
 ```bash
+cp .env.example .env
+# The MCP gateway fails closed without credentials. Generate two DISTINCT strong
+# secrets (native dev mints an ephemeral key automatically, Docker does not):
+MCP_API_KEY=$(openssl rand -hex 32)
+MCP_CLIENT_API_KEY=$(openssl rand -hex 32)
+echo "MCP_DEV=false" >> .env
+echo "MCP_REQUIRE_AUTH=true" >> .env
+echo "MCP_API_KEY=$MCP_API_KEY" >> .env
+echo "MCP_CLIENT_API_KEY=$MCP_CLIENT_API_KEY" >> .env
+unset MCP_API_KEY MCP_CLIENT_API_KEY
+
 docker compose up -d # dev (6 core services)
 docker compose --profile prod up -d # + Caddy HTTPS termination
 docker compose --profile monitoring up -d # + Prometheus + Grafana

@@ -47,10 +47,10 @@ DEMO_TENANTS=client-name
 
 # Only for prod:
 DOMAIN=chat.client.com
-# Generate one strong secret, keep it out of Git, and set the same value in both.
+# Generate two distinct strong secrets, keep them out of Git — one per variable.
 MCP_REQUIRE_AUTH=true
-MCP_API_KEY=<generated-strong-secret>
-MCP_CLIENT_API_KEY=<same-generated-strong-secret>
+MCP_API_KEY=<generated-strong-secret-1>
+MCP_CLIENT_API_KEY=<generated-strong-secret-2>
 # MCP stays internal behind web/Caddy. Leave empty unless a browser-facing MCP
 # ingress is intentionally added; then list only its exact HTTPS origin.
 MCP_ALLOWED_ORIGINS=
@@ -198,7 +198,10 @@ uv run agent-db drop autoparts  # реальная команда: drop <scenari
 
 ```
 1. git clone + mkdir -p .data/{app,rag,hf_cache,uploads,pg} + cp .env.example .env
-2. Edit .env: DATABASE_URL, LLM key, DEFAULT_TENANT_ID, DOMAIN
+2. Edit .env: DATABASE_URL, LLM key, DEFAULT_TENANT_ID, DOMAIN, plus MCP gateway creds
+   (gateway fails closed without them):
+   echo "MCP_API_KEY=$(openssl rand -hex 32)" >> .env
+   echo "MCP_CLIENT_API_KEY=$(openssl rand -hex 32)" >> .env
 3. docker compose up -d
 4. docker compose --profile monitoring up -d   (Grafana :3000)
 5. uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
@@ -274,16 +277,16 @@ DEMO_TENANTS=client-name
 
 # Только для prod:
 DOMAIN=chat.client.com
-# Сгенерируй один сильный секрет, не клади его в Git, оба значения совпадают.
+# Сгенерируй два разных сильных секрета, не клади их в Git — по одному на переменную.
 MCP_REQUIRE_AUTH=true
-MCP_API_KEY=<сгенерированный-сильный-secret>
-MCP_CLIENT_API_KEY=<тот-же-secret>
+MCP_API_KEY=<сгенерированный-сильный-secret-1>
+MCP_CLIENT_API_KEY=<сгенерированный-сильный-secret-2>
 # MCP остаётся internal. Оставь пустым, пока browser-facing MCP ingress не нужен;
 # тогда укажи только точный HTTPS Origin.
 MCP_ALLOWED_ORIGINS=
 ```
 
-Остальные переменные имеют безопасные demo-дефолты. **В public deployment нельзя оставлять MCP auth выключенным**: обязательны `MCP_REQUIRE_AUTH=true` и совпадающие непустые credentials.
+Остальные переменные имеют безопасные demo-дефолты. **В public deployment нельзя оставлять MCP auth выключенным**: обязательны `MCP_REQUIRE_AUTH=true` и два различных непустых credentials.
 
 ---
 
@@ -406,7 +409,10 @@ uv run agent-db drop autoparts  # реальная команда: drop <scenari
 
 ```
 1. git clone + mkdir -p .data/{app,rag,hf_cache,uploads,pg} + cp .env.example .env
-2. Правим .env: DATABASE_URL, LLM ключ, DEFAULT_TENANT_ID, DOMAIN
+2. Правим .env: DATABASE_URL, LLM ключ, DEFAULT_TENANT_ID, DOMAIN, плюс MCP-ключи
+   (gateway не стартует без них, fail-closed):
+   echo "MCP_API_KEY=$(openssl rand -hex 32)" >> .env
+   echo "MCP_CLIENT_API_KEY=$(openssl rand -hex 32)" >> .env
 3. docker compose up -d
 4. docker compose --profile monitoring up -d   (Grafana :3000)
 5. uv run agent-db register client-name autoparts  # реальная команда: register <tenant> <scenario>
