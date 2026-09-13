@@ -37,6 +37,46 @@ export function getSessionId(key: string): string {
 }
 
 /**
+ * Returns the capability token the server issued for this session, if any.
+ *
+ * The token is delivered in the SSE `session` event (and the
+ * `X-Session-Token` response header) of the turn that created the session;
+ * every later turn must present it or the server rejects the request.
+ */
+export function getSessionToken(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persists the session capability token issued by the server.
+ */
+export function storeSessionToken(key: string, token: string): void {
+  try {
+    sessionStorage.setItem(key, token);
+  } catch {
+    /* quota exceeded or private browsing — token stays in-memory */
+  }
+}
+
+/**
+ * Drops the stored session id (and optionally its token) so the next turn
+ * starts a fresh session. Used after the server rejects our capability
+ * token — e.g. the server-side session store was reset between reloads.
+ */
+export function resetSession(sessionKey: string, tokenKey?: string): void {
+  try {
+    sessionStorage.removeItem(sessionKey);
+    if (tokenKey) sessionStorage.removeItem(tokenKey);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
  * Loads persisted chat messages from sessionStorage.
  *
  * @param key - The sessionStorage key (e.g. "at_messages_myAgent").

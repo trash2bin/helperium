@@ -101,7 +101,7 @@
 
 ### Хранение сессий
 
-- **sessionStorage**: история сообщений (ключ `at_messages_{agent}`) и текущий session_id (ключ `at_session_{agent}`)
+- **sessionStorage**: история сообщений (ключ `at_messages_{agent}`), текущий session_id (ключ `at_session_{agent}`) и capability-токен сессии (ключ `at_session_token_{agent}`)
 - **localStorage**: выбранный агент (ключ `agentTutorAgentId`) — для синхронизации с admin dashboard
 
 ### SSE протокол
@@ -110,6 +110,7 @@
 
 | Тип события | Описание |
 |---|---|
+| `session` | Выдача capability-токена для новой сессии. `{ "type":"session", "session_id":"...", "session_token":"..." }` — также приходит заголовком `X-Session-Token`; виджет сохраняет токен и отправляет его на каждом следующем ходе |
 | `final` | Один проверенный output guard финальный ответ. Это buffered delivery, не token streaming. `{ "type":"final", "text":"полный ответ" }` |
 | `tool_call` | Агент вызвал инструмент. `{ "type":"tool_call", "name":"find_products" }` |
 | `audio` | Голосовой ответ (base64 WAV). `{ "type":"audio", "data":"base64..." }` |

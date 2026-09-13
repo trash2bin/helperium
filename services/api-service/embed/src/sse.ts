@@ -22,6 +22,8 @@ export interface StreamChatCallbacks {
   onDone: (raw: string, tools: string[]) => void;
   /** Called when an error event is received. */
   onError: (text: string) => void;
+  /** Called when the server issues a session capability token. */
+  onSessionToken?: (token: string) => void;
 }
 
 /** Options for the streamChat function. */
@@ -34,6 +36,10 @@ export interface StreamChatOpts {
   config: WidgetConfig;
   /** Current session ID. */
   sessionId: string;
+  /** Session capability token issued by the server (if already bound). */
+  sessionToken?: string | null;
+  /** Called when the server rejects our capability token (401). */
+  onUnauthorized?: () => void;
   /** Messages container element. */
   messagesEl: HTMLDivElement;
   /** Map of message text → retry count. */
@@ -72,6 +78,8 @@ export interface SSEReadCallbacks {
   onAudio: (data: string) => void;
   onDone: (raw: string, tools: string[]) => void;
   onError: (text: string) => void;
+  /** Called when the server issues a session capability token. */
+  onSessionToken?: (token: string) => void;
 }
 
 /**
@@ -99,6 +107,14 @@ export async function readSSEStream(
   // Correlation id for this chat turn — surfaced on the bubble so a problem
   // report can point straight at the server log/trace.
   const responseCorrelationId = response.headers.get('x-correlation-id') || '';
+  // Server-side session binding: a `session` event (or response header)
+  // carries the capability token that later turns must present.
+  let sawSessionToken = false;
+  const emitSessionToken = (token: string | null | undefined): void => {
+    if (!token || sawSessionToken) return;
+    sawSessionToken = true;
+    callbacks.onSessionToken?.(token);
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -119,6 +135,7 @@ export async function readSSEStream(
         display_name?: string;
         data?: string;
         correlation_id?: string;
+        session_token?: string;
       };
       try {
         payload = JSON.parse(line.slice(5).trim());
@@ -131,6 +148,10 @@ export async function readSSEStream(
       }
 
       switch (payload.type) {
+        case 'session':
+          emitSessionToken(payload.session_token);
+          break;
+
         case 'token':
           callbacks.onToken(payload.text || '');
           break;
@@ -219,6 +240,10 @@ export async function readSSEStream(
         : 'No response.',
     );
   }
+
+  // Header fallback for clients whose first turn didn't surface the `session`
+  // event through the parser (e.g. voice payloads).
+  emitSessionToken(response.headers.get('x-session-token'));
 }
 
 /**
@@ -238,6 +263,8 @@ export function streamChat(opts: StreamChatOpts): void {
     targetNode,
     config,
     sessionId,
+    sessionToken,
+    onUnauthorized,
     messagesEl,
     retryAttempts,
     maxRetries,
@@ -252,12 +279,29 @@ export function streamChat(opts: StreamChatOpts): void {
 
   const url = config.apiBase + '/api/chat/' + encodeURIComponent(config.agent);
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (sessionToken) {
+    headers['X-Session-Token'] = sessionToken;
+  }
+
   fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ message, session_id: sessionId }),
   })
     .then((response) => {
+      /* ── 401 Unauthorized: capability token rejected ── */
+      if (response.status === 401) {
+        targetNode.classList.remove('at-thinking');
+        removeMsgRow(targetNode);
+        // Our stored credentials no longer match the server (e.g. its session
+        // store was reset). The widget drops the session and starts over.
+        onUnauthorized?.();
+        return;
+      }
+
       /* ── 429 Rate Limit ── */
       if (response.status === 429) {
         targetNode.classList.remove('at-thinking');

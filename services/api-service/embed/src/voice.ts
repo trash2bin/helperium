@@ -196,6 +196,12 @@ export interface StreamVoiceOpts {
   config: WidgetConfig;
   /** Current session ID. */
   sessionId: string;
+  /** Session capability token issued by the server (if already bound). */
+  sessionToken?: string | null;
+  /** Called when the server issues a session capability token. */
+  onSessionToken?: (token: string) => void;
+  /** Called when the server rejects our capability token (401). */
+  onUnauthorized?: () => void;
   /** Messages container element. */
   messagesEl: HTMLDivElement;
   /** Callbacks for SSE events. */
@@ -225,8 +231,20 @@ export function streamVoiceChat(
   formData.append('agent', opts.config.agent);
   formData.append('lang', opts.config.lang);
 
-  fetch(url, { method: 'POST', body: formData })
+  const headers: Record<string, string> = {};
+  if (opts.sessionToken) {
+    headers['X-Session-Token'] = opts.sessionToken;
+  }
+
+  fetch(url, { method: 'POST', headers, body: formData })
     .then((response) => {
+      if (response.status === 401) {
+        targetNode.classList.remove('at-thinking');
+        targetNode.remove();
+        opts.onUnauthorized?.();
+        return;
+      }
+
       if (response.status === 429) {
         targetNode.classList.remove('at-thinking');
         targetNode.remove();

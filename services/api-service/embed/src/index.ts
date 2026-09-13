@@ -17,7 +17,7 @@ import { escapeHtml, } from './icons';
 import { addMessage, restoreHistory } from './messages';
 import { attachReportButton } from './report';
 import { streamChat } from './sse';
-import { createStorage, getSessionId } from './storage';
+import { createStorage, getSessionId, getSessionToken, resetSession, storeSessionToken } from './storage';
 import { ensureToolStrip } from './tools';
 import type { AddMessageOptions, WidgetConfig } from './types';
 import { appendToken, setFinalText } from './typewriter';
@@ -86,6 +86,20 @@ export function initWidget(): void {
   const sessionKey = 'at_session_' + config.agent;
   sessionId = getSessionId(sessionKey);
   ({ readStored, appendStored } = createStorage(storageKey, sessionId));
+
+  // Session capability token: issued by the server on the turn that created
+  // the session, required on every later turn (X-Session-Token). Rebound on
+  // agent switch together with the session id.
+  let sessionTokenKey = 'at_session_token_' + config.agent;
+  const currentSessionToken = (): string | null => getSessionToken(sessionTokenKey);
+  const saveSessionToken = (token: string): void =>
+    storeSessionToken(sessionTokenKey, token);
+  const resetSessionCredentials = (): void => {
+    // Server rejected our capability token (e.g. its session store was
+    // reset): drop the session and start a fresh one.
+    resetSession(sessionKey, sessionTokenKey);
+    sessionId = getSessionId(sessionKey);
+  };
 
   /* ── State ── */
   const voice = createVoiceState();
@@ -189,6 +203,27 @@ export function initWidget(): void {
       targetNode,
       config,
       sessionId,
+      sessionToken: currentSessionToken(),
+      onUnauthorized: () => {
+        // Same per-message attempt budget as the 429 path: a fresh session
+        // normally recovers on the first retry, the cap only guards against
+        // a pathological 401 loop.
+        const attempts = (retryAttempts.get(message) || 0) + 1;
+        retryAttempts.set(message, attempts);
+        if (attempts >= MAX_RETRIES) {
+          retryAttempts.delete(message);
+          addMsg(
+            'assistant',
+            config.lang === 'ru'
+              ? 'Не удалось восстановить сессию. Обновите страницу и попробуйте снова.'
+              : 'Could not restore the session. Reload the page and try again.',
+            { persist: false }
+          );
+          return;
+        }
+        resetSessionCredentials();
+        retryChat(message);
+      },
       messagesEl,
       retryAttempts,
       maxRetries: MAX_RETRIES,
@@ -220,6 +255,7 @@ export function initWidget(): void {
           targetNode.classList.add('at-error');
           targetNode.textContent = text;
         },
+        onSessionToken: saveSessionToken,
       },
       addMessage: addMsg as (kind: string, text: string, opts?: Record<string, unknown>) => HTMLDivElement,
       removeMsgRow: removeMsgRow as (node: HTMLDivElement) => void,
@@ -372,6 +408,16 @@ export function initWidget(): void {
       streamVoiceChat(blob, target, {
         config,
         sessionId,
+        sessionToken: currentSessionToken(),
+        onSessionToken: saveSessionToken,
+        onUnauthorized: () => {
+          resetSessionCredentials();
+          addMsg('assistant', config.lang === 'ru'
+            ? 'Сессия истекла — попробуйте отправить сообщение ещё раз.'
+            : 'Session expired — please send your message again.', {
+            persist: false,
+          });
+        },
         messagesEl,
         callbacks: {
           onToken: (text: string) => appendToken(target, text, messagesEl),
@@ -416,6 +462,7 @@ export function initWidget(): void {
     readStored = newStore.readStored;
     appendStored = newStore.appendStored;
     sessionId = newSessionId;
+    sessionTokenKey = 'at_session_token_' + name;
     // Update header
     const infoEl = ui.head.querySelector('.at-head-info');
     if (infoEl) {
