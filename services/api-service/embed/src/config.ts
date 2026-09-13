@@ -34,16 +34,22 @@ export function parseConfig(script: HTMLScriptElement | null): WidgetConfig {
 
   const rawLang = fromWindow('lang', 'data-lang');
   const detectedLang = navigator.language.startsWith('ru') ? 'ru' : 'en';
+  const lang: 'ru' | 'en' =
+    (rawLang === 'ru' || rawLang === 'en') ? rawLang : detectedLang;
 
   return {
     agent,
     apiBase: fromWindow('apiBase', 'data-api-base') || window.location.origin,
     title: fromWindow('title', 'data-title') || 'Assistant',
-    greeting: fromWindow('greeting', 'data-greeting') || 'How can I help?',
+    lang,
+    greeting:
+      fromWindow('greeting', 'data-greeting') ||
+      (lang === 'ru' ? 'Чем могу помочь?' : 'How can I help?'),
     accent: fromWindow('accent', 'data-accent') || '#0f766e',
     position: fromWindow('position', 'data-position') === 'left' ? 'left' : 'right',
-    lang: (rawLang === 'ru' || rawLang === 'en') ? rawLang : detectedLang,
-    placeholder: fromWindow('placeholder', 'data-placeholder') || 'Ask a question...',
+    placeholder:
+      fromWindow('placeholder', 'data-placeholder') ||
+      (lang === 'ru' ? 'Задайте вопрос…' : 'Ask a question...'),
     width: fromWindow('width', 'data-width') || 'min(380px, calc(100vw - 28px))',
     height: fromWindow('height', 'data-height') || 'min(620px, calc(100vh - 44px))',
     triggerOffsetBottom: fromWindow('triggerOffsetBottom', 'data-trigger-offset-bottom') || '16px',
