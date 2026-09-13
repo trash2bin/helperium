@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -94,6 +95,60 @@ func TestAdminAgentGetPreservesLlmConfigAPIKey(t *testing.T) {
 	}
 	if body := w.Body.String(); !strings.Contains(body, testAgentAPIKey) {
 		t.Fatalf("admin agent response lost llm_config.api_key: %s", body)
+	}
+}
+
+// ── Pentest H1: api-service masks api_key by default → admin opt-in header ──
+
+// fullKeysHeaderTestServer records the X-Full-Keys header api-service receives
+// for /api/agents requests; the upstream always returns the plaintext key.
+func newFullKeysProxyTestServer(t *testing.T) (*Server, *sync.Map) {
+	t.Helper()
+	seen := &sync.Map{} // path -> X-Full-Keys header value
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.Store(r.URL.Path, r.Header.Get("X-Full-Keys"))
+		w.Header().Set("Content-Type", "application/json")
+		agentJSON := `{"name":"shop-agent","llm_config":{"provider":"openai","api_key":"` + testAgentAPIKey + `","model":"gpt-4o-mini"}}`
+		if r.URL.Path == "/api/agents" {
+			_, _ = w.Write([]byte(`{"agents":[` + agentJSON + `]}`))
+			return
+		}
+		_, _ = w.Write([]byte(agentJSON))
+	}))
+	t.Cleanup(upstream.Close)
+
+	s := New(Options{
+		Addr:           ":0",
+		DataSvcURL:     "http://127.0.0.1:1",
+		ApiSvcURL:      upstream.URL,
+		ApiBearerToken: "api-token",
+		AdminToken:     "admin-secret",
+		ViewerToken:    "viewer-secret",
+	})
+	return s, seen
+}
+
+func TestAdminAgentRequestsCarryFullKeysHeader(t *testing.T) {
+	s, seen := newFullKeysProxyTestServer(t)
+
+	w := requestWithToken(t, s, http.MethodGet, "/api/agents", "admin-secret")
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin agents status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if got, _ := seen.Load("/api/agents"); got != "1" {
+		t.Errorf("admin /api/agents X-Full-Keys = %q, want %q (dashboard needs full keys for GET->PUT)", got, "1")
+	}
+}
+
+func TestViewerAgentRequestsNeverCarryFullKeysHeader(t *testing.T) {
+	s, seen := newFullKeysProxyTestServer(t)
+
+	w := requestWithToken(t, s, http.MethodGet, "/api/agents", "viewer-secret")
+	if w.Code != http.StatusOK {
+		t.Fatalf("viewer agents status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if got, _ := seen.Load("/api/agents"); got != "" {
+		t.Errorf("viewer /api/agents X-Full-Keys = %q, want empty (viewer must not unmask keys)", got)
 	}
 }
 

@@ -31,7 +31,7 @@ from uuid import uuid4
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -110,6 +110,12 @@ async def _get_proxy_headers(request: Request) -> dict[str, str]:
     # Add bearer token if configured
     if settings.api_bearer_token:
         headers["authorization"] = f"Bearer {settings.api_bearer_token}"
+
+    # Pentest H1: demo/web — публичный край. api-secrets (полные api_key)
+    # выдаются api-service только при X-Full-Keys: 1 (opt-in для admin-
+    # dashboard). Браузерный клиент не должен уметь этого попросить через
+    # наш прокси — заголовок всегда выбрасывается.
+    headers.pop("x-full-keys", None)
 
     return headers
 
@@ -477,27 +483,38 @@ async def proxy_tenant_api(request: Request, tenant_id: str, path: str):
         else:
             return await _proxy_to_rag(request, f"/{rag_subpath}")
     else:
-        # Default to API
-        is_sse = path == "chat" and request.method == "POST"
-        # If path already starts with 'api/', use it directly (e.g. api/health -> /health)
-        # Otherwise prepend 'api/' (e.g. chat -> /api/chat)
+        # Default to API — но только узкий allowlist (pentest H1):
+        # demo/web — публичный край, он не должен быть прокси к admin-контуру
+        # api-service (agents/backlog/voice/llm-providers и т.д.) с серверным
+        # bearer-токеном. Разрешены только публичные поверхности демо.
+        is_sse = request.method == "POST" and (path == "chat" or path.startswith("chat/"))
         if path.startswith("api/"):
             api_path = path.replace("api/", "", 1)
+            upstream = f"/{api_path}"
         else:
-            api_path = f"api/{path}"
-        return await _proxy_to_api(request, f"/{api_path}", stream=is_sse)
+            api_path = path
+            upstream = f"/api/{api_path}"
+        allowed_api = (
+            api_path == "chat"
+            or api_path.startswith("chat/")
+            or api_path in ("health", "reports")
+            or api_path.startswith("embed/")
+        )
+        if not allowed_api:
+            raise HTTPException(status_code=404, detail=f"Unknown API route: {path}")
+        return await _proxy_to_api(request, upstream, stream=is_sse)
 
 
 @app.get("/api/tenants")
 async def get_tenants(request: Request) -> Response:
-    """Return list of available tenants from data-service health endpoint.
+    """Return the demo tenant list.
 
-    Falls back to [DEFAULT_TENANT_ID] if data-service returns single-tenant response.
-    Also checks DEMO_TENANTS env var (comma-separated) as explicit override.
+    Pentest M2/H1: previously this discovered tenants from the data-service
+    /health endpoint, leaking the full tenant inventory (incl. e2e-*/test-*)
+    to anyone who can reach demo/web. Discovery is gone: the list comes only
+    from the explicit DEMO_TENANTS env var, falling back to the configured
+    default tenant.
     """
-    import json
-
-    # Explicit override via env var (via settings)
     explicit = settings.demo_tenants.strip()
     if explicit:
         return Response(
@@ -506,36 +523,8 @@ async def get_tenants(request: Request) -> Response:
             ),
             media_type="application/json",
         )
-
-    # Try to discover from data-service /health
-    default_tenant = settings.default_tenant_id
-    try:
-        http_client = request.app.state.http_client
-        url = f"{DATA_SERVICE_URL}/health"
-        ds_resp = await http_client.get(url, timeout=5.0)
-        if ds_resp.status_code == 200:
-            import json
-
-            data = ds_resp.json()
-            if "tenants" in data and isinstance(data["tenants"], list):
-                tenant_ids = [
-                    t["id"]
-                    for t in data["tenants"]
-                    if isinstance(t, dict) and "id" in t
-                ]
-                if tenant_ids:
-                    return Response(
-                        content=json.dumps({"tenants": tenant_ids}),
-                        media_type="application/json",
-                    )
-    except Exception:
-        logger.debug("Failed to discover tenants from data-service", exc_info=True)
-
-    # Fallback
-    import json
-
     return Response(
-        content=json.dumps({"tenants": [default_tenant]}),
+        content=json.dumps({"tenants": [settings.default_tenant_id]}),
         media_type="application/json",
     )
 
@@ -543,16 +532,6 @@ async def get_tenants(request: Request) -> Response:
 @app.get("/api/health")
 async def proxy_health(request: Request) -> Response:
     return await _proxy_to_api(request, "/health")
-
-
-@app.get("/api/backlog")
-async def proxy_backlog(request: Request) -> Response:
-    return await _proxy_to_api(request, "/api/backlog")
-
-
-@app.get("/api/backlog/{session_id}")
-async def proxy_backlog_detail(request: Request, session_id: str) -> Response:
-    return await _proxy_to_api(request, f"/api/backlog/{session_id}")
 
 
 @app.get("/api/session/history")

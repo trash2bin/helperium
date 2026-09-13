@@ -350,12 +350,14 @@ func TestViewerCanAccessHealthAndStatic(t *testing.T) {
 	s := New(Options{Addr: ":0", ViewerToken: "viewer-secret"})
 	router := s.Router()
 
-	paths := []string{"/", "/styles.css", "/health", "/api/health", "/i18n.json", "/metrics"}
+	paths := []string{"/", "/styles.css", "/health", "/api/health", "/i18n.json"}
 	for _, p := range paths {
 		t.Run(p, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, p, nil)
-			// No auth needed for static/health
+			// No auth needed for static/health. /metrics is NOT in this list:
+			// it is bearer-protected (pentest M1) and covered by
+			// metrics_auth_test.go.
 			router.ServeHTTP(w, req)
 			if w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden {
 				t.Errorf("viewer public path %s returned %d, should bypass auth", p, w.Code)

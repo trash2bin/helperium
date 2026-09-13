@@ -137,7 +137,7 @@ func (s *Server) Router() chi.Router {
 	r.Use(s.auditMiddleware())
 	r.Use(authMiddleware(s.opts.AdminToken, s.opts.ViewerToken))
 
-	// Prometheus metrics (no auth needed)
+	// Prometheus metrics — под тем же bearer-токеном (admin/viewer)
 	r.Handle("/metrics", promhttp.Handler())
 
 	// Health check (no auth)
@@ -307,9 +307,11 @@ func RoleFromContext(ctx context.Context) string {
 }
 
 // isPublicPath возвращает true для путей, не требующих авторизации.
+// ВАЖНО: /metrics сюда НЕ входит (pentest M1) — метрики отдают tenant-лейблы и
+// счётчики rate-limit, для них нужен валидный bearer (admin или viewer).
 func isPublicPath(path string) bool {
 	switch path {
-	case "/", "/index.html", "/styles.css", "/admin.css", "/app.js", "/i18n.js", "/i18n.json", "/metrics", "/openapi.json":
+	case "/", "/index.html", "/styles.css", "/admin.css", "/app.js", "/i18n.js", "/i18n.json", "/openapi.json":
 		return true
 	}
 	if strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/js/") || strings.HasPrefix(path, "/dist/") {
@@ -807,7 +809,7 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 	if dataDir == "" {
 		dataDir = ".data/uploads"
 	}
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		respondError(w, http.StatusInternalServerError, "mkdir_error", err.Error())
 		return
 	}
@@ -1253,6 +1255,13 @@ func (s *Server) proxyToApiService(w http.ResponseWriter, r *http.Request, path 
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+s.opts.ApiBearerToken)
+	// Pentest H1: api-service masks api keys by default; the header is set
+	// ONLY by admin-role handlers (see proxyAgentsToApiService) that need
+	// the full value for GET-then-PUT round-trips. Never forwarded for viewer
+	// because those requests never carry it.
+	if v := r.Header.Get("X-Full-Keys"); v != "" {
+		req.Header.Set("X-Full-Keys", v)
+	}
 	// Сохраняем оригинальный Content-Type (может быть multipart/form-data с boundary для voice)
 	ct := r.Header.Get("Content-Type")
 	if ct == "" {
@@ -1357,9 +1366,14 @@ func (s *Server) proxyAgentsToApiService(w http.ResponseWriter, r *http.Request,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
+		// api-service now masks keys by default (pentest H1); dual-mask here so
+		// even a future upstream that omits masking cannot leak to viewers.
 		_, _ = w.Write(maskAgentLlmConfigForViewer(body))
 		return
 	}
+	// Admin: api-service masks api_key by default (pentest H1). The admin UI
+	// round-trips GET->PUT, so explicitly opt in to full keys for admins only.
+	r.Header.Set("X-Full-Keys", "1")
 	s.proxyToApiService(w, r, path)
 }
 
@@ -1387,6 +1401,7 @@ func (s *Server) getFromApiService(r *http.Request, path string) ([]byte, int, e
 }
 
 func (s *Server) agentCreateHandler(w http.ResponseWriter, r *http.Request) {
+	r.Header.Set("X-Full-Keys", "1")
 	s.proxyToApiService(w, r, "/api/agents")
 }
 
@@ -1397,6 +1412,7 @@ func (s *Server) agentGetHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) agentUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
+	r.Header.Set("X-Full-Keys", "1")
 	s.proxyToApiService(w, r, "/api/agents/"+name)
 }
 
