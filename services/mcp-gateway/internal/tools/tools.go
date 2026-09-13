@@ -117,15 +117,11 @@ func (r *Registry) RagDisabledReason() string {
 func (r *Registry) buildTools() {
 	auto := make(map[string]toolDef)
 
-	// Always auto-generate builtin tools (health, stats)
-	for _, ep := range r.cfg.Endpoints {
-		if ep.Op == config.OpBuiltinHealth || ep.Op == config.OpBuiltinStats {
-			td := endpointToToolDef(ep, r.cfg.Entities, r.cfg.CustomQueries)
-			if td.Name != "" {
-				auto[td.Name] = td
-			}
-		}
-	}
+	// Pentest M3: builtin platform tools (health/stats) are intentionally NOT
+	// exposed to the model — они являются метаданными платформы, а не данными
+	// tenant'а. /health и /stats остаются HTTP-эндпоинтами data-service
+	// (health — public/агрегированный, M2), но LLM их инструментами не видит.
+	// Фильтр ниже дублирует это и для явных mcp_tools из manifest'а.
 
 	// Prefer explicit mcp_tools from config (data-service manifest) if available.
 	// They carry richer descriptions + params. Skip auto-generation for data tools
@@ -157,7 +153,7 @@ func (r *Registry) buildTools() {
 	r.toolDefs = make([]toolDef, 0, len(auto))
 	seen := make(map[string]bool, len(auto))
 	for _, td := range auto {
-		if seen[td.Name] {
+		if seen[td.Name] || isPlatformTool(td.Name) {
 			continue
 		}
 		seen[td.Name] = true
@@ -166,6 +162,12 @@ func (r *Registry) buildTools() {
 	sort.Slice(r.toolDefs, func(i, j int) bool {
 		return r.toolDefs[i].Name < r.toolDefs[j].Name
 	})
+}
+
+// isPlatformTool — имена встроенных платформенных тулов, которые не
+// экспонируются модели (pentest M3): метаданные платформы, не данные tenant'а.
+func isPlatformTool(name string) bool {
+	return name == "health" || name == "stats"
 }
 
 // registeredToolName returns the MCP-discovery name without changing the tenant

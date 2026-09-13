@@ -33,11 +33,30 @@ func TestMain(m *testing.M) {
 // Helpers
 // ════════════════════════════════════════════════════════════════
 
+// TestBuildHTTPServerHonorsMCPHost — native launcher (dev.sh) binds the
+// gateway to loopback via MCP_HOST=127.0.0.1, so the dev-mode surface is not
+// exposed on all interfaces (pentest C1). Without MCP_HOST the historical
+// default `:<port>` must be preserved (docker container bind).
+func TestBuildHTTPServerHonorsMCPHost(t *testing.T) {
+	t.Setenv("MCP_PORT", "18099")
+	t.Setenv("MCP_HOST", "127.0.0.1")
+	srv := buildHTTPServer(http.NewServeMux(), "18099")
+	if srv.Addr != "127.0.0.1:18099" {
+		t.Fatalf("Addr with MCP_HOST=127.0.0.1 = %q, want %q", srv.Addr, "127.0.0.1:18099")
+	}
+
+	t.Setenv("MCP_HOST", "")
+	srv = buildHTTPServer(http.NewServeMux(), "18099")
+	if srv.Addr != ":18099" {
+		t.Fatalf("Addr without MCP_HOST = %q, want %q", srv.Addr, ":18099")
+	}
+}
+
 func writeTestConfig(t *testing.T, data string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	return path
@@ -200,6 +219,29 @@ func TestDebugConfigAlias(t *testing.T) {
 // ════════════════════════════════════════════════════════════════
 // Auth middleware tests
 // ═══════════════════════════════════════════════���════════════════
+
+func TestAuthMiddleware_MetricsEndpointRequiresAuth(t *testing.T) {
+	t.Setenv("MCP_API_KEY", "test-secret-123")
+
+	r := newTestRouterFromConfig(t, defaultTestConfig())
+
+	// Without token → 401 (pentest M1: /metrics must not be auth-exempt)
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("GET /metrics without token = %d, want 401", rec.Code)
+	}
+
+	// With token → 200 (promhttp handler behind auth)
+	req = httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer test-secret-123")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /metrics with token = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
 
 func TestAuthMiddleware_HealthEndpointExcluded(t *testing.T) {
 	t.Setenv("MCP_API_KEY", "test-secret-123")

@@ -295,7 +295,14 @@ func (c *Client) FetchConfigWithTenant(tenantID string) (*config.Config, error) 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("mcp: config endpoint returned status %d: %s", resp.StatusCode, string(body))
+		// Preserve the upstream status/code across the boundary so the caller
+		// can distinguish "unknown tenant" (4xx) from a down dependency (5xx)
+		// instead of collapsing both into one generic failure.
+		return nil, fmt.Errorf(
+			"mcp: fetch config from %s: %w",
+			u,
+			parseDataServiceError("/mcp/manifest", resp.StatusCode, body),
+		)
 	}
 
 	var cfg config.Config
