@@ -115,3 +115,9 @@ vendor/
 
 # Benchmark run artifacts (raw backlogs, not tracked)
 reports/*/backlog/
+
+# Local working notes (self-declared untracked, see AGENTS.md)
+TODO-*.md
+
+# Ad-hoc screenshots at repo root
+/storefront-*.png

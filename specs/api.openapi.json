@@ -1,15 +1,181 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Agent-Tutor Core API",
-    "description": "Backend API for the Agent-Tutor system. Handles orchestration, session history, and tool integration.",
+    "title": "Helperium API",
+    "description": "LLM agent orchestration service",
     "version": "1.1.0"
   },
   "paths": {
+    "/api/chat": {
+      "post": {
+        "summary": "Chat Endpoint",
+        "operationId": "chat_endpoint_api_chat_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/voice": {
+      "post": {
+        "summary": "Chat Voice Endpoint",
+        "operationId": "chat_voice_endpoint_api_chat_voice_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_chat_voice_endpoint_api_chat_voice_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/{name}": {
+      "post": {
+        "summary": "Chat Agent Handler",
+        "operationId": "chat_agent_handler_api_chat__name__post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reports": {
+      "post": {
+        "summary": "Create Report",
+        "description": "Accept a problem report from the embed widget.",
+        "operationId": "create_report_api_reports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{name}/widget-config": {
+      "get": {
+        "summary": "Agent Widget Config Endpoint",
+        "operationId": "agent_widget_config_endpoint_api_agents__name__widget_config_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Agent Widget Config Endpoint Api Agents  Name  Widget Config Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
-        "summary": "Проверка здоровья API",
-        "description": "Проверяет работоспособность API и доступность LLM провайдера.",
+        "summary": "Health check",
         "operationId": "health_endpoint_health_get",
         "responses": {
           "200": {
@@ -25,77 +191,111 @@
         }
       }
     },
-    "/api/chat": {
+    "/api/agents": {
       "post": {
-        "summary": "Стриминг чата",
-        "description": "Основной эндпоинт для общения с агентом. Возвращает поток SSE событий.",
-        "operationId": "chat_endpoint_api_chat_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
+        "summary": "Create Agent Endpoint",
+        "operationId": "create_agent_endpoint_api_agents_post",
+        "parameters": [
+          {
+            "name": "X-Full-Keys",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Full-Keys"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCreateRequest"
               }
             }
           }
-        }
-      }
-    },
-    "/api/backlog": {
-      "get": {
-        "summary": "Список сессий бэклога",
-        "description": "Возвращает список всех сохраненных сессий из бэклога.",
-        "operationId": "backlog_list_endpoint_api_backlog_get",
+        },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BacklogListResponse"
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
         }
-      }
-    },
-    "/api/backlog/{session_id}": {
+      },
       "get": {
-        "summary": "Детали сессии бэклога",
-        "description": "Возвращает все события конкретной сессии.",
-        "operationId": "backlog_detail_endpoint_api_backlog__session_id__get",
+        "summary": "List Agents Endpoint",
+        "operationId": "list_agents_endpoint_api_agents_get",
         "parameters": [
           {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
+            "name": "X-Full-Keys",
+            "in": "header",
+            "required": false,
             "schema": {
-              "type": "string",
-              "title": "Session Id"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Full-Keys"
             }
           },
           {
-            "name": "limit",
-            "in": "query",
+            "name": "authorization",
+            "in": "header",
             "required": false,
             "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 500,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -105,7 +305,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BacklogDetailResponse"
+                  "$ref": "#/components/schemas/AgentListResponse"
                 }
               }
             }
@@ -123,60 +323,50 @@
         }
       }
     },
-    "/api/backlog/stats/{session_id}": {
+    "/api/agents/{name}": {
       "get": {
-        "summary": "Статистика LLM-вызовов сессии",
-        "description": "Возвращает агрегированную статистику по токенам, стоимости и количеству вызовов для сессии.",
-        "operationId": "backlog_stats_endpoint_api_backlog_stats__session_id__get",
+        "summary": "Get Agent Endpoint",
+        "operationId": "get_agent_endpoint_api_agents__name__get",
         "parameters": [
           {
-            "name": "session_id",
+            "name": "name",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
+              "title": "Name"
             }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/backlog/errors": {
-      "get": {
-        "summary": "Последние ошибки бэклога",
-        "description": "Возвращает последние ошибки по всем сессиям.",
-        "operationId": "backlog_errors_endpoint_api_backlog_errors_get",
-        "parameters": [
           {
-            "name": "limit",
-            "in": "query",
+            "name": "X-Full-Keys",
+            "in": "header",
             "required": false,
             "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Full-Keys"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -185,7 +375,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
               }
             }
           },
@@ -200,26 +392,118 @@
             }
           }
         }
-      }
-    },
-    "/api/backlog/export/{session_id}": {
-      "get": {
-        "summary": "Экспорт сессии бэклога",
-        "description": "Export backlog session as JSONL for fine-tuning.",
-        "operationId": "export_backlog_api_backlog_export__session_id__get",
+      },
+      "put": {
+        "summary": "Update Agent Endpoint",
+        "operationId": "update_agent_endpoint_api_agents__name__put",
         "parameters": [
           {
-            "name": "session_id",
+            "name": "name",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Session Id"
+              "title": "Name"
+            }
+          },
+          {
+            "name": "X-Full-Keys",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Full-Keys"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Agent Endpoint",
+        "operationId": "delete_agent_endpoint_api_agents__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
         "responses": {
-          "200": {
+          "204": {
             "description": "Successful Response"
           },
           "422": {
@@ -235,29 +519,52 @@
         }
       }
     },
-    "/api/session/history": {
+    "/admin/reports": {
       "get": {
-        "summary": "История сессии",
-        "description": "Возвращает историю сообщений для указанной сессии.",
-        "operationId": "session_history_endpoint_api_session_history_get",
+        "summary": "List Reports",
+        "description": "List widget problem reports, newest first, with a total count.",
+        "operationId": "list_reports_admin_reports_get",
         "parameters": [
           {
-            "name": "session_id",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "default": "default",
-              "title": "Session Id"
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
             }
           },
           {
-            "name": "agent_name",
+            "name": "status",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "title": "Agent Name"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -266,9 +573,71 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SessionHistoryResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/reports/{report_id}/status": {
+      "post": {
+        "summary": "Update Report Status",
+        "description": "Mark a report as reviewed (or back to new).",
+        "operationId": "update_report_status_admin_reports__report_id__status_post",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportStatusUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -290,12 +659,40 @@
         "summary": "Get Guardrails",
         "description": "Get current guard config.",
         "operationId": "get_guardrails_admin_guardrails_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -305,17 +702,35 @@
         "summary": "Update Guardrails",
         "description": "Update guard config. Accepts: enabled, block_on_match.",
         "operationId": "update_guardrails_admin_guardrails_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Config"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -344,12 +759,40 @@
         "summary": "Get All Spending",
         "description": "Get spending overview.",
         "operationId": "get_all_spending_admin_spending_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -369,6 +812,22 @@
             "schema": {
               "type": "string",
               "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -405,6 +864,22 @@
             "schema": {
               "type": "string",
               "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -447,12 +922,40 @@
         "summary": "Get Abuse Config",
         "description": "Get the current effective abuse configuration (from file + env).",
         "operationId": "get_abuse_config_admin_abuse_config_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -462,17 +965,35 @@
         "summary": "Save Abuse Config",
         "description": "Save new abuse config directly (admin dashboard alternative endpoint).",
         "operationId": "save_abuse_config_admin_abuse_config_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -501,12 +1022,40 @@
         "summary": "Reload Abuse Config",
         "description": "Reload abuse config from disk and apply runtime settings.\n\nCalled by admin-dashboard after saving new config.\nApplies runtime settings (history, loops) to the live settings object.",
         "operationId": "reload_abuse_config_admin_abuse_config_reload_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -518,6 +1067,24 @@
         "summary": "List Llm Providers",
         "description": "List all LLM providers with masked API keys.",
         "operationId": "list_llm_providers_admin_llm_providers_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -526,24 +1093,52 @@
                 "schema": {}
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       },
       "post": {
         "summary": "Add Llm Provider",
-        "description": "Add a new LLM provider.\n\nBody:\n    name (required): unique provider name\n    model (required): model identifier (e.g. openai/gpt-4o, anthropic/claude-3-sonnet)\n    provider: provider type — auto-detected from model prefix if omitted\n    api_key: API key (will not be returned in full)\n    api_base: custom API base URL\n    enabled: whether the provider is active (default: true)",
+        "description": "Add a new LLM provider.\n\nBody:\n    name (required): unique provider name\n    model (required): model identifier (e.g. openai/gpt-4o, anthropic/claude-3-sonnet)\n    provider: provider type \u2014 auto-detected from model prefix if omitted\n    api_key: API key (will not be returned in full)\n    api_base: custom API base URL\n    enabled: whether the provider is active (default: true)",
         "operationId": "add_llm_provider_admin_llm_providers_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -572,12 +1167,40 @@
         "summary": "List Litellm Providers",
         "description": "List all available providers from LiteLLM (live, no hardcode).",
         "operationId": "list_litellm_providers_admin_llm_provider_list_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -597,6 +1220,22 @@
             "schema": {
               "type": "string",
               "title": "Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -633,6 +1272,22 @@
             "schema": {
               "type": "string",
               "title": "Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -682,6 +1337,22 @@
               "type": "string",
               "title": "Name"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -720,6 +1391,22 @@
               "type": "string",
               "title": "Name"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -749,6 +1436,24 @@
         "summary": "Get Llm Config",
         "description": "Get current LLM provider fallback configuration.",
         "operationId": "get_llm_config_admin_llm_config_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -757,15 +1462,100 @@
                 "schema": {}
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
     },
-    "/api/voice-config": {
+    "/api/backlog": {
       "get": {
-        "summary": "Get Voice Config",
-        "description": "Get current STT (Speech-to-Text) configuration.",
-        "operationId": "get_voice_config_api_voice_config_get",
+        "summary": "Backlog List Endpoint",
+        "operationId": "backlog_list_endpoint_api_backlog_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacklogListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backlog/errors": {
+      "get": {
+        "summary": "Backlog Errors Endpoint",
+        "operationId": "backlog_errors_endpoint_api_backlog_errors_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -774,34 +1564,80 @@
                 "schema": {}
               }
             }
-          }
-        }
-      },
-      "put": {
-        "summary": "Update Voice Config",
-        "description": "Update and persist voice configuration.\n\nPreserves existing api_key/api_base/voice per provider when the\nincoming value is None or empty (masks sensitive fields).",
-        "operationId": "update_voice_config_api_voice_config_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object",
-                "title": "Body"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/backlog/{session_id}": {
+      "get": {
+        "summary": "Backlog Detail Endpoint",
+        "operationId": "backlog_detail_endpoint_api_backlog__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
           },
-          "required": true
-        },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Update Voice Config Api Voice Config Put"
+                  "$ref": "#/components/schemas/BacklogDetailResponse"
                 }
               }
             }
@@ -819,46 +1655,43 @@
         }
       }
     },
-    "/api/agents": {
+    "/api/backlog/stats/{session_id}": {
       "get": {
-        "summary": "Список агентов",
-        "description": "Возвращает список всех созданных агентов.",
-        "operationId": "list_agents_endpoint_api_agents_get",
+        "summary": "Backlog Stats Endpoint",
+        "operationId": "backlog_stats_endpoint_api_backlog_stats__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentListResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Создать агента",
-        "description": "Создаёт нового агента с указанными tenant_id.",
-        "operationId": "create_agent_endpoint_api_agents_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -875,110 +1708,39 @@
         }
       }
     },
-    "/api/agents/{name}": {
+    "/api/backlog/export/{session_id}": {
       "get": {
-        "summary": "Получить агента",
-        "description": "Возвращает данные конкретного агента по имени.",
-        "operationId": "get_agent_endpoint_api_agents__name__get",
+        "summary": "Export Backlog",
+        "operationId": "export_backlog_api_backlog_export__session_id__get",
         "parameters": [
           {
-            "name": "name",
+            "name": "session_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Name"
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Обновить агента",
-        "description": "Обновляет описание и/или tenant_id агента.",
-        "operationId": "update_agent_endpoint_api_agents__name__put",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentUpdateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "summary": "Удалить агента",
-        "description": "Удаляет агента по имени.",
-        "operationId": "delete_agent_endpoint_api_agents__name__delete",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
             "description": "Successful Response"
           },
           "422": {
@@ -994,22 +1756,147 @@
         }
       }
     },
-    "/api/agents/{name}/widget-config": {
+    "/api/session/history": {
       "get": {
-        "summary": "Конфиг виджета для агента",
-        "description": "Возвращает настройки embed-виджета для указанного агента.",
-        "operationId": "agent_widget_config_endpoint_api_agents__name__widget_config_get",
+        "summary": "Session History Endpoint",
+        "operationId": "session_history_endpoint_api_session_history_get",
         "parameters": [
           {
-            "name": "name",
-            "in": "path",
-            "required": true,
+            "name": "session_id",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string",
-              "title": "Name"
+              "default": "default",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "agent_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Agent Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice-config": {
+      "get": {
+        "summary": "Get Voice Config",
+        "operationId": "get_voice_config_api_voice_config_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Voice Config",
+        "operationId": "update_voice_config_api_voice_config_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1018,83 +1905,8 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "title": "Response Agent Widget Config Endpoint Api Agents  Name  Widget Config Get"
+                  "title": "Response Update Voice Config Api Voice Config Put"
                 }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/chat/voice": {
-      "post": {
-        "summary": "Chat Voice Endpoint",
-        "description": "Voice chat endpoint.\n\nAccepts an audio file via multipart/form-data, transcribes it via\nthe configured STT provider(s), feeds the text through the existing\nchat pipeline, and streams the response as SSE events.",
-        "operationId": "chat_voice_endpoint_api_chat_voice_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_chat_voice_endpoint_api_chat_voice_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/chat/{name}": {
-      "post": {
-        "summary": "Чат с агентом по имени",
-        "description": "Стриминг чата с конкретным агентом. Tenant IDs берутся из конфига агента.",
-        "operationId": "chat_by_agent_endpoint_api_chat__name__post",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
               }
             }
           },
@@ -1114,6 +1926,99 @@
   },
   "components": {
     "schemas": {
+      "AbuseConfigOverride": {
+        "properties": {
+          "rps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rps"
+          },
+          "burst": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burst"
+          },
+          "max_message_length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Message Length"
+          },
+          "min_interval_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Interval Ms"
+          },
+          "max_user_turns_per_session": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max User Turns Per Session"
+          },
+          "block_empty_user_agent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Empty User Agent"
+          },
+          "blocked_user_agents": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked User Agents"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AbuseConfigOverride",
+        "description": "Restrictive per-agent anti-abuse overrides with an explicit public contract."
+      },
       "AgentCreateRequest": {
         "properties": {
           "name": {
@@ -1170,15 +2075,13 @@
           "abuse_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/AbuseConfigOverride"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Abuse Config",
-            "description": "Per-agent abuse settings overrides (keys match AbuseConfig fields)"
+            "description": "Per-agent anti-abuse overrides; only explicit AbuseConfigOverride fields are accepted"
           },
           "system_prompt": {
             "anyOf": [
@@ -1283,15 +2186,13 @@
           "abuse_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/AbuseConfigOverride"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Abuse Config",
-            "description": "Per-agent abuse settings overrides"
+            "description": "Per-agent anti-abuse overrides; legacy message-based quota fields are rejected"
           },
           "system_prompt": {
             "anyOf": [
@@ -1405,15 +2306,13 @@
           "abuse_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/AbuseConfigOverride"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Abuse Config",
-            "description": "Per-agent abuse settings overrides"
+            "description": "Per-agent anti-abuse overrides; legacy message-based quota fields are rejected"
           },
           "system_prompt": {
             "anyOf": [
@@ -1518,7 +2417,7 @@
           "data"
         ],
         "title": "BacklogEvent",
-        "description": "A single event/record in a backlog session.\n\nFields vary by ``event`` type — ``model_response`` events contain\n``duration_ms`` and ``tokens``. Extra fields are preserved via\n``extra='allow'``."
+        "description": "A single event/record in a backlog session.\n\nFields vary by ``event`` type \u2014 ``model_response`` events contain\n``duration_ms`` and ``tokens``. Extra fields are preserved via\n``extra='allow'``."
       },
       "BacklogListResponse": {
         "properties": {
@@ -1795,7 +2694,227 @@
         },
         "type": "object",
         "title": "LLMConfig",
-        "description": "Per-agent LLM configuration. All fields optional — falls back to global defaults when null."
+        "description": "Per-agent LLM configuration. All fields optional \u2014 falls back to global defaults when null."
+      },
+      "ReportCreateRequest": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Agent",
+            "description": "Agent name"
+          },
+          "session_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Session Id",
+            "description": "Widget session id"
+          },
+          "lang": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(ru|en)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lang",
+            "description": "Widget language"
+          },
+          "message": {
+            "$ref": "#/components/schemas/ReportMessageContext",
+            "description": "The message being reported"
+          },
+          "transcript": {
+            "items": {
+              "$ref": "#/components/schemas/ReportTranscriptMessage"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Transcript",
+            "description": "Recent session transcript (client-capped)"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment",
+            "description": "Optional visitor comment"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportLastError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last error seen in this session"
+          },
+          "page_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Url",
+            "description": "Host page URL the widget runs on"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent",
+          "session_id",
+          "message"
+        ],
+        "title": "ReportCreateRequest",
+        "description": "Widget problem report payload (public ``POST /api/reports``).\n\nStored verbatim for operator review; the content is never fed to the LLM,\nso report text cannot steer model behaviour."
+      },
+      "ReportLastError": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Text",
+            "description": "Error bubble text",
+            "default": ""
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id",
+            "description": "Correlation id from the SSE error event"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ReportLastError",
+        "description": "Last SSE error observed by the widget, with its correlation id."
+      },
+      "ReportMessageContext": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^(assistant|error)$",
+            "title": "Kind",
+            "description": "assistant answer or an error bubble",
+            "default": "assistant"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Text",
+            "description": "Message text",
+            "default": ""
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Tools",
+            "description": "Tool names used for the answer"
+          },
+          "display_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Display Names",
+            "description": "Human-readable tool labels"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ReportMessageContext",
+        "description": "The assistant message a visitor is complaining about."
+      },
+      "ReportStatusUpdateRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "pattern": "^(new|reviewed)$",
+            "title": "Status",
+            "description": "New status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ReportStatusUpdateRequest",
+        "description": "Operator update of a report's review status."
+      },
+      "ReportTranscriptMessage": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^(user|assistant)$",
+            "title": "Kind",
+            "description": "Message kind"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Text",
+            "description": "Message text",
+            "default": ""
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Tools"
+          },
+          "ts": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts",
+            "description": "Client timestamp"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ReportTranscriptMessage",
+        "description": "One transcript entry attached to a widget problem report."
       },
       "SessionHistoryResponse": {
         "properties": {
@@ -1908,7 +3027,7 @@
         },
         "type": "object",
         "title": "VoiceAgentConfig",
-        "description": "Per-agent voice configuration overrides.\n\nAll fields are optional (None = fall back to global VoiceConfig)."
+        "description": "Per-agent STT voice configuration overrides.\n\nAll fields are optional (None = fall back to global VoiceConfig)."
       },
       "WidgetConfig": {
         "properties": {
@@ -1916,13 +3035,13 @@
             "type": "string",
             "title": "Title",
             "description": "Widget header title",
-            "default": "Ассистент"
+            "default": "\u0410\u0441\u0441\u0438\u0441\u0442\u0435\u043d\u0442"
           },
           "greeting": {
             "type": "string",
             "title": "Greeting",
             "description": "Greeting message in chat",
-            "default": "Чем могу помочь?"
+            "default": "\u0427\u0435\u043c \u043c\u043e\u0433\u0443 \u043f\u043e\u043c\u043e\u0447\u044c?"
           },
           "accent_color": {
             "type": "string",

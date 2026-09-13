@@ -2,6 +2,7 @@
 
 ## 2026-09-13
 
+- **fix:** восстановить правки, выпавшие из рабочего дерева при аварийном откате pre-commit (stash-restore конфликт при прерванной сессии): .gitignore (TODO-*.md, /storefront-*.png), mcp-gateway cmd/main.go (классификация tenant-scope ошибок), internal/tools/tools_test.go (M3-регрессии platform-тулов), specs/api.openapi.json (языко-зависимые поля виджета), rag test_upload_filename_sanitization.py; содержимое сверено построчно с эталонным диффом. **Verification:** построчный аудит 69 файлов эталонного диффа — 0 расхождений; go vet/pytest зелёные.
 - **chore(specs):** перегенерированы api.openapi.json/yaml под новую контроль-плейн поверхность: маскирование api-ключей агентов + X-Full-Keys, per-IP abuse budget, TRUSTED_PROXIES. **Verification:** соответствие сгенерированной схеме; make ci green.
 - **chore:** .gitignore: TODO-*.md (локальные рабочие заметки агента, по конвенции не коммитятся) и /storefront-*.png (ad-hoc скриншоты в корне). **Verification:** git check-ignore; рабочее дерево без мусора.
 - **fix(ci):** go install govulncheck@latest в ci-audit отказоустойчив (префикс -, как у соседнего uv audit) — сетевой сбой или обновление Go больше не роняет цель аудита. **Verification:** make ci-audit green.

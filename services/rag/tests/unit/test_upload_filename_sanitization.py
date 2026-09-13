@@ -33,6 +33,13 @@ from helperium_sdk.rag.models import Document
 
 
 @pytest.fixture(autouse=True)
+def _rag_admin_token():
+    """Pentest C2: mutating /documents/* endpoints require X-Admin-Token."""
+    with patch("rag.service.ADMIN_API_TOKEN", "test-admin-token"):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def mock_state():
     with (
         patch.object(state, "get_pipeline") as mock_pipe,
@@ -78,6 +85,7 @@ async def test_traversal_filename_is_neutralized(mock_state, tmp_path):
         resp = await ac.post(
             "/documents/upload",
             files={"file": ("../../etc/passwd", b"hello", "text/plain")},
+            headers={"X-Admin-Token": "test-admin-token"},
         )
     assert resp.status_code == 201, resp.text
     saved = Path(pipeline.import_document.call_args.kwargs["path"])
@@ -99,6 +107,7 @@ async def test_absolute_filename_is_neutralized(mock_state, tmp_path):
         resp = await ac.post(
             "/documents/upload",
             files={"file": ("/abs/path/doc.txt", b"hello", "text/plain")},
+            headers={"X-Admin-Token": "test-admin-token"},
         )
     assert resp.status_code == 201, resp.text
     saved = Path(pipeline.import_document.call_args.kwargs["path"])
@@ -123,6 +132,7 @@ async def test_dotdot_and_empty_filename_not_500(filename):
         resp = await ac.post(
             "/documents/upload",
             files={"file": (filename, b"hello", "text/plain")},
+            headers={"X-Admin-Token": "test-admin-token"},
         )
     assert resp.status_code != 500, (
         f"filename={filename!r} leaks an unhandled 500 (got {resp.status_code}); "

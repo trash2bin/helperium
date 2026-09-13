@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -209,8 +210,31 @@ func (registry *streamableTenantRegistry) serveHTTP(w http.ResponseWriter, r *ht
 			http.Error(w, "too many active Streamable HTTP tenant scopes", http.StatusServiceUnavailable)
 			return
 		}
-		slog.Error("Failed to create Streamable HTTP MCP server", "tenant_ids", tenantIDs, "error", err)
-		http.Error(w, "Failed to create MCP server", http.StatusInternalServerError)
+		// Classify the failure instead of collapsing everything into 500:
+		//   - upstream 5xx / transport -> retryable server error (502/503 class)
+		//   - upstream 4xx               -> the scope itself is the problem
+		//                                (unknown/invalid tenant), a client error
+		//   - anything else              -> genuine internal failure (500)
+		var serviceErr *httpclient.DataServiceError
+		switch {
+		case errors.Is(err, httpclient.ErrDataServiceUnavailable):
+			slog.Error("Failed to create Streamable HTTP MCP server (data service unavailable)",
+				"tenant_ids", tenantIDs, "error", err)
+			http.Error(w, "Data service unavailable, retry shortly", http.StatusServiceUnavailable)
+		case errors.As(err, &serviceErr):
+			status := http.StatusBadRequest
+			message := "Invalid tenant scope"
+			if serviceErr.StatusCode == http.StatusNotFound || serviceErr.Code == "tenant_not_found" {
+				status = http.StatusNotFound
+				message = "Unknown tenant"
+			}
+			slog.Warn("Failed to create Streamable HTTP MCP server (client error)",
+				"tenant_ids", tenantIDs, "tenant_status", status, "error", err)
+			http.Error(w, message, status)
+		default:
+			slog.Error("Failed to create Streamable HTTP MCP server", "tenant_ids", tenantIDs, "error", err)
+			http.Error(w, "Failed to create MCP server", http.StatusInternalServerError)
+		}
 		return
 	}
 	handler.ServeHTTP(w, r)
@@ -223,6 +247,11 @@ func main() {
 	}
 
 	devMode := os.Getenv("MCP_DEV") == "true"
+	if devMode {
+		slog.Warn("MCP_DEV=true — gateway runs WITHOUT authentication. " +
+			"This is the explicit local-development opt-out; the native launcher " +
+			"binds it to loopback (MCP_HOST=127.0.0.1). Never expose this port publicly.")
+	}
 	logLevel := slog.LevelInfo
 	if devMode {
 		logLevel = slog.LevelDebug
@@ -283,7 +312,7 @@ func buildHTTPServer(r http.Handler, port string) *http.Server {
 		}
 	}
 	return &http.Server{
-		Addr:              ":" + port,
+		Addr:              net.JoinHostPort(os.Getenv("MCP_HOST"), port),
 		Handler:           r,
 		ReadHeaderTimeout: readHeaderTimeout,
 		IdleTimeout:       idleTimeout,
@@ -446,8 +475,10 @@ func authMiddleware(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Health endpoint is excluded from auth
-		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+		// Health endpoint is excluded from auth. /metrics is NOT: it exposes
+		// tenant labels, tool inventory, LLM call durations and rate-limit
+		// counters (pentest M1) — same bearer as every other route.
+		if r.URL.Path == "/health" {
 			next.ServeHTTP(w, r)
 			return
 		}
