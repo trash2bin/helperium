@@ -1,7 +1,8 @@
 # CHANGELOG.md
 
 ## 2026-09-13
-- **doc(security):** add `doc/archive/pentest-live-2026-09-12.md` — evidence-снимок живого пентеста демо-контура: 2 Critical / 2 High / 3 Medium (слив api-ключей агентов через демо-прокси и админку, обход per-session rate limit ротацией session_id, XFF-spoofing per-IP лимитов, неавторизованные /metrics и /health-инвентарь, платформенные тулы в MCP tool-surface, RAG path-import как arbitrary file read, bind/exposure hardening). Исправления — последующими коммитами. **Verification:** секретов в отчёте нет (только demo-данные).
+
+- **security(api):** маскирование секретов агентов в /api/agents (pentest H1): все четыре read-эндпоинта возвращают llm_config.api_key замаскированным (первые 4 + … + последние 4, короткие — ********) по умолчанию; полный ключ — только с X-Full-Keys: 1 при валидном bearer; widget-config остаётся публичным без ключей. Плюс write-back guard: PUT/POST с маской вместо ключа отклоняется 400 — round-trip GET-без-заголовка → PUT молча перезаписал бы реальный секрет маской (update_agent заменяет llm_config целиком). **Verification:** новый test_agents_redaction.py (10 тестов: маска по умолчанию, plaintext по opt-in, 401 без bearer, 400 на маску в PUT/POST, round-trip с реальным ключом); api suite 612 passed.- **doc(security):** add `doc/archive/pentest-live-2026-09-12.md` — evidence-снимок живого пентеста демо-контура: 2 Critical / 2 High / 3 Medium (слив api-ключей агентов через демо-прокси и админку, обход per-session rate limit ротацией session_id, XFF-spoofing per-IP лимитов, неавторизованные /metrics и /health-инвентарь, платформенные тулы в MCP tool-surface, RAG path-import как arbitrary file read, bind/exposure hardening). Исправления — последующими коммитами. **Verification:** секретов в отчёте нет (только demo-данные).
 
 ## 2026-09-11
 
