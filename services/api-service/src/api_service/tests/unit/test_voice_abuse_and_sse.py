@@ -27,7 +27,9 @@ def _make_vc():
     vc.enabled = True
     vc.max_voice_message_size = 10485760
     vc.stt_fallback_enabled = True
-    vc.stt_providers = []
+    # One configured STT provider: these tests exercise abuse/SSE semantics,
+    # not configuration; an empty list now short-circuits to "not configured".
+    vc.stt_providers = [MagicMock(enabled=True)]
     return vc
 
 

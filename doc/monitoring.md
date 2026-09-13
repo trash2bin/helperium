@@ -165,7 +165,7 @@ Go (data, mcp, admin) ──┘                          │
 
 **Где копать при аномалиях:**
 - **LLM долгий** → `services/api-service/src/api_service/agent/orchestrator.py` (цикл _run_turn), провайдер LiteLLM
-- **Cost растёт** → сменить модель/провайдера в `services/api-service/src/api_service/agent/litellm_provider.py`
+- **Cost растёт** → сменить модель/провайдера в `services/api-service/src/api_service/agent/providers/litellm_provider.py`
 - **Abuse blocks** → `services/api-service/src/api_service/guardrails.py` (класс `GuardChecker`, prompt injection, repeated text)
 - **Backlog растёт** → worker'ы не успевают, `services/api-service/src/api_service/backlog.py`
 

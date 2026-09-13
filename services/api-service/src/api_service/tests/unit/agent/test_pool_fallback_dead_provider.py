@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from api_service.agent.answer_normalizer import AnswerNormalizer
-from api_service.agent.litellm_provider import LiteLLMProvider
+from api_service.agent.providers.litellm_provider import LiteLLMProvider
 from api_service.agent.models import CompletionRequest, CompletionResponse
 from api_service.agent.provider_pool import FallbackProvider
 
@@ -60,7 +60,7 @@ def _request() -> CompletionRequest:
 
 def _patch_scripted(return_value=None):
     return patch(
-        "api_service.agent.scripted_provider.create_scripted_provider",
+        "api_service.agent.providers.scripted_provider.create_scripted_provider",
         return_value=return_value,
     )
 

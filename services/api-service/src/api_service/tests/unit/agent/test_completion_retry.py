@@ -16,7 +16,7 @@ from api_service.agent.completion_retry import (
     retry_after_seconds,
     retry_category,
 )
-from api_service.agent.litellm_provider import LiteLLMProvider
+from api_service.agent.providers.litellm_provider import LiteLLMProvider
 from api_service.agent.models import CompletionRequest, CompletionResponse
 from api_service.agent.provider_pool import FallbackProvider
 
@@ -114,7 +114,9 @@ async def test_litellm_provider_retries_same_serialized_request_then_succeeds() 
         tools=[{"type": "function", "function": {"name": "db_search"}}],
     )
 
-    with patch("api_service.agent.litellm_provider.litellm.acompletion", completion):
+    with patch(
+        "api_service.agent.providers.litellm_provider.litellm.acompletion", completion
+    ):
         result = await provider.complete(request)
 
     assert result.content == "done"
@@ -146,7 +148,10 @@ async def test_non_retryable_provider_error_is_not_repeated() -> None:
     )
 
     with (
-        patch("api_service.agent.litellm_provider.litellm.acompletion", completion),
+        patch(
+            "api_service.agent.providers.litellm_provider.litellm.acompletion",
+            completion,
+        ),
         pytest.raises(litellm.BadRequestError),
     ):
         await provider.complete(CompletionRequest(messages=[]))
@@ -166,7 +171,10 @@ async def test_cancellation_is_reraised_without_retry_or_fallback() -> None:
     )
 
     with (
-        patch("api_service.agent.litellm_provider.litellm.acompletion", completion),
+        patch(
+            "api_service.agent.providers.litellm_provider.litellm.acompletion",
+            completion,
+        ),
         pytest.raises(asyncio.CancelledError),
     ):
         await provider.complete(CompletionRequest(messages=[]))
@@ -233,7 +241,8 @@ async def test_primary_retries_exhaust_before_fallback_provider_runs() -> None:
     providers = FallbackProvider([primary, backup])
 
     with patch(
-        "api_service.agent.litellm_provider.litellm.acompletion", primary_completion
+        "api_service.agent.providers.litellm_provider.litellm.acompletion",
+        primary_completion,
     ):
         response = await providers.complete(CompletionRequest(messages=[]))
 

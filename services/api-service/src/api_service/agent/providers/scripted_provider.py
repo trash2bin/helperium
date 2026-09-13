@@ -9,10 +9,11 @@ from pathlib import Path
 from collections.abc import Sequence
 from typing import Any
 
-from .models import CompletionRequest, CompletionResponse, ToolCall, UsageInfo
+from ..models import CompletionRequest, CompletionResponse, ToolCall, UsageInfo
+from .base import BaseLLMProvider
 
 
-class ScriptedLLMProvider:
+class ScriptedLLMProvider(BaseLLMProvider):
     """Consume one explicit provider response per call and record every request.
 
     JSONL accepts only the provider contract: ``content``, ``tool_calls`` with

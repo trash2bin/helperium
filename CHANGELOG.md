@@ -1,5 +1,9 @@
 # CHANGELOG.md
 
+## 2026-09-14
+
+- **refactor(api):** провайдеры собраны в `agent/providers/` за абстрактным `BaseLLMProvider` (abstract `complete()`, обязательное `model`, общий credential-free `identity()` вместо `factory._worker_identity`); LiteLLM-транспорт и его compatibility-политики (`litellm_compatibility.py`, ex `provider_compatibility.py`) живут рядом, список провайдеров — classmethod `LiteLLMProvider.supported_providers()`; `provider_store.py` больше не импортирует litellm, мёртвый `KNOWN_PROVIDERS` (форсировал импорт litellm при загрузке модуля) удалён. `prompts.py` сжат до заглушки `DEFAULT_SYSTEM_PROMPT`: trusted-data инвариант и вычурный дефолт-промпт убраны по контракту «No prompt steering» (anti-abuse.md переформулирован — граница структурная, не текстовая). Voice-конфиг без автосида: первый boot = пустой `VoiceConfig`, `/api/chat/voice` отвечает «Voice input is not configured» вместо generic STT-ошибки, настройка — только через `PUT /api/voice-config`. README: таблица provider resolution приведена к коду. **Verification:** make ci-test-py green (api 619, demo/web 108, rag 111, sdk 87, contract 3, scripts 8; +3 новых first-boot теста voice), make ci-lint-py green (ruff + pyright 0), make ci-docs green; Docker E2E не гонялся — сервисные границы не менялись.
+
 ## 2026-09-13
 
 - **docs:** /metrics-клеймы приведены к факту (pentest L4): метрики есть на core-сервисах (api, rag, mcp-gateway, data, admin) за bearer-токеном, у dev-only web-прокси `/metrics` нет (404) — README, RUNBOOK (EN/RU), doc/monitoring.md (web убран из списка «каждый на /metrics»). **Verification:** make ci-docs green (path checker + AGENTS coverage); live curl /metrics по портам: 401/403 core, 404 web.

@@ -477,7 +477,7 @@ class TestScriptedPipeline:
         """ScriptedLLMProvider record_to пишет JSONL с запросами/ответами."""
         api_url, agent_name, tid, data_dir = scripted_server
         # record mode проверяем на unit-уровне (не трогая поднятый инстанс)
-        from api_service.agent.scripted_provider import ScriptedLLMProvider
+        from api_service.agent.providers.scripted_provider import ScriptedLLMProvider
         record_path = data_dir / "recorded.jsonl"
         provider = ScriptedLLMProvider.from_file(
             str(data_dir / "pipeline.jsonl"), record_to=str(record_path)

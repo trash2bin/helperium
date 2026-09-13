@@ -24,6 +24,7 @@ from typing import Any
 
 from .models import CompletionRequest, CompletionResponse
 from .protocols import LLMProvider
+from .providers.base import BaseLLMProvider
 
 logger = logging.getLogger("api_service.agent.answer_normalizer")
 
@@ -101,7 +102,7 @@ def unwrap_answer_envelope(content: str) -> str | None:
     return result if isinstance(result, str) and result.strip() else None
 
 
-class AnswerNormalizer:
+class AnswerNormalizer(BaseLLMProvider):
     """Decorating middleware implementing the LLMProvider protocol.
 
     - A content body that is entirely a fabricated tool-call envelope is
@@ -117,9 +118,11 @@ class AnswerNormalizer:
     def __init__(self, inner: LLMProvider) -> None:
         self.inner = inner
 
-    @property
-    def model(self) -> str:
-        return self.inner.model
+    def __getattr__(self, name: str) -> Any:
+        """Delegate unknown attribute reads (``model``, identity fields) to
+        the wrapped provider, so the wrapper stays transparent over the
+        whole provider identity surface."""
+        return getattr(self.inner, name)
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         response = await self.inner.complete(request)

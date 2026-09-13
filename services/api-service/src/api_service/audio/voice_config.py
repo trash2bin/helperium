@@ -3,12 +3,13 @@
 Provides functional API for loading/saving/resolving voice config
 as Pydantic VoiceConfig models.
 
-Backed by SQLite (global_config table in agents.sqlite).
+Backed by SQLite (global_config table in agents.sqlite). There is no
+auto-seeded default: voice stays unconfigured (empty STT provider list)
+until an admin saves a config via ``PUT /api/voice-config``.
 """
 
 from __future__ import annotations
 
-import copy
 import logging
 import os
 import threading
@@ -21,24 +22,6 @@ from api_service.agent_repository import SqliteAgentRepository
 logger = logging.getLogger(__name__)
 
 _GLOBAL_CONFIG_KEY = "voice"
-
-DEFAULT_VOICE_CONFIG_DICT: dict = {
-    "enabled": True,
-    "stt_providers": [
-        {
-            "name": "OpenAI Whisper",
-            "provider": "litellm",
-            "model": "whisper-1",
-            "api_key": None,
-            "api_base": None,
-            "enabled": True,
-        }
-    ],
-    "stt_fallback_enabled": True,
-    "max_voice_message_size": 10 * 1024 * 1024,
-    "min_voice_interval_seconds": 10,
-    "max_voice_duration_seconds": 120,
-}
 
 
 def _get_db_path() -> str:
@@ -94,11 +77,15 @@ def build_stt_providers(config):
 
 
 def load_voice_config() -> VoiceConfig:
-    """Load the current voice config as a Pydantic VoiceConfig model."""
+    """Load the current voice config as a Pydantic VoiceConfig model.
+
+    Returns an unconfigured ``VoiceConfig()`` (no STT providers) until an
+    admin persists a config; nothing is auto-seeded on first boot.
+    """
     repo = _get_repo()
     raw = repo.get_global_config(_GLOBAL_CONFIG_KEY)
     if raw is None:
-        raw = copy.deepcopy(DEFAULT_VOICE_CONFIG_DICT)
+        return VoiceConfig()
     return VoiceConfig(**raw)
 
 

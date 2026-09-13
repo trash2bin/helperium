@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
 
 from api_service.agent.answer_normalizer import AnswerNormalizer
-from api_service.agent.litellm_provider import LiteLLMProvider
+from api_service.agent.providers.litellm_provider import LiteLLMProvider
 from api_service.agent.provider_pool import FallbackProvider
 
 
@@ -27,7 +27,7 @@ from api_service.agent.provider_pool import FallbackProvider
 def _patch_scripted(return_value=None):
     """Patch create_scripted_provider to return None (no scripted mode)."""
     return patch(
-        "api_service.agent.scripted_provider.create_scripted_provider",
+        "api_service.agent.providers.scripted_provider.create_scripted_provider",
         return_value=return_value,
     )
 
@@ -35,7 +35,7 @@ def _patch_scripted(return_value=None):
 def _patch_scripted_active(provider):
     """Patch create_scripted_provider to return an active scripted provider."""
     return patch(
-        "api_service.agent.scripted_provider.create_scripted_provider",
+        "api_service.agent.providers.scripted_provider.create_scripted_provider",
         return_value=provider,
     )
 

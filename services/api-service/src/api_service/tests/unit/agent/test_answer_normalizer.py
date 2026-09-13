@@ -10,7 +10,7 @@ from api_service.agent.answer_normalizer import (
     unwrap_answer_envelope,
 )
 from api_service.agent.models import CompletionRequest, CompletionResponse, ToolCall
-from api_service.agent.scripted_provider import ScriptedLLMProvider
+from api_service.agent.providers.scripted_provider import ScriptedLLMProvider
 
 
 def _request() -> CompletionRequest:

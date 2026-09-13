@@ -13,7 +13,7 @@ import pytest
 
 from api_service.agent.loop import AppendOnlyLoop, LoopLimits, LoopRun, Transcript
 from api_service.agent.models import CompletionResponse
-from api_service.agent.scripted_provider import ScriptedLLMProvider
+from api_service.agent.providers.scripted_provider import ScriptedLLMProvider
 from api_service.guardrails import GuardChecker
 
 BLOCKED_PLACEHOLDER = "[Ответ заблокирован системой безопасности]"

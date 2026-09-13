@@ -13,7 +13,7 @@ from typing import Any
 
 from helperium_sdk.settings import settings
 
-from .litellm_provider import LiteLLMProvider
+from .providers.litellm_provider import LiteLLMProvider
 from .provider_pool import FallbackProvider, ProviderPool
 
 
@@ -99,16 +99,6 @@ def _provider_identity(config: dict) -> tuple[str, str, str]:
     )
 
 
-def _worker_identity(worker: LiteLLMProvider) -> tuple[str, str, str]:
-    """Credential-free identity of an already-built provider, used to dedupe
-    a pool worker against the named candidates before appending it."""
-    return (
-        worker.provider or "",
-        worker.model,
-        (worker.api_base or "").rstrip("/"),
-    )
-
-
 async def resolve_llm(
     *,
     llm_client: Any | None = None,
@@ -126,7 +116,9 @@ async def resolve_llm(
     answer JSON) are normalized once, at the boundary.
     """
     from .answer_normalizer import AnswerNormalizer
-    from .scripted_provider import create_scripted_provider as _create_scripted
+    from .providers.scripted_provider import (
+        create_scripted_provider as _create_scripted,
+    )
 
     scripted = _create_scripted()
     if scripted:
@@ -172,7 +164,7 @@ async def resolve_llm(
             except Exception:  # noqa: BLE001 — pool health must not break resolution
                 pool_worker = None
             if pool_worker is not None:
-                identity = _worker_identity(pool_worker)
+                identity = pool_worker.identity()
                 if identity not in candidate_identities:
                     candidates.append(pool_worker)
                     candidate_identities.add(identity)

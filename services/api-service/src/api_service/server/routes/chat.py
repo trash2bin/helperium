@@ -468,6 +468,12 @@ async def chat_voice_endpoint(
             media_type="text/event-stream",
         )
 
+    if not resolved_config.stt_providers:
+        return StreamingResponse(
+            _single_error("Voice input is not configured", correlation_id),
+            media_type="text/event-stream",
+        )
+
     stt_engine = STTEngine.from_config(resolved_config)
     try:
         stt_result = await stt_engine.transcribe(audio_bytes)

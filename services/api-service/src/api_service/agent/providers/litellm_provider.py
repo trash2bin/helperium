@@ -19,19 +19,20 @@ from api_service.prometheus_metrics import (
     llm_retry_suppressed_total,
 )
 
-from .completion_retry import CompletionRetryExecutor, CompletionRetryPolicy
-from .models import CompletionRequest, CompletionResponse, ToolCall, UsageInfo
-from .provider_compatibility import find_provider_model_policy
+from ..completion_retry import CompletionRetryExecutor, CompletionRetryPolicy
+from ..models import CompletionRequest, CompletionResponse, ToolCall, UsageInfo
+from .base import BaseLLMProvider
+from .litellm_compatibility import find_provider_model_policy
 
 
-logger = logging.getLogger("api_service.agent.litellm_provider")
+logger = logging.getLogger("api_service.agent.providers.litellm_provider")
 
 
 class ProviderProtocolError(ValueError):
     """The provider returned a response that cannot be represented safely."""
 
 
-class LiteLLMProvider:
+class LiteLLMProvider(BaseLLMProvider):
     """Translate native LiteLLM function calls into the one provider protocol.
 
     Text is final assistant text by default. A verified provider/model policy may
@@ -69,6 +70,19 @@ class LiteLLMProvider:
                 max_backoff_seconds=settings.llm_retry_max_backoff_seconds,
             )
         )
+
+    @classmethod
+    def supported_providers(cls) -> list[str]:
+        """Return provider names LiteLLM supports, for admin UI pickers.
+
+        Reads the live ``litellm.provider_list`` registry on every call (no
+        hardcode); returns an empty list when litellm is unavailable.
+        """
+        try:
+            return [p.value for p in litellm.provider_list]  # type: ignore[union-attr]
+        except Exception:
+            logger.warning("Failed to get LiteLLM provider list", exc_info=True)
+            return []
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         messages = self._serialize_transcript(request.messages)
@@ -219,7 +233,7 @@ class LiteLLMProvider:
 
         LiteLLM expects historical assistant ``tool_calls[].function.arguments``
         to be JSON strings when it reconstructs a continuation request, including
-        Ollama. Trusted-data policy and security observation remain in the agent
+        Ollama. Prompt policy and security observation remain in the agent
         loop, not this transport adapter.
         """
         normalized: list[dict[str, Any]] = []

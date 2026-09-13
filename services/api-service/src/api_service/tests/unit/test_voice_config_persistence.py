@@ -213,3 +213,66 @@ class TestVoiceConfigKeyPreservation:
             assert get_resp.status_code == 200
             body = get_resp.json()
             assert body["stt_providers"][0]["api_key"] == "persist-key"
+
+
+def _get_app_unseeded(monkeypatch, tmp_path):
+    """Load app against an empty agents.sqlite (no voice row — first boot)."""
+    voice_dir = tmp_path / "sessions"
+    voice_dir.mkdir(parents=True, exist_ok=True)
+    agents_db = voice_dir / "agents.sqlite"
+
+    conn = sqlite3.connect(str(agents_db))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS global_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    import helperium_sdk.settings as sdk_settings
+
+    sdk_settings.settings.session_db_path = str(voice_dir / "sessions.db")
+
+    monkeypatch.setenv("AGENT_DB_PATH", str(agents_db))
+    monkeypatch.setenv("API_BEARER_TOKEN", "voice-test-token")
+
+    import api_service.audio.voice_config as vc_mod
+
+    vc_mod._repo = None
+
+    app_mod = importlib.reload(sys.modules["api_service.server.app"])
+    return app_mod.app
+
+
+class TestVoiceConfigFirstBoot:
+    """Первый boot без записи в БД: автосида нет, voice не настроен."""
+
+    def test_load_voice_config_returns_unconfigured_model(self, monkeypatch, tmp_path):
+        from api_service.audio.voice_config import load_voice_config
+
+        app = _get_app_unseeded(monkeypatch, tmp_path)
+        assert app is not None
+
+        config = load_voice_config()
+        assert config.stt_providers == []
+        assert config.enabled is True  # model default; no seeded provider entry
+
+    def test_get_voice_config_returns_empty_provider_list(self, monkeypatch, tmp_path):
+        app = _get_app_unseeded(monkeypatch, tmp_path)
+        with TestClient(
+            app, headers={"Authorization": "Bearer voice-test-token"}
+        ) as client:
+            resp = client.get("/api/voice-config")
+            assert resp.status_code == 200
+            assert resp.json()["stt_providers"] == []
+
+    def test_voice_chat_reports_not_configured(self, monkeypatch, tmp_path):
+        """POST /api/chat/voice без настроенных STT-провайдеров — ясная ошибка."""
+        app = _get_app_unseeded(monkeypatch, tmp_path)
+        with TestClient(app) as client:
+            resp = client.post(
+                "/api/chat/voice",
+                files={"audio": ("a.webm", b"fake-audio-bytes")},
+                data={"session_id": "sess-first-boot"},
+            )
+            assert resp.status_code == 200  # SSE stream carrying an error event
+            assert "Voice input is not configured" in resp.text

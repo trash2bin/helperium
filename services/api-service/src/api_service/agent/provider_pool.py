@@ -18,9 +18,9 @@ from dataclasses import dataclass
 
 import httpx
 
-from .litellm_provider import LiteLLMProvider
 from .models import CompletionRequest, CompletionResponse
-from .protocols import LLMProvider
+from .providers.base import BaseLLMProvider
+from .providers.litellm_provider import LiteLLMProvider
 
 logger = logging.getLogger("api_service.agent.provider_pool")
 
@@ -30,7 +30,7 @@ _HEALTH_PATH: str = os.environ.get("HEALTH_PATH", "/health")
 
 
 @dataclass(slots=True)
-class ProviderWorker:
+class ProviderWorker(BaseLLMProvider):
     """Один провайдер с health check.
 
     Wraps a ``LiteLLMProvider`` and tracks its last-known health status.
@@ -97,6 +97,10 @@ class ProviderWorker:
         """Delegate to the underlying provider."""
         return await self.provider_impl.complete(request)
 
+    def identity(self) -> tuple[str, str, str]:
+        """Return the wrapped transport's identity, not the worker's own."""
+        return self.provider_impl.identity()
+
 
 def _monotonic() -> float:
     """Return monotonic clock seconds (helper for testability)."""
@@ -105,7 +109,7 @@ def _monotonic() -> float:
     return time.monotonic()
 
 
-class FallbackProvider:
+class FallbackProvider(BaseLLMProvider):
     """Try ordered typed completion providers until one responds successfully.
 
     The adapter owns execution-time failover only. Provider-specific model naming,
@@ -114,7 +118,7 @@ class FallbackProvider:
     agent turn so continuation calls keep a coherent upstream model.
     """
 
-    def __init__(self, providers: Sequence[LLMProvider]) -> None:
+    def __init__(self, providers: Sequence[BaseLLMProvider]) -> None:
         if not providers:
             raise ValueError("FallbackProvider needs at least one provider")
         self._providers = list(providers)
@@ -144,6 +148,10 @@ class FallbackProvider:
 
         message = f"All {provider_count} LLM providers failed"
         raise RuntimeError(message) from errors[-1]
+
+    def identity(self) -> tuple[str, str, str]:
+        """Return the identity of the currently active provider."""
+        return self._providers[self._active_index].identity()
 
 
 class ProviderPool:

@@ -1,22 +1,9 @@
-from api_service.agent.prompts import (
-    SYSTEM_PROMPT,
-    TRUSTED_DATA_POLICY,
-    compose_system_prompt,
-)
+"""The default prompt is a minimal stub: admin-configured agents carry real
+prompts, and model behavior is controlled structurally, not by prompt text."""
+
+from api_service.agent.prompts import DEFAULT_SYSTEM_PROMPT
 
 
-def test_trusted_data_policy_prefixes_default_agent_policy() -> None:
-    composed = compose_system_prompt(None)
-
-    assert composed.startswith(TRUSTED_DATA_POLICY)
-    assert composed.endswith(SYSTEM_PROMPT)
-
-
-def test_trusted_data_policy_cannot_be_removed_by_custom_agent_prompt() -> None:
-    custom_policy = "Answer only with catalog facts."
-
-    composed = compose_system_prompt(custom_policy)
-
-    assert composed.startswith(TRUSTED_DATA_POLICY)
-    assert composed.endswith(custom_policy)
-    assert "не расширяй\nдоступный tenant scope" in composed
+def test_default_system_prompt_is_a_non_empty_stub() -> None:
+    assert DEFAULT_SYSTEM_PROMPT.strip()
+    assert "MCP" in DEFAULT_SYSTEM_PROMPT

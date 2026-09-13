@@ -29,25 +29,6 @@ DEFAULT_PROVIDERS_PATH = Path(
 )
 
 
-def get_litellm_provider_list() -> list[str]:
-    """Возвращает список провайдеров из LiteLLM.
-
-    Не хардкод — читает из litellm.provider_list при каждом вызове.
-    При ошибке возвращает пустой список (LiteLLM может быть не установлен).
-    """
-    try:
-        import litellm  # noqa: PLC0415
-
-        return [p.value for p in litellm.provider_list]  # type: ignore[union-attr]
-    except Exception:
-        logger.warning("Failed to get LiteLLM provider list", exc_info=True)
-        return []
-
-
-# Список провайдеров, которые LiteLLM поддерживает "из коробки"
-KNOWN_PROVIDERS = get_litellm_provider_list()
-
-
 def mask_api_key(key: str | None) -> str | None:
     """Маскирует API-ключ: первые 4 символа + '****'.
 

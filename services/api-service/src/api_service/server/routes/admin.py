@@ -172,9 +172,9 @@ async def list_llm_providers():
 @router.get("/admin/llm-provider-list")
 async def list_litellm_providers():
     """List all available providers from LiteLLM (live, no hardcode)."""
-    from api_service.provider_store import get_litellm_provider_list
+    from api_service.agent.providers.litellm_provider import LiteLLMProvider
 
-    providers = get_litellm_provider_list()
+    providers = LiteLLMProvider.supported_providers()
     return {
         "providers": providers,
         "count": len(providers),

@@ -1,6 +1,6 @@
 """Provider/model compatibility registry tests."""
 
-from api_service.agent.provider_compatibility import find_provider_model_policy
+from api_service.agent.providers.litellm_compatibility import find_provider_model_policy
 
 
 def test_step37_nim_policy_shapes_reasoning_and_keeps_continuation_tools() -> None:

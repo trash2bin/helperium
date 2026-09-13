@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from api_service.agent.orchestrator import LLMAgent
-from api_service.agent.scripted_provider import ScriptedLLMProvider
+from api_service.agent.providers.scripted_provider import ScriptedLLMProvider
 
 
 @dataclass

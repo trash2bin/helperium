@@ -15,7 +15,7 @@ from api_service.agent.loop import (
     _validate_call,
 )
 from api_service.agent.models import CompletionResponse, ToolCall
-from api_service.agent.scripted_provider import ScriptedLLMProvider
+from api_service.agent.providers.scripted_provider import ScriptedLLMProvider
 
 
 @dataclass

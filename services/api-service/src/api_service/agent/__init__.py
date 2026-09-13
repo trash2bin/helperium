@@ -1,7 +1,6 @@
 """Minimal typed agent package."""
 
 from .conversation import ConversationManager
-from .litellm_provider import LiteLLMProvider, ProviderProtocolError
 from .loop import AppendOnlyLoop, LoopLimits, LoopOutcome, LoopRun, Transcript
 from .mcp_client import MCPClient, ToolResult
 from .models import (
@@ -13,7 +12,8 @@ from .models import (
 )
 from .orchestrator import LLMAgent, agent
 from .protocols import LLMProvider, MCPToolSession
-from .scripted_provider import ScriptedLLMProvider
+from .providers.litellm_provider import LiteLLMProvider, ProviderProtocolError
+from .providers.scripted_provider import ScriptedLLMProvider
 from .types import AgentEvent, EventType, SessionId, TurnId
 
 __all__ = [

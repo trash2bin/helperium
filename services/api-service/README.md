@@ -10,7 +10,7 @@
 - Формирует системный промпт + Persona агента
 - Управляет MCP-клиентом (подключение к mcp-gateway:8083)
 - Хранит историю диалогов (SQLite, путь настраивается через `DEMO_SESSION_DB_PATH`)
-- Хранит voice config: глобальный (SQLite: `agents.sqlite`, таблица `global_config`) и per-agent (колонка `voice_config` в таблице `agents`)
+- Хранит voice config: глобальный (SQLite: `agents.sqlite`, таблица `global_config`) и per-agent (колонка `voice_config` в таблице `agents`). Автосид отсутствует: до `PUT /api/voice-config` (bearer-токен api-service) голос не настроен, `/api/chat/voice` отвечает «Voice input is not configured»
 - Пишет полный бэклог взаимодействий (JSONL в `backlog/`)
 - Проксирует SSE-стрим от агента к Web
 
@@ -464,18 +464,19 @@ A tool failure, provider failure, cancellation, dependency outage, limit, blocke
 
 ### Extending the agent safely
 
-Do not add stages, middleware, text parsers, or provider-specific execution branches. To add a tool, expose it through the scoped MCP schema and make its JSON schema accurate. To add a provider, implement the narrow `LLMProvider.complete(CompletionRequest) -> CompletionResponse` protocol and return native structured tool calls. Add a scripted-provider regression proving the complete transcript and SSE behavior.
+Do not add stages, middleware, text parsers, or provider-specific execution branches. To add a tool, expose it through the scoped MCP schema and make its JSON schema accurate. To add a provider, inherit `agent/providers/base.BaseLLMProvider` (abstract `complete(CompletionRequest) -> CompletionResponse` plus the identity surface `model`/`provider`/`api_base`/`enable_thinking`) and return native structured tool calls. Add a scripted-provider regression proving the complete transcript and SSE behavior.
 
 ## LLM Provider Resolution
 
-`resolve_llm()` in `agent/factory.py` selects the provider in this order:
+`resolve_llm()` in `agent/factory.py` selects the provider in this order (mirrors «Приоритет выбора LLM» above):
 
 | Priority | Source | When used |
 |---:|---|---|
-| 1 | Explicit `llm_client` | Tests or a caller-injected provider |
-| 2 | Per-agent `llm_config` | Persisted model/provider configuration for a named agent |
-| 3 | Per-agent `provider_priority` | Ordered healthy provider selection from `ProviderPool` |
-| 4 | Pool or environment fallback | Provider store, then environment-backed LiteLLM provider |
+| 1 | Scripted provider | Env-gated deterministic dev/test mode (`USE_SCRIPTED_LLM`) |
+| 2 | Explicit `llm_client` | Tests or a caller-injected provider |
+| 3 | Per-agent `llm_config` | Persisted model/provider configuration for a named agent |
+| 4 | Per-agent `provider_priority` | Ordered candidates from the provider store; a healthy pool worker is appended as the last rung when `fallback_enabled` |
+| 5 | Pool or environment fallback | ProviderPool, then environment-backed LiteLLM provider |
 
 Provider resolution changes transport selection only. It does not change the append-only loop, MCP scope, tool protocol, or tenant authority.
 
