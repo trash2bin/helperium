@@ -6,6 +6,7 @@ __pycache__/
 
 # === Пользовательские данные (маунтятся через volumes, не в image) ===
 .data/
+infra/.data/
 generated_materials/
 backlog/
 *.db
