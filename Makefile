@@ -23,16 +23,17 @@ ci-test-py:
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/agent-db/tests/contract/ -v --tb=short
 	PYTHONPATH=$(PWD)/scripts uv run -- python -m pytest scripts/test_cleanup_stale_tenants.py -v --tb=short
 
+GO_SERVICES := ./services/data-service/... ./services/mcp-gateway/... ./services/admin-dashboard/... ./services/helperium-go/...
+
 ci-lint-go:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-	$$(go env GOPATH)/bin/golangci-lint run ./services/data-service/...
-	$$(go env GOPATH)/bin/golangci-lint run ./services/mcp-gateway/...
+	$$(go env GOPATH)/bin/golangci-lint run $(GO_SERVICES)
 
 ci-fmt-go: ## check go formatting (diff only, fail if not formatted)
-	$$(go env GOPATH)/bin/golangci-lint fmt --diff ./services/data-service/... ./services/mcp-gateway/...
+	$$(go env GOPATH)/bin/golangci-lint fmt --diff $(GO_SERVICES)
 
 fmt-go: ## fix go formatting
-	$$(go env GOPATH)/bin/golangci-lint fmt ./services/data-service/... ./services/mcp-gateway/...
+	$$(go env GOPATH)/bin/golangci-lint fmt $(GO_SERVICES)
 
 ci-test-go:
 	go test ./services/data-service/... -count=1 -timeout 180s
