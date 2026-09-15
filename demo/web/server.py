@@ -5,18 +5,18 @@ HTTP routes proxied:
     proxy_data_entity()     -> data-service:GET /{entity}
     proxy_data_stats()      -> data-service:GET /stats
     proxy_rag_documents()   -> rag:POST /documents/list
-    proxy_tenant_api(data/) -> data-service:GET /{path}
-    proxy_tenant_api(rag/)  -> rag:POST|GET /{path}
+    proxy_agents()          -> api-service:GET /api/agents (name-only projection)
+    proxy_health()          -> api-service:GET /health
+    proxy_session_history() -> api-service:GET /api/session/history (capability)
+    proxy_report()          -> api-service:POST /api/reports
     proxy_chat()            -> api-service:POST /api/chat (SSE)
     proxy_chat_by_agent()   -> api-service:POST /api/chat/{agent_name} (SSE)
-    proxy_health()          -> api-service:GET /health
-    proxy_backlog()         -> api-service:GET /api/backlog
-    proxy_backlog_detail()  -> api-service:GET /api/backlog/{session_id}
-    proxy_session_history() -> api-service:GET /api/session/history
     proxy_embed()           -> api-service:GET /embed/{path}
-    proxy_api_any()         -> api-service:ANY /api/{path}
-    get_tenants()           -> data-service:GET /health (discovery)
-    proxy_tenant_api(api/)  -> api-service:ANY /{path}
+    proxy_tenant_api(data/) -> data-service:GET /{path}
+    proxy_tenant_api(rag/)  -> rag:POST|GET /{path}
+    proxy_tenant_api(api/)  -> api-service allowlist: chat/chat/*, health,
+                               reports, embed/* (everything else 404s)
+    get_tenants()           -> DEMO_TENANTS env, no data-service discovery
 
 Stage 0.4: Translated from Starlette to FastAPI + /api/* reverse proxy + SSE-proxy.
 """
@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, Callable, Awaitable
 from uuid import uuid4
 
@@ -36,7 +37,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from demo.settings import PROJECT_ROOT, settings
+from demo.settings import settings
 from helperium_sdk.tracing import (
     setup_opentelemetry,
     instrument_fastapi,
@@ -55,7 +56,7 @@ logger = logging.getLogger("demo.web.server")
 setup_opentelemetry("demo-web")
 
 
-STATIC_DIR = PROJECT_ROOT / "demo" / "web" / "static"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 # API proxy configuration
 API_BASE_URL = f"http://{settings.api_host}:{settings.api_port}"
@@ -66,8 +67,24 @@ def _build_api_url(path: str) -> str:
     return f"{API_BASE_URL}{path}" if path.startswith("/") else f"{API_BASE_URL}/{path}"
 
 
-async def _get_proxy_headers(request: Request) -> dict[str, str]:
-    """Build headers for proxying to API, including auth token and correlation ID."""
+def _interrupted_text(request: Request) -> str:
+    """Terminal error text in the visitor's language.
+
+    Same source as api-service: the widget renders this text verbatim, so a
+    Russian-speaking visitor must not get an English error (and vice versa).
+    """
+    if request.headers.get("accept-language", "").startswith("ru"):
+        return "Соединение с ассистентом прервано. Попробуйте ещё раз."
+    return "The connection to the assistant was interrupted. Please try again."
+
+
+async def _get_base_proxy_headers(
+    request: Request, attach_bearer: bool = True
+) -> dict[str, str]:
+    """Build base headers for internal service proxies (data-service, RAG).
+
+    Does NOT include session capability token — only api-service needs it.
+    """
     headers = {
         "user-agent": request.headers.get("user-agent", "demo-web-proxy"),
         "accept": request.headers.get("accept", "*/*"),
@@ -82,18 +99,14 @@ async def _get_proxy_headers(request: Request) -> dict[str, str]:
     if tenant_id:
         headers["X-Tenant-ID"] = tenant_id
 
-    # Единый correlation ID на всю цепочку браузер → прокси → api-service:
+    # Единый correlation ID на цепочку браузер → прокси → upstream:
     # если браузер не прислал свой, отдаём наверх id из middleware прокси.
-    # api-service принимает входящий заголовок, так что логи, SSE-события
-    # и ответ браузеру получают один и тот же id.
     correlation_id = request.headers.get("x-correlation-id") or getattr(
         request.state, "correlation_id", None
     )
     # demo-web — доверенный край для браузерного трафика: реальный клиент —
     # это TCP-peer соединения. Клиентский X-Forwarded-For не должен доходить
-    # до api-service: per-IP лимиты chat/reports и форензика репортов
-    # ключуются по нему, поэтому заголовок всегда перезаписывается адресом
-    # пира, а не пересылается.
+    # до upstream: per-IP лимиты и форензика ключуются по адресу пира.
     client = request.client
     if client and client.host:
         headers["x-forwarded-for"] = client.host
@@ -107,8 +120,8 @@ async def _get_proxy_headers(request: Request) -> dict[str, str]:
         if ct:
             headers["content-type"] = ct
 
-    # Add bearer token if configured
-    if settings.api_bearer_token:
+    # Add bearer token for internal services (data-service, RAG) that need it.
+    if attach_bearer and settings.api_bearer_token:
         headers["authorization"] = f"Bearer {settings.api_bearer_token}"
 
     # Pentest H1: demo/web — публичный край. api-secrets (полные api_key)
@@ -120,15 +133,39 @@ async def _get_proxy_headers(request: Request) -> dict[str, str]:
     return headers
 
 
+
+async def _get_api_proxy_headers(
+    request: Request, attach_bearer: bool = True
+) -> dict[str, str]:
+    """Build headers for proxying to API service (includes session capability)."""
+    headers = await _get_base_proxy_headers(request, attach_bearer=attach_bearer)
+
+    # Session capability travels with the browser: chat turns and transcript
+    # reads authenticate with the token minted for that session (pentest F4).
+    session_token = request.headers.get("x-session-token")
+    if session_token:
+        headers["x-session-token"] = session_token
+
+    return headers
+
+
+# Backward-compatibility alias for existing tests.
+# The old _get_proxy_headers included both bearer and session token.
+# Use _get_base_proxy_headers for internal services (data/rag) and
+# _get_api_proxy_headers for api-service routes.
+_get_proxy_headers = _get_api_proxy_headers
+
+
 async def _proxy_to_api(
     request: Request,
     api_path: str,
     stream: bool = False,
+    attach_bearer: bool = True,
 ) -> Response | StreamingResponse:
     """Proxy request to API service."""
     http_client = request.app.state.http_client
     url = _build_api_url(api_path)
-    headers = await _get_proxy_headers(request)
+    headers = await _get_api_proxy_headers(request, attach_bearer=attach_bearer)
 
     body = await request.body() if request.method != "GET" else None
 
@@ -138,12 +175,24 @@ async def _proxy_to_api(
         logger.debug(f"Proxy body size: {len(body)} bytes")
 
     try:
+        # Pentest 2026-09-14 robustness: WEB_PROXY_TIMEOUT applies to the gap
+        # BETWEEN streamed chunks, but an agent turn can legitimately stay
+        # silent longer while it thinks or runs tools — a 30s read timeout
+        # used to kill the SSE proxy leg mid-stream. Streaming requests
+        # therefore carry an unbounded read timeout; connection/pool limits
+        # stay bounded and api-service owns the real upstream deadlines.
+        build_kwargs: dict[str, Any] = {}
+        if stream:
+            build_kwargs["timeout"] = httpx.Timeout(
+                settings.web_proxy_timeout, read=None
+            )
         proxy_req = http_client.build_request(
             request.method,
             url,
             headers=headers,
             content=body,
             params=dict(request.query_params),
+            **build_kwargs,
         )
 
         if stream:
@@ -180,8 +229,23 @@ async def _proxy_to_api(
                 )
 
             async def stream_gen():
-                async for chunk in response.aiter_bytes():
-                    yield chunk
+                try:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+                except Exception as exc:
+                    # A dead upstream must never end the stream silently: the
+                    # widget waits for a terminal event, otherwise the visitor
+                    # is stuck on the "thinking" indicator forever.
+                    logger.error("SSE proxy interrupted: %s", exc)
+                    error_payload: dict[str, Any] = {
+                        "type": "error",
+                        "text": _interrupted_text(request),
+                    }
+                    correlation = headers.get("x-correlation-id")
+                    if correlation:
+                        error_payload["correlation_id"] = correlation
+                    yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n"
+                    yield 'data: {"type": "done"}\n\n'
 
             # Filter out hop-by-hop headers
             response_headers = {
@@ -223,6 +287,13 @@ async def _proxy_to_api(
             status_code=502,
             headers={"content-type": "text/plain"},
         )
+    except httpx.TimeoutException as exc:
+        logger.error(f"API timeout: {exc}")
+        return Response(
+            content=b"API service timeout",
+            status_code=504,
+            headers={"content-type": "text/plain"},
+        )
     except httpx.HTTPStatusError as exc:
         return Response(
             content=exc.response.content,
@@ -230,9 +301,12 @@ async def _proxy_to_api(
             headers=dict(exc.response.headers),
         )
     except Exception as exc:
+        # Never echo an unexpected exception to the browser: its message can
+        # carry internal hosts, filesystem paths or upstream credentials.
+        # Detail goes to the log, the client gets a generic retryable error.
         logger.error(f"Proxy error: {exc}")
         return Response(
-            content=str(exc).encode(),
+            content=b"Proxy error",
             status_code=500,
             headers={"content-type": "text/plain"},
         )
@@ -274,12 +348,24 @@ app = FastAPI(
 )
 
 # CORS middleware
-# WEB_ORIGIN from env: comma-separated, or default to http://localhost:8080 for dev.
-# Set WEB_ORIGIN=* explicitly for embed/production to allow all origins.
-cors_origins_raw = settings.web_origin
-cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()] or [
-    "http://localhost:8080"
-]
+# WEB_ORIGIN from env: comma-separated explicit origins (pentest F5: a
+# wildcard — alone or mixed in — is rejected and falls back to the dev
+# default; reflecting ``access-control-allow-origin: *`` made every proxied
+# response readable by any web page).
+_CORS_DEFAULT_ORIGINS = ["http://localhost:8080"]
+
+
+def _cors_origins_from(raw: str | None) -> list[str]:
+    origins = [o.strip() for o in (raw or "").split(",") if o.strip()]
+    if not origins or "*" in origins:
+        logger.error(
+            "WEB_ORIGIN must list explicit origins; wildcard '*' is rejected."
+        )
+        return list(_CORS_DEFAULT_ORIGINS)
+    return origins
+
+
+cors_origins = _cors_origins_from(settings.web_origin)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -356,7 +442,7 @@ async def _proxy_to_data_service(
     """
     http_client = request.app.state.http_client
     url = f"{DATA_SERVICE_URL}{data_path}"
-    headers = await _get_proxy_headers(request)
+    headers = await _get_base_proxy_headers(request)
     logger.debug("data-service proxy: %s -> %s", request.method, url)
     # Прокидываем query-параметры (pattern, limit, fields и т.д.) —
     # data-service стратегии (grep/filter) требуют их.
@@ -411,7 +497,7 @@ async def _proxy_to_rag(
     """Proxy to RAG service with graceful fallback."""
     http_client = request.app.state.http_client
     url = f"{RAG_SERVICE_URL}{rag_path}"
-    headers = await _get_proxy_headers(request)
+    headers = await _get_base_proxy_headers(request)
     try:
         if json_body is not None:
             response = await getattr(http_client, method.lower())(
@@ -454,8 +540,29 @@ async def proxy_rag_documents(request: Request) -> Response:
 
 @app.get("/api/agents")
 async def proxy_agents(request: Request) -> Response:
-    """Proxy the public demo agent list so the UI can select named agents."""
-    return await _proxy_to_api(request, "/api/agents")
+    """Public projection of the agent list (pentest F1).
+
+    The demo UI selects agents by name only; llm_config (provider, model,
+    masked key), system_prompt and provider priority never cross the demo
+    edge, even though api-service masks the key itself.
+    """
+    response = await _proxy_to_api(request, "/api/agents")
+    if response.status_code != 200:
+        return response
+    try:
+        payload = json.loads(response.body)
+        projected = {
+            "agents": [
+                {"name": agent["name"]}
+                for agent in payload.get("agents", [])
+                if isinstance(agent, dict) and "name" in agent
+            ]
+        }
+    except (ValueError, TypeError):
+        return response
+    return Response(
+        content=json.dumps(projected), status_code=200, media_type="application/json"
+    )
 
 
 @app.api_route(
@@ -536,12 +643,15 @@ async def proxy_health(request: Request) -> Response:
 
 @app.get("/api/session/history")
 async def proxy_session_history(request: Request) -> Response:
+    """Transcript reads authenticate with the browser's session capability
+    token (pentest F4); the server bearer is deliberately not attached, so
+    api-service enforces the capability per session_id."""
     session_id = request.query_params.get("session_id", "")
     agent_name = request.query_params.get("agent_name")
     path = f"/api/session/history?session_id={session_id}"
     if agent_name:
         path += f"&agent_name={agent_name}"
-    return await _proxy_to_api(request, path)
+    return await _proxy_to_api(request, path, attach_bearer=False)
 
 
 @app.post("/api/chat", response_model=None)

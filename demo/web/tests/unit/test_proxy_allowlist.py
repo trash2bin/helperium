@@ -17,7 +17,7 @@ import respx
 from fastapi.testclient import TestClient
 
 from demo.settings import settings
-from demo.web.server import _get_proxy_headers, app
+from demo.web.server import _get_base_proxy_headers as _get_proxy_headers, app
 
 from starlette.requests import Request
 
@@ -133,6 +133,85 @@ class TestTenantRouteAllowlist:
         assert upstream_route.calls.last.request.url.path.endswith(
             "/api/chat/autoparts-assistant"
         )
+
+
+class TestAgentsPublicProjection:
+    """Pentest F1: /api/agents through the demo edge must be a public projection.
+
+    The proxy used to forward the full upstream payload (system prompt, LLM
+    provider/model, masked key, provider priority) with its server bearer.
+    The demo UI only consumes agent names.
+    """
+
+    UPSTREAM_BODY = {
+        "agents": [
+            {
+                "name": "autoparts-assistant",
+                "tenant_ids": ["autoparts"],
+                "llm_config": {
+                    "provider": "nvidia_nim",
+                    "api_key": "nvapi-secret-value",
+                    "model": "nvidia_nim/test-model",
+                },
+                "system_prompt": "SECRET SYSTEM PROMPT",
+                "provider_priority": ["primary"],
+            }
+        ]
+    }
+
+    @respx.mock
+    def test_agents_response_is_projected_to_public_fields(self, client):
+        with patch.object(settings, "api_bearer_token", "secret-token-xyz"):
+            upstream = respx.get("http://127.0.0.1:8081/api/agents").mock(
+                return_value=httpx.Response(200, json=self.UPSTREAM_BODY)
+            )
+            response = client.get("/api/agents")
+
+        assert response.status_code == 200
+        assert upstream.called
+        body = response.json()
+        assert [a["name"] for a in body["agents"]] == ["autoparts-assistant"]
+        text = response.text
+        for secret_marker in ("llm_config", "system_prompt", "api_key", "provider_priority"):
+            assert secret_marker not in text, secret_marker
+
+
+class TestSessionHistoryCapabilityForwarding:
+    """Pentest F4: history reads ride the session capability, not the server bearer.
+
+    The proxy must not attach its control-plane bearer to transcript reads
+    (that made any session_id readable anonymously) and must forward the
+    browser's X-Session-Token so the capability check happens upstream.
+    """
+
+    @respx.mock
+    def test_history_never_injects_bearer_and_forwards_session_token(self, client):
+        with patch.object(settings, "api_bearer_token", "secret-token-xyz"):
+            upstream = respx.get("http://127.0.0.1:8081/api/session/history").mock(
+                return_value=httpx.Response(200, json={"messages": []})
+            )
+            response = client.get(
+                "/api/session/history?session_id=sess-1&agent_name=demo",
+                headers={"X-Session-Token": "cap-token-123"},
+            )
+
+        assert response.status_code == 200
+        request = upstream.calls.last.request
+        assert request.headers.get("authorization") is None, (
+            "server bearer must not authenticate transcript reads"
+        )
+        assert request.headers.get("x-session-token") == "cap-token-123"
+
+    @respx.mock
+    def test_history_without_session_token_still_has_no_bearer(self, client):
+        with patch.object(settings, "api_bearer_token", "secret-token-xyz"):
+            upstream = respx.get("http://127.0.0.1:8081/api/session/history").mock(
+                return_value=httpx.Response(401, json={"detail": "no"})
+            )
+            response = client.get("/api/session/history?session_id=sess-1")
+
+        assert response.status_code == 401
+        assert upstream.calls.last.request.headers.get("authorization") is None
 
 
 class TestTenantsNoDiscovery:
