@@ -44,15 +44,31 @@ demo-web может эволюционировать в полноценный p
 | `GET /api/rag/documents` | → rag-service | `POST /documents/list` |
 | `POST /api/chat` | → api-service | `/api/chat` (SSE) |
 | `POST /api/chat/{agent_name}` | → api-service | `/api/chat/{agent_name}` (SSE) |
+| `POST /api/reports` | → api-service | `/api/reports` (отчёты виджета) |
 | `GET /embed/{path}` | → api-service | `/embed/{path}` (статик виджета) |
-| `GET /api/backlog` | → api-service | `/api/backlog` |
-| `GET /api/backlog/{session_id}` | → api-service | `/api/backlog/{session_id}` |
-| `GET /api/session/history` | → api-service | `/api/session/history` |
-| `ANY /api/{path:path}` | → api-service | catch-all для /api/* |
+| `GET /api/agents` | → api-service | `/api/agents`, ответ проецируется до `{"agents":[{"name":…}]}` |
+| `GET /api/health` | → api-service | `/health` |
+| `GET /api/session/history` | → api-service | `/api/session/history`; серверный bearer **не** подставляется — запрос аутентифицируется capability-токеном браузера (`X-Session-Token`) |
+| `GET /api/tenants` | — | список из `DEMO_TENANTS` env (без discovery через data-service) |
+
+**Allowlist вместо catch-all:** не перечисленные выше `/api/*` маршруты не проксируются вообще.
+`proxy_tenant_api(api/…)` пропускает наверх только `chat`, `chat/*`, `health`, `reports`,
+`embed/*`; всё остальное отвечает `404` (pentest H1 — demo-web не должен быть прокси
+к admin-контуру api-service с серверным bearer).
 
 **Универсальный маршрут:** `GET/POST /api/tenant/{tenant_id}/{path:path}` → `data/{entity}`, `rag/{subpath}`, `api/{path}`, `chat`.
 
-**Обработка SSE:** demo-web корректно стримит SSE-ответы побайтово, что важно для chat-эндпоинтов.
+**Обработка SSE:** demo-web стримит SSE-ответы побайтово, что важно для chat-эндпоинтов.
+Стримовые запросы идут с `httpx.Timeout(WEB_PROXY_TIMEOUT, read=None)` — таймаут
+применяется к connect/write, но не к паузе между чанками (агент может долго думать
+или звать тулы), а настоящие дедлайны держит api-service. Сбой апстрима посреди
+стрима не обрывает поток молча: прокси добивает его терминальной парой
+`error` + `done` с `correlation_id` (иначе виджет навсегда остаётся в «thinking»);
+нестримовый таймаут — `504`. Текст терминальной ошибки выбирается по
+`Accept-Language` (как в api-service), а неожиданное исключение в лог уходит
+целиком, наружу — `500 Proxy error` без деталей (public errors sanitised).
+
+**Session capability:** `session_id` demo-страницы лежит в localStorage, поэтому каждый reload — это возобновление серверной сессии. demo/web пробрасывает токен браузера (`X-Session-Token`) и не подставляет на чтение транскрипта серверный bearer (`attach_bearer=False`); `demo/web/static/app.js` хранит токен по ключу «агент + session_id», предъявляет его и на чате, и на чтении истории и не шлёт токен чужой сессии.
 
 ## Embed Widget
 
@@ -97,12 +113,12 @@ uv run pytest demo/web/tests/unit/ -v    # ~50 тестов
 | `DEMO_API_PORT` | `8081` | Порт api-service |
 | `DEMO_WEB_HOST` | `127.0.0.1` | Хост web сервиса |
 | `DEMO_WEB_PORT` | `8080` | Порт web сервиса |
-| `WEB_ORIGIN` | `http://localhost:8080` | CORS origin |
+| `WEB_ORIGIN` | `http://localhost:8080` | CORS origin: только явные origins через запятую; wildcard (`*`, в том числе в списке) отклоняется с error-логом и fallback на dev-дефолт (pentest F5) |
 | `API_BEARER_TOKEN` | — | Bearer token для аутентификации |
 | `DATA_SERVICE_URL` | `http://127.0.0.1:8084` | Базовый URL data-service |
 | `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | Базовый URL RAG-сервиса |
 | `DEFAULT_TENANT_ID` | `default` | Fallback tenant ID |
 | `DEMO_TENANTS` | — | Список tenant IDs для UI селектора |
-| `WEB_PROXY_TIMEOUT` | `30.0` | Таймаут HTTP-клиента (секунды) |
+| `WEB_PROXY_TIMEOUT` | `30.0` | Таймаут HTTP-клиента (секунды); для SSE применяется только к connect/write, чтение стрима не ограничено |
 ---
-**Last verified:** 2026-08-09 (HEAD `be9a991`) — web-сервис и embedded виджет сверены с кодом
+**Last verified:** 2026-09-15 (working tree, pentest follow-up) — добавлено поведение capability-токена на demo-странице (чат + чтение истории) и гигиена ошибок прокси (accept-language, sanitised 500). Ранее: 2026-09-14 (working tree) — маршрутная таблица сверена с `demo/web/server.py` (убран несуществующий backlog/catch-all, добавлены agents/reports/tenants, отмечен capability на history), `WEB_ORIGIN` — fail-closed по wildcard.

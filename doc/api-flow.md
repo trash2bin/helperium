@@ -49,14 +49,15 @@ admin-dashboard (:8085) — Go/chi admin web UI (Alpine.js)
 |---|---|---|---|
 | `proxy_chat()` | POST `/api/chat` | SSE stream | Chat streaming |
 | `proxy_chat_by_agent()` | POST `/api/chat/{agent_name}` | SSE stream | Named agent chat |
+| `proxy_report()` | POST `/api/reports` | HTTP | Widget problem reports |
+| `proxy_agents()` | GET `/api/agents` | HTTP | Agent list, projected to name-only |
 | `proxy_health()` | GET `/health` | HTTP | API health check |
-| `proxy_backlog()` | GET `/api/backlog` | HTTP | List backlog sessions |
-| `proxy_backlog_detail()` | GET `/api/backlog/{session_id}` | HTTP | Backlog details |
-| `proxy_session_history()` | GET `/api/session/history` | HTTP | Session history |
+| `proxy_session_history()` | GET `/api/session/history` | HTTP | Session history; capability token only |
 | `proxy_embed()` | GET `/embed/{path}` | HTTP | Embed widget static files |
-| `proxy_api_any()` | ANY `/api/{path}` | HTTP/SSE | Catch-all proxy |
+| `proxy_tenant_api(api/…)` | `/api/tenant/{tenant}/api/*` | HTTP/SSE | Allowlist: chat, chat/*, health, reports, embed/* — everything else 404 |
 
-**Headers forwarded:** `X-Tenant-ID`, `X-Correlation-ID`, `Authorization`
+**Headers forwarded:** `X-Tenant-ID`, `X-Correlation-ID`, `X-Session-Token`, `Authorization`
+(кроме transcript-чтений: `proxy_session_history()` передаёт `attach_bearer=False`)
 **Config env:** `API_HOST` + `API_PORT` (builds `http://{host}:{port}`)
 
 ### 3. demo-web → rag (direct proxy)
@@ -247,4 +248,4 @@ LLM → tool_call("filter_catalog_product", {category: "Brakes", price__gte: 100
 
 > **Прим.:** admin-dashboard использует общие `DATA_SERVICE_URL` / `API_SERVICE_URL` / `RAG_SERVICE_URL` (`cmd/server/main.go:36-38`), а не отдельные `ADMIN_DASHBOARD_*`.
 ---
-**Last verified:** 2026-09-10 (working tree, audit sweep) — tool examples updated: grep_* → db_search (/q/search), filter flow updated with sort_by; consolidated db_* surface + per-entity filter_{entity} cross-checked against data-service/configgen READMEs.
+**Last verified:** 2026-09-14 (working tree, pentest follow-up) — demo-web → api-service таблица сверена с `demo/web/server.py`: убраны несуществующие `proxy_backlog*`/`proxy_api_any`, добавлены reports/agents/allowlist, отмечен capability-only history. Ранее: 2026-09-10 (audit sweep) — tool examples grep_* → db_search (/q/search), sort_by в filter flow, consolidated db_* surface.

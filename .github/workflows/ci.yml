@@ -54,6 +54,30 @@ jobs:
           node-version: "20"
       - name: Biome lint
         run: npx @biomejs/biome check --max-diagnostics=500
+      - name: Demo web JS tests (node:test)
+        # The integration suite runs the real app.js in a vm, so dynamic
+        # import() inside it needs the vm-modules flag.
+        run: node --experimental-vm-modules --test demo/web/static/*.test.mjs
+
+  test-storefront:
+    name: Demo storefront tests (Django, SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Run storefront tests
+        # demo/autoparts-store is a foreign project with its own uv env, not
+        # part of the helperium workspace: --frozen --directory keeps it
+        # isolated. config.test_settings replaces PostgreSQL with in-memory
+        # SQLite, so no database service is required.
+        run: uv run --frozen --directory demo/autoparts-store python manage.py test tests -v 1
+        env:
+          DJANGO_DEBUG: "true"
+          DJANGO_SETTINGS_MODULE: config.test_settings
 
   test-python:
     name: Python tests

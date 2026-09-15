@@ -1,4 +1,4 @@
-.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs ci-e2e
+.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs ci-e2e ci-test-js ci-test-storefront
 
 ci-lint-py:
 	uv run ruff check services/api-service/src/
@@ -43,6 +43,21 @@ ci-lint-js:
 	@echo "=== JS lint (biome) ==="
 	npx --yes @biomejs/biome@2.5.4 check --max-diagnostics=500
 	@echo "✅ JS lint OK"
+
+ci-test-js:
+	@echo "=== Demo web JS tests (node:test) ==="
+	node --experimental-vm-modules --test demo/web/static/*.test.mjs
+	@echo "✅ JS tests OK"
+
+# The storefront is a foreign project with its own uv environment (not part of
+# the helperium workspace), hence --frozen --directory instead of the root env.
+# config.test_settings swaps PostgreSQL for in-memory SQLite, so no DB service
+# is needed; DJANGO_DEBUG skips the production password checks.
+ci-test-storefront:
+	@echo "=== Demo storefront tests (Django, SQLite) ==="
+	DJANGO_DEBUG=True DJANGO_SETTINGS_MODULE=config.test_settings \
+		uv run --frozen --directory demo/autoparts-store python manage.py test tests -v 1
+	@echo "✅ Storefront OK"
 
 ci-admin:
 	@echo "=== Admin dashboard Go tests ==="
@@ -89,5 +104,5 @@ build-embed:
 	./infra/scripts/dev.sh restart api
 	@echo "✅ Embed widget rebuilt + api-service restarted"
 
-ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-lint-js ci-admin ci-test-embed ci-docs
+ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-lint-js ci-test-js ci-test-storefront ci-admin ci-test-embed ci-docs
 	@echo "✅ CI passed locally"

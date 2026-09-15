@@ -259,7 +259,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      - WEB_ORIGIN=${WEB_ORIGIN:-*}
+      - WEB_ORIGIN=${WEB_ORIGIN:-http://localhost:8080}
       - API_BEARER_TOKEN=${API_BEARER_TOKEN:-}
       - DEMO_API_HOST=api
       - DEMO_API_PORT=8081

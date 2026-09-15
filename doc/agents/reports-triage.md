@@ -32,7 +32,7 @@ Runbook: утром в админке висят жалобы с флажка «
 | `comment` | Свободный комментарий посетителя — часто там визуальный симптом, которого в данных нет |
 | `last_error_text` / `last_error_correlation_id` | Последняя SSE-ошибка сессии и **correlation_id хода чата** — главный grep-ключ |
 | `correlation_id` | correlation_id самого POST-запроса жалобы (меньше полезен — это не ход чата) |
-| `session_key` | `agent:{имя}:{session_id}` — прямой маппинг на backlog-файл (см. §5) |
+| `session_key` | Ключ сессии, под которым её пишет чат: `agent:{имя}:{session_id}` для именованного агента и `direct:{session_id}` для agent-less direct-чата/голоса (`session_capability.effective_session_id()`) — прямой маппинг на backlog-файл (см. §5) |
 | `page_url`, `client_ip`, `user_agent` | Где и чем (браузер/ОС) воспроизводилось — важно для рендер-багов |
 
 ## 3. Первая классификация — три пути
@@ -74,6 +74,7 @@ docker compose logs api | grep "<last_error_correlation_id>" # Docker-депло
 
 # Ключ 2: session_key → вся серверная сессия в backlog-файле
 # agent:autoparts-assistant:<sid>  →  $BACKLOG_DIR/agent_autoparts-assistant_<sid>.jsonl
+# direct:<sid> (чат без агента)    →  $BACKLOG_DIR/direct_<sid>.jsonl
 less backlog/agent_autoparts-assistant_<sid>.jsonl
 ```
 

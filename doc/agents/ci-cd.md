@@ -5,13 +5,18 @@
 | Job | Что проверяет | Команда |
 |---|---|---|
 | `lint-python` | Ruff lint, format, Pyright, uv audit | `ruff check`, `ruff format --check`, `pyright`, `uv audit` |
-| `lint-js` | Biome (embed/admin-dashboard JS) | `biome check` |
+| `lint-js` | Biome (embed/admin-dashboard/static JS) + node:test демо-страницы | `biome check`, `node --experimental-vm-modules --test demo/web/static/*.test.mjs` |
 | `test-python` | Все Python тесты | `pytest` по всем пакетам |
+| `test-storefront` | Тесты demo/autoparts-store (Django на SQLite) | `uv run --frozen --directory demo/autoparts-store python manage.py test tests` |
 | `lint-go` | golangci-lint v2 + govulncheck | `golangci-lint run ./...`, `govulncheck` |
 | `test-go` | Go тесты | `go test ./... -count=1 -timeout 180s` |
+| `test-admin-js` | Admin dashboard vitest | `npm test` |
+| `test-embed` | Embed-виджет тесты + build | `npm test`, `bash build.sh` |
 | `test-e2e` | e2e без LLM (agent-db) | two-stage Compose: `up -d` long-lived services, затем `run --rm e2e` |
 
-Pipeline зелёный = все **6 джоб** проходят (lint-python, lint-js, test-python, lint-go, test-go, test-e2e).
+Pipeline зелёный = все джобы проходят (lint-python, docs-links, lint-js, test-storefront, test-python, lint-go, test-go, test-embed, test-admin-js, test-e2e).
+
+`demo/autoparts-store` — foreign project со своим uv-окружением (не часть helperium workspace), поэтому в CI и в `make ci-test-storefront` он запускается через `--frozen --directory`; `config.test_settings` подменяет PostgreSQL на in-memory SQLite, так что сервис БД не нужен.
 
 ## Docker E2E lifecycle
 
@@ -63,6 +68,8 @@ make ci-lint-py       # только Python линт
 make ci-test-py       # только Python тесты (~10 сек)
 make ci-lint-go       # только Go линтинг
 make ci-test-go       # только Go тесты (~30 сек)
+make ci-test-js       # JS-тесты demo-web (node:test)
+make ci-test-storefront  # Django-тесты demo/autoparts-store (SQLite)
 make ci-admin         # admin-dashboard + JS тесты (~2 сек)
 make ci-audit         # uv audit + govulncheck
 ```
@@ -137,4 +144,4 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 3. [ ] e2e без LLM зелёные — native `./infra/scripts/dev.sh e2e` или documented two-stage Docker `up -d` + `run --rm e2e`
 4. [ ] Mutation score не упал (опционально)
 ---
-**Last verified:** 2026-08-20 (working tree after `e839d6c`) — workflow запускает long-lived CI dependencies detached, then E2E as the sole terminal container; clean Docker profile passed 137 tests with explicit fail-closed CORS default.
+**Last verified:** 2026-09-15 (working tree, pentest follow-up) — добавлены джоба `test-storefront` и шаг node:test в `lint-js`; таблица джоб приведена к актуальному `ci.yml` (в неё же добавлены `docs-links`, `test-admin-js`, `test-embed`, ранее отсутствовавшие). Предыдущий marker: 2026-08-20 (working tree after `e839d6c`) — workflow запускает long-lived CI dependencies detached, then E2E as the sole terminal container; clean Docker profile passed 137 tests with explicit fail-closed CORS default.

@@ -22,6 +22,7 @@ services/mcp-gateway/bin/
 services/admin-dashboard/bin/*
 
 # Local config / dev artifacts
+.pi/mcp.json
 .claude/
 .pi/fix-*
 .pi/scout-*
