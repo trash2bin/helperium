@@ -48,12 +48,12 @@ func WriteSpecToFile(spec map[string]any, filePath string) error {
 		return fmt.Errorf("marshal spec: %w", err)
 	}
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
 	// Финальный \n держит файл стабильным между перегенерациями и git-diff.
 	data = append(data, '\n')
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
 		return fmt.Errorf("write spec: %w", err)
 	}
 	return nil
@@ -517,25 +517,25 @@ func buildSchemas() map[string]any {
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"id":                         map[string]any{"type": "string"},
-							"created_at":                 map[string]any{"type": "number", "description": "Unix epoch seconds"},
-							"status":                     map[string]any{"type": "string", "enum": []string{"new", "reviewed"}},
-							"agent":                      map[string]any{"type": "string"},
-							"session_id":                 map[string]any{"type": "string"},
-							"session_key":                map[string]any{"type": "string", "description": "agent:{name}:{session_id}, matches backlog/log lookup"},
-							"lang":                       map[string]any{"type": "string"},
-							"message_kind":               map[string]any{"type": "string"},
-							"message_text":               map[string]any{"type": "string"},
-							"message_tools":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							"display_names":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							"transcript":                 map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-							"comment":                    map[string]any{"type": "string"},
-							"last_error_text":            map[string]any{"type": "string"},
-							"last_error_correlation_id":  map[string]any{"type": "string"},
-							"page_url":                   map[string]any{"type": "string"},
-							"correlation_id":             map[string]any{"type": "string"},
-							"client_ip":                  map[string]any{"type": "string"},
-							"user_agent":                 map[string]any{"type": "string"},
+							"id":                        map[string]any{"type": "string"},
+							"created_at":                map[string]any{"type": "number", "description": "Unix epoch seconds"},
+							"status":                    map[string]any{"type": "string", "enum": []string{"new", "reviewed"}},
+							"agent":                     map[string]any{"type": "string"},
+							"session_id":                map[string]any{"type": "string"},
+							"session_key":               map[string]any{"type": "string", "description": "agent:{name}:{session_id}, matches backlog/log lookup"},
+							"lang":                      map[string]any{"type": "string"},
+							"message_kind":              map[string]any{"type": "string"},
+							"message_text":              map[string]any{"type": "string"},
+							"message_tools":             map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"display_names":             map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"transcript":                map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+							"comment":                   map[string]any{"type": "string"},
+							"last_error_text":           map[string]any{"type": "string"},
+							"last_error_correlation_id": map[string]any{"type": "string"},
+							"page_url":                  map[string]any{"type": "string"},
+							"correlation_id":            map[string]any{"type": "string"},
+							"client_ip":                 map[string]any{"type": "string"},
+							"user_agent":                map[string]any{"type": "string"},
 						},
 					},
 				},

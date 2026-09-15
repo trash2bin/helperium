@@ -6,7 +6,8 @@
 // что ломало фронт (контрактный тест contract.test.js требует путь в спеке).
 //
 // Статические/system-пути исключаются из сравнения:
-//   /health, /i18n.json, /openapi.json, /metrics, /* (static catch-all)
+//
+//	/health, /i18n.json, /openapi.json, /metrics, /* (static catch-all)
 package server
 
 import (

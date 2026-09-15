@@ -18,7 +18,7 @@ func specPath(t *testing.T, name string) string {
 		t.Fatalf("os.Getwd: %v", err)
 	}
 	candidates := []string{
-		filepath.Join(wd, "..", "specs", name),      // из helperium-go/config/ → specs/
+		filepath.Join(wd, "..", "specs", name),             // из helperium-go/config/ → specs/
 		filepath.Join(wd, "..", "..", "..", "specs", name), // из services/helperium-go/config/ → repo/specs
 	}
 	for _, c := range candidates {

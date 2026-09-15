@@ -14,9 +14,10 @@
 //	}
 //
 // Environment variables:
-//   OTEL_ENABLED              — set to "false" to disable tracing (default: "true")
-//   OTEL_EXPORTER_OTLP_ENDPOINT — OTLP HTTP endpoint (default: http://localhost:4318)
-//   OTEL_SERVICE_NAME          — override service name
+//
+//	OTEL_ENABLED              — set to "false" to disable tracing (default: "true")
+//	OTEL_EXPORTER_OTLP_ENDPOINT — OTLP HTTP endpoint (default: http://localhost:4318)
+//	OTEL_SERVICE_NAME          — override service name
 package tracing
 
 import (

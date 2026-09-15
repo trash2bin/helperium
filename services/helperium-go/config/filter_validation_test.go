@@ -6,9 +6,9 @@ import (
 
 func TestIsValidFilterExpression(t *testing.T) {
 	tests := []struct {
-		name    string
-		filter  string
-		want    bool
+		name   string
+		filter string
+		want   bool
 	}{
 		// ── Valid ──
 		{"empty filter", "", true},

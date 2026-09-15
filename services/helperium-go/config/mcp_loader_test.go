@@ -13,7 +13,7 @@ func writeTempConfig(t *testing.T, data string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatalf("write temp config: %v", err)
 	}
 	return path

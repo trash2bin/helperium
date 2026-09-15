@@ -890,26 +890,28 @@ func queryParams(ep config.Endpoint) []map[string]any {
 	// /q/* — консолидированный LLM-диспетчер (Фаза 2).
 	// entity — обычный string (не enum), остальные параметры зависят от пути.
 	if ep.Op == config.OpQDispatch {
-		entity := map[string]any{"name": "entity", "in": "query", "required": true,
-			"schema": map[string]any{"type": "string"}, "description": "Имя сущности (из db_map)."}
-		switch {
-		case ep.Path == "/q/map":
+		entity := map[string]any{
+			"name": "entity", "in": "query", "required": true,
+			"schema": map[string]any{"type": "string"}, "description": "Имя сущности (из db_map).",
+		}
+		switch ep.Path {
+		case "/q/map":
 			return nil
-		case ep.Path == "/q/describe":
+		case "/q/describe":
 			return []map[string]any{entity}
-		case ep.Path == "/q/search":
+		case "/q/search":
 			return []map[string]any{
 				entity,
 				{"name": "pattern", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Поисковый запрос."},
 				intp("limit", "Максимум результатов (1-100, default 10)."),
 				str("fields", "Список полей для поиска через запятую."),
 			}
-		case ep.Path == "/q/get":
+		case "/q/get":
 			return []map[string]any{
 				entity,
 				{"name": "id", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Идентификатор записи."},
 			}
-		case ep.Path == "/q/related":
+		case "/q/related":
 			return []map[string]any{
 				entity,
 				{"name": "id", "in": "query", "required": true, "schema": map[string]any{"type": "string"}, "description": "Идентификатор родительской записи."},

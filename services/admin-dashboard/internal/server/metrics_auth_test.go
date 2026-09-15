@@ -9,10 +9,6 @@ import (
 // Pentest M1: /metrics на admin-dashboard требует валидный bearer-токен —
 // метрики отдают tenant-лейблы и счётчики rate-limit (разведка).
 
-func metricsTestServer() *httptest.ResponseRecorder {
-	return httptest.NewRecorder()
-}
-
 func TestMetrics_RequiresAuth_NoToken(t *testing.T) {
 	s := New(Options{Addr: ":0", AdminToken: "admin-tok", ViewerToken: "viewer-tok"})
 	router := s.Router()

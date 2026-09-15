@@ -17,9 +17,9 @@ import (
 // AuditEntry — одна запись аудита изменений конфигурации.
 type AuditEntry struct {
 	Timestamp time.Time `json:"timestamp"`
-	ActorRole string    `json:"actor_role"` // admin / viewer
-	Action    string    `json:"action"`      // tenant.create / config.update / tenant.introspect / ...
-	Resource  string    `json:"resource"`    // tenant ID, agent name, path summary
+	ActorRole string    `json:"actor_role"`        // admin / viewer
+	Action    string    `json:"action"`            // tenant.create / config.update / tenant.introspect / ...
+	Resource  string    `json:"resource"`          // tenant ID, agent name, path summary
 	Details   string    `json:"details,omitempty"` // человекочитаемый контекст
 }
 
@@ -33,7 +33,7 @@ type AuditStore struct {
 
 // NewAuditStore создаёт AuditStore в указанной директории.
 func NewAuditStore(dir string) *AuditStore {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		slog.Warn("audit: failed to create directory, falling back to temp", "dir", dir, "error", err)
 		dir = os.TempDir()
 	}
@@ -51,7 +51,7 @@ func (a *AuditStore) currentPath() string {
 
 func (a *AuditStore) rotateFile() {
 	path := a.currentPath()
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		slog.Warn("audit: failed to open log file", "path", path, "error", err)
 		return
@@ -94,8 +94,12 @@ func (a *AuditStore) Log(actorRole, action, resource, details string) {
 		if _, err := a.file.Write(data); err != nil {
 			slog.Warn("audit: failed to write entry", "error", err)
 		}
-		a.file.Write([]byte{'\n'})
-		a.file.Sync()
+		if _, err := a.file.Write([]byte{'\n'}); err != nil {
+			slog.Warn("audit: failed to write newline", "error", err)
+		}
+		if err := a.file.Sync(); err != nil {
+			slog.Warn("audit: failed to sync", "error", err)
+		}
 	}
 
 	a.buffer = append(a.buffer, entry)
@@ -130,7 +134,7 @@ func (a *AuditStore) Recent(limit int) []AuditEntry {
 		filePath := a.file.Name()
 		file, err := os.Open(filePath)
 		if err == nil {
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 
 			stat, err := file.Stat()
 			if err == nil && stat.Size() > 0 {
@@ -287,34 +291,34 @@ func auditResource(path string) string {
 
 // auditPatterns — маппинг относительных путей к именам действий.
 var auditPatterns = map[string]string{
-	"tenants":                              "tenant.create",
-	"tenants/{id}":                         "tenant.delete",
-	"tenants/{id}/config":                  "config.update",
-	"tenants/{id}/introspect":              "tenant.introspect",
-	"tenants/upload-sqlite":                "tenant.upload",
+	"tenants":                 "tenant.create",
+	"tenants/{id}":            "tenant.delete",
+	"tenants/{id}/config":     "config.update",
+	"tenants/{id}/introspect": "tenant.introspect",
+	"tenants/upload-sqlite":   "tenant.upload",
 
-	"rag/config":                           "rag.config.update",
-	"rag/documents/import":                 "rag.doc.import",
-	"rag/documents/upload":                 "rag.doc.upload",
-	"rag/documents/delete":                 "rag.doc.delete",
+	"rag/config":           "rag.config.update",
+	"rag/documents/import": "rag.doc.import",
+	"rag/documents/upload": "rag.doc.upload",
+	"rag/documents/delete": "rag.doc.delete",
 
-	"agents":                               "agent.create",
-	"agents/{name}":                        "agent.update",
-	"agents/{name}/delete":                 "agent.delete",
-	"agents/{name}/abuse":                  "agent.abuse.update",
+	"agents":               "agent.create",
+	"agents/{name}":        "agent.update",
+	"agents/{name}/delete": "agent.delete",
+	"agents/{name}/abuse":  "agent.abuse.update",
 
-	"llm-providers":                        "llm-provider.add",
-	"llm-providers/{name}":                 "llm-provider.update",
-	"llm-providers/{name}/delete":          "llm-provider.delete",
-	"llm-providers/{name}/toggle":          "llm-provider.toggle",
+	"llm-providers":               "llm-provider.add",
+	"llm-providers/{name}":        "llm-provider.update",
+	"llm-providers/{name}/delete": "llm-provider.delete",
+	"llm-providers/{name}/toggle": "llm-provider.toggle",
 
-	"voice-config":                         "voice-config.update",
+	"voice-config": "voice-config.update",
 
-	"abuse-settings":                       "abuse-settings.update",
-	"abuse-preset/{preset}":                "abuse-preset.set",
-	"admin/abuse-config/reload":            "abuse-config.reload",
+	"abuse-settings":            "abuse-settings.update",
+	"abuse-preset/{preset}":     "abuse-preset.set",
+	"admin/abuse-config/reload": "abuse-config.reload",
 
-	"db/test":                              "db.test",
+	"db/test": "db.test",
 }
 
 // ── Helpers ──

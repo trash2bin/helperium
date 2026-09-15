@@ -29,7 +29,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -72,7 +71,6 @@ type Server struct {
 	ragClient  *RagClient
 	abuseStore *AbuseStore
 	auditStore *AuditStore
-	mu         sync.RWMutex
 }
 
 //go:embed static
@@ -725,9 +723,8 @@ func (s *Server) tenantCreateHandler(w http.ResponseWriter, r *http.Request) {
 	// Data-service ожидает формат: {id, config: {version, data_source: {driver, dsn}}}
 	// Normalize driver string
 	driver := req.Driver
-	if driver == "sqlite" || driver == "sqlite3" {
-		driver = "sqlite"
-	} else if driver == "" {
+	switch driver {
+	case "sqlite", "sqlite3", "":
 		driver = "sqlite"
 	}
 
@@ -817,7 +814,7 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 		respondError(w, http.StatusBadRequest, "file_required", err.Error())
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Save DB file to a data directory
 	dataDir := s.opts.DataDir
@@ -848,7 +845,7 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 		respondError(w, http.StatusInternalServerError, "file_create_error", err.Error())
 		return
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
 	if _, err := io.Copy(dst, file); err != nil {
 		respondError(w, http.StatusInternalServerError, "file_write_error", err.Error())
@@ -873,14 +870,14 @@ func (s *Server) tenantUploadSQLiteHandler(w http.ResponseWriter, r *http.Reques
 
 	body, status, err := s.proxyPostToDataService("/admin/tenants", payload)
 	if err != nil {
-		os.Remove(savePath)
+		_ = os.Remove(savePath)
 		respondError(w, http.StatusBadGateway, "upstream_error", err.Error())
 		return
 	}
 
 	// Registration failed — clean up the uploaded file
 	if status != http.StatusCreated && status != http.StatusOK {
-		os.Remove(savePath)
+		_ = os.Remove(savePath)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		w.Write(body)
@@ -1162,7 +1159,7 @@ func (s *Server) ragDocUploadHandler(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "file_required", err.Error())
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	fileContent, err := io.ReadAll(file)
 	if err != nil {

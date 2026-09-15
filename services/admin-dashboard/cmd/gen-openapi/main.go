@@ -1,6 +1,7 @@
 // Quick utility to generate openapi.json at build time.
 // Called from build.sh:
-//   go run ./cmd/gen-openapi/
+//
+//	go run ./cmd/gen-openapi/
 package main
 
 import (

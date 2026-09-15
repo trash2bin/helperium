@@ -142,10 +142,10 @@ func (s *AbuseStore) save() error {
 		return fmt.Errorf("marshal abuse config: %w", err)
 	}
 	dir := filepath.Dir(s.filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	if err := os.WriteFile(s.filePath, data, 0644); err != nil {
+	if err := os.WriteFile(s.filePath, data, 0o644); err != nil {
 		return fmt.Errorf("write abuse_config.json: %w", err)
 	}
 	return nil
