@@ -5,6 +5,7 @@ from django.http import JsonResponse
 from django.urls import include, path
 
 from catalog import views
+from catalog.admin_login_throttle import throttled_admin_login
 
 
 def healthcheck(request):
@@ -12,6 +13,10 @@ def healthcheck(request):
 
 
 urlpatterns = [
+    # Pentest 2026-09-14 (S1): throttled login shadows the admin's own login
+    # view — listed before the admin include; reverse('admin:login') still
+    # produces the same path so all redirects keep working.
+    path("admin/login/", throttled_admin_login),
     path("admin/", admin.site.urls),
     path("healthz/", healthcheck, name="healthcheck"),
     path("", views.index, name="index"),

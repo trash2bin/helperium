@@ -28,7 +28,9 @@ services:
       DB_NAME: ${STORE_DB_NAME:-autoparts}
       DB_USER: ${STORE_DB_USER:-autoparts}
       DB_PASSWORD: ${STORE_DB_PASSWORD:?set STORE_DB_PASSWORD in .env.public}
-    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_data && python manage.py collectstatic --noinput"]
+    # createcachetable provisions the DatabaseCache table backing the admin
+    # login throttle (shared per-IP counters across gunicorn workers).
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py createcachetable && python manage.py seed_data && python manage.py collectstatic --noinput"]
     depends_on:
       storefront-db:
         condition: service_healthy

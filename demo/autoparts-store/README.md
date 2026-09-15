@@ -16,6 +16,14 @@ http://localhost:8000
 http://localhost:8000/admin/
 ```
 
+Вход в `/admin/login/` защищён per-IP throttle (pentest S1): после
+`ADMIN_LOGIN_FAILURE_LIMIT` неудачных попыток (по умолчанию 5) с одного IP
+страница отвечает `429` с `Retry-After` в течение `ADMIN_LOGIN_COOLOFF_SECONDS`
+(по умолчанию 900 с); успешный вход сбрасывает счётчик. Счётчики живут в общей
+таблице `django_admin_throttle_cache` (её создаёт `createcachetable` в compose-
+команде), поэтому лимит общий на все воркеры gunicorn. На публичном контуре
+`/admin/*` закрыт Caddy (404), т.е. throttle там — вторая линия защиты.
+
 ---
 
 ## 🏪 Как выглядит сайт
@@ -114,6 +122,14 @@ docker-compose up -d
 Сайт появится на http://localhost:8000. Bootstrap не запускает Helperium core в
 standalone режиме, но уже гарантирует, что отдельная роль данных не имеет прав
 `INSERT`, `UPDATE` или `DELETE`.
+
+`HELPERIUM_API_BASE` (браузерный адрес core API, куда виджет стучится за
+`/embed/embed.js` и `/api/chat`) в локальном compose по умолчанию —
+`http://127.0.0.1:8081`, и **обязан содержать явный порт**: без порта браузер
+уйдёт на `:80`, где в dev ничего не слушает, и виджет молча умрёт (pentest S2;
+регрессия запинена в `tests/test_widget_embed_config.py`). На публичном контуре
+значение, наоборот, остаётся пустым — виджет берёт `window.location.origin` за
+Caddy-прокси.
 
 Для native Helperium + storefront используй один явный запуск из корня проекта:
 

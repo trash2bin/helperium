@@ -124,3 +124,20 @@ DEMO_ORDER_SUBMISSIONS = env_bool("DEMO_ORDER_SUBMISSIONS", False)
 USE_THOUSAND_SEPARATOR = True
 THOUSAND_SEPARATOR = " "
 NUMBER_GROUPING = 3
+
+# ── Admin login throttle (pentest 2026-09-14 S1) ─────────────────────────
+# Per-IP failure counters shared by all gunicorn workers via the DatabaseCache
+# alias; run `python manage.py createcachetable` once per database (the compose
+# web command does it on every start).
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "admin_throttle": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_admin_throttle_cache",
+        "OPTIONS": {"MAX_ENTRIES": 10000},
+    },
+}
+ADMIN_LOGIN_FAILURE_LIMIT = int(os.environ.get("ADMIN_LOGIN_FAILURE_LIMIT", "5"))
+ADMIN_LOGIN_COOLOFF_SECONDS = int(
+    os.environ.get("ADMIN_LOGIN_COOLOFF_SECONDS", "900")
+)
