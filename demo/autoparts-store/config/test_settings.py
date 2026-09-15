@@ -35,3 +35,6 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     },
 }
+
+# Static files: use simple storage so tests don't need collectstatic/manifest.
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
