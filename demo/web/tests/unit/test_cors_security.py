@@ -6,7 +6,11 @@
 3. С comma-separated origins — каждый работает
 4. allow_headers не wildcard
 5. allow_methods не * (а GET, POST, OPTIONS)
-6. WEB_ORIGIN=* явно — всё ещё работает
+
+Отдельно: `TestCorsWildcardOrigin` проверяет поведение **самого**
+`CORSMiddleware` на явно переданном `origins=["*"]` — это не политика
+demo-web. Политика (wildcard отклоняется, fallback на dev-дефолт) живёт в
+`_cors_origins_from()` и запинена в `test_cors_wildcard.py`.
 
 Запуск:
     uv run pytest demo/web/tests/unit/test_cors_security.py -v --tb=short
@@ -269,12 +273,19 @@ class TestCorsMethods:
 
 
 # =============================================================================
-# 6. WEB_ORIGIN=* явно — всё ещё работает
+# "*"-origin на уровне сырого CORSMiddleware (не политика demo-web)
 # =============================================================================
 
 
 class TestCorsWildcardOrigin:
-    """WEB_ORIGIN=* explicitly should allow all origins."""
+    """Поведение CORSMiddleware при явно переданном origins=["*"] как таковое.
+
+    Это **не** demo-web-политика: `demo/web/server.py` отклоняет `*` в
+    `_cors_origins_from()` и такого списка до middleware не доносит (pentest F5,
+    регрессия — `test_cors_wildcard.py`). Тесты ниже фиксируют лишь то, что сам
+    Starlette-мидлварь на wildcard отвечает `*`, чтобы отличить нашу политику
+    от поведения зависимости.
+    """
 
     def test_wildcard_allows_any_origin(self):
         """WEB_ORIGIN=* returns Access-Control-Allow-Origin: *."""

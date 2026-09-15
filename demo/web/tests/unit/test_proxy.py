@@ -4,7 +4,7 @@ demo/web — это тонкий reverse-proxy + статический серв
 Он проксирует:
   /api/data/*       -> data-service:8084 (read-only данные)
   /api/rag/documents -> rag:8082        (документы)
-  /api/{chat,backlog,session/history} -> api-service:8081 (агент)
+  /api/{chat,chat/*,session/history,agents,health,reports} -> api-service:8081 (allowlist)
 
 Эти тесты проверяют, что:
 1. Endpoint'ы правильно проксируют на upstream-сервис

@@ -61,12 +61,17 @@ Browser → /api/tenant/school-a/data/students
 
 ### API Service (через api-service)
 - `GET /api/health` — health-check API
-- `GET /api/backlog` — модель бэклога
-- `GET /api/session/history` — история сессий
-- `POST /api/chat` — SSE-стриминг чата с агентом
+- `GET /api/agents` — список агентов, проецированный до имён (`{"agents":[{"name":…}]}`)
+- `GET /api/session/history` — история сессии; серверный bearer не подставляется, запрос аутентифицируется capability-токеном браузера (`X-Session-Token`)
+- `POST /api/chat` — SSE-стриминг чата с агентом; demo-страница предъявляет capability-токен сессии (`X-Session-Token`), иначе возобновлённая сессия получает `401`
 - `POST /api/chat/{agent_name}` — SSE-стриминг чата с указанным агентом
-- `GET /api/tenants` — список доступных tenant'ов
-- `ANY /api/{path:path}` — catch-all прокси для неопределённых /api/* маршрутов
+- `POST /api/reports` — отчёты о проблемах из виджета
+- `GET /embed/{path}` — статика embed-виджета
+- `GET /api/tenants` — список tenant'ов из `DEMO_TENANTS` (без discovery)
+
+**Allowlist, а не catch-all:** остальные `/api/*` маршруты отвечают `404` — demo/web не должен
+быть прокси к admin-контуру api-service с серверным bearer (pentest H1).
+`/api/backlog/*` через demo/web не проксируется вообще (только напрямую с bearer).
 
 ### Tenant Routing (демо-режим)
 - `GET|POST|... /api/tenant/{tenant_id}/{path:path}` — универсальный маршрут с tenant в URL:
@@ -131,6 +136,19 @@ async def _get_proxy_headers(request):
     if tenant_id:
         headers["X-Tenant-ID"] = tenant_id
 
+    # Capability-токен сессии идёт с браузером (чат и чтение транскрипта)
+    session_token = request.headers.get("x-session-token")
+    if session_token:
+        headers["x-session-token"] = session_token
+
+    # x-forwarded-for всегда перезаписывается TCP-пиром, клиентский не проходит
+    ...
+
+    # attach_bearer=False для transcript-чтений: серверный bearer не должен
+    # замещать capability сессии
+    if attach_bearer and settings.api_bearer_token:
+        headers["authorization"] = f"Bearer {settings.api_bearer_token}"
+
     return headers
 ```
 
@@ -144,13 +162,13 @@ async def _get_proxy_headers(request):
 | `DEMO_API_PORT` | `8081` | Порт API сервиса |
 | `DEMO_WEB_HOST` | `127.0.0.1` | Хост web сервиса |
 | `DEMO_WEB_PORT` | `8080` | Порт web сервиса |
-| `WEB_ORIGIN` | `http://localhost:8080` | CORS origin (comma-separated список, `*` для embed/production) |
+| `WEB_ORIGIN` | `http://localhost:8080` | CORS origin: только явные origins через запятую; `*` (одиночный или в списке) отклоняется с error-логом и fallback на dev-дефолт (pentest F5) |
 | `API_BEARER_TOKEN` | — | Опциональный bearer token для API |
 | `DATA_SERVICE_URL` | `http://127.0.0.1:8084` | Базовый URL data-service (прямой прокси) |
 | `RAG_SERVICE_URL` | `http://127.0.0.1:8082` | Базовый URL RAG-сервиса (прямой прокси) |
 | `DEFAULT_TENANT_ID` | `default` | Fallback tenant ID для UI селектора |
 | `DEMO_TENANTS` | — | Comma-separated список tenant IDs для явного отображения в UI |
-| `WEB_PROXY_TIMEOUT` | `30.0` | Таймаут HTTP-клиента для проксирования (секунды) |
+| `WEB_PROXY_TIMEOUT` | `30.0` | Таймаут HTTP-клиента для проксирования (секунды); для SSE-запросов — только connect/write, чтение стрима не ограничено |
 
 ### Docker Compose
 

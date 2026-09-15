@@ -1,7 +1,7 @@
 // Браузер ходит на demo/web (:8080), который проксирует:
 //   /api/data/*       -> data-service:8084
 //   /api/rag/documents -> rag:8082
-//   /api/{chat,backlog,session/history} -> api-service:8081 (агент)
+//   /api/{chat,chat/*,session/history,agents,health,reports} -> api-service:8081 (allowlist)
 const apiBase = window.DEMO_API_BASE || `${window.location.protocol}//${window.location.host}`;
 
 const chatHistoryKey = "agentTutorMessages";
@@ -18,6 +18,8 @@ const state = {
   tenants: [],          // available tenants
   agentId: null,       // selected agent name
   agents: [],          // agents list
+  sessionToken: null,  // capability token for the current chat session
+  sessionTokenKey: null, // session key that in-memory token belongs to
 };
 
 // SSE Debug logging
@@ -452,6 +454,9 @@ async function loadAgents() {
   select.addEventListener("change", function() {
     var val = select.value;
     state.agentId = val || null;
+    // The token of the previous agent's session is dropped; the next read or
+    // turn resolves the token of the newly selected agent's own session.
+    forgetSessionToken();
     try {
       if (val) { storage.setItem(agentStorageKey, val); }
       else { storage.removeItem(agentStorageKey); }
@@ -490,8 +495,11 @@ async function reloadForNewTenant() {
   state.tab = null;
   state.data = null;
 
-  // Генерируем новую сессию для нового tenant'а
+  // session_id персистентный и per-agent (getSessionId), поэтому смена tenant'а
+  // его не меняет: серверная сессия та же, и валидный capability-токен остаётся
+  // в storage под своим ключом. Забываем только закэшированный в памяти.
   currentSessionId = getSessionId();
+  forgetSessionToken();
 
   // Очищаем историю чата (разные tenant'ы — разные данные)
   writeStoredMessages([]);
@@ -733,6 +741,53 @@ async function checkHealth() {
 
 // ── История чата с сервера ──
 
+// api-service binds the first turn of a session to a capability token and
+// rejects every later turn without it, so the chat POST and the transcript
+// read both have to present the token minted for *this* session key.
+
+function sessionTokenKey(agentId, sessionId) {
+  return "helperium_session_token:" + (agentId || "direct") + ":" + (sessionId || "");
+}
+
+function sessionTokenFor(agentId, sessionId) {
+  const key = sessionTokenKey(agentId, sessionId);
+  try {
+    const stored = storage.getItem(key);
+    if (stored) return stored;
+  } catch {
+    /* storage unavailable (private mode) — fall back to the in-memory copy */
+  }
+  // The in-memory token is only valid for the key it was minted for, so a
+  // token left over from another agent or session is never presented.
+  return state.sessionTokenKey === key ? state.sessionToken : null;
+}
+
+function rememberSessionToken(agentId, sessionId, token) {
+  const key = sessionTokenKey(agentId, sessionId);
+  state.sessionToken = token;
+  state.sessionTokenKey = key;
+  try {
+    storage.setItem(key, token);
+  } catch {
+    /* the in-memory copy above still covers this page */
+  }
+}
+
+function forgetSessionToken() {
+  state.sessionToken = null;
+  state.sessionTokenKey = null;
+}
+
+function chatRequestHeaders() {
+  const headers = { "Content-Type": "application/json" };
+  if (!state.agentId && state.tenantId) {
+    headers["X-Tenant-ID"] = state.tenantId;
+  }
+  const sessionToken = sessionTokenFor(state.agentId, currentSessionId);
+  if (sessionToken) headers["X-Session-Token"] = sessionToken;
+  return headers;
+}
+
 async function restoreServerHistory() {
   const messages = $("#messages");
   if (!messages) return;
@@ -745,7 +800,12 @@ async function restoreServerHistory() {
     const url = state.agentId
       ? `${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}&agent_name=${encodeURIComponent(state.agentId)}`
       : `${apiBase}/api/session/history?session_id=${encodeURIComponent(currentSessionId)}`;
-    const response = await fetchWithTenant(url);
+    // Transcript reads authenticate with the session capability token
+    // (the demo edge no longer injects its server bearer for them).
+    const sessionToken = sessionTokenFor(state.agentId, currentSessionId);
+    const historyHeaders = {};
+    if (sessionToken) historyHeaders["X-Session-Token"] = sessionToken;
+    const response = await fetchWithTenant(url, { headers: historyHeaders });
     if (!response.ok) return;
 
     const data = await response.json();
@@ -834,10 +894,9 @@ async function _streamChat(message, target) {
       ? apiBase + "/api/chat/" + encodeURIComponent(state.agentId)
       : apiBase + "/api/chat";
 
-    var headers = { "Content-Type": "application/json" };
-    if (!state.agentId && state.tenantId) {
-      headers["X-Tenant-ID"] = state.tenantId;
-    }
+    // Same helper as the transcript read: the resumed session must present
+    // the capability token api-service bound to it on the first turn.
+    var headers = chatRequestHeaders();
 
     const response = await fetch(chatEndpoint, {
       method: "POST",
@@ -897,6 +956,11 @@ function handleEventChunk(chunk, target) {
   if (!line) { sseLog("No data line found in chunk"); return; }
   const payload = JSON.parse(line.slice(5).trim());
   sseLog("Event type:", payload.type, payload);
+  // Capability token minted for this session (first turn). Persisted per
+  // agent+session so transcript restore can authenticate after a reload.
+  if (payload.type === "session" && payload.session_token) {
+    rememberSessionToken(state.agentId, currentSessionId, payload.session_token);
+  }
   clearAssistantThinking(target);
   if (payload.type === "final") {
     sseLog("Final text received:", payload.text?.substring(0, 100));
