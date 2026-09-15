@@ -237,11 +237,16 @@ if embed_path.is_dir():
     app.mount("/embed", StaticFiles(directory=str(embed_path)), name="embed")
     logger.info("Embed widget mounted at /embed from %s", embed_path)
 
-# Public allowlist: browser-facing chat, widget bootstrap/assets and liveness only.
+# Public routes: browser-facing chat, widget bootstrap/assets, liveness, and
+# transcript reads — the last carries its own auth (control-plane bearer OR the
+# session capability token), see backlog.session_history_router.
 app.include_router(chat.router)
 app.include_router(reports.router)
 app.include_router(agents.public_router)
 app.include_router(health.router)
+# Transcript reads carry their own auth dependency (control-plane bearer OR
+# the session capability token) — see backlog.session_history_router.
+app.include_router(backlog.session_history_router)
 
 # Every other API route is private by construction. New control-plane routers
 # must be included here, so they cannot become public by omitted per-route auth.

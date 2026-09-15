@@ -120,6 +120,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /api/session/history:
+    get:
+      summary: Session History Endpoint
+      operationId: session_history_endpoint_api_session_history_get
+      parameters:
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          default: default
+          title: Session Id
+      - name: agent_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Name
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Session-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Session-Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionHistoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/agents:
     post:
       summary: Create Agent Endpoint
@@ -663,7 +712,7 @@ paths:
       summary: Add Llm Provider
       description: "Add a new LLM provider.\n\nBody:\n    name (required): unique\
         \ provider name\n    model (required): model identifier (e.g. openai/gpt-4o,\
-        \ anthropic/claude-3-sonnet)\n    provider: provider type \u2014 auto-detected\
+        \ anthropic/claude-3-sonnet)\n    provider: provider type — auto-detected\
         \ from model prefix if omitted\n    api_key: API key (will not be returned\
         \ in full)\n    api_base: custom API base URL\n    enabled: whether the provider\
         \ is active (default: true)"
@@ -1057,45 +1106,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/session/history:
-    get:
-      summary: Session History Endpoint
-      operationId: session_history_endpoint_api_session_history_get
-      parameters:
-      - name: session_id
-        in: query
-        required: false
-        schema:
-          type: string
-          default: default
-          title: Session Id
-      - name: agent_name
-        in: query
-        required: false
-        schema:
-          type: string
-          title: Agent Name
-      - name: authorization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Authorization
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionHistoryResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/voice-config:
     get:
       summary: Get Voice Config
@@ -1456,9 +1466,14 @@ components:
       - ts
       - data
       title: BacklogEvent
-      description: "A single event/record in a backlog session.\n\nFields vary by\
-        \ ``event`` type \u2014 ``model_response`` events contain\n``duration_ms``\
-        \ and ``tokens``. Extra fields are preserved via\n``extra='allow'``."
+      description: 'A single event/record in a backlog session.
+
+
+        Fields vary by ``event`` type — ``model_response`` events contain
+
+        ``duration_ms`` and ``tokens``. Extra fields are preserved via
+
+        ``extra=''allow''``.'
     BacklogListResponse:
       properties:
         sessions:
@@ -1630,8 +1645,8 @@ components:
           description: Maximum tokens in response
       type: object
       title: LLMConfig
-      description: "Per-agent LLM configuration. All fields optional \u2014 falls\
-        \ back to global defaults when null."
+      description: Per-agent LLM configuration. All fields optional — falls back to
+        global defaults when null.
     ReportCreateRequest:
       properties:
         agent:
@@ -1869,13 +1884,12 @@ components:
           type: string
           title: Title
           description: Widget header title
-          default: "\u0410\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442"
+          default: Ассистент
         greeting:
           type: string
           title: Greeting
           description: Greeting message in chat
-          default: "\u0427\u0435\u043C \u043C\u043E\u0433\u0443 \u043F\u043E\u043C\
-            \u043E\u0447\u044C?"
+          default: Чем могу помочь?
         accent_color:
           type: string
           title: Accent Color

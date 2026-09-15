@@ -21,6 +21,7 @@ from api_service.prometheus_metrics import (
     reports_total,
 )
 from api_service.server.rate_limit import get_client_ip, limiter, reports_rate_limit
+from api_service.server.session_capability import effective_session_id
 
 logger = logging.getLogger("api_service.server")
 
@@ -40,7 +41,7 @@ async def create_report(request: Request, body: ReportCreateRequest) -> JSONResp
         "agent": body.agent,
         "session_id": body.session_id,
         # Same effective key the chat routes use for history/backlog lookup.
-        "session_key": f"agent:{body.agent}:{body.session_id}",
+        "session_key": effective_session_id(body.session_id, body.agent),
         "lang": body.lang,
         "message_kind": body.message.kind,
         "message_text": body.message.text,

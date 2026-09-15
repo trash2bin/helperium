@@ -26,7 +26,7 @@
 | `/api/chat/{name}` | POST | SSE-чат с именованным агентом; `tenant_ids` только из persisted Agent Store |
 | `/api/session/history` | GET | История сессии (query params: session_id, agent_name) |
 
-> **Session capability (pentest 2026-09-13):** `session_id` в чате обязателен; первая реплика новой сессии выдаёт capability-токен (SSE-событие `session` + заголовок `X-Session-Token`), повторное использование `session_id` без валидного `X-Session-Token` отклоняется с 401. Голосовой эндпоинт применяет тот же гейт; `/api/session/history` и `/api/backlog/*` закрыты bearer-токеном.
+> **Session capability (pentest 2026-09-13, расширено 2026-09-14):** `session_id` в чате обязателен; первая реплика новой сессии выдаёт capability-токен (SSE-событие `session` + заголовок `X-Session-Token`), повторное использование `session_id` без валидного `X-Session-Token` отклоняется с 401. Голосовой эндпоинт применяет тот же гейт. `/api/session/history` принимает **либо** capability-токен сессии (`X-Session-Token`; ключ сессии — `agent:{agent}:{session_id}` для именованного агента и `direct:{session_id}` для agent-less direct-чата/голоса, ровно тот, под которым чат пишет транскрипт и минтит токен: `session_capability.effective_session_id()`), **либо** control-plane bearer для операторского/дашборд-пути — без обоих `401`; при незаданном `API_BEARER_TOKEN` без токена сессии — `503`. `/api/backlog/*` закрыт только bearer-токеном.
 | `/api/backlog` | GET | Список бэклогов |
 | `/api/backlog/{id}` | GET | Детали бэклога |
 | `/api/backlog/stats/{session_id}` | GET | Статистика сессии (токены, cost, ошибки) |
@@ -280,7 +280,8 @@ curl -X POST http://localhost:8081/api/agents \
 строгие caps DTO (`extra=forbid`). «Пожалованные» баблы запоминаются в
 sessionStorage (`at_reported_<agent>`) и переживают восстановление истории.
 На стороне сервера к жалобе добавляются `correlation_id` запроса, IP и
-User-Agent (форензика) и `session_key` вида `agent:{name}:{session_id}` для
+User-Agent (форензика) и `session_key` — ключ сессии, под которым её пишет чат
+(`agent:{name}:{session_id}`, для chat без агента — `direct:{session_id}`), для
 поиска по backlog-файлу и логам.
 
 ## Переменные окружения

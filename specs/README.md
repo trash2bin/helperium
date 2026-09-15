@@ -11,6 +11,7 @@ specs/
 ├── config.example.json        # Пример конфига SQLite (shop scenario)
 ├── config.postgres.json       # Пример конфига PostgreSQL (production-шаблон)
 ├── api.openapi.yaml           # OpenAPI api-service сервера (порт 8081)
+├── api.openapi.json           # тот же контракт в JSON (проверяет тот же drift-тест)
 ├── rag.openapi.yaml           # OpenAPI rag-сервиса (порт 8082)
 ├── fixtures/                  # seed.json для data-service --seed (.gitignore)
 └── README.md
@@ -194,7 +195,7 @@ func (cfg *Config) Validate() error   // для Load() — проверяет в
 и декораторов `@app.get/post`. Рабочий процесс:
 
 ```
-FastAPI-код → app.openapi() → YAML spec → git commit
+FastAPI-код → app.openapi() → YAML/JSON spec → git commit
 ```
 
 ### Изменять spec вручную — НЕЛЬЗЯ
@@ -214,8 +215,21 @@ uv run pytest rag/tests/unit/test_openapi_spec.py -v
 генерируется программно, без запущенного сервера:
 
 ```bash
-uv run python -c "import sys, yaml, json; from api_service.server.app import app; yaml.dump(json.loads(json.dumps(app.openapi(), default=str)), sys.stdout, sort_keys=False)" > specs/api.openapi.yaml
+uv run python -c "import sys, yaml, json; from api_service.server.app import app; yaml.safe_dump(json.loads(json.dumps(app.openapi(), default=str)), sys.stdout, sort_keys=False, allow_unicode=True)" > specs/api.openapi.yaml
 ```
+
+JSON-снимок `specs/api.openapi.json` — тот же контракт в форме, которую
+копируют инструменты. Он проверяется тем же тестом, поэтому обновлять его
+нужно тем же коммитом:
+
+```bash
+uv run python -c "import json; from api_service.server.app import app; print(json.dumps(json.loads(json.dumps(app.openapi(), default=str)), indent=2))" > specs/api.openapi.json
+```
+
+Оба теста сравнивают разобранные структуры, поэтому формат записи на вердикт
+не влияет. Команды выше — не декорация: `allow_unicode=True` в YAML-команде
+обязателен, без него эмодаши и кириллица уходят в `\uXXXX`-escape и повторный
+прогон даёт шумной диф без изменения контракта.
 
 Для rag-сервиса аналогично (`from rag_service... app`), либо — при запущенном
 сервисе с включённым роутом:

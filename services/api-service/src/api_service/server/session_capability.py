@@ -20,6 +20,19 @@ import secrets
 SESSION_TOKEN_HEADER = "X-Session-Token"
 
 
+def effective_session_id(session_id: str, agent_name: str | None = None) -> str:
+    """Session key a capability token is minted for and verified against.
+
+    Named-agent sessions live under ``agent:{name}:{session_id}``; direct
+    (agent-less) text and voice sessions live under ``direct:{session_id}``.
+    Both chat minter and history/backlog verifier must use this function:
+    before direct sessions were verified by the bare id, the token minted by a
+    direct chat could never match (history always answered 401) and the stored
+    transcript was read under the wrong key.
+    """
+    return f"agent:{agent_name}:{session_id}" if agent_name else f"direct:{session_id}"
+
+
 def generate_session_token() -> str:
     """Return a fresh 256-bit url-safe capability token."""
     return secrets.token_urlsafe(32)

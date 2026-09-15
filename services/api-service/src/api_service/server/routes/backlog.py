@@ -3,7 +3,7 @@
 from __future__ import annotations
 import json
 import logging
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from api_service.http_models import (
     BacklogDetailResponse,
@@ -15,6 +15,8 @@ from api_service.http_models import (
 )
 from api_service.backlog import backlog
 from api_service.sessions import session_store
+from ..auth import require_session_history_access
+from ..session_capability import effective_session_id
 import asyncio
 
 logger = logging.getLogger("api_service.server")
@@ -136,9 +138,18 @@ async def export_backlog(session_id: str):
     )
 
 
-@router.get("/api/session/history", response_model=SessionHistoryResponse)
+# Transcript reads live on their own router: unlike the backlog evidence
+# routes (control-plane bearer only), the session owner authenticates with
+# the capability token minted for that session.
+session_history_router = APIRouter(
+    dependencies=[Depends(require_session_history_access)]
+)
+
+
+@session_history_router.get(
+    "/api/session/history", response_model=SessionHistoryResponse
+)
 async def session_history_endpoint(
     session_id: str = Query("default"), agent_name: str = Query(None)
 ):
-    effective = f"agent:{agent_name}:{session_id}" if agent_name else session_id
-    return await get_session_history(effective)
+    return await get_session_history(effective_session_id(session_id, agent_name))

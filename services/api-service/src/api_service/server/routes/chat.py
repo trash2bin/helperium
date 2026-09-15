@@ -31,6 +31,7 @@ from ..sse import _sse, _single_error, _event_payload, _get_lang
 from ..security import check_abuse
 from ..session_capability import (
     SESSION_TOKEN_HEADER,
+    effective_session_id,
     generate_session_token,
     hash_session_token,
     token_matches,
@@ -354,12 +355,12 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
             media_type="text/event-stream",
         )
 
-    effective_session_id = f"direct:{session_id}"
+    session_key = effective_session_id(session_id)
 
     # Session capability first: no anti-abuse accounting for unauthenticated
     # reuse of someone else's session id.
     stored_hash, hijack_error = await _reject_session_hijack(
-        request, effective_session_id, correlation_id
+        request, session_key, correlation_id
     )
     if hijack_error is not None:
         return hijack_error
@@ -375,7 +376,7 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
     return await _capability_sse_response(
         lambda: get_agent().stream_events(
             message,
-            session_id=effective_session_id,
+            session_id=session_key,
             tenant_ids=tenant_ids,
             llm_config=profile.llm_config if profile else None,
             provider_priority=profile.provider_priority if profile else None,
@@ -393,7 +394,7 @@ async def chat_endpoint(request: Request) -> StreamingResponse:
         correlation_id=correlation_id,
         session_id=session_id,
         stored_hash=stored_hash,
-        effective_session_id=effective_session_id,
+        effective_session_id=session_key,
         watcher=watcher,
     )
 
@@ -500,16 +501,13 @@ async def chat_voice_endpoint(
     # tenant scope stays server-configured either way.
     profile = None if agent_data else direct_chat_profile()
 
-    if agent:
-        effective_session_id = f"agent:{agent}:{session_id}"
-    else:
-        effective_session_id = f"direct:{session_id}"
+    session_key = effective_session_id(session_id, agent)
 
     request_lang = lang or _get_lang(request)
 
     # Session capability gate, same contract as the text endpoints.
     stored_hash, hijack_error = await _reject_session_hijack(
-        request, effective_session_id, correlation_id
+        request, session_key, correlation_id
     )
     if hijack_error is not None:
         return hijack_error
@@ -548,7 +546,7 @@ async def chat_voice_endpoint(
     return await _capability_sse_response(
         lambda: get_agent().stream_events(
             user_message=text,
-            session_id=effective_session_id,
+            session_id=session_key,
             tenant_ids=tenant_ids,
             system_prompt=system_prompt,
             lang=request_lang,
@@ -561,7 +559,7 @@ async def chat_voice_endpoint(
         correlation_id=correlation_id,
         session_id=session_id,
         stored_hash=stored_hash,
-        effective_session_id=effective_session_id,
+        effective_session_id=session_key,
         watcher=watcher,
     )
 
@@ -608,12 +606,12 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
             media_type="text/event-stream",
         )
 
-    effective_session_id = f"agent:{name}:{session_id}"
+    session_key = effective_session_id(session_id, name)
 
     # Session capability first: no anti-abuse accounting for unauthenticated
     # reuse of someone else's session id.
     stored_hash, hijack_error = await _reject_session_hijack(
-        request, effective_session_id, correlation_id
+        request, session_key, correlation_id
     )
     if hijack_error is not None:
         return hijack_error
@@ -633,7 +631,7 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
     return await _capability_sse_response(
         lambda: get_agent().stream_events(
             user_message=message,
-            session_id=effective_session_id,
+            session_id=session_key,
             tenant_ids=tenant_ids,
             system_prompt=system_prompt,
             lang=lang,
@@ -647,6 +645,6 @@ async def chat_agent_handler(request: Request, name: str) -> StreamingResponse:
         correlation_id=correlation_id,
         session_id=session_id,
         stored_hash=stored_hash,
-        effective_session_id=effective_session_id,
+        effective_session_id=session_key,
         watcher=watcher,
     )

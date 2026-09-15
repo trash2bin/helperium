@@ -191,6 +191,94 @@
         }
       }
     },
+    "/api/session/history": {
+      "get": {
+        "summary": "Session History Endpoint",
+        "operationId": "session_history_endpoint_api_session_history_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "default",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "agent_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agents": {
       "post": {
         "summary": "Create Agent Endpoint",
@@ -1756,71 +1844,6 @@
         }
       }
     },
-    "/api/session/history": {
-      "get": {
-        "summary": "Session History Endpoint",
-        "operationId": "session_history_endpoint_api_session_history_get",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "default",
-              "title": "Session Id"
-            }
-          },
-          {
-            "name": "agent_name",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "title": "Agent Name"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionHistoryResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/voice-config": {
       "get": {
         "summary": "Get Voice Config",
@@ -2499,8 +2522,7 @@
           },
           "session_id": {
             "type": "string",
-            "title": "Session Id",
-            "default": "default"
+            "title": "Session Id"
           },
           "agent": {
             "anyOf": [
@@ -2527,7 +2549,8 @@
         },
         "type": "object",
         "required": [
-          "audio"
+          "audio",
+          "session_id"
         ],
         "title": "Body_chat_voice_endpoint_api_chat_voice_post"
       },
