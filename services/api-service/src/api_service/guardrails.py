@@ -13,18 +13,33 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 
-# ── Unicode homoglyph translation table ───────────────────────────────────
-# Maps visually identical Cyrillic/Ukrainian characters to their Latin
-# equivalents.  Applied before regex guard checks to prevent homoglyph bypass.
-# Note: unicodedata.normalize('NFKC', ...) does NOT translate these — they
-# are distinct codepoints.
+# ── Unicode homoglyph normalization ──────────────────────────────────────
+# Strategy:
+# 1. NFKC normalization handles: fullwidth forms, mathematical alphanumerics
+#    (bold, sans-serif, monospace, etc.), compatibility characters, ligatures.
+# 2. Small explicit map for scripts NFKC doesn't normalize: Greek, Cyrillic.
+#    These are distinct scripts, not compatibility variants.
+# This avoids hardcoding 200+ codepoints manually.
 
+# Only scripts NFKC does NOT normalize: Greek and Cyrillic/Ukrainian
+# (visually confusable but distinct scripts)
 HOMOGLYPH_MAP: dict[str, str] = {
+    # Greek (Greek and Coptic block)
+    "\u03b1": "a",  # α Greek small letter alpha
+    "\u03b5": "e",  # ε Greek small letter epsilon
+    "\u03b9": "i",  # ι Greek small letter iota
+    "\u03bf": "o",  # ο Greek small letter omicron
+    "\u03c1": "p",  # ρ Greek small letter rho
+    "\u03c3": "c",  # σ Greek small letter sigma
+    "\u03c5": "y",  # υ Greek small letter upsilon
+    "\u03c7": "x",  # χ Greek small letter chi
+    # Cyrillic / Ukrainian
     "\u0430": "a",  # Cyrillic а → Latin a
     "\u0435": "e",  # Cyrillic е → Latin e
     "\u0456": "i",  # Ukrainian і → Latin i
@@ -37,8 +52,15 @@ HOMOGLYPH_MAP: dict[str, str] = {
 
 
 def _normalize_homoglyphs(text: str) -> str:
-    """Replace homoglyph characters with their Latin equivalents."""
-    return "".join(HOMOGLYPH_MAP.get(ch, ch) for ch in text)
+    """Normalize homoglyphs to Latin via NFKC + script-specific map.
+
+    1. NFKC: fullwidth, mathematical alphanumerics, compatibility chars → ASCII
+    2. HOMOGLYPH_MAP: Greek, Cyrillic (distinct scripts NFKC doesn't touch)
+    """
+    # Step 1: NFKC handles most compatibility variants automatically
+    nfkc = unicodedata.normalize("NFKC", text)
+    # Step 2: Apply small map for Greek/Cyrillic (scripts NFKC doesn't touch)
+    return "".join(HOMOGLYPH_MAP.get(ch, ch) for ch in nfkc)
 
 
 # ── Default blocking patterns (input) ────────────────────────────────────────
@@ -222,7 +244,7 @@ class GuardChecker:
             return GuardResult()
         if not message:
             return GuardResult()
-        # Normalize homoglyphs before regex search (LOW-3 fix)
+        # Normalize homoglyphs before regex search
         normalized = _normalize_homoglyphs(message)
         for compiled, reason in self._input_compiled:
             if compiled.search(normalized):
@@ -251,7 +273,7 @@ class GuardChecker:
             return GuardResult()
         if not content:
             return GuardResult()
-        # Normalize homoglyphs before regex search (LOW-3 fix)
+        # Normalize homoglyphs before regex search
         normalized = _normalize_homoglyphs(content)
         for compiled, reason in self._output_compiled:
             if compiled.search(normalized):
