@@ -63,6 +63,55 @@ def _normalize_homoglyphs(text: str) -> str:
     return "".join(HOMOGLYPH_MAP.get(ch, ch) for ch in nfkc)
 
 
+# ── Escape sequence decoding ──────────────────────────────────────────────
+# Attackers embed escape sequences (\x69, \u0069, \151) to spell out injection
+# keywords.  LLMs and many runtimes decode these before processing; regex
+# guard patterns see the literal backslash and do NOT match.
+
+_HEX_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})")
+_UNICODE2_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+_UNICODE4_ESCAPE = re.compile(r"\\U([0-9a-fA-F]{8})")
+_OCTAL_ESCAPE = re.compile(r"\\([0-3][0-7]{0,2})")  # \0 to \377
+
+
+def _decode_escapes(text: str) -> str:
+    r"""Decode common escape sequences that LLMs/interpreters would expand.
+
+    Handles:
+    - \xNN   (hex byte, e.g. \x69 → i)
+    - \uNNNN (4-digit unicode, e.g. \u0069 → i)
+    - \UNNNNNNNN (8-digit unicode)
+    - \NNN   (octal, e.g. \151 → i)
+
+    Iterates until no more changes (handles double-encoding like
+    "\x5cx75" → "\u00" → ... → actual chars).
+    """
+    prev = None
+    result = text
+    for _ in range(5):  # max nesting depth for double/triple encoding
+        if result == prev:
+            break
+        prev = result
+        # Order matters — decode hex first, then unicode, then octal
+        result = _HEX_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), result)
+        result = _UNICODE2_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), result)
+        result = _UNICODE4_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), result)
+        result = _OCTAL_ESCAPE.sub(lambda m: chr(int(m.group(1), 8)), result)
+    return result
+
+
+def _normalize_for_guard(text: str) -> str:
+    r"""Full normalization pipeline for guard input/output.
+
+    Order:
+    1. Decode escape sequences (\x69 → i, \u0069 → i, etc.)
+    2. NFKC normalization (fullwidth, math alphanumerics, etc.)
+    3. Homoglyph map (Greek, Cyrillic)
+    """
+    decoded = _decode_escapes(text)
+    return _normalize_homoglyphs(decoded)
+
+
 # ── Default blocking patterns (input) ────────────────────────────────────────
 # Each pattern is a tuple (regex, reason_tag).
 
@@ -244,8 +293,8 @@ class GuardChecker:
             return GuardResult()
         if not message:
             return GuardResult()
-        # Normalize homoglyphs before regex search
-        normalized = _normalize_homoglyphs(message)
+        # Decode escapes + normalize homoglyphs before regex search
+        normalized = _normalize_for_guard(message)
         for compiled, reason in self._input_compiled:
             if compiled.search(normalized):
                 self.config.blocked_count += 1
@@ -273,8 +322,8 @@ class GuardChecker:
             return GuardResult()
         if not content:
             return GuardResult()
-        # Normalize homoglyphs before regex search
-        normalized = _normalize_homoglyphs(content)
+        # Decode escapes + normalize homoglyphs before regex search
+        normalized = _normalize_for_guard(content)
         for compiled, reason in self._output_compiled:
             if compiled.search(normalized):
                 self.config.blocked_count += 1
