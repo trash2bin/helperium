@@ -45,6 +45,11 @@ from api_service.spending import BudgetExceeded, ReservationConflict
 
 logger = logging.getLogger("api_service.agent.loop")
 
+# Public placeholders for browser-facing events. The transcript and the audit
+# log keep raw content/arguments; only the SSE event carries these markers.
+OUTPUT_BLOCKED_PLACEHOLDER = "[Ответ заблокирован системой безопасности]"
+ARGUMENT_BLOCKED_MARKER = "[Заблокировано системой безопасности]"
+
 _RECOVERABLE_TOOL_ERROR_CODES = frozenset(
     {"ARGUMENT_VALIDATION_FAILED", "INVALID_RELATION"}
 )
@@ -367,7 +372,11 @@ class AppendOnlyLoop:
             )
             yield AgentEvent(
                 "tool_call",
-                {"id": call.id, "name": call.name, "arguments": call.arguments},
+                {
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": self._guard_tool_arguments(call.arguments),
+                },
             )
 
             validation_error = _validate_call(allowed.get(call.name), call.arguments)
@@ -409,7 +418,7 @@ class AppendOnlyLoop:
                     {
                         "id": call.id,
                         "name": call.name,
-                        "result": content,
+                        "result": self._guard_intermediate(content),
                         "isError": True,
                     },
                 )
@@ -461,7 +470,7 @@ class AppendOnlyLoop:
                 {
                     "id": call.id,
                     "name": call.name,
-                    "result": content,
+                    "result": self._guard_intermediate(content),
                     "isError": not ok,
                 },
             )
@@ -661,6 +670,61 @@ class AppendOnlyLoop:
             self._guard_checker and self._guard_checker.check_input(content).blocked
         )
 
+    def _guard_intermediate(self, content: str) -> str:
+        """Scan intermediate data (raw tool results) for leaks before SSE.
+
+        Routes the string through check_intermediate(): the output leak
+        patterns plus PII (email/tight phone). When blocked, the SSE event
+        carries the public placeholder instead of the raw content — raw DB
+        rows with credentials/PII must not be readable from the browser's
+        devtools. The transcript keeps raw content, so the agent's answer
+        quality is unaffected.
+        """
+        if not content:
+            return content
+        if (
+            self._guard_checker
+            and self._guard_checker.check_intermediate(content).blocked
+        ):
+            # Never log the content itself — raw tool results may hold PII;
+            # the reason/pattern pair in the guard's own log is enough.
+            logger.warning("[AGENT] intermediate tool result blocked by guard")
+            return OUTPUT_BLOCKED_PLACEHOLDER
+        return content
+
+    def _guard_tool_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Scan tool call arguments for prompt injection before SSE.
+
+        Runs each argument value through the input guard (arguments are the
+        instructions the LLM generated — the DB side treats them as untrusted
+        literals either way). When blocked, only that value is replaced in the
+        SSE event; the actual MCP call and the audit log keep raw arguments.
+        """
+        return self._redact_arguments(arguments) if self._guard_checker else arguments
+
+    def _redact_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Recursively redact argument values matching injection patterns.
+
+        Callers must ensure self._guard_checker is set. Lists and nested dicts
+        are walked at any depth: tool arguments carry array-of-object filters.
+        """
+        result = dict(arguments)
+        for key, value in result.items():
+            result[key] = self._redact_value(value)
+        return result
+
+    def _redact_value(self, value: Any) -> Any:
+        """Redact one argument value: str/dict/list at any nesting depth."""
+        if isinstance(value, str):
+            if self._guard_checker.check_input(value).blocked:
+                return ARGUMENT_BLOCKED_MARKER
+            return value
+        if isinstance(value, dict):
+            return self._redact_arguments(value)
+        if isinstance(value, list):
+            return [self._redact_value(item) for item in value]
+        return value
+
     @staticmethod
     def _echoes_last_tool_result(run: LoopRun, final_text: str) -> bool:
         """Whether the final text is the last tool result copied verbatim.
@@ -677,7 +741,7 @@ class AppendOnlyLoop:
 
     def _guard_output(self, content: str) -> str:
         if self._guard_checker and self._guard_checker.check_output(content).blocked:
-            return "[Ответ заблокирован системой безопасности]"
+            return OUTPUT_BLOCKED_PLACEHOLDER
         return content
 
     def _tool_limit_reached(self, metrics: LoopMetrics) -> bool:

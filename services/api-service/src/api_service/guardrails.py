@@ -9,6 +9,7 @@ Configurable via env vars and admin API.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -19,16 +20,15 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 
-# ── Unicode homoglyph normalization ──────────────────────────────────────
-# Strategy:
+# ── Unicode normalization strategy ────────────────────────────────────────
 # 1. NFKC normalization handles: fullwidth forms, mathematical alphanumerics
 #    (bold, sans-serif, monospace, etc.), compatibility characters, ligatures.
 # 2. Small explicit map for scripts NFKC doesn't normalize: Greek, Cyrillic.
-#    These are distinct scripts, not compatibility variants.
-# This avoids hardcoding 200+ codepoints manually.
-
-# Only scripts NFKC does NOT normalize: Greek and Cyrillic/Ukrainian
-# (visually confusable but distinct scripts)
+# 3. Strip zero-width and invisible separator characters that attackers insert
+#    inside keywords (e.g., "ig\u200bnore" to bypass regex).
+# 4. Decode URL-encoded sequences (%69 → i) and HTML entities (&#105; → i).
+# 5. Collapse whitespace variations so the .{0,20} regex gap matches across
+#    tabs, newlines, non-breaking spaces, etc.
 HOMOGLYPH_MAP: dict[str, str] = {
     # Greek (Greek and Coptic block)
     "\u03b1": "a",  # α Greek small letter alpha
@@ -68,17 +68,33 @@ def _normalize_homoglyphs(text: str) -> str:
 # keywords.  LLMs and many runtimes decode these before processing; regex
 # guard patterns see the literal backslash and do NOT match.
 
-_HEX_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})")
+_HEX_RUN_ESCAPE = re.compile(r"(?:\\x[0-9a-fA-F]{2})+")
 _UNICODE2_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
 _UNICODE4_ESCAPE = re.compile(r"\\U([0-9a-fA-F]{8})")
 _OCTAL_ESCAPE = re.compile(r"\\([0-3][0-7]{0,2})")  # \0 to \377
+
+
+def _decode_hex_run(match: re.Match[str]) -> str:
+    """Decode one run of consecutive \\xNN as a UTF-8 byte sequence.
+
+    A multi-byte pair like \\xD1\\x96 is the UTF-8 encoding of Cyrillic і
+    (U+0456); per-byte Latin-1 decoding would yield "Ñ\\x96" and the homoglyph
+    map would never see the codepoint. Invalid UTF-8 falls back to per-byte
+    Latin-1 so ASCII-only runs keep their meaning.
+    """
+    pairs = re.findall(r"\\x([0-9a-fA-F]{2})", match.group(0))
+    raw = bytes(int(p, 16) for p in pairs)
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
 
 
 def _decode_escapes(text: str) -> str:
     r"""Decode common escape sequences that LLMs/interpreters would expand.
 
     Handles:
-    - \xNN   (hex byte, e.g. \x69 → i)
+    - \xNN   (hex byte, e.g. \x69 → i; consecutive runs decode as UTF-8)
     - \uNNNN (4-digit unicode, e.g. \u0069 → i)
     - \UNNNNNNNN (8-digit unicode)
     - \NNN   (octal, e.g. \151 → i)
@@ -93,23 +109,118 @@ def _decode_escapes(text: str) -> str:
             break
         prev = result
         # Order matters — decode hex first, then unicode, then octal
-        result = _HEX_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), result)
+        result = _HEX_RUN_ESCAPE.sub(_decode_hex_run, result)
         result = _UNICODE2_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), result)
         result = _UNICODE4_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), result)
         result = _OCTAL_ESCAPE.sub(lambda m: chr(int(m.group(1), 8)), result)
     return result
 
 
+# ── URL encoding decoding ───────────────────────────────────────────────
+# Attackers use %xx to encode keyword characters (e.g., %69 = 'i').
+_URL_RUN_ESCAPE = re.compile(r"(?:%[0-9a-fA-F]{2})+")
+
+
+def _decode_url_run(match: re.Match[str]) -> str:
+    """Decode one run of consecutive %XX as a UTF-8 byte sequence.
+
+    %D1%96 is the UTF-8 encoding of Cyrillic і; per-byte Latin-1 decoding
+    would yield "Ñ\\x96" and the homoglyph map would never see the codepoint.
+    Invalid UTF-8 falls back to per-byte Latin-1.
+    """
+    pairs = re.findall(r"%([0-9a-fA-F]{2})", match.group(0))
+    raw = bytes(int(p, 16) for p in pairs)
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+def _decode_url_encoding(text: str) -> str:
+    r"""Decode URL percent-encoding (%69 → i) with iterative decoding.
+
+    Consecutive %XX runs decode as UTF-8 (so %D1%96 → Cyrillic і, which the
+    homoglyph map then normalizes). Iterates up to 3 passes for
+    double-encoding: %2569 → %69 → i.
+    """
+    prev = None
+    result = text
+    for _ in range(3):
+        if result == prev:
+            break
+        prev = result
+        result = _URL_RUN_ESCAPE.sub(_decode_url_run, result)
+    return result
+
+
+# ── Zero-width and invisible character stripping ─────────────────────────
+# Characters that are invisible to the reader but break regex word matching
+# (e.g., "ig\u200bnore" splits "ignore" across invisible chars).
+_ZERO_WIDTH_CHARS = {
+    "\u200b",  # ZERO WIDTH SPACE
+    "\u200c",  # ZERO WIDTH NON-JOINER
+    "\u200d",  # ZERO WIDTH JOINER
+    "\u2060",  # WORD JOINER
+    "\u00ad",  # SOFT HYPHEN
+    "\u202a",  # LEFT-TO-RIGHT EMBEDDING
+    "\u202b",  # RIGHT-TO-LEFT EMBEDDING
+    "\u202c",  # POP DIRECTIONAL FORMATTING
+    "\u202d",  # LEFT-TO-RIGHT OVERRIDE
+    "\u202e",  # RIGHT-TO-LEFT OVERRIDE
+    "\u2061",  # FUNCTION APPLICATION
+    "\u2062",  # INVISIBLE TIMES
+    "\u2063",  # INVISIBLE SEPARATOR
+    "\u2064",  # INVISIBLE PLUS
+    "\ufeff",  # ZERO WIDTH NO-BREAK SPACE (BOM)
+    "\u00a0",  # NO-BREAK SPACE
+}
+
+
+def _strip_zero_width(text: str) -> str:
+    """Remove zero-width and invisible separator characters."""
+    return "".join(ch for ch in text if ch not in _ZERO_WIDTH_CHARS)
+
+
+# ── Whitespace normalization ─────────────────────────────────────────────
+# Normalize all whitespace variants (tabs, newlines, non-breaking spaces,
+# em spaces, etc.) to single spaces so the .{0,20} regex gap works uniformly.
+_WHITESPACE_RE = re.compile(r"\s+", re.UNICODE)
+
+
+def _normalize_whitespace(text: str) -> str:
+    """Collapse all Unicode whitespace to single ASCII spaces.
+
+    This also handles the case where zero-width chars have already been stripped
+    and adjacent words need a separator. Newlines, tabs, non-breaking spaces,
+    em spaces, thin spaces, etc. all become regular spaces.
+    """
+    return _WHITESPACE_RE.sub(" ", text)
+
+
 def _normalize_for_guard(text: str) -> str:
     r"""Full normalization pipeline for guard input/output.
 
     Order:
-    1. Decode escape sequences (\x69 → i, \u0069 → i, etc.)
-    2. NFKC normalization (fullwidth, math alphanumerics, etc.)
-    3. Homoglyph map (Greek, Cyrillic)
+    1. Decode URL percent-encoding (%69 → i)
+    2. Decode HTML entities (&#105; → i, &amp → &)
+    3. Decode escape sequences (\x69 → i, \u0069 → i, etc.)
+    4. Strip zero-width and invisible characters
+    5. NFKC normalization (fullwidth, math alphanumerics, etc.)
+    6. Homoglyph map (Greek, Cyrillic)
+    7. Normalize whitespace variants to single space
     """
-    decoded = _decode_escapes(text)
-    return _normalize_homoglyphs(decoded)
+    # Step 1: URL encoding
+    url_decoded = _decode_url_encoding(text)
+    # Step 2: HTML entities
+    html_decoded = html.unescape(url_decoded)
+    # Step 3: Escape sequences (iterative for double-encoding)
+    escape_decoded = _decode_escapes(html_decoded)
+    # Step 4: Strip zero-width/invisible chars
+    no_zw = _strip_zero_width(escape_decoded)
+    # Step 5+6: NFKC + homoglyph map
+    homoglyph_normalized = _normalize_homoglyphs(no_zw)
+    # Step 7: Whitespace normalization
+    return _normalize_whitespace(homoglyph_normalized)
 
 
 # ── Default blocking patterns (input) ────────────────────────────────────────
@@ -213,6 +324,41 @@ DEFAULT_OUTPUT_PATTERNS: list[tuple[str, str]] = [
         r"(?i)(?:Bearer\s+[a-zA-Z0-9_\-.:]{20,}|Authorization\s*:?\s*Bearer)",
         "leak_bearer_token",
     ),
+    # ── Database connection strings with embedded credentials ──────────
+    # Only URLs WITH credentials match ("db:5432/store" without @ passes).
+    (
+        r"(?i)(?:postgres|postgresql|mysql|mongodb|redis|amqp)://"
+        r"[a-zA-Z0-9._-]+(?::[^@]+@)",
+        "leak_db_connection_string",
+    ),
+]
+
+# PII patterns for INTERMEDIATE data (raw tool results, tool arguments) only.
+# Deliberately NOT in DEFAULT_OUTPUT_PATTERNS: the final answer guard shares
+# check_output, and the LLM legitimately mentions dates, article numbers and
+# contact emails in answers. A loose phone pattern there would block every
+# answer carrying a date (15.09.2026) or article (1234567890) — false-positive
+# regression verified before this split. Intermediate raw DB rows, on the other
+# hand, must not be readable from the browser's devtools, so email/tight-phone
+# blocking is cheap there (the transcript keeps raw content; only the SSE event
+# is redacted, and the widget UI ignores tool_result payloads anyway).
+#
+# Phone formats covered (each ≥10 digits so 8-digit dates never match):
+#   +15551234567, +7 999 123-45-67   — international with leading +
+#   555-123-4567, 555 123 4567       — US 3-3-4
+#   8 999 123-45-67, 7999123-45-67   — RU with leading 7/8
+DEFAULT_INTERMEDIATE_PATTERNS: list[tuple[str, str]] = [
+    *DEFAULT_OUTPUT_PATTERNS,
+    (
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        "leak_pii_email",
+    ),
+    (
+        r"\+\d[\d\s\-().]{8,}\d"
+        r"|\b\d{3}[\s\-.]\d{3}[\s\-.]\d{4}\b"
+        r"|\b[78][\s\-().]?\d{3}[\s\-]?\d{3}[\s\-]\d{2}[\s\-]\d{2}\b",
+        "leak_pii_phone",
+    ),
 ]
 
 
@@ -230,12 +376,18 @@ class GuardConfig:
     """Guard configuration."""
 
     enabled: bool = True
-    block_on_match: str = "block"  # "block" | "warn"
+    # "block" | "warn". Honored by check_input; check_output/check_intermediate
+    # always block on match — a warn-only output leak would stream to the
+    # browser, so output-side blocking is unconditional by design.
+    block_on_match: str = "block"
     input_patterns: list[tuple[str, str]] = field(
         default_factory=lambda: list(DEFAULT_BLOCK_PATTERNS)
     )
     output_patterns: list[tuple[str, str]] = field(
         default_factory=lambda: list(DEFAULT_OUTPUT_PATTERNS)
+    )
+    intermediate_patterns: list[tuple[str, str]] = field(
+        default_factory=lambda: list(DEFAULT_INTERMEDIATE_PATTERNS)
     )
     blocked_count: int = 0
 
@@ -260,6 +412,10 @@ class GuardConfig:
                     config.output_patterns = [
                         (p["pattern"], p["reason"]) for p in overrides["output"]
                     ]
+                if "intermediate" in overrides:
+                    config.intermediate_patterns = [
+                        (p["pattern"], p["reason"]) for p in overrides["intermediate"]
+                    ]
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.warning("Failed to parse GUARDRAIL_BLOCK_PATTERNS: %s", e)
         return config
@@ -276,6 +432,9 @@ class GuardChecker:
         self._output_compiled = [
             (re.compile(p), reason) for p, reason in self.config.output_patterns
         ]
+        self._intermediate_compiled = [
+            (re.compile(p), reason) for p, reason in self.config.intermediate_patterns
+        ]
 
     def reload(self) -> None:
         """Reload config from env."""
@@ -285,6 +444,9 @@ class GuardChecker:
         ]
         self._output_compiled = [
             (re.compile(p), reason) for p, reason in self.config.output_patterns
+        ]
+        self._intermediate_compiled = [
+            (re.compile(p), reason) for p, reason in self.config.intermediate_patterns
         ]
 
     def check_input(self, message: str) -> GuardResult:
@@ -317,7 +479,13 @@ class GuardChecker:
         return GuardResult()
 
     def check_output(self, content: str) -> GuardResult:
-        """Check LLM response for system prompt leak or credentials."""
+        """Check LLM response for system prompt leak or credentials.
+
+        Gates the FINAL answer only: real secrets (credentials, bearer tokens,
+        credentialed DB URLs) block. PII email/phone patterns deliberately do
+        NOT run here — legitimate answers carry dates, article numbers and
+        contact emails; see DEFAULT_INTERMEDIATE_PATTERNS for the split.
+        """
         if not self.config.enabled:
             return GuardResult()
         if not content:
@@ -329,6 +497,34 @@ class GuardChecker:
                 self.config.blocked_count += 1
                 logger.warning(
                     "[GUARD] Matched output: %s (pattern: %s)",
+                    reason,
+                    compiled.pattern[:60],
+                )
+                return GuardResult(
+                    blocked=True,
+                    reason=reason,
+                    pattern=compiled.pattern,
+                )
+        return GuardResult()
+
+    def check_intermediate(self, content: str) -> GuardResult:
+        """Check intermediate data (raw tool results, tool arguments) for leaks.
+
+        Extends the output scan with PII patterns (email, tight phone formats).
+        Raw DB rows must not be readable from the browser's devtools via
+        tool_result/tool_call SSE events; the transcript keeps raw content, so
+        only the SSE event is redacted and answer quality is unaffected.
+        """
+        if not self.config.enabled:
+            return GuardResult()
+        if not content:
+            return GuardResult()
+        normalized = _normalize_for_guard(content)
+        for compiled, reason in self._intermediate_compiled:
+            if compiled.search(normalized):
+                self.config.blocked_count += 1
+                logger.warning(
+                    "[GUARD] Matched intermediate: %s (pattern: %s)",
                     reason,
                     compiled.pattern[:60],
                 )

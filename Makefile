@@ -1,4 +1,4 @@
-.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs ci-e2e ci-test-js ci-test-storefront
+.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs ci-e2e ci-test-js ci-test-storefront ci-trivy
 
 ci-lint-py:
 	uv run ruff check services/api-service/src/
@@ -14,6 +14,19 @@ ci-audit:
 	@echo ""
 	@echo "=== Go vulncheck (services/mcp-gateway) ==="
 	cd services/mcp-gateway && $$(go env GOPATH)/bin/govulncheck ./... 2>&1 | grep -E '(No vulnerabilities|Your code is affected|error)' || true
+
+# Docker image vulnerability scanning (pentest follow-up 2026-09-17).
+# Not part of `make ci`: requires a Docker daemon with the service images
+# already built (run `./infra/scripts/compose.sh --profile test build` first,
+# or point TRIVY_IMAGES at any tag set). Fails on HIGH/CRITICAL findings.
+TRIVY_IMAGES ?= helperium-api helperium-data helperium-rag helperium-mcp-gateway helperium-admin helperium-web
+ci-trivy:
+	@command -v trivy >/dev/null 2>&1 || { echo "❌ trivy not installed (brew install trivy)"; exit 1; }
+	@rc=0; for image in $(TRIVY_IMAGES); do \
+		echo "=== trivy scan: $$image ==="; \
+		trivy image --exit-code 1 --severity HIGH,CRITICAL --quiet $$image || rc=1; \
+	done; \
+	exit $$rc
 
 ci-test-py:
 	CORS_ALLOW_ORIGINS=http://localhost:8080 PYTHONPATH=$(PWD) uv run -- python -m pytest services/api-service/src/api_service/tests/ -v --tb=short

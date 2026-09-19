@@ -85,6 +85,9 @@ class _Guard:
     def check_output(self, _text):
         return _GuardResult()
 
+    def check_intermediate(self, _text):
+        return _GuardResult()
+
 
 class _Backlog:
     def __init__(self) -> None:

@@ -20,28 +20,35 @@ import pytest
 class TestDemoSettingsDefaults:
     """Без env vars — все дефолты.
 
-    NB: LiteLLM автоматически загружает .env при импорте —
-    очищаем ключи из .env для изоляции.
+    NB: LiteLLM загружает .env при импорте — в комбинированных прогонах
+    (api + demo в одном pytest-процессе) collection api-тестов успевает
+    внести .env-ключи в os.environ ДО импорта этого модуля. Поэтому
+    clean-env строится ЛЕНИВО в момент теста (после session-фикстуры
+    conftest.py, вычищающей .env-инъекции), а не class-attribute на
+    import-времени — иначе захваченный загрязнённый environ попадает
+    в patch.dict и ломает дефолт-ассерты.
     """
 
-    _CLEAN_ENV = {
-        k: v
-        for k, v in os.environ.items()
-        if k
-        not in (
-            "DEFAULT_TENANT_ID",
-            "DEMO_TENANTS",
-            "WEB_ORIGIN",
-            "CORS_ALLOW_ORIGINS",
-            "MISTRAL_API_KEY",
-            "MISTRAL_MODEL",
-        )
-    }
+    @staticmethod
+    def _clean_env() -> dict:
+        return {
+            k: v
+            for k, v in os.environ.items()
+            if k
+            not in (
+                "DEFAULT_TENANT_ID",
+                "DEMO_TENANTS",
+                "WEB_ORIGIN",
+                "CORS_ALLOW_ORIGINS",
+                "MISTRAL_API_KEY",
+                "MISTRAL_MODEL",
+            )
+        }
 
     def test_core_defaults(self):
         from demo.settings import DemoSettings
 
-        with patch.dict(os.environ, self._CLEAN_ENV, clear=True):
+        with patch.dict(os.environ, self._clean_env(), clear=True):
             s = DemoSettings()
             assert s.api_host == "127.0.0.1"
             assert s.api_port == 8081
@@ -54,7 +61,7 @@ class TestDemoSettingsDefaults:
         """Новые поля tenant-конфигурации — дефолты."""
         from demo.settings import DemoSettings
 
-        with patch.dict(os.environ, self._CLEAN_ENV, clear=True):
+        with patch.dict(os.environ, self._clean_env(), clear=True):
             s = DemoSettings()
             assert s.default_tenant_id == "default"
             assert s.demo_tenants == ""  # пустая строка = авто-дискавери

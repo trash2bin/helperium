@@ -1,0 +1,7 @@
+# Intentional fake credentials in security test fixtures. These strings MUST
+# look like real API keys for the guard tests to be meaningful (they assert
+# that key-shaped patterns are blocked/redacted). Not real secrets.
+services/api-service/src/api_service/tests/unit/test_guardrails_false_positive_regressions.py:generic-api-key:68
+services/api-service/src/api_service/tests/unit/test_guardrails_false_positive_regressions.py:generic-api-key:110
+services/api-service/src/api_service/tests/unit/agent/test_loop_intermediate_leak.py:generic-api-key:36
+services/api-service/src/api_service/tests/unit/agent/test_loop_intermediate_leak.py:generic-api-key:54
