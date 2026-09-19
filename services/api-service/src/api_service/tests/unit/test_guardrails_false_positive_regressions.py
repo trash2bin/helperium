@@ -104,6 +104,31 @@ class TestIntermediateSeparateScan:
             f"Дата в tool result заблокирована — ложное срабатывание: {result.reason!r}"
         )
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            '{"rows": [{"payment_date": "+15.09.2026"}]}',
+            '{"note": "доплата +15.09.2026", "status": "ok"}',
+        ],
+    )
+    def test_intermediate_plus_prefixed_dates_do_not_false_positive(
+        self, checker, text
+    ):
+        """Дата с ведущим '+' (пометка суммы/прироста) — не телефон.
+
+        ``\\+\\d[\\d\\s\\-().]{8,}\\d`` матчит «+15.09.2026» как телефон:
+        ``+1`` + разделители ``5.09.202`` + ``6``. Формат dd.mm.yyyy после
+        ``+`` исключается lookahead'ом.
+        """
+        result = checker.check_intermediate(text)
+        assert result.blocked is False, (
+            f"\n\n❌ FAIL: Дата с '+' заблокирована phone-паттерном.\n"
+            f"Input: {text!r}\n"
+            f"reason: {result.reason!r}\n"
+            f"Фикс: негативный lookahead (?!\\d{{1,2}}[./]\\d{{1,2}}[./]\\d{{2,4}}) "
+            f"после \\+ в первой альтернативе phone-паттерна."
+        )
+
     def test_intermediate_still_blocks_secrets(self, checker):
         """check_intermediate наследует credentials/bearer/DSN из output."""
         for text in [

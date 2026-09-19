@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from api_service.guardrails import GuardChecker, GuardConfig
@@ -21,7 +23,6 @@ def warn_checker():
     return GuardChecker(config=config)
 
 
-@pytest.mark.asyncio
 class TestGuardrails:
     """All guardrail test scenarios."""
 
@@ -187,3 +188,26 @@ class TestGuardrails:
         result = checker.check_output(content)
         # Russian text like ваш_ключ shouldn't match the 16-char min
         assert result.blocked is False
+
+
+class TestEnvOverrideFailsClosed:
+    """GUARDRAIL_BLOCK_PATTERNS replaces a pattern family wholesale.
+
+    Overriding "output" does not propagate into intermediate_patterns:
+    the intermediate scan keeps the compiled defaults (default output
+    patterns + PII), so an output override cannot re-open the tool-result
+    scan. Operators who ADD output patterns must add them to "intermediate"
+    explicitly — fail-closed by design.
+    """
+
+    def test_output_override_does_not_weaken_intermediate(self, monkeypatch):
+        monkeypatch.setenv("GUARDRAIL_BLOCK_PATTERNS", json.dumps({"output": []}))
+        checker = GuardChecker(GuardConfig.from_env())
+        key = "sk-test0123456789abcdefghij"
+        assert checker.check_output(f"key: {key}").blocked is False, (
+            "output:[] должен снять output-паттерны"
+        )
+        assert checker.check_intermediate(f"key: {key}").blocked is True, (
+            "intermediate при output:[] должен остаться на дефолтах "
+            "(fail-closed): ключ в tool result не должен протечь"
+        )

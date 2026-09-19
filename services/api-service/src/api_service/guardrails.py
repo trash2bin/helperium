@@ -197,12 +197,31 @@ def _normalize_whitespace(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", text)
 
 
+# ── HTML entity decoding ─────────────────────────────────────────────────
+def _decode_html_entities(text: str) -> str:
+    r"""Decode HTML entities iteratively (&#105; → i, &amp;#105; → i).
+
+    html.unescape is single-pass: "&amp;#105;" becomes "&#105;" and a literal
+    "&#105;" survives the guard, while a reader that applies entity decoding
+    again sees "i". Iterates until stable (bounded) so layered entity
+    wrappers cannot hide a keyword, mirroring the URL and escape decoders.
+    """
+    prev = None
+    result = text
+    for _ in range(5):  # max wrapper depth, consistent with _decode_escapes
+        if result == prev:
+            break
+        prev = result
+        result = html.unescape(result)
+    return result
+
+
 def _normalize_for_guard(text: str) -> str:
     r"""Full normalization pipeline for guard input/output.
 
     Order:
     1. Decode URL percent-encoding (%69 → i)
-    2. Decode HTML entities (&#105; → i, &amp → &)
+    2. Decode HTML entities iteratively (&#105; → i, &amp;#105; → i)
     3. Decode escape sequences (\x69 → i, \u0069 → i, etc.)
     4. Strip zero-width and invisible characters
     5. NFKC normalization (fullwidth, math alphanumerics, etc.)
@@ -211,8 +230,8 @@ def _normalize_for_guard(text: str) -> str:
     """
     # Step 1: URL encoding
     url_decoded = _decode_url_encoding(text)
-    # Step 2: HTML entities
-    html_decoded = html.unescape(url_decoded)
+    # Step 2: HTML entities (iterative — double-encoded wrappers must open)
+    html_decoded = _decode_html_entities(url_decoded)
     # Step 3: Escape sequences (iterative for double-encoding)
     escape_decoded = _decode_escapes(html_decoded)
     # Step 4: Strip zero-width/invisible chars
@@ -354,7 +373,9 @@ DEFAULT_INTERMEDIATE_PATTERNS: list[tuple[str, str]] = [
         "leak_pii_email",
     ),
     (
-        r"\+\d[\d\s\-().]{8,}\d"
+        # "+" + date-like shape (+15.09.2026, +5/9/26) is not a phone:
+        # the lookahead excludes dd.mm.yyyy before the digit run matches.
+        r"\+(?!\d{1,2}[./]\d{1,2}[./]\d{2,4})\d[\d\s\-().]{8,}\d"
         r"|\b\d{3}[\s\-.]\d{3}[\s\-.]\d{4}\b"
         r"|\b[78][\s\-().]?\d{3}[\s\-]?\d{3}[\s\-]\d{2}[\s\-]\d{2}\b",
         "leak_pii_phone",
@@ -416,6 +437,11 @@ class GuardConfig:
                     config.intermediate_patterns = [
                         (p["pattern"], p["reason"]) for p in overrides["intermediate"]
                     ]
+                # NB: each key replaces its family wholesale, and "output" does
+                # NOT propagate into intermediate_patterns — intermediate keeps
+                # the compiled defaults (default output + PII), so an output
+                # override cannot re-open the tool-result scan. Operators who
+                # ADD output patterns must add them to "intermediate" too.
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.warning("Failed to parse GUARDRAIL_BLOCK_PATTERNS: %s", e)
         return config
