@@ -716,7 +716,12 @@ class AppendOnlyLoop:
     def _redact_value(self, value: Any) -> Any:
         """Redact one argument value: str/dict/list at any nesting depth."""
         if isinstance(value, str):
-            if self._guard_checker.check_input(value).blocked:
+            result = self._guard_checker.check_input(value)
+            # A match is blocked OR warn-flagged: in warn mode check_input
+            # returns blocked=False with reason="warn:<tag>", and without the
+            # reason check the injection text would stream to the browser
+            # unredacted — inconsistent with the unconditional output side.
+            if result.blocked or result.reason.startswith("warn:"):
                 return ARGUMENT_BLOCKED_MARKER
             return value
         if isinstance(value, dict):

@@ -64,7 +64,10 @@ class _MCP:
 
 
 class _GuardResult:
+    # Mirrors the real GuardResult contract (blocked/reason) — the loop's
+    # warn-mode redaction reads reason.startswith("warn:").
     blocked = False
+    reason = ""
 
 
 class _Guard:

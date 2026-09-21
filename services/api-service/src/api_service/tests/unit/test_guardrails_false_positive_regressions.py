@@ -170,5 +170,41 @@ class TestUtf8MultiByteUrlEncoding:
         )
 
 
+# ── 4. Emoji ZWJ sequences and NBSP must survive the normalization ──────
+
+
+class TestEmojiAndNbspNoFalsePositives:
+    """Emoji ZWJ sequences and NBSP text must not be blocked.
+
+    Regression guard for the rule-based invisible-char stripping (2026-09
+    follow-up): the new rule strips category Cf (covers the manual list:
+    200B–200F, 202A–202E, 2060–2064, 00AD, 061C, FEFF) plus FE00–FE0F, plus
+    the two Cn-adjacent exceptions. Legitimate text — emoji joined with ZWJ
+    (family, flags), NBSP thousands separators — carries the same codepoints
+    and must keep passing (not blocked ≠ not stripped: normalization is only
+    for pattern matching, display is unaffected).
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Отличный товар 👨‍👩‍👧‍👦 рекомендую всем!",  # family emoji, ZWJ-joined
+            "Флаг России 🇷🇺 и флаг Германии 🇩🇪 в наличии.",  # flag pairs (RI+DE)
+            "Цена 1\u00a0500\u00a0руб., количество 1..99.",  # NBSP thousands separators
+            "Заказ от 15.09.2026 готов к выдаче ✅",  # date + emoji (VS16 not present)
+        ],
+    )
+    def test_emoji_and_nbsp_text_passes(self, checker, text):
+        result = checker.check_input(text)
+        assert result.blocked is False, (
+            f"\n\n❌ FAIL: Легитимный текст с emoji/NBSP заблокирован.\n"
+            f"Текст: {text!r}\n"
+            f"Normalized: {_normalize_for_guard(text)!r}\n"
+            f"reason: {result.reason!r}\n"
+            f"Фикс: правило стриппинга (Cf + FE00–FE0F + исключения) не должно "
+            f"превращать легитимный текст в блокировку."
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-x"])
