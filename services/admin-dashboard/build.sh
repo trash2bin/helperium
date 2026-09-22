@@ -4,6 +4,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# html-validate 11.x uses fs.globSync, which exists only since Node 22; on Node 20
+# the CLI dies with a cryptic "TypeError: fs.globSync is not a function". Fail with
+# the requirement instead. CI pins Node 22 for the same reason.
+node_major=$(node -p "process.versions.node.split('.')[0]")
+if [ "$node_major" -lt 22 ]; then
+  echo "Node >= 22 required, found $(node -v) (html-validate needs fs.globSync)" >&2
+  exit 1
+fi
+
 mkdir -p internal/server/static/dist
 
 echo "=== npm install (if needed) ==="

@@ -63,6 +63,38 @@ class DocumentationPathCheckerTests(unittest.TestCase):
         self.assertIn("path `design.md` not found (bare filename)", report)
         self.assertNotIn("путь", report)
 
+    def test_changelog_paths_are_not_validated(self):
+        """History is not a liveness claim: dead paths in CHANGELOG.md are not errors."""
+        root = self.with_temp_root()
+        (root / "AGENTS.md").write_text("# Project guide\n", encoding="utf-8")
+        (root / "CHANGELOG.md").write_text(
+            "- removed `doc/FINAL_TASK.md`\n- dropped `infra/scripts/gone.sh`\n",
+            encoding="utf-8",
+        )
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = checker.main()
+
+        report = output.getvalue()
+        self.assertEqual(status, 0, report)
+        self.assertNotIn("CHANGELOG.md", report)
+
+    def test_live_document_still_reports_dead_paths(self):
+        root = self.with_temp_root()
+        (root / "AGENTS.md").write_text("# Project guide\n", encoding="utf-8")
+        guide = root / "doc" / "guide.md"
+        guide.parent.mkdir(parents=True)
+        guide.write_text("Moved away from `doc/gone.md`.\n", encoding="utf-8")
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = checker.main()
+
+        report = output.getvalue()
+        self.assertEqual(status, 1)
+        self.assertIn("doc/guide.md: path `doc/gone.md` does not exist", report)
+
     def test_checker_source_contains_no_cyrillic_diagnostics(self):
         source = CHECKER_PATH.read_text(encoding="utf-8")
         self.assertIsNone(

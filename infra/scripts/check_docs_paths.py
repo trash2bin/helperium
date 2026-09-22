@@ -3,7 +3,9 @@
 
 The checker scans project documentation, validates Markdown links and inline
 file-like references, and ensures that live documentation is discoverable from
-AGENTS.md. Paths may resolve from either repository root or the source document.
+AGENTS.md. History is not validated: CHANGELOG.md is intentionally not scanned,
+so naming a deleted file there is fine (see DOC_GLOBS).
+Paths may resolve from either repository root or the source document.
 External URLs, anchors, glob/template patterns, and candidates containing spaces
 are ignored.
 
@@ -22,10 +24,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Documentation files considered live project documentation.
+# Documentation files considered live project documentation. CHANGELOG.md is
+# deliberately NOT in this list: every entry is a historical record, so the paths
+# it names (deleted files, renamed docs, one-off artifacts) are expected to be
+# dead, and validating them is a false positive by construction. Do not add it
+# back; a live document belongs in doc/, specs/, demo/ or a service README.
 DOC_GLOBS = [
     "AGENTS.md",
-    "CHANGELOG.md",
     "README.md",
     "doc/**/*.md",
     "services/**/README.md",

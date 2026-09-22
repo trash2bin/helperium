@@ -103,6 +103,11 @@ cd services/admin-dashboard && bash build.sh
 
 Lint срабатывает на собранном HTML (partials — фрагменты). `close-order` ловит ту же ошибку, что была — страницы, оказавшиеся вне `.app`.
 
+Требуется **Node ≥ 22**: `html-validate` 11.x зовёт `fs.globSync`, которого нет в
+Node 20 (`TypeError: fs.globSync is not a function`). `build.sh` проверяет версию
+первым делом и выходит с понятным сообщением, `package.json` объявляет
+`engines.node >= 22`, CI-джобы, собирающие фронт, пиннуют Node 22.
+
 #### Что из собранного в git, а что нет
 
 | Артефакт | В git | Почему |
@@ -122,6 +127,7 @@ Lint срабатывает на собранном HTML (partials — фраг�
 | Pre-commit `admin-dashboard JS tests` падает на bundle missing | хук `admin-dashboard-tests` (`.pre-commit-config.yaml`) гоняет `npm test` при изменениях в `src/`/`tests/`, а бандл не собран | `make build-admin` и повторить коммит |
 | Правка в `src/` не видна в UI | `dist/app.js` — артефакт, git о нём не напоминает | `make build-admin` + перезапуск admin-dashboard |
 | `html-validate` падает на `close-order` | блок оказался вне `.app` в `partials/` | сверить `app-open.html` / `app-close.html` и порядок в `build.sh` |
+| `TypeError: fs.globSync is not a function` | Node < 22: `html-validate` 11.x требует API `fs.globSync` | `nvm use 22` (или новее); `build.sh` теперь ловит это до линта |
 
 `make ci-admin` собирает ассеты первым шагом, поэтому локальный прогон не зависит
 от того, когда вы последний раз запускали `build.sh`. `make ci-e2e` тоже зависит
@@ -217,4 +223,4 @@ admin-dashboard:
 
 
 ---
-**Last verified:** 2026-09-22 (working tree following `2b83366`) — документированы сборка фронта, gitignored-бандл и режимы отказа (guard в `Dockerfile`, громкий `contract.test.js`, шаги сборки в CI). **Verification:** `make ci-admin` — Go 131 passed, vitest 75 passed; симуляция чистого чек-аута (бандл убран) — `contract.test.js` падает с `bundle missing`. Предыдущий marker: 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).
+**Last verified:** 2026-09-22 (working tree following `2b83366`) — документированы сборка фронта, gitignored-бандл и режимы отказа (guard в `Dockerfile`, громкий `contract.test.js`, шаги сборки в CI, требование Node ≥ 22). **Verification:** `make ci-admin` — Go 131 passed, vitest 75 passed; симуляция чистого чек-аута (бандл убран) — `contract.test.js` падает с `bundle missing`; падение CI показало, что Node 20 не тянет `html-validate` — локально воспроизведено (`node@20` → `fs.globSync` TypeError, `node@22` → проходит), джобы `test-admin-js`/`test-e2e` переведены на Node 22, версия закреплена в `build.sh` и `engines`.ндл убран) — `contract.test.js` падает с `bundle missing`. Предыдущий marker: 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).

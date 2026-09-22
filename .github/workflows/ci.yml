@@ -185,7 +185,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 22+: build.sh runs html-validate, whose CLI needs fs.globSync
+          # (Node 20 dies with "TypeError: fs.globSync is not a function").
+          node-version: "22"
       # build.sh also runs `go run ./cmd/gen-openapi/` (regenerates the admin
       # OpenAPI snapshot), so the host Go toolchain is part of this job.
       - uses: actions/setup-go@v5
@@ -219,7 +221,9 @@ jobs:
       # image ships a dashboard whose only script resolves to the SPA fallback.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 22+: build.sh runs html-validate (fs.globSync), same as the
+          # admin-dashboard job above.
+          node-version: "22"
       # build.sh calls `go run ./cmd/gen-openapi/` as well — host Go is required
       # even though the service images are built by docker below.
       - uses: actions/setup-go@v5
