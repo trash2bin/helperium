@@ -47,9 +47,29 @@ torch = { index = "pytorch-cpu" }
 torchvision = { index = "pytorch-cpu" }
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# setuptools (а не hatchling) — ради `package-dir`-маппинга ниже: он позволяет
+# объявить пакетом `rag` саму директорию сервиса, без переноса файлов в подпапку.
+# Hatchling так не может: editable-установка с `sources`-перезаписью префикса
+# (`sources` меняет префикс, а не убирает его) им прямо запрещена.
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["."]
-include = ["rag/**", "rag/fixtures/**"]
+[tool.setuptools]
+# `services/rag/*` — это и есть пакет `rag` (плоский layout). Без маппинга
+# установка выкладывает содержимое как верхнеуровневые модули (`config`,
+# `service`, `fixtures`…), и `import rag` не работает ни в console script,
+# ни в обычном `python -c`.
+packages = [
+    "rag",
+    "rag.cache",
+    "rag.chunker",
+    "rag.embedding",
+    "rag.fixtures",
+    "rag.parser",
+    "rag.pipeline",
+    "rag.reranker",
+    "rag.vector_store",
+]
+
+[tool.setuptools.package-dir]
+rag = "."

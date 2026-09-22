@@ -72,6 +72,13 @@ cd services/rag && uv run python -m rag.service
 ./infra/scripts/compose.sh up -d rag
 ```
 
+Пакет `rag` — это сама директория `services/rag` (плоский layout); установка
+маппит её в пакет `rag` через `[tool.setuptools.package-dir]` в `pyproject.toml`,
+поэтому `import rag`, `python -m rag.service` и console scripts работают
+нормально — без `PYTHONPATH` и без обёрток.
+Entry points: `agent-rag`, `agent-rag-ingest`, `agent-rag-docgen`, `agent-seedgen`
+(последний пишет `specs/fixtures/seed.json` в корне репозитория).
+
 ## Тестирование
 
 ```bash
@@ -126,4 +133,4 @@ curl -s -X POST http://127.0.0.1:8082/context \
 
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).
+**Last verified:** 2026-09-22 (working tree following `2b83366`) — добавлено описание плоского layout через [tool.setuptools.package-dir] (переход с hatchling на setuptools ради нормального импорта без PYTHONPATH). **Verification:** make ci зелёный (rag 115, sdk 87, openapi drift 3, admin Go 131 + vitest 75, embed 115, storefront OK, docs OK); import rag (cwd=/tmp, без PYTHONPATH) → services/rag/__init__.py.

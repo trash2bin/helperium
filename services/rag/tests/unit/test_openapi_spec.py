@@ -9,14 +9,17 @@ import yaml
 
 
 # Тесты запускаются через `uv run pytest` из корня репо — cwd == repo root.
-# Тесты запускаются через `uv run pytest` из корня репо — cwd == repo root.
+# Маркер корня — каталог, в котором есть и `specs/`, и `services/`: одного
+# `specs/` недостаточно. Служебный (gitignored) `specs/` может появиться
+# внутри дерева сервиса, и поиск "ближайшего specs" тогда уходит не в корень,
+# а в этот каталог — контракт сверялся бы с посторонней копией.
 def _find_project_root() -> Path:
     p = Path(__file__).resolve().parent
     for _ in range(10):
-        if (p / "specs").is_dir():
+        if (p / "specs").is_dir() and (p / "services").is_dir():
             return p
         p = p.parent
-    raise RuntimeError(f"Cannot find specs/ from {__file__}")
+    raise RuntimeError(f"Cannot find repo root (specs/ + services/) from {__file__}")
 
 
 SPEC_PATH = _find_project_root() / "specs" / "rag.openapi.yaml"

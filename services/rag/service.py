@@ -553,7 +553,7 @@ def _check_metrics_token(request: Request) -> None:
     if token == ADMIN_API_TOKEN:
         return
     auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer ") and auth[len("Bearer "):] == ADMIN_API_TOKEN:
+    if auth.startswith("Bearer ") and auth[len("Bearer ") :] == ADMIN_API_TOKEN:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

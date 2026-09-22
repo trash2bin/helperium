@@ -487,10 +487,10 @@ cmd_start() {
     local extra_env=""
     case "$svc" in
       rag)
-        # The RAG project currently has a flat package layout at services/rag.
-        # Add its parent only for this native process so `python -m rag.service`
-        # resolves deterministically without a user-managed PYTHONPATH workaround.
-        extra_env="RAG_PORT=$RAG_PORT RAG_IMPORT_ROOT=$PROJECT_ROOT/.data/rag-imports PYTHONPATH=$PROJECT_ROOT/services${PYTHONPATH:+:$PYTHONPATH}"
+        # Пакет `rag` — сама директория services/rag (плоский layout); установка
+        # маппит её в пакет `rag` через [tool.setuptools.package-dir], поэтому
+        # `python -m rag.service` резолвится без PYTHONPATH.
+        extra_env="RAG_PORT=$RAG_PORT RAG_IMPORT_ROOT=$PROJECT_ROOT/.data/rag-imports"
         # RAG admin ops (/documents/import|upload|delete, /admin/*) require
         # X-Admin-Token = ADMIN_API_TOKEN (fail-closed, pentest C2). Default to
         # ADMIN_TOKEN like .env.example does; keep dev dashboard upload working.

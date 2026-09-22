@@ -128,7 +128,11 @@ async def test_import_document_success(mock_state, tmp_path, monkeypatch):
     ) as ac:
         response = await ac.post(
             "/documents/import",
-            json={"path": str(tmp_path / "new.txt"), "discipline_id": "d1", "title": "New Doc"},
+            json={
+                "path": str(tmp_path / "new.txt"),
+                "discipline_id": "d1",
+                "title": "New Doc",
+            },
             headers={"X-Admin-Token": ADMIN_TEST_TOKEN},
         )
 
@@ -150,7 +154,11 @@ async def test_import_document_not_found(mock_state, tmp_path, monkeypatch):
     ) as ac:
         response = await ac.post(
             "/documents/import",
-            json={"path": str(tmp_path / "missing.txt"), "discipline_id": "d1", "title": "Title"},
+            json={
+                "path": str(tmp_path / "missing.txt"),
+                "discipline_id": "d1",
+                "title": "Title",
+            },
             headers={"X-Admin-Token": ADMIN_TEST_TOKEN},
         )
 

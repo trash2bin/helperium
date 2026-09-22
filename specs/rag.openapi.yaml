@@ -175,10 +175,10 @@ paths:
                 $ref: '#/components/schemas/AdminConfigResponse'
     put:
       summary: Обновить RAG-конфиг
-      description: Применяет новые параметры конфигурации RAG. После обновления сбрасывает
+      description: 'Применяет новые параметры конфигурации RAG. После обновления сбрасывает
         pipeline — новый pipeline создастся при следующем вызове get_pipeline() с
-        обновлённым конфигом. embedding_api_key не принимается (читается только из
-        env).
+        обновлённым конфигом. embedding_api_key: "***" = оставить текущий, пустая
+        строка = очистить, новое значение = применить.'
       operationId: admin_put_config_admin_config_put
       requestBody:
         content:
@@ -392,6 +392,13 @@ components:
           - type: string
           - type: 'null'
           title: Embedding Passage Prefix
+        embedding_api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Embedding Api Key
+          description: API-ключ эмбеддингов. Если прислать "***" — оставить текущий.
+            Если прислать пустую строку — очистить. Если прислать новый ключ — применить.
         embedding_api_base:
           anyOf:
           - type: string
@@ -479,7 +486,7 @@ components:
           title: Context Max Tokens
       type: object
       title: AdminConfigUpdateRequest
-      description: Обновление RAG-конфига (все поля опциональны, api_key не принимается).
+      description: Обновление RAG-конфига (все поля опциональны).
     AdminStatsResponse:
       properties:
         document_count:

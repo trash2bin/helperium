@@ -96,9 +96,7 @@ async def test_documents_delete_failclosed_without_token(mock_state):
 
 
 @pytest.mark.asyncio
-async def test_documents_import_failclosed_when_root_unset(
-    mock_state, monkeypatch
-):
+async def test_documents_import_failclosed_when_root_unset(mock_state, monkeypatch):
     """Без RAG_IMPORT_ROOT path-based import недоступен даже с токеном."""
     pipeline, _ = mock_state
     monkeypatch.delenv("RAG_IMPORT_ROOT", raising=False)

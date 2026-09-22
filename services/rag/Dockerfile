@@ -31,7 +31,6 @@ COPY --from=builder --chown=app:app /app/services/helperium-sdk /app/services/he
 
 
 ENV PATH=/app/.venv/bin:$PATH \
-    PYTHONPATH=/app/services:$PYTHONPATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/home/app \

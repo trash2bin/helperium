@@ -41,7 +41,12 @@ from rag.fixtures.catalog import (
 # specs/fixtures/seed.json — рядом с OpenAPI-схемами, как и другие
 # технические артефакты проекта. gitignore'd: регенерируется через
 # `uv run agent-seedgen` (детерминирован при --seed 42).
-SEED_PATH = Path(__file__).resolve().parents[2] / "specs" / "fixtures" / "seed.json"
+#
+# Глубина пути: fixtures → rag → services → корень репозитория. `parents[2]`
+# давал `services/`, и `agent-seedgen` писал файл в `services/specs/fixtures/`,
+# мимо всех потребителей (specs/fixtures/README.md, data-service --seed-path,
+# SDK-тест). Регрессия — services/rag/tests/unit/test_seedgen_path.py.
+SEED_PATH = Path(__file__).resolve().parents[3] / "specs" / "fixtures" / "seed.json"
 SEED_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
