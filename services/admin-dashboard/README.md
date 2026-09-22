@@ -86,16 +86,48 @@ admin-dashboard/
 
 ### Сборка (build.sh)
 
+Фронтенд админки — артефакт сборки, который вкомпилируется в Go-бинар через
+`//go:embed static` (`server.go`). Node нужен только на шаге сборки: ни в
+Docker-образ, ни в runtime он не попадает.
+
 ```bash
-cd admin-dashboard && bash build.sh
-# 1. tsc --noEmit          — typecheck
-# 2. cat partials/* > static/index.html — HTML сборка
-# 3. npx html-validate ... — HTML линтинг (close-order, no-raw-characters)
-# 4. Generate admin OpenAPI → static/openapi.json
-# 5. esbuild src/index.ts → static/dist/app.js
+make build-admin                 # из корня репо
+# или
+cd services/admin-dashboard && bash build.sh
+# 1. tsc --noEmit                       — typecheck
+# 2. cat partials/* > static/index.html — HTML сборка (16 partials)
+# 3. npx html-validate ...              — HTML линтинг (close-order, no-raw-characters)
+# 4. Generate admin OpenAPI            → static/openapi.json
+# 5. esbuild src/index.ts              → static/dist/app.js (+ app.js.map)
 ```
 
 Lint срабатывает на собранном HTML (partials — фрагменты). `close-order` ловит ту же ошибку, что была — страницы, оказавшиеся вне `.app`.
+
+#### Что из собранного в git, а что нет
+
+| Артефакт | В git | Почему |
+|---|---|---|
+| `internal/server/static/index.html` | да | собирается из `partials/`, но ревьюится в диффе целиком |
+| `internal/server/static/openapi.json` | да | генерится `cmd/gen-openapi`, сверяется `router_contract_test.go` |
+| `internal/server/static/dist/app.js` | **нет** (`dist/` в корневом `.gitignore`) | бандл меняется на каждой правке UI — шумный дифф |
+| `internal/server/static/dist/app.js.map` | нет | то же; карта нужна только для локальной отладки |
+
+#### Режимы отказа и что делать
+
+| Симптом | Причина | Решение |
+|---|---|---|
+| `docker build` падает: `missing internal/server/static/dist/app.js` | образ намеренно не собирает фронт (в нём нет node/npm) | `make build-admin`, затем `docker build` |
+| Дашборд пустой, в консоли `Uncaught SyntaxError: Unexpected token '<'` | образ собран без бандла: `index.html` грузит `/dist/app.js`, а SPA-fallback (`server.go`) отдаёт по этому пути HTML | `make build-admin` и пересобрать образ |
+| `contract.test.js`: `admin-dashboard bundle missing` | в чистом чек-ауте `dist/app.js` нет, а тест читает бандл, чтобы сверить вызовы API | `make build-admin`; в CI шаг сборки стоит до тестов |
+| Pre-commit `admin-dashboard JS tests` падает на bundle missing | хук `admin-dashboard-tests` (`.pre-commit-config.yaml`) гоняет `npm test` при изменениях в `src/`/`tests/`, а бандл не собран | `make build-admin` и повторить коммит |
+| Правка в `src/` не видна в UI | `dist/app.js` — артефакт, git о нём не напоминает | `make build-admin` + перезапуск admin-dashboard |
+| `html-validate` падает на `close-order` | блок оказался вне `.app` в `partials/` | сверить `app-open.html` / `app-close.html` и порядок в `build.sh` |
+
+`make ci-admin` собирает ассеты первым шагом, поэтому локальный прогон не зависит
+от того, когда вы последний раз запускали `build.sh`. `make ci-e2e` тоже зависит
+от `build-admin` — тестовый профиль собирает образ админки, а тот без бандла
+падает на guard'е. В CI `build.sh` идёт после `setup-node` **и** `setup-go`:
+скрипт, кроме esbuild, зовёт `go run ./cmd/gen-openapi/`.
 
 ---
 
@@ -159,6 +191,12 @@ cd admin-dashboard && bash build.sh     # 0 errors expected
 
 ## Docker
 
+Образ **не собирает фронтенд**: в нём нет node/npm, поэтому `Dockerfile` только
+копирует `internal/server/static/` и падает на guard'е
+(`RUN test -f internal/server/static/dist/app.js`), если бандла нет. Сборка — до
+`docker build`: `make build-admin`. В CI это отдельный шаг перед сборкой образов,
+поэтому `helperium-admin:latest` из чистого чек-аута несёт рабочий UI.
+
 ```yaml
 admin-dashboard:
   build: ./admin-dashboard
@@ -179,4 +217,4 @@ admin-dashboard:
 
 
 ---
-**Last verified:** 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).
+**Last verified:** 2026-09-22 (working tree following `2b83366`) — документированы сборка фронта, gitignored-бандл и режимы отказа (guard в `Dockerfile`, громкий `contract.test.js`, шаги сборки в CI). **Verification:** `make ci-admin` — Go 131 passed, vitest 75 passed; симуляция чистого чек-аута (бандл убран) — `contract.test.js` падает с `bundle missing`. Предыдущий marker: 2026-08-24 (working tree following `0add4ea`) — documentation restructure (P0-P5 sweep).

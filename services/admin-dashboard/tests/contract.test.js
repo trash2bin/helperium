@@ -298,9 +298,18 @@ domainFiles.forEach(function (f) {
 });
 
 const APP_JS_PATH = join(__dirname, '../internal/server/static/dist/app.js');
-if (existsSync(APP_JS_PATH)) {
-  allCalls = allCalls.concat(extractApiCalls(readFileSync(APP_JS_PATH, 'utf-8'), 'app.js'));
+// The bundle is a build artifact (gitignored `dist/`), so a clean checkout has no
+// app.js. Silently skipping the scan quietly drops the bundle from the contract
+// check — and a missing bundle also means the Docker image ships a dashboard
+// whose only script falls through to the SPA fallback (HTML parsed as JS).
+// Fail loudly: `make build-admin` (or `cd services/admin-dashboard && bash build.sh`).
+if (!existsSync(APP_JS_PATH)) {
+  throw new Error(
+    'admin-dashboard bundle missing: ' + APP_JS_PATH + '\n' +
+      'Run `make build-admin` (or `cd services/admin-dashboard && bash build.sh`) first.'
+  );
 }
+allCalls = allCalls.concat(extractApiCalls(readFileSync(APP_JS_PATH, 'utf-8'), 'app.js'));
 
 // Deduplicate
 const seen = {};

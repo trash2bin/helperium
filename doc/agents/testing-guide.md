@@ -13,6 +13,8 @@ make ci-docs         # links и AGENTS catalog coverage
 make ci              # полный локальный CI
 ```
 
+`make ci-admin` первым шагом собирает фронтенд админки (`build.sh`: partials → `index.html`, esbuild → `dist/app.js`), поэтому локальный прогон не зависит от того, когда вы последний раз запускали `build.sh`. Если `contract.test.js` падает с `admin-dashboard bundle missing` — бандл не собран: `make build-admin`. То же требование у `docker build` админки: образ фронт не собирает (нет node/npm) и падает на guard'е без бандла. Симптомы и решения — в [`services/admin-dashboard/README.md`](../../services/admin-dashboard/README.md).
+
 Для одного test file используй repository-root paths:
 
 ```bash
@@ -125,4 +127,4 @@ uv run pytest path/to/test.py::test_name -v --tb=long -s
 
 External/live LLM and browser checks are intentionally outside deterministic CI. Keep their credentials, budgets and target domains explicit; do not target `demo/autoparts-store` without separate approval.
 
-**Last verified:** 2026-08-31 (working tree after `f094429`, uncommitted audit-tail fixes on top). Clean Docker E2E last passed 138 tests with ci-state-init completing normally outside the terminal E2E lifecycle and explicit fail-closed CORS default; the test-profile compose wrapper now rebuilds service images on `up`/`run` (see above), and the e2e README AST counter stands at 148.
+**Last verified:** 2026-09-22 (working tree following `2b83366`) — в «Быстрые проверки» добавлено требование сборки фронта админки (`make build-admin`) перед contract-тестом и `docker build`. **Verification:** `make ci-admin` зелёный (Go 131 passed, vitest 75 passed); симуляция чистого чек-аута — `contract.test.js` падает с `bundle missing`. Предыдущий marker: 2026-08-31 (working tree after `f094429`, uncommitted audit-tail fixes on top) — clean Docker E2E 138 tests with ci-state-init completing normally outside the terminal E2E lifecycle and explicit fail-closed CORS default; test-profile compose wrapper rebuilds service images on `up`/`run`; e2e README AST counter 148.

@@ -186,9 +186,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # build.sh also runs `go run ./cmd/gen-openapi/` (regenerates the admin
+      # OpenAPI snapshot), so the host Go toolchain is part of this job.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
       - name: Install deps
         run: npm ci
         working-directory: services/admin-dashboard/tests
+      # The bundle is a build artifact (gitignored) and contract.test.js reads it;
+      # without this step the check cannot run in a clean checkout.
+      - name: Install admin-dashboard deps
+        run: npm ci
+        working-directory: services/admin-dashboard
+      - name: Build admin-dashboard bundle
+        run: bash build.sh
+        working-directory: services/admin-dashboard
       - name: Run vitest suites
         run: npm test
         working-directory: services/admin-dashboard/tests
@@ -199,6 +213,25 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      # The admin image embeds a gitignored frontend bundle and deliberately does
+      # not build it (no node/npm in the image). Build it here, otherwise the
+      # image ships a dashboard whose only script resolves to the SPA fallback.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # build.sh calls `go run ./cmd/gen-openapi/` as well — host Go is required
+      # even though the service images are built by docker below.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: Install admin-dashboard deps
+        run: npm ci
+        working-directory: services/admin-dashboard
+      - name: Build admin-dashboard bundle
+        run: bash build.sh
+        working-directory: services/admin-dashboard
 
       # ── Docker layer cache (type=gha) ──────────────────────────────
       # Общий слой кэшируется в GH Actions cache между runs → повторные

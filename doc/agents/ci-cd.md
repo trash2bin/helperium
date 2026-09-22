@@ -122,6 +122,18 @@ admin-dashboard/internal/server/static/
 2. **Contract-тесты** (`services/admin-dashboard/tests/contract.test.js`) — сканируют domain-модули и сверяют вызовы с 3 контрактными JSON (api-service, rag, admin endpoints).
 3. **Pre-commit хуки:** stale-бинарник и vitest при изменении `app.js`/domain-модулей.
 
+### Сборка фронта в CI
+
+Бандл админки (`internal/server/static/dist/app.js`) — gitignored артефакт, и
+образ его не собирает (в образе нет node/npm). Поэтому в `ci.yml` он собирается
+до всех потребителей:
+
+- **`test-admin-js`:** `npm ci` + `bash build.sh` в `services/admin-dashboard` **до** `npm test`. `contract.test.js` читает бандл; раньше отсутствие файла молча пропускалось через `if (existsSync(...))` — то есть в чистом чек-ауте CI тихо терял половину контрактной проверки (сканировались только `src/domains/*.ts`). Теперь тест падает с подсказкой `make build-admin`.
+- **`test-e2e`:** те же два шага до `docker/build-push-action` — иначе `helperium-admin:latest` собирается без бандла, `/dist/app.js` уходит в SPA-fallback (HTML вместо JS), и e2e гоняется против мёртвого UI.
+- **`Dockerfile`** закрывает третий случай (локальный `docker build` без сборки): guard `test -f internal/server/static/dist/app.js` валит сборку образа с инструкцией вместо тихой поломки.
+
+Диагностика и таблица симптомов — в [`services/admin-dashboard/README.md`](../../services/admin-dashboard/README.md) (разделы «Сборка» и «Docker»).
+
 ```bash
 make ci-admin
 cd admin-dashboard/tests && npm test
@@ -144,4 +156,4 @@ npx openapi-typescript specs/api.openapi.yaml -o admin-dashboard/internal/server
 3. [ ] e2e без LLM зелёные — native `./infra/scripts/dev.sh e2e` или documented two-stage Docker `up -d` + `run --rm e2e`
 4. [ ] Mutation score не упал (опционально)
 ---
-**Last verified:** 2026-09-15 (working tree, pentest follow-up) — добавлены джоба `test-storefront` и шаг node:test в `lint-js`; таблица джоб приведена к актуальному `ci.yml` (в неё же добавлены `docs-links`, `test-admin-js`, `test-embed`, ранее отсутствовавшие). Предыдущий marker: 2026-08-20 (working tree after `e839d6c`) — workflow запускает long-lived CI dependencies detached, then E2E as the sole terminal container; clean Docker profile passed 137 tests with explicit fail-closed CORS default.
+**Last verified:** 2026-09-22 (working tree following `2b83366`) — в секцию admin-dashboard добавлена сборка фронта в CI: шаг `build.sh` в `test-admin-js`/`test-e2e`, громкий `contract.test.js` вместо `if (existsSync(...))`, guard в `Dockerfile`. **Verification:** `make ci-admin` зелёный (Go 131 passed, vitest 75 passed); `ci.yml` — 10 джоб, порядок шагов `checkout → setup-node → npm ci → build.sh → docker build`. Предыдущий marker: 2026-09-15 (working tree, pentest follow-up) — добавлены джоба `test-storefront` и шаг node:test в `lint-js`; таблица джоб приведена к актуальному `ci.yml` (в неё же добавлены `docs-links`, `test-admin-js`, `test-embed`, ранее отсутствовавшие). Предыдущий marker: 2026-08-20 (working tree after `e839d6c`) — workflow запускает long-lived CI dependencies detached, then E2E as the sole terminal container; clean Docker profile passed 137 tests with explicit fail-closed CORS default.

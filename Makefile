@@ -1,4 +1,4 @@
-.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed ci-docs ci-e2e ci-test-js ci-test-storefront ci-trivy
+.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed build-admin ci-docs ci-e2e ci-test-js ci-test-storefront ci-trivy ci-admin
 
 ci-lint-py:
 	uv run ruff check services/api-service/src/
@@ -74,6 +74,8 @@ ci-test-storefront:
 	@echo "✅ Storefront OK"
 
 ci-admin:
+	@echo "=== Admin dashboard assets (partials → index.html + bundle) ==="
+	cd services/admin-dashboard && bash build.sh
 	@echo "=== Admin dashboard Go tests ==="
 	cd services/admin-dashboard && go test ./...
 	@echo "=== Admin dashboard JS tests ==="
@@ -100,7 +102,10 @@ ci-docs:
 # failures), runs the Docker SDK contract test, then the native E2E suite.
 # Not part of default `make ci` (requires Docker + stops dev services via
 # `dev.sh e2e-up`). Run before any demo: make ci-e2e
-ci-e2e:
+# The admin image embeds a gitignored frontend bundle (see services/admin-dashboard/
+# README, "Сборка"): the image does not build it, so the bundle must exist before
+# compose builds the images.
+ci-e2e: build-admin
 	@echo "=== E2E: rebuild test-profile images ==="
 	./infra/scripts/compose.sh --profile test build
 	@echo "=== E2E: start test profile ==="
@@ -117,6 +122,10 @@ build-embed:
 	cd services/api-service/embed && bash build.sh
 	./infra/scripts/dev.sh restart api
 	@echo "✅ Embed widget rebuilt + api-service restarted"
+
+build-admin: ## rebuild admin-dashboard assets (partials + bundle); required before docker build
+	cd services/admin-dashboard && bash build.sh
+	@echo "✅ Admin dashboard assets rebuilt"
 
 ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-lint-js ci-test-js ci-test-storefront ci-admin ci-test-embed ci-docs
 	@echo "✅ CI passed locally"
