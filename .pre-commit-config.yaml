@@ -4,9 +4,9 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --target-version, py313]
-        files: ^services/api-service/
+        files: ^services/(api-service|rag)/
       - id: ruff-format
-        files: ^api-service/
+        files: ^services/(api-service|rag)/
 
   - repo: local
     hooks:
@@ -14,7 +14,7 @@ repos:
         name: Biome JS lint
         entry: npx @biomejs/biome check
         language: system
-        files: ^(services/admin-dashboard/internal/server/static/.*\.js|services/api-service/embed/(src|tests)/.*\.js|demo/web/static/.*\.js)$
+        files: ^(services/admin-dashboard/(src|tests)/.*\.(js|ts)|services/admin-dashboard/internal/server/static/.*\.js|services/api-service/embed/(src|tests)/.*\.js|demo/web/static/.*\.js)$
         pass_filenames: false
 
   - repo: local

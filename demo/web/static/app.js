@@ -1005,10 +1005,6 @@ function handleEventChunk(chunk, target) {
   }
 }
 
-function appendAssistantToken(target, text) {
-  setAssistantText(target, `${target.dataset.raw || ""}${text}`);
-}
-
 function setAssistantText(target, raw) {
   clearAssistantThinking(target);
   target.dataset.raw = raw;

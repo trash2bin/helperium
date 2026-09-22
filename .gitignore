@@ -45,6 +45,7 @@ bench-backlog/
 .env.*
 *.egg-info
 dist/
+build/
 !services/api-service/embed/dist/
 context.md
 
@@ -101,7 +102,7 @@ playwright-report/
 .playwright-mcp
 
 # Admin audit logs (runtime artifact; dev spawns into internal/audit due to DATA_DIR path)
-admin-dashboard/internal/audit/
+services/admin-dashboard/internal/audit/
 
 # Symlinks to specs/
 services/api-service/specs
