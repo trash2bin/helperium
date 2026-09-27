@@ -122,6 +122,10 @@ jobs:
         run: uv run pytest services/agent-db/tests/test_bench_core.py -v --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}
+      - name: Run stress harness contract tests
+        run: uv run pytest "services/agent-db/tests/test_stress_"*.py -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}
       - name: Run repo maintenance script tests
         run: uv run pytest scripts/test_cleanup_stale_tenants.py -v --tb=short
         env:

@@ -60,7 +60,7 @@ Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding и
 | CI, local failures и E2E | `doc/agents/testing-guide.md` → `doc/agents/ci-cd.md` → `Makefile` |
 | Зависимости / uv lock / аудит CVE | `doc/dependency-index-traps.md` → `pyproject.toml` → `Makefile` (ci-audit, ci-e2e) |
 | Benchmark / answer quality | `doc/benchmark/README.md` → `doc/benchmark/core-benchmark.md` → `doc/benchmark/runs/README.md` |
-| Нагрузка, ёмкость, stress/soak | `doc/stress/README.md` (дизайн; харнесс не реализован — кода нет) → `doc/benchmark/README.md` (как устроен бенч-харнесс: lock, evidence, report) |
+| Нагрузка, ёмкость, stress/soak | `doc/stress/README.md` (дизайн + контрактный слой `agent_db/stress`; драйвера и лестницы нет — чисел нет) → `doc/benchmark/README.md` (как устроен бенч-харнесс: lock, evidence, report) |
 | Остатки демо-аудита / follow-up | `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md` → локальный untracked todo-файл в корне репозитория (рабочий список для агента-исполнителя, в git не входит) |
 | Operations / monitoring | `doc/agents/operations.md` → `doc/monitoring.md` → `infra/scripts/dev.sh` |
 | Product/demo readiness | Current code + recent CI/E2E evidence, затем dated audits (`doc/archive/product-demo-readiness-audit-2026-08-28-head-53a3172.md`, `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md`, `doc/archive/widget-demo-readiness-2026-09-01-head-f094429.md`) and `doc/archive/remediation-plan-2026-08-18.md` as historical context |

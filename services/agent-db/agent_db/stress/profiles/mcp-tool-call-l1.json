@@ -1,0 +1,24 @@
+{
+  "profile_version": 3,
+  "name": "mcp-tool-call-l1",
+  "target_layer": "L1",
+  "tenants": { "count": 4, "distribution": "round_robin", "scope": "separate" },
+  "sessions": {
+    "pool_size": 32,
+    "recycle_after_turns": 40,
+    "recycle_after_seconds": 1800,
+    "min_interval_ms": 1200
+  },
+  "arrival": { "model": "constant", "rps": 20, "duration_s": 300, "warmup_s": 60 },
+  "clients": { "source_ips": 1, "generators": 1 },
+  "workload": [
+    { "weight": 0.6, "name": "point_get", "tools": ["db_get"], "history_turns": 0 },
+    {
+      "weight": 0.4,
+      "name": "search",
+      "tools": ["db_search"],
+      "history_turns": 0
+    }
+  ],
+  "budget_preset": "off"
+}
