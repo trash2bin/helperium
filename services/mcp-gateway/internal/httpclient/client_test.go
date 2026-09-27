@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -493,5 +494,95 @@ func TestSSRF_New_LogsWarningForPrivateIP(t *testing.T) {
 	}
 	if c.baseURL != "http://127.0.0.1:8084" {
 		t.Errorf("baseURL = %q, want http://127.0.0.1:8084", c.baseURL)
+	}
+}
+
+// The manifest cache is what keeps a per-request config fetch off the tool-call
+// path. It had no test at all, which is how a gateway binary two months older
+// than the tree could answer a load run with a config fetch per request and
+// nobody notice: the point of these tests is that the hit count is observable
+// in the contract, not in a log line.
+func TestFetchConfigWithTenant_CachesTheManifestPerTenant(t *testing.T) {
+	hits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tenant := r.Header.Get("X-Tenant-ID")
+		hits[tenant]++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.baseURL = srv.URL
+
+	for i := 0; i < 3; i++ {
+		if _, err := c.FetchConfigWithTenant("t-1"); err != nil {
+			t.Fatalf("FetchConfigWithTenant() error = %v", err)
+		}
+	}
+	if _, err := c.FetchConfigWithTenant("t-2"); err != nil {
+		t.Fatalf("FetchConfigWithTenant(t-2) error = %v", err)
+	}
+
+	if hits["t-1"] != 1 {
+		t.Errorf("tenant t-1 fetched %d times, want 1: the manifest cache did not hold", hits["t-1"])
+	}
+	if hits["t-2"] != 1 {
+		t.Errorf("tenant t-2 fetched %d times, want 1: the cache must be per tenant", hits["t-2"])
+	}
+}
+
+func TestInvalidateManifestCacheForcesARefetch(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.baseURL = srv.URL
+
+	if _, err := c.FetchConfigWithTenant("t-1"); err != nil {
+		t.Fatalf("first fetch error = %v", err)
+	}
+	c.InvalidateManifestCache("t-1")
+	if _, err := c.FetchConfigWithTenant("t-1"); err != nil {
+		t.Fatalf("fetch after invalidation error = %v", err)
+	}
+	if hits != 2 {
+		t.Errorf("fetches = %d, want 2: invalidation must force a refetch", hits)
+	}
+
+	c.InvalidateManifestCache()
+	if _, err := c.FetchConfigWithTenant("t-1"); err != nil {
+		t.Fatalf("fetch after clearing every scope error = %v", err)
+	}
+	if hits != 3 {
+		t.Errorf("fetches = %d, want 3: clearing all scopes must force a refetch", hits)
+	}
+}
+
+func TestFetchConfigWithTenant_CacheExpiryRefetches(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.baseURL = srv.URL
+	c.manifestCacheTTL = 0
+
+	for i := 0; i < 2; i++ {
+		if _, err := c.FetchConfigWithTenant("t-1"); err != nil {
+			t.Fatalf("fetch error = %v", err)
+		}
+	}
+	if hits != 2 {
+		t.Errorf("fetches = %d, want 2: an expired entry must not be served", hits)
 	}
 }

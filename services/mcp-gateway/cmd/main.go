@@ -335,13 +335,16 @@ func newMCPServer(tenantScope string) *server.MCPServer {
 
 // createServerForTenant creates a per-tenant MCP server with unprefixed tools.
 func createServerForTenant(tenantID string) (*server.MCPServer, error) {
-	slog.Info("Fetching config for tenant", "tenantID", tenantID)
+	// "Resolving", not "fetching": FetchConfigWithTenant serves this from its TTL
+	// cache on every call after the first, and a log that says "fetching" per
+	// request reads as a per-request cost that is not being paid.
+	slog.Info("Resolving tenant config", "tenantID", tenantID)
 	cfg, err := globalClient.FetchConfigWithTenant(tenantID)
 	if err != nil {
-		slog.Error("Failed to fetch config", "tenantID", tenantID, "error", err)
+		slog.Error("Failed to resolve tenant config", "tenantID", tenantID, "error", err)
 		return nil, err
 	}
-	slog.Info("Config fetched, creating server", "tenantID", tenantID)
+	slog.Info("Config resolved, creating server", "tenantID", tenantID)
 	mcpServer := newMCPServer(tenantID)
 	slog.Info("Creating registry", "tenantID", tenantID)
 	registry := tools.NewTenantRegistry(cfg, tenantID)
@@ -364,10 +367,10 @@ func createCompositeServer(tenantIDs []string) (*server.MCPServer, error) {
 	composite := newMCPServer(strings.Join(tenantIDs, ","))
 
 	for _, tenantID := range tenantIDs {
-		slog.Info("Fetching config for tenant", "tenantID", tenantID)
+		slog.Info("Resolving tenant config", "tenantID", tenantID)
 		cfg, err := globalClient.FetchConfigWithTenant(tenantID)
 		if err != nil {
-			slog.Error("Failed to fetch config", "tenantID", tenantID, "error", err)
+			slog.Error("Failed to resolve tenant config", "tenantID", tenantID, "error", err)
 			return nil, err
 		}
 

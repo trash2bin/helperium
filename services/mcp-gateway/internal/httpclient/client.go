@@ -268,13 +268,19 @@ func (c *Client) FetchConfig() (*config.Config, error) {
 }
 
 func (c *Client) FetchConfigWithTenant(tenantID string) (*config.Config, error) {
-	// Check TTL cache first
+	// Check TTL cache first. The hit/miss decision is logged here, where it is
+	// made: callers that log "fetching config" before calling in cannot tell a
+	// cache hit from a fetch, and a report read of a log full of "fetching"
+	// lines once concluded the gateway fetched the manifest per request while
+	// the cache was in fact serving.
 	c.manifestCacheMu.RLock()
 	if cached, ok := c.manifestCache[tenantID]; ok && time.Now().Before(cached.exp) {
 		c.manifestCacheMu.RUnlock()
+		slog.Debug("manifest cache hit", "tenant_id", tenantID)
 		return cached.cfg, nil
 	}
 	c.manifestCacheMu.RUnlock()
+	slog.Debug("manifest cache miss", "tenant_id", tenantID)
 
 	u := c.baseURL + "/mcp/manifest"
 
