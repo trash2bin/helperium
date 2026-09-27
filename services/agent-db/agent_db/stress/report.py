@@ -44,6 +44,13 @@ COLUMNS: tuple[str, ...] = (
     "lag_p99",
     "verdict",
     "environment_hash",
+    # Extensions beyond the §10 metric list: they are what tells a rung that held
+    # at the nominal pool apart from one that needed a wider pool, and what the
+    # generator cost while it measured. Without them the "invalid stage is an
+    # action" record of §2 leaves no trace in the artefact.
+    "pool_expansions",
+    "dropped_ticks",
+    "spin_tail_ms",
 )
 
 # Metrics a layer cannot produce in phase 1, and why. Kept next to the columns so
@@ -55,7 +62,16 @@ UNAVAILABLE_PHASE_1: dict[str, str] = {
     "sut_cpu": "server CPU comes from cgroup slices, collected separately",
     "generator_cpu": "cpu time is measured per stage by the harness",
     "platform_overhead_p95": "needs LLM timings to subtract (phase 2)",
+    "pool_expansions": "pool growth is recorded per rung",
+    "dropped_ticks": "tick accounting is recorded per rung",
+    "spin_tail_ms": "the calibrated tail is recorded per rung",
 }
+
+# Layers whose turns contain no model latency, so the platform overhead *is* the
+# compensated turn latency (§1 for L1; §7 explicitly allows t_complete on L2,
+# where the stub is instant). On any other layer the value has to come from
+# per-request LLM timings, and an empty cell says so instead of guessing.
+LAYER_HAS_NO_LLM_IN_TURN = ("L1", "L2")
 
 # Columns whose emptiness is a property of the layer, not of the tooling.
 LAYER_UNAVAILABLE: dict[str, dict[str, str]] = {
@@ -76,7 +92,6 @@ def stage_row(
     scope: str,
     environment_hash: str,
     layer: str,
-    platform_overhead_p95: float | None = None,
 ) -> dict[str, Any]:
     """One table row, with ``None`` where the layer has no such quantity."""
     stats = stage.stats
@@ -90,13 +105,19 @@ def stage_row(
         "p95": round(stats.p95, 2),
         "p99": round(stats.p99, 2),
         "err_pct": round(stats.error_rate * 100, 3),
-        # On L1 there is no LLM latency to subtract, so platform_overhead *is* the
-        # compensated turn latency (§1). Asserting that here, instead of relying on
-        # a caller to pass the same number, keeps the identity in one place.
+        # Per stage, never a run-wide constant: stages differ in how much of the
+        # turn was the model's, and §7 judges this column. Where a driver supplied
+        # per-request LLM timings the value comes from the stage; on the layers
+        # where nothing else happens inside the turn the identity with the
+        # compensated percentile is asserted here, per layer, by name.
         "platform_overhead_p95": (
-            round(platform_overhead_p95, 2)
-            if platform_overhead_p95 is not None
-            else (round(stats.compensated_p95, 2) if layer == "L1" else None)
+            round(stats.platform_overhead_p95, 2)
+            if stats.platform_overhead_p95 is not None
+            else (
+                round(stats.compensated_p95, 2)
+                if layer in LAYER_HAS_NO_LLM_IN_TURN
+                else None
+            )
         ),
         "platform_overhead_model_p95": None,
         "stub_queue_wait_p95": None,
@@ -110,11 +131,23 @@ def stage_row(
         "sut_cpu": None,
         # The generator is part of the instrument, so its own CPU is measured
         # rather than assumed: a rung bought with a saturated generator is a
-        # number about the generator.
+        # number about the generator. The denominator is the whole stage, the
+        # same one the saturation gate uses.
+        # ``is not None`` rather than truthiness: a measured 0.0 is a measurement,
+        # and collapsing it into an empty cell would print "n/a" next to a reason
+        # claiming the number is not collected yet - a false statement.
         "generator_cpu": (
-            round(stage.cpu_s / stage.measured_duration_s * 100, 2)
-            if stage.cpu_s and stage.measured_duration_s
+            round(
+                (stage.cpu_measured_s or stage.cpu_s) / stage.measured_window_s * 100,
+                2,
+            )
+            if stage.measured_window_s
             else None
+        ),
+        "pool_expansions": stage.pool_expansions,
+        "dropped_ticks": stage.dropped_ticks,
+        "spin_tail_ms": (
+            round(stage.spin_tail_ms, 3) if stage.spin_tail_ms is not None else None
         ),
         "lag_p99": round(stage.tick_lag_p99, 3),
         "verdict": stage.verdict,
@@ -180,6 +213,20 @@ def interpretation_notes(result: LadderResult, manifest: RunManifest) -> list[st
                 f"{stage.pool_expansions} pool expansion(s) and produced no verdict: "
                 + "; ".join(stage.invalid_reasons)
             )
+        elif stage.pool_expansions:
+            # A valid rung that needed a wider pool is not the same evidence as
+            # one that held at the nominal width (§2: invalid is an action).
+            notes.append(
+                f"stage {stage.target_rps:.0f} rps passed only after "
+                f"{stage.pool_expansions} pool expansion(s), to {stage.workers} "
+                "workers: its verdict holds at that width, not at the nominal one"
+            )
+        if stage.stats.error_mix:
+            # §3: the report must separate working degradation from real refusals,
+            # and that is a property of the stage, not only of the invalid ones.
+            notes.append(
+                f"stage {stage.target_rps:.0f} rps error mix: {stage.stats.error_mix}"
+            )
     if result.stages and result.stages[-1].verdict == "invalid" and result.knee:
         # The rung above the knee never produced a verdict, so the knee is the
         # last rate that was *shown* to be held - not the last rate the platform
@@ -190,10 +237,20 @@ def interpretation_notes(result: LadderResult, manifest: RunManifest) -> list[st
             f"invalid, so the knee {result.knee.rate:.0f} rps is a LOWER BOUND: the "
             "platform was never shown to fail above it"
         )
-        if stage.valid and stage.stats.error_mix:
+    if result.knee and result.knee.rate and result.knee.bracket is None:
+        if result.stages and result.stages[-1].verdict == "pass":
             notes.append(
-                f"stage {stage.target_rps:.0f} rps errors: {stage.stats.error_mix}"
+                f"the ladder's top rung ({result.knee.rate:.0f} rps) passed, so the "
+                "knee is a LOWER BOUND at the top of the ladder: no rung above it "
+                "was ever run, and the platform was never shown to fail"
             )
+    headline = result.headline()
+    if headline and headline["runs_discarded"]:
+        notes.append(
+            f"{headline['runs_discarded']:.0f} of {headline['runs_requested']:.0f} "
+            "knee runs were invalid and left out of the median: the headline rests "
+            "on the valid ones only (§2)"
+        )
     return notes
 
 
@@ -203,7 +260,6 @@ def build_report(
     manifest: RunManifest,
     scope: str,
     profile_path: str | None = None,
-    platform_overhead_p95: float | None = None,
     wall_clock_s: float | None = None,
 ) -> dict[str, Any]:
     """Machine-readable verdict and evidence summary (``report.json``)."""
@@ -215,7 +271,6 @@ def build_report(
             scope=scope,
             environment_hash=environment_hash,
             layer=result.target_layer,
-            platform_overhead_p95=platform_overhead_p95,
         )
         for stage in result.stages
     ]
@@ -267,20 +322,15 @@ def _fmt(value: Any) -> str:
     return str(value)
 
 
-MARKDOWN_COLUMNS: tuple[str, ...] = (
-    "target_rps",
-    "achieved_rps",
-    "p50",
-    "p95",
-    "p99",
-    "err_pct",
-    "platform_overhead_p95",
-    "lag_p99",
-    "verdict",
-    "environment_hash",
-)
+# The human-readable table carries every reportable column, because §10's whole
+# point is that two runs are compared by looking at them: a column that exists
+# only in report.json is a column nobody compares. Empty cells print as ``n/a``
+# and are explained in the section below the table.
+MARKDOWN_COLUMNS: tuple[str, ...] = COLUMNS
 
 HEADERS: dict[str, str] = {
+    "profile": "profile",
+    "scope": "scope",
     "target_rps": "target rps",
     "achieved_rps": "achieved",
     "p50": "p50",
@@ -288,9 +338,19 @@ HEADERS: dict[str, str] = {
     "p99": "p99",
     "err_pct": "err%",
     "platform_overhead_p95": "overhead p95",
+    "platform_overhead_model_p95": "overhead model p95",
+    "stub_queue_wait_p95": "stub queue p95",
+    "mcp_lock_wait_p95": "mcp lock p95",
+    "prompt_tokens_p50": "prompt tokens p50",
+    "terminator_mix": "terminator mix",
+    "sut_cpu": "SUT CPU",
+    "generator_cpu": "gen CPU %",
     "lag_p99": "lag p99",
     "verdict": "verdict",
     "environment_hash": "env hash",
+    "pool_expansions": "pool x",
+    "dropped_ticks": "dropped",
+    "spin_tail_ms": "spin tail ms",
 }
 
 
@@ -369,7 +429,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Evidence",
         "",
-        "Raw per-request records live in `raw/<stage>.jsonl`; the profile snapshot, "
+        "Raw per-request records live in `raw/<rps>-run<k>-attempt<n>.jsonl` - one "
+        "file per rung attempt and per knee repeat, so the headline median can be "
+        "recomputed from the evidence it claims to come from. The profile snapshot, "
         "the manifest and this report sit next to them (§10).",
         "",
     ]

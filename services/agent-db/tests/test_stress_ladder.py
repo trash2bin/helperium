@@ -8,6 +8,7 @@ import pytest
 
 from agent_db.stress.ladder import (
     DEFAULT_RATES,
+    JUDGED_METRIC_READY_LAYERS,
     LAYER_T_BUDGET_MS,
     LadderError,
     LadderPlan,
@@ -35,29 +36,41 @@ def make_result(
     dropped: int = 0,
     lag_ms: float = 0.2,
     cpu_s: float = 0.0,
+    cpu_measured_s: float | None = None,
 ) -> StageResult:
-    """A synthetic stage: every measured turn has the same latency."""
-    count = spec.total_ticks - spec.warmup_ticks
+    """A synthetic stage where every planned tick ran, warm-up included.
+
+    Records cover the whole stage because that is what the runner returns and
+    what the §3 accounting check verifies; the measured subset is derived from
+    the same warm-up definition the runner uses.
+    """
+    ran = spec.total_ticks - dropped
     records = []
-    for index in range(count):
-        record = RawRequestRecord(
-            planned_ms=index * spec.interval_ms + spec.warmup_s * 1000.0,
-            started_ms=index * spec.interval_ms + spec.warmup_s * 1000.0,
-            actual_ms=latency_ms,
-            t_complete=latency_ms,
+    for index in range(ran):
+        planned = index * spec.interval_ms
+        records.append(
+            RawRequestRecord(
+                planned_ms=planned,
+                started_ms=planned,
+                actual_ms=latency_ms,
+                t_complete=latency_ms,
+            )
         )
-        if index < errors:
-            record.status = "error"
-            record.error_class = ErrorClass.OTHER
-        records.append(record)
+    measured = [r for r in records if r.planned_ms >= spec.warmup_s * 1000.0]
+    for record in measured[:errors]:
+        record.status = "error"
+        record.error_class = ErrorClass.OTHER
     return StageResult(
         spec=spec,
-        stats=summarise(records, spec.measured_duration_s),
+        stats=summarise(measured, spec.measured_window_s),
         records=records,
-        tick_lag_ms=[lag_ms] * count,
+        tick_lag_ms=[lag_ms] * len(records),
         dropped_ticks=dropped,
-        warmup_ticks=spec.warmup_ticks,
+        warmup_ticks=len(records) - len(measured),
         cpu_s=cpu_s,
+        # A fake's CPU figure is a measured-window figure unless it says otherwise:
+        # that is the quantity the saturation gate judges.
+        cpu_measured_s=cpu_s if cpu_measured_s is None else cpu_measured_s,
     )
 
 
@@ -82,8 +95,8 @@ class FakeRunner:
         assert workers is not None
         self.calls.append((spec.target_rps, workers))
         rps = spec.target_rps
-        # 1.5% of one core, the shape a real generator reports.
-        cpu = round(spec.measured_duration_s * 0.015, 6)
+        # 1.5% of one core inside the measured window, the gate's denominator.
+        cpu = round(spec.measured_window_s * 0.015, 6)
         if self.always_dropping:
             return make_result(spec, dropped=3, cpu_s=cpu)
         latency = self.latency_for(rps) if self.latency_for else 5.0
@@ -139,18 +152,25 @@ class TestLadderPlanValidation:
         assert ladder.t_budget_ms == LAYER_T_BUDGET_MS["L1"] == 50.0
         assert ladder.duration_s == profile.arrival.duration_s
 
-    def test_a_layer_without_a_default_budget_is_refused(self, profile):
-        # L4 has no documented T, and an invented one produces a verdict with no
-        # basis; the caller has to supply it.
-        layer_four = profile.model_copy(update={"target_layer": "L4"})
-        with pytest.raises(LadderError, match="no default T"):
-            LadderPlan.for_profile(layer_four)
+    def test_a_layer_without_a_judged_metric_is_refused(self, profile):
+        # §7 judges platform_overhead, and on L3 the harness cannot separate the
+        # platform's work from the model's response time. Judging an L3 rung on
+        # the turn latency would fail an honest 2.5 s model and call it a
+        # platform verdict, so the ladder refuses instead of producing it.
+        layer_three = profile.model_copy(update={"target_layer": "L3"})
+        with pytest.raises(LadderError, match="cannot be judged yet"):
+            LadderPlan.for_profile(layer_three)
 
-    def test_l4_is_accepted_with_an_explicit_budget(self, profile):
+    def test_l4_is_refused_even_with_an_explicit_budget(self, profile):
+        # L4 additionally has no documented T; the metric is the more fundamental
+        # obstacle, so that is the refusal the caller sees.
         layer_four = profile.model_copy(update={"target_layer": "L4"})
-        assert (
-            LadderPlan.for_profile(layer_four, t_budget_ms=3000.0).t_budget_ms == 3000.0
-        )
+        with pytest.raises(LadderError, match="cannot be judged yet"):
+            LadderPlan.for_profile(layer_four, t_budget_ms=3000.0)
+
+    def test_l2_is_accepted_because_its_substrate_is_instant(self, profile):
+        layer_two = profile.model_copy(update={"target_layer": "L2"})
+        assert LadderPlan.for_profile(layer_two).t_budget_ms == 500.0
 
     def test_budget_preset_on_refuses_a_ladder(self, profile):
         with pytest.raises(LadderError, match="budget_preset"):
@@ -214,11 +234,14 @@ class TestKneeSearch:
         assert result.status == "below_first_rung"
         assert result.knee is None
 
-    def test_every_rung_passing_leaves_the_top_as_a_bracket(self, profile):
+    def test_every_rung_passing_leaves_the_top_as_a_lower_bound(self, profile):
+        # Nothing above the top rung was ever run, so there is no bracket: a
+        # zero-width one would claim the ceiling is exactly that rate.
         runner = FakeRunner(passing_rps=1000.0)
-        result = run(profile, runner, plan=plan(rates=(5.0, 10.0)))
+        result = run(profile, runner, plan=plan(rates=(5.0, 10.0), repeats=2))
         assert result.knee.rate == 10.0
-        assert result.knee.bracket == (10.0, 10.0)
+        assert result.knee.bracket is None
+        assert len(result.repeats) == 1, "the top rung is repeated like any knee"
 
     def test_an_error_rate_above_the_budget_fails_even_with_good_latency(self, profile):
         runner = FakeRunner(
@@ -288,7 +311,9 @@ class TestGeneratorSaturation:
                 self.calls.append((spec.target_rps, workers))
                 return make_result(
                     spec,
-                    cpu_s=spec.measured_duration_s * 0.95,
+                    # Saturated inside the measured window: that is what the gate
+                    # judges, and what must not be answered with more workers.
+                    cpu_s=spec.measured_window_s * 0.95,
                     dropped=5,
                 )
 
@@ -314,13 +339,45 @@ class TestGeneratorSaturation:
         assert result.stages[0].pool_expansions == 1
 
 
+class TestLayerFence:
+    def test_a_hand_built_plan_cannot_run_an_unjudgeable_layer(self, profile):
+        # The fence in LadderPlan.for_profile is not enough: a CLI or soak driver
+        # builds LadderPlan directly, and the outcome was the one the fence exists
+        # to prevent - an honest 2.5 s model reported as a platform failure.
+        layer_three = profile.model_copy(update={"target_layer": "L3"})
+        with pytest.raises(LadderError, match="cannot be judged yet"):
+            run_ladder(
+                runner=FakeRunner(passing_rps=1000.0),
+                plan=LadderPlan(
+                    rates=(5.0,), t_budget_ms=500.0, duration_s=2.0, warmup_s=0.5
+                ),
+                workload=WorkloadPlan.from_profile(profile),
+                profile=layer_three,
+                tenants=["t-1"],
+            )
+
+    def test_a_budget_preset_of_on_is_still_refused_at_run_time(self, profile):
+        with pytest.raises(LadderError, match="budget_preset"):
+            run_ladder(
+                runner=FakeRunner(passing_rps=1000.0),
+                plan=plan(rates=(5.0,)),
+                workload=WorkloadPlan.from_profile(profile),
+                profile=profile.model_copy(update={"budget_preset": "on"}),
+                tenants=["t-1"],
+            )
+
+    def test_l3_keeps_its_documented_budget_for_the_day_it_becomes_plannable(self):
+        assert LAYER_T_BUDGET_MS["L3"] == 500.0
+        assert "L3" not in JUDGED_METRIC_READY_LAYERS
+
+
 class TestEvidenceSink:
     def test_every_rung_hands_its_raw_records_to_the_sink(self, profile):
         seen: list[tuple[float, int]] = []
         runner = FakeRunner(passing_rps=25.0)
 
-        def sink(outcome, stage):
-            seen.append((outcome.target_rps, len(stage.records)))
+        def sink(outcome, stage, ticket):
+            seen.append((outcome.target_rps, len(stage.records), ticket.label()))
 
         result = run_ladder(
             runner=runner,
@@ -330,8 +387,36 @@ class TestEvidenceSink:
             tenants=["t-1"],
             on_stage=sink,
         )
-        assert [rps for rps, _ in seen] == [s.target_rps for s in result.stages]
-        assert all(count > 0 for _, count in seen)
+        assert [rps for rps, _, _ in seen] == [s.target_rps for s in result.stages]
+        assert all(count > 0 for _, count, _ in seen)
+        # Every rung files its own evidence, and the label says which run it is:
+        # without that, raw/<rps>.jsonl mixes repeats that cannot be untangled.
+        assert all(label.endswith("attempt0") for _, _, label in seen)
+
+    def test_each_attempt_and_repeat_files_its_own_evidence(self, profile):
+        labels: list[str] = []
+
+        class StarvedRunner(FakeRunner):
+            def run(self, spec, plan_, *, tenants, workers=None):
+                if len(self.calls) == 0:
+                    self.calls.append((spec.target_rps, workers))
+                    return make_result(spec, dropped=4, cpu_s=0.1)
+                return super().run(spec, plan_, tenants=tenants, workers=workers)
+
+        run_ladder(
+            runner=StarvedRunner(passing_rps=1000.0),
+            plan=plan(rates=(5.0,), repeats=3, max_pool_expansions=2),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=profile,
+            tenants=["t-1"],
+            on_stage=lambda outcome, stage, ticket: labels.append(ticket.label()),
+        )
+        assert labels == [
+            "5rps-run0-attempt0",
+            "5rps-run0-attempt1",
+            "5rps-run1-attempt0",
+            "5rps-run2-attempt0",
+        ]
 
     def test_a_ladder_without_a_sink_still_works(self, profile):
         runner = FakeRunner(passing_rps=25.0)
@@ -345,7 +430,29 @@ class TestRepeats:
         assert len(result.repeats) == 2
         headline = result.headline()
         assert headline["runs"] == 3
+        assert headline["runs_requested"] == 3
         assert headline["p95_min"] <= headline["p95_median"] <= headline["p95_max"]
+
+    def test_an_invalid_rung_above_the_knee_is_still_repeated(self, profile):
+        # This is the path of §10's own worked example, and it used to return
+        # before repeating: the headline would rest on a single run while
+        # report.json advertised repeats=3.
+        class HalfBrokenRunner(FakeRunner):
+            def run(self, spec, plan_, *, tenants, workers=None):
+                if spec.target_rps > 5.0:
+                    self.calls.append((spec.target_rps, workers))
+                    return make_result(spec, dropped=2, cpu_s=0.5)
+                return super().run(spec, plan_, tenants=tenants, workers=workers)
+
+        result = run(
+            profile,
+            HalfBrokenRunner(passing_rps=1000.0),
+            plan=plan(rates=(5.0, 10.0), repeats=3),
+        )
+        assert result.status == "knee_found"
+        assert result.knee.bracket is None
+        assert len(result.repeats) == 2
+        assert result.headline()["runs"] == 3
 
     def test_a_single_run_still_reports_its_own_measurement(self, profile):
         runner = FakeRunner(passing_rps=1000.0)

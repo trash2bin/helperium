@@ -15,9 +15,9 @@ whole interval.
 
 A late tick is not the same as a missed slot. Being a few milliseconds late is
 normal and is exactly what the CO compensation in :mod:`agent_db.stress.records`
-corrects for; a tick whose planned time is already more than one interval in the
-past cannot be run late without silently re-timing the stage, so it is dropped
-and counted. Any dropped tick invalidates the stage (§3), and the answer is a
+corrects for; a tick whose planned time is a whole interval or more in the past
+cannot be run late without silently re-timing the stage, so it is dropped and
+counted. Any dropped tick invalidates the stage (§3), and the answer is a
 bigger pool, not a lower rate.
 """
 
@@ -110,6 +110,17 @@ class StageSpec:
                 f"warmup_s ({self.warmup_s}) must be shorter than duration_s "
                 f"({self.duration_s}): otherwise the stage measures nothing"
             )
+        if self.warmup_ticks >= self.total_ticks:
+            # The declared warm-up is shorter than the stage but covers every tick
+            # of it (warm-up within one interval of the end): the measured window
+            # would be empty and the failure would surface as a bare ValueError in
+            # the middle of a rung, after the stand had already been asked to run.
+            raise ValueError(
+                f"warm-up covers all {self.total_ticks} tick(s) of a "
+                f"{self.duration_s} s stage at {self.target_rps} rps "
+                f"(ceil({self.warmup_s} x {self.target_rps}) = {self.warmup_ticks}): "
+                "the measured window would be empty"
+            )
 
     @property
     def interval_ms(self) -> float:
@@ -125,8 +136,26 @@ class StageSpec:
 
     @property
     def warmup_ticks(self) -> int:
-        """Ticks whose planned time falls inside the warm-up window."""
-        return min(int(self.warmup_s * self.target_rps), self.total_ticks)
+        """Ticks whose planned time falls inside the warm-up window.
+
+        Ceiled, and this is the *only* definition: the measured-window
+        denominator and the ``planned_ms >= warmup`` filter both derive from it.
+        A floored version disagreed with the filter by one tick, and the
+        discrepancy made ``achieved_rps`` fall short of the target on short
+        stages - a rung that executed every tick exactly on schedule could fail
+        the ``achieved >= 0.98 x target`` half of §7.
+        """
+        return min(math.ceil(self.warmup_s * self.target_rps), self.total_ticks)
+
+    @property
+    def measured_window_s(self) -> float:
+        """Wall time the measured ticks span: ``(total - warmup) / rps``.
+
+        ``duration - warmup`` is the wall clock of the stage, but the ticks are
+        integral: the rate a stage that ran every tick on schedule achieved is
+        exactly ``rps`` only when the denominator is built from the tick count.
+        """
+        return (self.total_ticks - self.warmup_ticks) / self.target_rps
 
 
 @dataclass
@@ -148,21 +177,39 @@ class StageResult:
     # is part of the instrument, so its cost is evidence rather than trivia: a
     # stage measured by a saturated generator is a stage about the generator.
     cpu_s: float = 0.0
+    # CPU spent inside the measured window only, sampled when the first measured
+    # tick starts. The whole-stage figure cannot judge saturation: with a 300 s
+    # stage and a 60 s warm-up, a generator burning 0.85 cores per measured second
+    # averages 0.68 over the stage and would escape the gate - and then be
+    # answered with the pool doubling the gate exists to prevent.
+    cpu_measured_s: float = 0.0
+    # Worker threads report here instead of dying silently: a raised driver or
+    # transport error would otherwise lose its remaining tickets and quietly
+    # shrink the sample (the accounting check in ``is_valid`` is the net).
+    worker_failures: list[str] = field(default_factory=list)
 
     @property
     def tick_lag_p99(self) -> float:
         return percentile(self.tick_lag_ms, 0.99) if self.tick_lag_ms else 0.0
 
     @property
-    def cpu_utilisation(self) -> float:
-        """Generator CPU spent per second of measured stage time, in cores."""
-        measured = self.spec.measured_duration_s
-        return self.cpu_s / measured if measured > 0 else 0.0
+    def cpu_share(self) -> float:
+        """Generator CPU per second of the *measured window*, in cores.
+
+        Both halves come from the measured window, so neither dilutes nor inflates
+        the ratio: the CPU clock is sampled when the first measured tick starts
+        (not at the stage boundary, which would charge warm-up work to the measured
+        ticks) and the denominator is the window the ticks span. The whole-stage
+        ``cpu_s`` stays available for the run artefact so a reader can rebuild
+        either figure.
+        """
+        window = self.spec.measured_window_s
+        return self.cpu_measured_s / window if window > 0 else 0.0
 
     @property
     def generator_bound(self) -> bool:
         """True when the instrument, not the platform, was the bottleneck."""
-        return self.cpu_utilisation >= GENERATOR_CPU_LIMIT
+        return self.cpu_share >= GENERATOR_CPU_LIMIT
 
     @property
     def accounted_ticks(self) -> int:
@@ -171,18 +218,34 @@ class StageResult:
 
     @property
     def is_valid(self) -> bool:
-        """§3 and §10: no dropped tick, and the generator stayed on schedule."""
+        """§3 and §10: every tick accounted for, none dropped, the generator on schedule.
+
+        The accounting check is not decoration: ``invalid_reasons()`` reports
+        unaccounted ticks, and a validity rule that ignored its own report could
+        publish a rung whose sample shrank because a worker died.
+        """
         if self.generator_bound:
             return False
-        return self.dropped_ticks == 0 and self.tick_lag_p99 < LAG_INVALID_MS
+        if self.worker_failures:
+            return False
+        if self.dropped_ticks:
+            return False
+        if self.tick_lag_p99 >= LAG_INVALID_MS:
+            return False
+        return self.accounted_ticks == self.spec.total_ticks
 
     def invalid_reasons(self) -> list[str]:
         reasons = []
         if self.generator_bound:
             reasons.append(
-                f"generator CPU {self.cpu_utilisation * 100:.0f}% of one core >= "
+                f"generator CPU {self.cpu_share * 100:.0f}% of one core during the "
+                f"measured window >= "
                 f"{GENERATOR_CPU_LIMIT * 100:.0f}%: the instrument saturated, so the "
                 "latency measured here is partly its own queue"
+            )
+        if self.worker_failures:
+            reasons.extend(
+                f"worker failure: {failure}" for failure in self.worker_failures
             )
         if self.dropped_ticks:
             reasons.append(f"{self.dropped_ticks} dropped tick(s)")
@@ -191,8 +254,13 @@ class StageResult:
                 f"generator lag p99 {self.tick_lag_p99:.1f} ms >= {LAG_INVALID_MS} ms"
             )
         actual = len(self.records) + self.dropped_ticks
-        if actual != self.spec.total_ticks:
+        if actual < self.spec.total_ticks:
             reasons.append(f"{self.spec.total_ticks - actual} tick(s) unaccounted for")
+        elif actual > self.spec.total_ticks:
+            reasons.append(
+                f"{actual - self.spec.total_ticks} tick(s) more than the "
+                f"{self.spec.total_ticks} planned"
+            )
         return reasons
 
     def meets(self, t_budget_ms: float, max_error_rate: float = 0.01) -> bool:
@@ -250,6 +318,31 @@ class _WorkerBuffer:
     lag_ms: list[float] = field(default_factory=list)
     dropped: int = 0
     reinitialisations: int = 0
+    failures: list[str] = field(default_factory=list)
+
+
+class _WarmupBoundary:
+    """Samples the CPU clock when the first measured tick is about to run.
+
+    The whole-stage CPU figure cannot judge saturation (warm-up dilutes it) and a
+    monitor thread or a timed read would fight the injected clock the tests use.
+    Reading the clock at the boundary costs one call, needs no thread, and lands
+    on the moment the measured window starts.
+    """
+
+    def __init__(self, cpu_clock: Callable[[], float], warmup_ms: float) -> None:
+        self._cpu_clock = cpu_clock
+        self._warmup_ms = warmup_ms
+        self._lock = threading.Lock()
+        self.cpu_at_boundary: float | None = None
+
+    def note(self, planned_ms: float) -> None:
+        """Called by a worker before a turn; the first measured tick wins."""
+        if planned_ms < self._warmup_ms or self.cpu_at_boundary is not None:
+            return
+        with self._lock:
+            if self.cpu_at_boundary is None:
+                self.cpu_at_boundary = self._cpu_clock()
 
 
 class _Schedule:
@@ -332,41 +425,59 @@ class StageRunner:
         # few hundred ms, and doing that after the start would make the first
         # ticks late and drop them (measured: 9 dropped ticks at 20 rps).
         tail_ms = self._tail_ms(interval / 1000.0 * worker_count)
-        started = self.clock()
-        cpu_before = self.clock_cpu()
         warmup_ms = spec.warmup_s * 1000.0
+
+        boundary = _WarmupBoundary(self.clock_cpu, warmup_ms)
 
         def worker(worker_id: int) -> None:
             session = sessions[worker_id]
             buffer = buffers[worker_id]
-            while True:
-                index = schedule.next_index()
-                if index is None:
-                    return
-                planned_ms = index * interval
-                wait = planned_ms - (self.clock() - started) * 1000.0
-                if wait > 0:
-                    self._wait_until(planned_ms, started, tail_ms)
-                now_ms = (self.clock() - started) * 1000.0
-                buffer.lag_ms.append(now_ms - planned_ms)
-                if now_ms - planned_ms >= interval:
-                    # Running this tick now would re-time the stage: the slot is
-                    # gone, and calling it "late but fine" would hide the fact
-                    # that the generator, not the platform, set the ceiling.
-                    buffer.dropped += 1
-                    continue
-                execution = self.driver.execute_turn(
-                    session,
-                    plan.step_for(index),
-                    planned_ms=planned_ms,
-                    started_ms=now_ms,
-                    tenant=session.tenant,
-                    scenario=plan.scenario,
-                )
-                buffer.records.append(execution.record)
-                buffer.calls.extend(execution.calls)
-                buffer.reinitialisations += execution.reinitialisations
+            # Workers are created before the stage clock starts and released only
+            # after it is read: with a 168-worker pool, starting threads inside
+            # the stage would spend 20-30 ms of it, and at 160 rps that lateness
+            # lands inside the warm-up where it invalidates the rung for no
+            # reason but our own startup. Being late is not the same as being
+            # unable to keep up.
+            gate.wait()
+            try:
+                while True:
+                    index = schedule.next_index()
+                    if index is None:
+                        return
+                    planned_ms = index * interval
+                    wait = planned_ms - (self.clock() - started) * 1000.0
+                    if wait > 0:
+                        self._wait_until(planned_ms, started, tail_ms)
+                    now_ms = (self.clock() - started) * 1000.0
+                    buffer.lag_ms.append(now_ms - planned_ms)
+                    if now_ms - planned_ms >= interval:
+                        # Running this tick now would re-time the stage: the slot
+                        # is gone, and calling it "late but fine" would hide the
+                        # fact that the generator, not the platform, set the
+                        # ceiling.
+                        buffer.dropped += 1
+                        continue
+                    boundary.note(planned_ms)
+                    execution = self.driver.execute_turn(
+                        session,
+                        plan.step_for(index),
+                        planned_ms=planned_ms,
+                        started_ms=now_ms,
+                        tenant=session.tenant,
+                        scenario=plan.scenario,
+                    )
+                    buffer.records.append(execution.record)
+                    buffer.calls.extend(execution.calls)
+                    buffer.reinitialisations += execution.reinitialisations
+            except BaseException as exc:  # noqa: BLE001 - reported as invalidity
+                # A worker that dies must not look like a stage that finished:
+                # its remaining tickets would simply never be claimed, and the
+                # accounting check turns that into an invalid rung.
+                buffer.failures.append(f"{type(exc).__name__}: {exc}")
+                worker_errors.append(exc)
 
+        worker_errors: list[BaseException] = []
+        gate = threading.Event()
         threads = [
             threading.Thread(
                 target=worker, args=(index,), name=f"stress-worker-{index}"
@@ -375,8 +486,12 @@ class StageRunner:
         ]
         for thread in threads:
             thread.start()
+        started = self.clock()
+        cpu_before = self.clock_cpu()
+        gate.set()
         for thread in threads:
             thread.join()
+        cpu_after = self.clock_cpu()
         for session in sessions:
             self.driver.close_session(session)
 
@@ -387,6 +502,12 @@ class StageRunner:
         lag.sort()
         measured = [record for record in records if record.planned_ms >= warmup_ms]
         if not measured:
+            if worker_errors:
+                # The explanation is a dead worker, not the warm-up: with a
+                # single worker its death leaves no one to claim the measured
+                # ticks, and "no measured ticks" would blame the profile for a
+                # failure the driver caused.
+                raise worker_errors[0]
             raise ValueError(
                 f"stage {spec.target_rps} rps produced no measured ticks: "
                 f"warm-up covers {spec.warmup_ticks} of {spec.total_ticks} ticks"
@@ -394,7 +515,7 @@ class StageRunner:
 
         return StageResult(
             spec=spec,
-            stats=summarise(measured, spec.measured_duration_s),
+            stats=summarise(measured, spec.measured_window_s),
             records=records,
             calls=calls,
             tick_lag_ms=lag,
@@ -402,7 +523,15 @@ class StageRunner:
             reinitialisations=sum(buffer.reinitialisations for buffer in buffers),
             warmup_ticks=len(records) - len(measured),
             spin_tail_ms=tail_ms,
-            cpu_s=self.clock_cpu() - cpu_before,
+            cpu_s=cpu_after - cpu_before,
+            cpu_measured_s=(
+                cpu_after - boundary.cpu_at_boundary
+                if boundary.cpu_at_boundary is not None
+                else cpu_after - cpu_before
+            ),
+            worker_failures=[
+                failure for buffer in buffers for failure in buffer.failures
+            ],
         )
 
     def _open_sessions(
@@ -458,7 +587,10 @@ class StageRunner:
         unrelated probe misleads in both directions: a 5 ms probe on Darwin
         reports ~2.5 ms while a 20 ms wait actually wakes ~10 ms late. The probe
         is therefore the wait a worker will really take (``interval x workers``),
-        bounded so a wide pool does not turn calibration itself into a stage.
+        clamped to ``CALIBRATION_PROBE_CAP_S`` (50 ms) because realistic rungs
+        ask for far longer sleeps (168 workers at 160 rps wait ~1 s) and probing
+        a full second per sample would cost more than the stage it is preparing.
+        The result is cached for the whole run, so later rungs reuse it.
 
         Calibration is per run, not per tick: the overshoot is a property of the
         ``sleep`` implementation and the host's timer coalescing, both stable

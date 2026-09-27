@@ -203,6 +203,45 @@ class TestSummarise:
         assert half.meets(t_budget_ms=50.0, target_rps=50.0) is True
         assert half.meets(t_budget_ms=50.0, target_rps=100.0) is False
 
+    def test_platform_overhead_excludes_the_model_latency(self) -> None:
+        # L3 shape: a 2.5 s turn of which 2.4 s is the model being honest. §7
+        # judges the platform's own work, so the model must not fail the stage.
+        records = [_record(actual_ms=2500.0, t_complete=2500.0) for _ in range(20)]
+        stats = summarise(records, duration_s=1.0, llm_latency_ms=[2400.0] * 20)
+        assert stats.platform_overhead_p95 == pytest.approx(100.0)
+        assert stats.t_complete_p95 == pytest.approx(2500.0)
+        assert stats.meets(t_budget_ms=500.0) is True, (
+            "honest model latency must not fail a stage"
+        )
+
+    def test_without_llm_timings_no_overhead_is_fabricated(self) -> None:
+        # summarise cannot know whether the stage had a model, so it does not fill
+        # in the identity: a fabricated overhead on a layer with a real LLM would
+        # be a wrong verdict wearing the right column name.
+        records = [
+            _record(planned_ms=0.0, started_ms=300.0, actual_ms=40.0) for _ in range(10)
+        ]
+        stats = summarise(records, duration_s=1.0)
+        assert stats.platform_overhead_p95 is None
+        # The fallback the criterion uses where nothing else happens inside the
+        # turn (L1, L2) is the compensated percentile, and it is still open-loop.
+        assert stats.compensated_p95 == pytest.approx(340.0)
+        assert stats.meets(t_budget_ms=400.0) is True
+        assert stats.meets(t_budget_ms=300.0) is False
+
+    def test_a_verdict_uses_the_overhead_not_the_turn_latency(self) -> None:
+        records = [_record(actual_ms=900.0, t_complete=900.0) for _ in range(20)]
+        assert summarise(records, duration_s=1.0).meets(t_budget_ms=500.0) is False
+        with_llm = summarise(records, duration_s=1.0, llm_latency_ms=[850.0] * 20)
+        assert with_llm.meets(t_budget_ms=500.0) is True
+        assert with_llm.compensated_p95 == pytest.approx(900.0)
+
+    def test_per_request_llm_timings_must_match_the_records(self) -> None:
+        with pytest.raises(ValueError, match="must line up"):
+            summarise(
+                [_record() for _ in range(3)], duration_s=1.0, llm_latency_ms=[1.0]
+            )
+
     def test_missing_llm_metrics_do_not_fabricate_zero(self) -> None:
         stats = summarise([_record()], duration_s=1.0)
         assert stats.t_complete_p95 is None

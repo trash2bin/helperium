@@ -217,18 +217,113 @@ class TestWorkloadPlan:
             WorkloadPlan([], scenario="sqlite-testseed")
 
 
+class TestAccounting:
+    def test_a_worker_that_dies_does_not_look_like_a_finished_stage(self) -> None:
+        # A raised driver error used to lose the worker's remaining tickets
+        # silently, and the accounting check that reports them was not part of
+        # is_valid - so a shrunken sample could still be published as a pass.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=1.0)
+        original = driver.execute_turn
+
+        state = {"raised": False}
+
+        def exploding(session, step, **kwargs):
+            # Exactly one worker dies, so the survivor claims the remaining
+            # tickets and the stage completes as an invalid rung.
+            if not state["raised"] and len(driver.turns) >= 2:
+                state["raised"] = True
+                raise RuntimeError("driver gave up")
+            return original(session, step, **kwargs)
+
+        driver.execute_turn = exploding  # type: ignore[method-assign]
+        # Two workers, so the survivor claims the dead worker's tickets and the
+        # stage completes as an *invalid* rung instead of a ValueError.
+        result = StageRunner(
+            driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0
+        ).run(spec(), plan(), tenants=["t-1", "t-1"], workers=2)
+        assert result.worker_failures
+        assert result.is_valid is False
+        assert any("worker failure" in reason for reason in result.invalid_reasons())
+
+    def test_a_lone_worker_dying_reports_its_own_error(self) -> None:
+        # With one worker there is nobody left to claim the measured ticks; the
+        # failure must surface as the driver error, not as "the warm-up covered
+        # the whole stage", which would blame the profile for it.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=1.0)
+
+        def exploding(session, step, **kwargs):
+            raise RuntimeError("driver gave up")
+
+        driver.execute_turn = exploding  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="driver gave up"):
+            StageRunner(driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0).run(
+                spec(), plan(), tenants=["t-1"]
+            )
+
+    def test_unaccounted_ticks_are_invalid_not_just_reported(self) -> None:
+        stage = StageRunner(
+            FakeDriver(VirtualClock()), clock=VirtualClock(), spin_wait_s=0.0
+        ).run(spec(), plan(), tenants=["t-1"])
+        stage.dropped_ticks = 0
+        stage.records = stage.records[:-1]
+        assert stage.accounted_ticks != stage.spec.total_ticks
+        assert stage.is_valid is False
+        assert any("unaccounted" in reason for reason in stage.invalid_reasons())
+
+    def test_more_records_than_planned_ticks_is_worded_as_an_overshoot(self) -> None:
+        # The count goes negative for an overshoot, and the string is spliced
+        # verbatim into the report: "-3 tick(s) unaccounted for" reads as a broken
+        # instrument, not as the arithmetic it is.
+        stage = StageRunner(
+            FakeDriver(VirtualClock()), clock=VirtualClock(), spin_wait_s=0.0
+        ).run(spec(), plan(), tenants=["t-1"])
+        stage.records = stage.records + stage.records
+        assert stage.is_valid is False
+        assert any(
+            "more than the 5 planned" in reason for reason in stage.invalid_reasons()
+        )
+
+
+class TestWarmupArithmetic:
+    def test_warmup_ticks_are_ceiled_so_the_filter_agrees_with_the_flag(self) -> None:
+        stage_spec = spec(rps=5.0, duration_s=4.0, warmup_s=1.5)
+        assert stage_spec.total_ticks == 20
+        # ceil(7.5): the tick planned exactly at 1.5 s is a warm-up tick, and the
+        # measured window is built from the same number.
+        assert stage_spec.warmup_ticks == 8
+        assert stage_spec.measured_window_s == pytest.approx(2.4)
+
+    def test_a_stage_that_ran_every_tick_reports_the_target_rate(self) -> None:
+        # With the floored warm-up count this was 12 / 2.5 s = 4.8 rps, i.e. below
+        # the 0.98 x 5 = 4.9 gate in §7, and a perfectly on-schedule rung failed.
+        clock = VirtualClock()
+        stage_spec = spec(rps=5.0, duration_s=4.0, warmup_s=1.5)
+        result = StageRunner(
+            FakeDriver(clock, turn_ms=1.0),
+            clock=clock,
+            sleeper=clock.sleep,
+            spin_wait_s=0.0,
+        ).run(stage_spec, plan(), tenants=["t-1"])
+        assert result.stats.achieved_rps == pytest.approx(5.0)
+        assert result.meets(t_budget_ms=50.0) is True
+
+
 class TestGeneratorSaturation:
-    def test_a_cpu_starved_generator_invalidates_the_stage(self) -> None:
-        # 90% of a core spent by the instrument: the latency measured here is
-        # partly the generator's own queue, so the rung has no verdict.
+    def test_a_generator_that_saturated_only_while_measuring_is_caught(self) -> None:
+        # 0.1 CPU-s during the warm-up, 1.35 during the measured window: with a
+        # whole-stage denominator this stage averaged well under the gate, and a
+        # generator saturated while measuring would then be answered with the pool
+        # doubling the gate exists to prevent.
         clock = VirtualClock()
         driver = FakeDriver(clock)
         reads = {"n": 0}
 
         def cpu_clock() -> float:
-            # The runner reads the CPU clock once before the stage and once after.
+            # Three reads: before the stage, at the warm-up boundary, and after.
             reads["n"] += 1
-            return 0.0 if reads["n"] == 1 else 1.35
+            return {1: 0.0, 2: 0.10, 3: 1.45}[reads["n"]]
 
         runner = StageRunner(
             driver,
@@ -239,8 +334,12 @@ class TestGeneratorSaturation:
         )
         stage_spec = spec()
         result = runner.run(stage_spec, plan(), tenants=["t-1"])
-        assert result.cpu_utilisation == pytest.approx(
-            1.35 / stage_spec.measured_duration_s, rel=0.01
+        # Both halves are the measured window: the sample is taken when the first
+        # measured tick starts, and the denominator is the window those ticks span.
+        assert result.cpu_measured_s == pytest.approx(1.35)
+        assert result.cpu_s == pytest.approx(1.45)
+        assert result.cpu_share == pytest.approx(
+            1.35 / stage_spec.measured_window_s, rel=0.01
         )
         assert result.generator_bound is True
         assert result.is_valid is False
@@ -487,13 +586,23 @@ class TestStageRun:
         result = StageResult(spec=spec(), stats=stats_ok(), records=[])
         assert any("unaccounted" in reason for reason in result.invalid_reasons())
 
-    def test_a_stage_without_measured_ticks_is_refused(self) -> None:
+    def test_a_spec_whose_warmup_covers_every_tick_is_refused_up_front(self) -> None:
+        # Warm-up shorter than the stage but covering all of its ticks: the
+        # measured window would be empty. Refusing in the spec keeps the failure
+        # from surfacing as a bare ValueError in the middle of a rung, after the
+        # stand has already been put to work.
+        with pytest.raises(ValueError, match="measured window would be empty"):
+            spec(rps=1.0, duration_s=1.0, warmup_s=0.5)
+
+    def test_a_stage_whose_measured_ticks_all_dropped_is_refused(self) -> None:
         clock = VirtualClock()
-        driver = FakeDriver(clock)
-        # warm-up covers every tick: nothing is left to measure.
+        # One worker whose single turn outlasts the whole stage: every measured
+        # tick is more than an interval late, so all of them are dropped and there
+        # is nothing to summarise.
+        driver = FakeDriver(clock, turn_ms=3000.0)
         with pytest.raises(ValueError, match="no measured ticks"):
             virtual_runner(driver, clock).run(
-                spec(rps=1.0, duration_s=1.0, warmup_s=0.5), plan(), tenants=["t-1"]
+                spec(rps=5.0, duration_s=1.0, warmup_s=0.4), plan(), tenants=["t-1"]
             )
 
     def test_tenants_and_workers_are_validated(self) -> None:

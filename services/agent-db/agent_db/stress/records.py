@@ -142,6 +142,12 @@ class StageStats:
     compensated_p95: float
     t_complete_p95: float | None
     prompt_tokens_p50: float | None
+    # The metric §7 actually judges: t_complete minus the LLM latency the turn
+    # spent. Computed per stage (never stamped from one run-wide value), because
+    # a single number cannot describe stages with different LLM shares. Where
+    # the layer has no LLM, the identity to ``compensated_p95`` is asserted by
+    # ``summarise`` rather than assumed by its callers.
+    platform_overhead_p95: float | None = None
     terminator_mix: dict[str, int] = field(default_factory=dict)
     error_mix: dict[str, int] = field(default_factory=dict)
 
@@ -156,16 +162,27 @@ class StageStats:
         *,
         target_rps: float | None = None,
     ) -> bool:
-        """The capacity criterion (§7): p95 within budget and errors under 1%.
+        """The capacity criterion (§7): overhead p95 within budget, errors under 1%.
 
-        The percentile is the CO-compensated one, because this is an open-loop
-        test: a generator that fell behind would otherwise understate latency and
-        the knee would look better than it is (§2). When ``target_rps`` is given
-        the stage must also have achieved 98% of it, which is the other half of
-        the same criterion - a rung that silently ran fewer turns than asked is
-        not evidence that the rate was held.
+        The judged percentile is ``platform_overhead_p95`` - the platform's own
+        work - because a stage must not fail for the model's honest latency (§7:
+        "критерий ёмкости - platform_overhead, а не t_complete"). When no overhead
+        could be computed the fallback is the compensated turn latency, which is
+        the correct reading on the layers where nothing else happens inside the
+        turn (L1, L2 - §7 allows t_complete on L2); on a layer with a real model
+        the ladder refuses to run at all rather than fall back silently. The
+        compensated form is what makes it an open-loop criterion either way, since
+        a generator that fell behind would otherwise understate latency (§2).
+        When ``target_rps`` is given the stage must also have achieved 98% of it,
+        which is the other half of the same criterion - a rung that silently ran
+        fewer turns than asked is not evidence that the rate was held.
         """
-        if self.compensated_p95 > t_budget_ms:
+        judged = (
+            self.platform_overhead_p95
+            if self.platform_overhead_p95 is not None
+            else self.compensated_p95
+        )
+        if judged > t_budget_ms:
             return False
         if self.error_rate > max_error_rate:
             return False
@@ -174,12 +191,32 @@ class StageStats:
         return True
 
 
-def summarise(records: Sequence[RawRequestRecord], duration_s: float) -> StageStats:
-    """Aggregate one stage. Warm-up exclusion is the driver's job, not ours."""
+def summarise(
+    records: Sequence[RawRequestRecord],
+    duration_s: float,
+    *,
+    llm_latency_ms: Sequence[float] | None = None,
+) -> StageStats:
+    """Aggregate one stage. Warm-up exclusion is the driver's job, not ours.
+
+    ``llm_latency_ms`` is the per-request LLM time spent inside each record's
+    ``t_complete``, aligned with ``records``. Supplying it computes the metric §7
+    judges. Omitting it leaves ``platform_overhead_p95`` unset rather than
+    filling in the identity: this function cannot know whether the stage had an
+    LLM, and a fabricated overhead on a layer that does would be a wrong verdict
+    wearing the right column name. Layers where the identity is known to hold
+    (``L1``, ``L2``) fall back to the compensated percentile in ``meets`` and say
+    so in the layer rule of :mod:`agent_db.stress.report`.
+    """
     if not records:
         raise ValueError("cannot summarise an empty stage")
     if duration_s <= 0:
         raise ValueError("duration_s must be positive")
+    if llm_latency_ms is not None and len(llm_latency_ms) != len(records):
+        raise ValueError(
+            f"llm_latency_ms has {len(llm_latency_ms)} entries for {len(records)} "
+            "records: per-request timings must line up with per-request records"
+        )
 
     latencies = [r.actual_ms for r in records]
     compensated = [r.compensated_ms() for r in records]
@@ -195,6 +232,15 @@ def summarise(records: Sequence[RawRequestRecord], duration_s: float) -> StageSt
             key = record.error_class.value if record.error_class else "unclassified"
             errors[key] = errors.get(key, 0) + 1
 
+    if llm_latency_ms is None:
+        overhead_p95: float | None = None
+    else:
+        overhead = [
+            record.compensated_ms() - latency
+            for record, latency in zip(records, llm_latency_ms, strict=True)
+        ]
+        overhead_p95 = percentile(overhead, 0.95)
+
     return StageStats(
         count=len(records),
         errors=sum(1 for r in records if r.is_error),
@@ -204,6 +250,7 @@ def summarise(records: Sequence[RawRequestRecord], duration_s: float) -> StageSt
         p99=percentile(latencies, 0.99),
         compensated_p95=percentile(compensated, 0.95),
         t_complete_p95=percentile(completions, 0.95) if completions else None,
+        platform_overhead_p95=overhead_p95,
         prompt_tokens_p50=percentile(tokens, 0.50) if tokens else None,
         terminator_mix=terminators,
         error_mix=errors,

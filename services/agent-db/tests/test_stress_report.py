@@ -13,6 +13,7 @@ from agent_db.stress.manifest import CodeInfo, RunManifest, collect_environment
 from agent_db.stress.profile import load_profile
 from agent_db.stress.report import (
     COLUMNS,
+    HEADERS,
     build_report,
     interpretation_notes,
     render_markdown,
@@ -75,7 +76,6 @@ def report(profile, manifest, **kwargs):
         manifest=manifest,
         scope="separate",
         profile_path=str(L1_PROFILE),
-        platform_overhead_p95=10.0,
     )
 
 
@@ -100,22 +100,52 @@ class TestColumns:
         assert row["verdict"] == "pass"
         assert row["environment_hash"] == manifest.environment_hash(short=True)
         assert row["generator_cpu"] == 1.5
-        assert row["platform_overhead_p95"] == 10.0
+        # Per stage from the stage's own stats: on L1 that is the compensated
+        # turn latency, the metric §7 judges.
+        assert row["platform_overhead_p95"] == row["p95"]
+        assert row["pool_expansions"] == 0
+        assert row["dropped_ticks"] == 0
 
     def test_on_l1_platform_overhead_is_the_turn_latency_itself(
         self, profile, manifest
     ):
-        # No LLM on this layer, so subtracting nothing is the whole computation;
-        # the report asserts it rather than relying on the identity.
+        # No LLM on this layer, so subtracting nothing is the whole computation.
+        # The layer rule asserts it by name instead of any caller passing it in.
         row = stage_row(
             ladder_result(profile).stages[0],
             profile="p",
             scope="separate",
             environment_hash="hash",
             layer="L1",
-            platform_overhead_p95=5.0,
         )
-        assert row["platform_overhead_p95"] == 5.0
+        assert row["platform_overhead_p95"] == row["p95"]
+        assert row["platform_overhead_p95"] is not None
+
+    def test_on_l2_the_identity_is_allowed_too(self, profile):
+        # §7 explicitly lets t_complete judge L2, where the stub is instant.
+        stage = ladder_result(profile).stages[0]
+        row = stage_row(
+            stage, profile="p", scope="separate", environment_hash="hash", layer="L2"
+        )
+        assert row["platform_overhead_p95"] == row["p95"]
+
+    def test_a_stage_that_supplied_llm_timings_fills_the_column_per_stage(
+        self, profile
+    ):
+        # The blocker this replaces: one run-wide overhead value stamped into
+        # every row, including rows whose overhead was larger.
+        stage = ladder_result(profile).stages[0]
+        with_timings = replace(
+            stage, stats=replace(stage.stats, platform_overhead_p95=17.0)
+        )
+        row = stage_row(
+            with_timings,
+            profile="p",
+            scope="separate",
+            environment_hash="hash",
+            layer="L3",
+        )
+        assert row["platform_overhead_p95"] == 17.0
 
     def test_on_l1_the_report_fills_platform_overhead_from_the_compensation(
         self, profile, manifest
@@ -269,6 +299,86 @@ class TestNotes:
         assert "LOWER BOUND" in notes
         assert "never shown to fail" in notes
 
+    def test_a_rung_that_needed_a_wider_pool_says_so(self, profile, manifest):
+        # §2: an invalid stage is an action, so a rung that passed only after the
+        # pool grew is not the same evidence as one that held at the nominal width.
+        class StarvedRunner(FakeRunner):
+            def run(self, spec, plan_, *, tenants, workers=None):
+                if len(self.calls) == 0:
+                    self.calls.append((spec.target_rps, workers))
+                    return make_result(spec, dropped=4, cpu_s=0.1)
+                return super().run(spec, plan_, tenants=tenants, workers=workers)
+
+        result = run_ladder(
+            runner=StarvedRunner(passing_rps=1000.0),
+            plan=LadderPlan(
+                rates=(5.0,),
+                t_budget_ms=50.0,
+                duration_s=2.0,
+                warmup_s=0.5,
+                max_pool_expansions=2,
+            ),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=profile,
+            tenants=["t-1"],
+        )
+        assert result.stages[0].verdict == "pass"
+        notes = " ".join(interpretation_notes(result, manifest))
+        assert "passed only after 1 pool expansion" in notes
+        assert "at that width" in notes
+
+    def test_a_ladder_whose_top_passed_is_a_lower_bound_too(self, profile, manifest):
+        result = run_ladder(
+            runner=FakeRunner(passing_rps=1000.0),
+            plan=LadderPlan(
+                rates=(5.0, 10.0), t_budget_ms=50.0, duration_s=2.0, warmup_s=0.5
+            ),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=profile,
+            tenants=["t-1"],
+        )
+        notes = " ".join(interpretation_notes(result, manifest))
+        assert "LOWER BOUND at the top of the ladder" in notes
+
+    def test_discarded_knee_runs_are_reported_not_hidden(self, profile, manifest):
+        class HalfBrokenRunner(FakeRunner):
+            def run(self, spec, plan_, *, tenants, workers=None):
+                if spec.target_rps > 5.0:
+                    self.calls.append((spec.target_rps, workers))
+                    return make_result(spec, dropped=2, cpu_s=0.5)
+                return super().run(spec, plan_, tenants=tenants, workers=workers)
+
+        result = run_ladder(
+            runner=HalfBrokenRunner(passing_rps=1000.0),
+            plan=LadderPlan(
+                rates=(5.0, 10.0),
+                t_budget_ms=50.0,
+                duration_s=2.0,
+                warmup_s=0.5,
+                repeats=3,
+            ),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=profile,
+            tenants=["t-1"],
+        )
+        built = build_report(result=result, manifest=manifest, scope="separate")
+        assert built["ladder"]["headline"]["runs_discarded"] == 0.0, (
+            "the knee rung itself is valid; only the rung above it went invalid"
+        )
+        assert any("LOWER BOUND" in note for note in built["notes"])
+
+    def test_the_error_mix_is_printed_for_a_valid_stage(self, profile, manifest):
+        stage = ladder_result(profile).stages[0]
+        noisy = replace(
+            stage,
+            stats=replace(stage.stats, error_mix={"other": 3}),
+        )
+        result = ladder_result(profile)
+        result.stages[0] = noisy
+        notes = " ".join(interpretation_notes(result, manifest))
+        assert "error mix" in notes
+        assert "other" in notes
+
     def test_prediction_and_finding_are_compared_not_just_listed(
         self, profile, manifest
     ):
@@ -277,10 +387,21 @@ class TestNotes:
 
 
 class TestMarkdown:
-    def test_the_table_header_uses_the_short_column_set(self, profile, manifest):
+    def test_the_table_carries_every_column_the_report_has(self, profile, manifest):
+        # §10 wants runs compared by looking at them: a column that exists only in
+        # report.json is a column nobody compares.
         text = render_markdown(report(profile, manifest))
-        assert "| target rps | achieved | p50 | p95 | p99 | err% |" in text
-        assert "| 5 | 5.33 | 5 | 5 |" in text
+        header = next(
+            line for line in text.splitlines() if line.startswith("| profile |")
+        )
+        for column in COLUMNS:
+            assert HEADERS[column] in header, column
+        assert "| 5 | 5 | 5 | 5 |" in text
+
+    def test_the_generator_and_pool_evidence_reaches_the_table(self, profile, manifest):
+        text = render_markdown(report(profile, manifest))
+        assert "gen CPU %" in text
+        assert "pool x" in text and "dropped" in text and "spin tail ms" in text
 
     def test_the_knee_and_its_bracket_are_printed(self, profile, manifest):
         text = render_markdown(report(profile, manifest))
@@ -339,4 +460,4 @@ class TestWriteReport:
 
     def test_the_report_points_at_its_evidence(self, profile, manifest):
         text = render_markdown(report(profile, manifest))
-        assert "raw/<stage>.jsonl" in text
+        assert "raw/<rps>-run<k>-attempt<n>.jsonl" in text

@@ -30,14 +30,56 @@ from .runner import GENERATOR_CPU_LIMIT, StageResult, StageSpec, WorkloadPlan
 
 # §7 defaults. L4 is a soak/overload layer whose budget depends on the scenario,
 # so it has no default: an invented T would be a verdict with no basis.
+# §7's documented defaults. L3's entry is the design number and is deliberately
+# still here while L3 is not plannable: removing it would make L3 fail for the
+# wrong reason ("no default T") and would silently reintroduce an L3 budget the
+# day someone drops the judged-metric fence. The fence lives in both
+# ``LadderPlan.for_profile`` and ``run_ladder``.
 LAYER_T_BUDGET_MS: dict[str, float] = {"L1": 50.0, "L2": 500.0, "L3": 500.0}
 
 # §2: 5 -> 10 -> 20 -> 40 -> 80, doubling.
 DEFAULT_RATES: tuple[float, ...] = (5.0, 10.0, 20.0, 40.0, 80.0)
 
+# Layers whose judged percentile this harness can actually compute today.
+#
+# §7 judges ``platform_overhead p95`` - the turn without the model's own latency -
+# and says a stage must not fail because the model was slow. On L1 there is no LLM
+# inside the turn, so the overhead is the compensated turn latency and the metric
+# exists. On L2 the stub is ~0-latency and §7 explicitly allows t_complete there.
+# On L3 the overhead is uncomputable until the substrate reports per-request
+# timings: judging an L3 rung on the turn latency would report "below_first_rung"
+# for an honest 2.5 s model, which is a verdict about the wrong thing. So the
+# ladder refuses L3 rather than producing it.
+JUDGED_METRIC_READY_LAYERS = ("L1", "L2")
+
 
 class LadderError(ValueError):
     """The ladder cannot be run as specified."""
+
+
+@dataclass(frozen=True)
+class StageTicket:
+    """Which run of which rung one piece of evidence belongs to (§10).
+
+    ``attempt`` counts pool expansions within the rung; ``run_index`` is 0 for the
+    rung that produced the verdict and 1.. for the knee repeats. Both are needed:
+    without them ``raw/<rps>.jsonl`` interleaves the repeats and the discarded
+    attempts into one file that cannot be split again, so the headline median -
+    which §2 defines over 2-3 runs - would not be reproducible from the raw
+    evidence it claims to come from.
+    """
+
+    target_rps: float
+    attempt: int
+    run_index: int
+
+    @property
+    def is_repeat(self) -> bool:
+        return self.run_index > 0
+
+    def label(self) -> str:
+        """File-name-safe label for this run of this rung."""
+        return f"{self.target_rps:g}rps-run{self.run_index}-attempt{self.attempt}"
 
 
 class StageSink(Protocol):
@@ -48,7 +90,9 @@ class StageSink(Protocol):
     the run directory.
     """
 
-    def __call__(self, outcome: StageOutcome, stage: StageResult) -> None: ...
+    def __call__(
+        self, outcome: StageOutcome, stage: StageResult, ticket: StageTicket
+    ) -> None: ...
 
 
 class StageRunnerPort(Protocol):
@@ -122,6 +166,14 @@ class LadderPlan:
                 f"{profile.budget_preset!r}; a knee ladder is only meaningful with "
                 "the budgets off (§5), otherwise the rung measures slowapi"
             )
+        if profile.target_layer not in JUDGED_METRIC_READY_LAYERS:
+            raise LadderError(
+                f"layer {profile.target_layer} cannot be judged yet: §7's criterion is "
+                "platform_overhead p95, and on this layer the harness cannot separate "
+                "the platform's work from the model's latency (the substrate reports "
+                "no per-request timings before phase 2). Judging it on the turn "
+                "latency would fail an honest model - refusing is the honest option"
+            )
         budget = t_budget_ms
         if budget is None:
             budget = LAYER_T_BUDGET_MS.get(profile.target_layer)
@@ -165,16 +217,37 @@ class StageOutcome:
     dropped_ticks: int
     t_budget_ms: float
     cpu_s: float = 0.0
-    measured_duration_s: float = 0.0
+    cpu_measured_s: float = 0.0
+    # The window the measured ticks span, ``(total_ticks - warmup_ticks) / rps``:
+    # the denominator both the saturation gate and the reported generator share
+    # use, so the artefact and the gate cannot drift apart.
+    measured_window_s: float = 0.0
+    spin_tail_ms: float = 0.0
     max_error_rate: float = 0.01
     step_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def generator_bound(self) -> bool:
-        """True when the rung is unmeasurable because the generator saturated."""
-        if self.measured_duration_s <= 0:
+        """True when the rung is unmeasurable because the generator saturated.
+
+        Same rule as ``StageResult.generator_bound`` and over the same quantities:
+        the CPU spent inside the measured window (sampled at the warm-up boundary)
+        against the length of that window. A whole-stage average would let a
+        generator that saturated while measuring escape the gate, and the gate is
+        the only thing standing between that and a pool doubling that makes it
+        worse.
+        """
+        if self.measured_window_s <= 0:
             return False
-        return self.cpu_s >= GENERATOR_CPU_LIMIT * self.measured_duration_s
+        cpu_measured = self.cpu_measured_s if self.cpu_measured_s else self.cpu_s
+        return cpu_measured >= GENERATOR_CPU_LIMIT * self.measured_window_s
+
+    @property
+    def judged_p95(self) -> float:
+        """The percentile the verdict was made on (§7)."""
+        if self.stats.platform_overhead_p95 is not None:
+            return self.stats.platform_overhead_p95
+        return self.stats.compensated_p95
 
     @property
     def verdict(self) -> Literal["pass", "fail", "invalid"]:
@@ -213,7 +286,9 @@ class StageOutcome:
             tick_lag_p99=result.tick_lag_p99,
             dropped_ticks=result.dropped_ticks,
             cpu_s=result.cpu_s,
-            measured_duration_s=result.spec.measured_duration_s,
+            cpu_measured_s=result.cpu_measured_s,
+            measured_window_s=result.spec.measured_window_s,
+            spin_tail_ms=result.spin_tail_ms,
             step_counts=dict(step_counts or {}),
             t_budget_ms=t_budget_ms,
             max_error_rate=max_error_rate,
@@ -276,26 +351,32 @@ class LadderResult:
         return ([knee] if knee is not None else []) + list(self.repeats)
 
     def headline(self) -> dict[str, float] | None:
-        """Median p95 and spread over the knee repeats (§2).
+        """Median judged percentile and spread over the knee repeats (§2).
 
-        A single run is not a headline: the doc requires a median of 2-3 runs,
-        so with ``repeats == 1`` this reports the one measurement and the caller
-        marks the run unpublishable rather than publishing a single sample.
+        A single run is not a headline: the doc requires a median of 2-3 runs, so
+        with fewer than two *valid* runs the caller marks the result
+        unpublishable instead of publishing one sample. The percentile is the one
+        the verdict used (``judged_p95``): reporting an easier metric as the
+        headline while judging on a harder one would be two claims about one run.
+        Runs that were invalid are counted and reported, not silently dropped.
         """
-        measured = [stage for stage in self.headline_sample() if stage.valid]
+        sample = self.headline_sample()
+        measured = [stage for stage in sample if stage.valid]
         if not measured:
             return None
-        p95s = sorted(stage.p95 for stage in measured)
+        values = sorted(stage.judged_p95 for stage in measured)
         middle = (
-            p95s[len(p95s) // 2]
-            if len(p95s) % 2
-            else (p95s[len(p95s) // 2 - 1] + p95s[len(p95s) // 2]) / 2
+            values[len(values) // 2]
+            if len(values) % 2
+            else (values[len(values) // 2 - 1] + values[len(values) // 2]) / 2
         )
         return {
             "runs": float(len(measured)),
+            "runs_requested": float(len(sample)),
+            "runs_discarded": float(len(sample) - len(measured)),
             "p95_median": middle,
-            "p95_min": p95s[0],
-            "p95_max": p95s[-1],
+            "p95_min": values[0],
+            "p95_max": values[-1],
         }
 
 
@@ -354,6 +435,16 @@ def run_ladder(
             f"profile {profile.name!r} has budget_preset={profile.budget_preset!r}: "
             "the ladder is only defined with the budgets off (§5)"
         )
+    if profile.target_layer not in JUDGED_METRIC_READY_LAYERS:
+        # The same fence as ``LadderPlan.for_profile``, repeated where the run
+        # actually starts: a hand-built plan bypassed it, and the result was
+        # exactly the outcome the fence exists to prevent - an honest 2.5 s model
+        # reported as a platform failure.
+        raise LadderError(
+            f"layer {profile.target_layer} cannot be judged yet: §7's criterion is "
+            "platform_overhead p95, and this layer's turns contain model latency "
+            "the harness cannot yet separate out (phase 2)"
+        )
     result = LadderResult(
         plan=plan,
         profile_name=profile.name,
@@ -391,18 +482,30 @@ def run_ladder(
             result.knee = KneeEstimate(
                 rate=passing, bracket=None, tolerance=plan.tolerance, bisection_steps=0
             )
+            _repeat_knee(
+                runner,
+                plan,
+                workload,
+                profile,
+                tenants,
+                passing,
+                result,
+                on_stage=on_stage,
+                expand_pool=expand_pool,
+            )
             return result
         failing = rps
         break
 
     if failing is None:
-        # Every rung passed: the ladder's top is the answer, and the ceiling is
-        # somewhere above it. Reported as a bracket, not as a rate.
+        # Every rung passed: nothing above the top was ever run, so the top is a
+        # lower bound and there is no bracket. A zero-width bracket would read as
+        # "the ceiling is exactly this rate", a claim no rung supports.
         result.status = "knee_found" if passing is not None else "below_first_rung"
         result.knee = (
             KneeEstimate(
                 rate=passing,
-                bracket=(passing, passing),
+                bracket=None,
                 tolerance=plan.tolerance,
                 bisection_steps=0,
             )
@@ -410,7 +513,17 @@ def run_ladder(
             else None
         )
         if passing is not None:
-            _repeat_knee(runner, plan, workload, profile, tenants, passing, result)
+            _repeat_knee(
+                runner,
+                plan,
+                workload,
+                profile,
+                tenants,
+                passing,
+                result,
+                on_stage=on_stage,
+                expand_pool=expand_pool,
+            )
         return result
 
     if passing is None:
@@ -447,7 +560,17 @@ def run_ladder(
                 tolerance=plan.tolerance,
                 bisection_steps=steps,
             )
-            _repeat_knee(runner, plan, workload, profile, tenants, low, result)
+            _repeat_knee(
+                runner,
+                plan,
+                workload,
+                profile,
+                tenants,
+                low,
+                result,
+                on_stage=on_stage,
+                expand_pool=expand_pool,
+            )
             return result
         if outcome.verdict == "pass":
             low = mid
@@ -457,7 +580,17 @@ def run_ladder(
     result.knee = KneeEstimate(
         rate=low, bracket=(low, high), tolerance=plan.tolerance, bisection_steps=steps
     )
-    _repeat_knee(runner, plan, workload, profile, tenants, low, result)
+    _repeat_knee(
+        runner,
+        plan,
+        workload,
+        profile,
+        tenants,
+        low,
+        result,
+        on_stage=on_stage,
+        expand_pool=expand_pool,
+    )
     return result
 
 
@@ -469,9 +602,18 @@ def _repeat_knee(
     tenants: Sequence[str],
     rps: float,
     result: LadderResult,
+    *,
+    on_stage: StageSink | None = None,
+    expand_pool: bool = True,
 ) -> None:
-    """Re-run the knee rung to get the spread §2 asks for."""
-    for _ in range(max(plan.repeats - 1, 0)):
+    """Re-run the knee rung to get the spread §2 asks for.
+
+    Repeats write their evidence through the same sink as the rungs: the headline
+    is computed from these records, so §10's canonical source for a percentile
+    has to contain them. ``expand_pool`` is the caller's setting, not a constant,
+    so a repeat re-measures the same rung the same way.
+    """
+    for index in range(max(plan.repeats - 1, 0)):
         result.repeats.append(
             _run_rung(
                 runner=runner,
@@ -480,7 +622,9 @@ def _repeat_knee(
                 profile=profile,
                 tenants=tenants,
                 rps=rps,
-                expand_pool=True,
+                expand_pool=expand_pool,
+                on_stage=on_stage,
+                run_index=index + 1,
             )
         )
 
@@ -495,13 +639,20 @@ def _run_rung(
     rps: float,
     expand_pool: bool,
     on_stage: StageSink | None = None,
+    run_index: int = 0,
 ) -> StageOutcome:
-    """Run one rung, doubling the pool while the generator is the bottleneck."""
+    """Run one rung, doubling the pool while the generator is the bottleneck.
+
+    ``run_index`` is 0 for the rung that produces the verdict and 1.. for the knee
+    repeats; it travels to the evidence sink so a repeat's records are not mixed
+    with the run they are supposed to be a repeat of.
+    """
     workers = plan.workers_for(rps, floor=profile.sessions.pool_size)
     spec = plan.spec_for(rps)
     expansions = 0
     while True:
         stage = runner.run(spec, workload, tenants=tenants, workers=workers)
+        attempt = expansions
         # §2 says an invalid stage is answered with a bigger pool, but that rule
         # assumes the invalidity came from too few slots. When the generator ran
         # out of CPU, every extra worker adds another busy-wait tail and the rung
@@ -523,7 +674,34 @@ def _run_rung(
                 step_counts=workload.step_counts(spec.total_ticks),
             )
             if on_stage is not None:
-                on_stage(outcome, stage)
+                on_stage(
+                    outcome,
+                    stage,
+                    StageTicket(
+                        target_rps=spec.target_rps,
+                        attempt=attempt,
+                        run_index=run_index,
+                    ),
+                )
             return outcome
+        if on_stage is not None:
+            # The discarded attempt is evidence too: it is how a rung that needed
+            # a wider pool is told apart from one that held at the nominal width.
+            on_stage(
+                StageOutcome.from_result(
+                    stage,
+                    t_budget_ms=plan.t_budget_ms,
+                    max_error_rate=plan.max_error_rate,
+                    workers=workers,
+                    pool_expansions=expansions,
+                    step_counts=workload.step_counts(spec.total_ticks),
+                ),
+                stage,
+                StageTicket(
+                    target_rps=spec.target_rps,
+                    attempt=attempt,
+                    run_index=run_index,
+                ),
+            )
         workers *= 2
         expansions += 1
