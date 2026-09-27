@@ -2,15 +2,28 @@
   "profile_version": 3,
   "name": "chat-mixed-v3",
   "target_layer": "L3",
-  "tenants": { "count": 8, "distribution": "round_robin", "scope": "separate" },
+  "fixture": "sqlite-testseed",
+  "tenants": {
+    "count": 8,
+    "distribution": "round_robin",
+    "scope": "separate"
+  },
   "sessions": {
     "pool_size": 160,
     "recycle_after_turns": 40,
     "recycle_after_seconds": 1800,
     "min_interval_ms": 1200
   },
-  "arrival": { "model": "constant", "rps": 20, "duration_s": 600, "warmup_s": 120 },
-  "clients": { "source_ips": 1, "generators": 1 },
+  "arrival": {
+    "model": "constant",
+    "rps": 20,
+    "duration_s": 600,
+    "warmup_s": 120
+  },
+  "clients": {
+    "source_ips": 1,
+    "generators": 1
+  },
   "llm": {
     "substrate": "stub",
     "provider_concurrency": 256,
@@ -18,18 +31,33 @@
     "p95_ms": 2500
   },
   "workload": [
-    { "weight": 0.4, "name": "one_tool", "tools": ["db_get"], "history_turns": 0 },
+    {
+      "weight": 0.4,
+      "name": "one_tool",
+      "tools": [
+        "db_get"
+      ],
+      "history_turns": 0
+    },
     {
       "weight": 0.4,
       "name": "search_get",
-      "tools": ["db_search", "db_get"],
+      "tools": [
+        "db_search",
+        "db_get"
+      ],
       "history_turns": 3
     },
     {
       "weight": 0.2,
       "name": "heavy",
-      "tools": ["db_map", "db_search"],
-      "repeat": { "db_get": 6 },
+      "tools": [
+        "db_map",
+        "db_search"
+      ],
+      "repeat": {
+        "db_get": 6
+      },
       "history_turns": 8
     }
   ],

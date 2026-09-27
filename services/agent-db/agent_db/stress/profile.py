@@ -32,6 +32,11 @@ PROFILE_VERSION = 3
 # Composite scope prefixes every tool with its tenant: ``{tenant}__db_get``.
 COMPOSITE_SEPARATOR = "__"
 
+# L0 (control-plane: /health, /metrics, tenant-id validation) is driven by
+# raw HTTP, not by MCP tools, so it has no profile shape yet; it joins with the
+# Driver protocol from §11.
+SUPPORTED_LAYERS = ("L1", "L2", "L3", "L4")
+
 
 class ProfileValidationError(ValueError):
     """A profile cannot be run as written."""
@@ -138,7 +143,11 @@ class LoadProfile(BaseModel):
 
     profile_version: Literal[3]
     name: str = Field(min_length=1)
-    target_layer: Literal["L0", "L1", "L2", "L3", "L4"]
+    target_layer: Literal["L1", "L2", "L3", "L4"]
+    # Argument values live in a fixture, not here and not in the manifest: this
+    # endpoint publishes no argument metadata (verified live), and one fixture
+    # is shared by several profiles. See ``stress.fixture``.
+    fixture: str = Field(min_length=1)
     tenants: TenantsSpec
     sessions: SessionsSpec
     arrival: ArrivalSpec

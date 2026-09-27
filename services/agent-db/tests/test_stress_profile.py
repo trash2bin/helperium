@@ -25,6 +25,7 @@ BASE = {
     "profile_version": 3,
     "name": "test-profile",
     "target_layer": "L3",
+    "fixture": "sqlite-testseed",
     "tenants": {"count": 2, "distribution": "round_robin", "scope": "separate"},
     "sessions": {
         "pool_size": 16,
@@ -182,6 +183,18 @@ class TestSchemaRefusals:
     def test_l1_with_a_substrate_is_refused(self) -> None:
         with pytest.raises(Exception, match="does not call the LLM"):
             _profile(target_layer="L1")
+
+    def test_l0_is_not_expressible_yet(self) -> None:
+        # L0 is control-plane traffic (/health, /metrics, tenant-id validation),
+        # not MCP tools, so it has no profile shape until the raw_http driver
+        # exists. Accepting an L0 profile today would let it silently request
+        # tool calls that do not exist on that layer.
+        with pytest.raises(Exception):
+            _profile(target_layer="L0")
+
+    def test_fixture_name_is_required(self) -> None:
+        with pytest.raises(Exception):
+            _profile(fixture=None)
 
     def test_l3_without_a_substrate_is_refused(self) -> None:
         with pytest.raises(Exception, match="requires an llm block"):

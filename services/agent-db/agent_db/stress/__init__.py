@@ -8,6 +8,13 @@ this package is publishable until they are.
 
 from __future__ import annotations
 
+from .fixture import (
+    ArgumentFixture,
+    FixtureValidationError,
+    effective_fixture,
+    load_fixture,
+    validate_fixture_covers,
+)
 from .profile import (
     LoadProfile,
     ProfileValidationError,
@@ -25,15 +32,20 @@ from .records import (
 )
 
 __all__ = [
+    "ArgumentFixture",
     "ErrorClass",
+    "FixtureValidationError",
     "LoadProfile",
     "ProfileValidationError",
     "RawRequestRecord",
     "StageStats",
     "canonical_tool_name",
+    "effective_fixture",
+    "load_fixture",
     "load_profile",
     "percentile",
     "summarise",
+    "validate_fixture_covers",
     "validate_tools_against_manifest",
     "write_raw_records",
 ]

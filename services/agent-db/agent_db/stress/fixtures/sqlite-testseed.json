@@ -1,0 +1,12 @@
+{
+  "fixture_version": 1,
+  "name": "sqlite-testseed",
+  "scenario": "sqlite-testseed",
+  "arguments": {
+    "db_map": {},
+    "db_describe": { "entity": "group" },
+    "db_search": { "entity": "student", "pattern": "Петров", "limit": 5 },
+    "db_filter": { "entity": "group", "name": "ПИ-20", "limit": 1 },
+    "db_get": { "entity": "group", "id": "g1" }
+  }
+}
