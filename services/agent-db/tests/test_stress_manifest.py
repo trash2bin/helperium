@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from agent_db.stress.manifest import (
     BUDGET_TABLE,
     HARDCODED_CONSTANTS,
     REQUIRED_HOST_FIELDS,
+    BinarySpec,
     ManifestError,
     RunManifest,
     collect_budgets,
@@ -198,9 +201,123 @@ class TestCodeInfo:
 def _code(dirty: bool = False):
     from agent_db.stress.manifest import CodeInfo
 
+    # A complete manifest names its artefact: without a digest or a binary the
+    # numbers cannot be tied to a build, and publication refuses the run.
     return CodeInfo(
-        commit="0" * 40, branch="main", dirty=dirty, api_workers=1, image_digests={}
+        commit="0" * 40,
+        branch="main",
+        dirty=dirty,
+        api_workers=1,
+        image_digests={"data-service": "sha256:" + "a" * 64},
     )
+
+
+def _fake_git(args: list[str]) -> str:
+    """A clean tree at a fixed commit: these tests are about binaries only."""
+    if args[:2] == ["rev-parse", "HEAD"]:
+        return "0" * 40 + "\n"
+    if args[0] == "rev-parse":
+        return "main\n"
+    return ""
+
+
+class TestBinaries:
+    """A native stand runs binaries, and the manifest must name them (§6).
+
+    Regression: a gateway binary two months older than the tree served a load run
+    with a config fetch and a server build per request, and every measurement was
+    attributed to HEAD, because nothing in the artefact recorded the binary.
+    """
+
+    @staticmethod
+    def _tree(tmp_path: Path, *, binary_mtime: float, source_mtime: float) -> dict:
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "main.go").write_text("package main\n", encoding="utf-8")
+        # A test file edited after the build must not mark the binary stale:
+        # tests never enter the artefact.
+        (repo / "src" / "main_test.go").write_text("package main\n", encoding="utf-8")
+        os.utime(repo / "src" / "main.go", (source_mtime, source_mtime))
+        os.utime(repo / "src" / "main_test.go", (source_mtime + 10, source_mtime + 10))
+        binary = repo / "bin" / "gateway"
+        binary.parent.mkdir()
+        binary.write_bytes(b"\x7fELFBIN")
+        os.utime(binary, (binary_mtime, binary_mtime))
+        return {"repo": repo, "binary": binary}
+
+    def test_a_stale_binary_blocks_publication(self, tmp_path, profile):
+        tree = self._tree(
+            tmp_path, binary_mtime=time.time() - 86400, source_mtime=time.time()
+        )
+        code = collect_code(
+            tree["repo"],
+            binaries=[BinarySpec("mcp-gateway", tree["binary"], tree["repo"] / "src")],
+            runner=_fake_git,
+        )
+        info = code.binaries["mcp-gateway"]
+        assert info["freshness"] == "stale"
+        assert len(info["sha256"]) == 64
+        assert info["newest_source"] == "main.go"
+        blockers = RunManifest(
+            environment=environment(profile), code=code
+        ).publication_blockers()
+        assert any("is older than its newest source" in blocker for blocker in blockers)
+
+    def test_a_binary_newer_than_its_sources_is_fresh(self, tmp_path, profile):
+        tree = self._tree(
+            tmp_path, binary_mtime=time.time(), source_mtime=time.time() - 86400
+        )
+        code = collect_code(
+            tree["repo"],
+            binaries=[BinarySpec("data-service", tree["binary"], tree["repo"] / "src")],
+            runner=_fake_git,
+        )
+        assert code.binaries["data-service"]["freshness"] == "fresh"
+        assert not [
+            blocker
+            for blocker in RunManifest(
+                environment=environment(profile), code=code
+            ).publication_blockers()
+            if "runtime binary" in blocker
+        ]
+
+    def test_a_binary_without_readable_sources_is_unchecked_not_fresh(self, tmp_path, profile):
+        tree = self._tree(
+            tmp_path, binary_mtime=time.time(), source_mtime=time.time()
+        )
+        code = collect_code(
+            tree["repo"],
+            binaries=[
+                BinarySpec("gateway", tree["binary"], tree["repo"] / "no-such-dir")
+            ],
+            runner=_fake_git,
+        )
+        assert code.binaries["gateway"]["freshness"] == "unchecked"
+        blockers = RunManifest(
+            environment=environment(profile), code=code
+        ).publication_blockers()
+        assert any("freshness could not be checked" in b for b in blockers)
+
+    def test_a_missing_binary_is_an_error_not_an_unchecked(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        with pytest.raises(ManifestError, match="not found"):
+            collect_code(
+                repo,
+                binaries=[BinarySpec("gateway", repo / "bin" / "gateway", repo)],
+                runner=_fake_git,
+            )
+
+    def test_a_run_that_names_no_artefact_at_all_is_blocked(self, tmp_path, profile):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        code = collect_code(repo, runner=_fake_git)
+        assert code.image_digests == {}
+        assert code.binaries == {}
+        manifest = RunManifest(environment=environment(profile), code=code)
+        assert any(
+            "no runtime artefact" in blocker for blocker in manifest.publication_blockers()
+        )
 
 
 class TestRunManifest:

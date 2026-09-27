@@ -24,15 +24,16 @@ import re
 import resource
 import shutil
 import subprocess
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .profile import LoadProfile
 
-MANIFEST_VERSION = 1
+MANIFEST_VERSION = 2
 
 # Fields §6 lists under ``environment`` that have to be *measured*, not assumed.
 # ``generator_host``/``budget_preset``/``profile`` are supplied by the caller and
@@ -135,6 +136,117 @@ def collect_budgets(
 
 
 @dataclass(frozen=True)
+class BinarySpec:
+    """A runtime artefact on a native stand, paired with the tree it must have
+    been built from.
+
+    ``path`` is the binary the stand actually ran; ``source_root`` is the
+    directory whose sources compile into it. The freshness check exists because
+    it happened once already: a gateway binary two months older than the tree
+    answered a load run with a config fetch and a server build per request,
+    measurements were attributed to HEAD, and nothing in the artefact named the
+    binary. The manifest now names it, and publication refuses a stale one.
+    """
+
+    label: str
+    path: str | Path
+    source_root: str | Path
+
+
+@dataclass(frozen=True)
+class BinaryInfo:
+    """What was actually executed, hashed and dated (§6)."""
+
+    label: str
+    path: str
+    sha256: str
+    size: int
+    mtime: str
+    source_root: str
+    newest_source: str | None
+    newest_source_mtime: str | None
+    # "fresh" | "stale" | "unchecked": a native run against a binary older than
+    # its newest source measured code that is not the recorded commit.
+    freshness: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+# How much younger a binary may be than its newest source and still count as
+# fresh. go build writes the artefact after compiling, so a strict comparison
+# would already hold; the grace absorbs same-second mtime granularity.
+_STALE_GRACE_S = 1.0
+
+
+def _iso(mtime: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
+
+
+def collect_binaries(
+    specs: Sequence[BinarySpec],
+    *,
+    source_suffixes: Sequence[str] = (".go",),
+) -> dict[str, BinaryInfo]:
+    """Hash each binary and compare it with the newest source it was built from.
+
+    Test files never enter the binary, so ``_test.go`` files are excluded from
+    the freshness probe: editing a test after a build must not mark the binary
+    stale. A missing binary is an error, not an "unchecked": the caller said the
+    stand ran it.
+    """
+    by_label: dict[str, BinaryInfo] = {}
+    for spec in specs:
+        binary = Path(spec.path)
+        if not binary.is_file():
+            raise ManifestError(
+                f"runtime binary {spec.label!r} not found at {binary}"
+            )
+        raw = binary.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+
+        newest: tuple[str, float] | None = None  # (relpath, mtime)
+        source_root = Path(spec.source_root)
+        if source_root.is_dir():
+            for root, dirs, files in os.walk(source_root):
+                dirs[:] = [d for d in dirs if d != ".git"]
+                for name in files:
+                    if not name.endswith(source_suffixes):
+                        continue
+                    if name.endswith("_test.go"):
+                        continue
+                    path = Path(root) / name
+                    mtime = path.stat().st_mtime
+                    if newest is None or mtime > newest[1]:
+                        newest = (str(path.relative_to(source_root)), mtime)
+
+        if newest is None:
+            freshness = "unchecked"
+            newest_name = None
+            newest_mtime = None
+        else:
+            newest_name, newest_mtime_epoch = newest
+            newest_mtime = _iso(newest_mtime_epoch)
+            if binary.stat().st_mtime + _STALE_GRACE_S < newest_mtime_epoch:
+                freshness = "stale"
+            else:
+                freshness = "fresh"
+
+        by_label[spec.label] = BinaryInfo(
+            label=spec.label,
+            path=str(binary),
+            sha256=digest,
+            size=len(raw),
+            mtime=_iso(binary.stat().st_mtime),
+            source_root=str(source_root),
+            newest_source=newest_name,
+            newest_source_mtime=newest_mtime,
+            freshness=freshness,
+        )
+    return by_label
+
+
+@dataclass(frozen=True)
 class CodeInfo:
     """The subject of comparison, and the first knob a capacity fix turns (§6)."""
 
@@ -143,6 +255,9 @@ class CodeInfo:
     dirty: bool
     api_workers: int
     image_digests: dict[str, str] = field(default_factory=dict)
+    # label -> BinaryInfo.as_dict(); populated on native stands, where the
+    # container digest does not exist and the binary is the only artefact.
+    binaries: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -233,6 +348,25 @@ class RunManifest:
                 f"working tree was dirty at {self.code.commit[:8]}: the recorded "
                 "commit does not describe the code that ran"
             )
+        for label, info in self.code.binaries.items():
+            if info["freshness"] == "stale":
+                blockers.append(
+                    f"runtime binary {label} ({info['path']}) is older than its "
+                    f"newest source ({info['newest_source_mtime']} < binary "
+                    f"{info['mtime']}): this run measured code that is not the "
+                    "recorded commit"
+                )
+            elif info["freshness"] == "unchecked":
+                blockers.append(
+                    f"runtime binary {label} ({info['path']}) has no readable "
+                    f"sources under {info['source_root']}: its freshness could "
+                    "not be checked"
+                )
+        if not self.code.binaries and not self.code.image_digests:
+            blockers.append(
+                "no runtime artefact is recorded (neither image digests nor "
+                "binaries): nothing ties these numbers to a specific build"
+            )
         return blockers
 
 
@@ -241,9 +375,16 @@ def collect_code(
     *,
     api_workers: int = 1,
     image_digests: Mapping[str, str] | None = None,
+    binaries: Sequence[BinarySpec] | None = None,
+    source_suffixes: Sequence[str] = (".go",),
     runner: Callable[[list[str]], str] | None = None,
 ) -> CodeInfo:
-    """Read the commit, the branch and whether the tree was clean."""
+    """Read the commit, the branch and whether the tree was clean.
+
+    ``binaries`` names the native binaries the stand ran, so the artefact can
+    tie the numbers to a build and refuse a stale one; on a container stand the
+    same duty falls to ``image_digests``.
+    """
 
     def git(args: list[str]) -> str:
         if runner is not None:
@@ -266,12 +407,14 @@ def collect_code(
         raise ManifestError(f"unexpected git commit format: {commit!r}")
     branch = git(["rev-parse", "--abbrev-ref", "HEAD"]).strip() or "DETACHED"
     dirty = bool(git(["status", "--porcelain"]).strip())
+    collected = collect_binaries(list(binaries or []), source_suffixes=source_suffixes)
     return CodeInfo(
         commit=commit,
         branch=branch,
         dirty=dirty,
         api_workers=api_workers,
         image_digests=dict(image_digests or {}),
+        binaries={label: info.as_dict() for label, info in collected.items()},
     )
 
 

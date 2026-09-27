@@ -194,7 +194,8 @@ def interpretation_notes(result: LadderResult, manifest: RunManifest) -> list[st
     blockers = manifest.publication_blockers()
     if blockers:
         notes.append(
-            "environment is incomplete, so this run is not publishable as capacity: "
+            "the manifest is incomplete, so this run is not publishable as "
+            "capacity: "
             + "; ".join(blockers)
         )
     if result.prediction is not None and result.knee and result.knee.rate:
