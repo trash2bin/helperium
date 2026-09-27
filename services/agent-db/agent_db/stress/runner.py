@@ -39,6 +39,29 @@ from .transport import McpSession
 # p99 exceeds this is invalid no matter how good the SUT looks.
 LAG_INVALID_MS = 5.0
 
+# How fast the generator may open its session pool, in sessions per second: it
+# paces its own handshakes by this.
+#
+# Measured on the isolated stand 2026-09-27: opening a 168-session pool in a tight
+# loop produced ~600-700 requests (a session costs ``initialize`` plus
+# ``notifications/initialized``) inside ~200 ms - an instantaneous rate near
+# 3000/s. The gateway rate-limits per IP, so the rung died with HTTP 429 *before
+# its first tick*: the generator was measuring its own handshake burst. Pacing
+# costs wall clock before the stage clock starts, and changes nothing measured
+# inside the stage.
+SESSION_OPEN_RATE = 100.0
+
+# Share of one core the generator may spend before its own saturation becomes the
+# explanation for the rung's numbers.
+#
+# Measured on the isolated stand 2026-09-27: at 160 rps the pool had been doubled
+# twice (672 workers), the spin tails alone cost 117% of a core, the rung posted
+# 19 dropped ticks and lag p99 6.3 ms - and doubling the pool again would have made
+# it worse, because every extra worker adds another busy-wait tail. A stage whose
+# generator is this busy is not evidence about the platform, so it is invalid and,
+# unlike an undersized pool, it must not be answered with a bigger pool.
+GENERATOR_CPU_LIMIT = 0.8
+
 # A calibration sample above this would mean the host cannot keep time at all;
 # the tail is capped so the generator does not answer that with a busy loop.
 CALIBRATED_TAIL_CAP_MS = 25.0
@@ -121,10 +144,25 @@ class StageResult:
     # The busy-wait tail this run used, in ms: a number the report prints rather
     # than a hidden knob, because it is part of how the generator behaved.
     spin_tail_ms: float = 0.0
+    # Process CPU seconds spent by the stage, all threads summed. The generator
+    # is part of the instrument, so its cost is evidence rather than trivia: a
+    # stage measured by a saturated generator is a stage about the generator.
+    cpu_s: float = 0.0
 
     @property
     def tick_lag_p99(self) -> float:
         return percentile(self.tick_lag_ms, 0.99) if self.tick_lag_ms else 0.0
+
+    @property
+    def cpu_utilisation(self) -> float:
+        """Generator CPU spent per second of measured stage time, in cores."""
+        measured = self.spec.measured_duration_s
+        return self.cpu_s / measured if measured > 0 else 0.0
+
+    @property
+    def generator_bound(self) -> bool:
+        """True when the instrument, not the platform, was the bottleneck."""
+        return self.cpu_utilisation >= GENERATOR_CPU_LIMIT
 
     @property
     def accounted_ticks(self) -> int:
@@ -134,10 +172,18 @@ class StageResult:
     @property
     def is_valid(self) -> bool:
         """§3 and §10: no dropped tick, and the generator stayed on schedule."""
+        if self.generator_bound:
+            return False
         return self.dropped_ticks == 0 and self.tick_lag_p99 < LAG_INVALID_MS
 
     def invalid_reasons(self) -> list[str]:
         reasons = []
+        if self.generator_bound:
+            reasons.append(
+                f"generator CPU {self.cpu_utilisation * 100:.0f}% of one core >= "
+                f"{GENERATOR_CPU_LIMIT * 100:.0f}%: the instrument saturated, so the "
+                "latency measured here is partly its own queue"
+            )
         if self.dropped_ticks:
             reasons.append(f"{self.dropped_ticks} dropped tick(s)")
         if self.tick_lag_p99 >= LAG_INVALID_MS:
@@ -151,7 +197,9 @@ class StageResult:
 
     def meets(self, t_budget_ms: float, max_error_rate: float = 0.01) -> bool:
         """The capacity criterion (§7), and only for a valid stage."""
-        return self.is_valid and self.stats.meets(t_budget_ms, max_error_rate)
+        return self.is_valid and self.stats.meets(
+            t_budget_ms, max_error_rate, target_rps=self.spec.target_rps
+        )
 
 
 class WorkloadPlan:
@@ -231,6 +279,8 @@ class StageRunner:
         clock: Callable[[], float] | None = None,
         sleeper: Callable[[float], None] | None = None,
         spin_wait_s: float | None = None,
+        cpu_clock: Callable[[], float] | None = None,
+        session_open_rate: float = SESSION_OPEN_RATE,
     ) -> None:
         """``spin_wait_s`` is the busy-wait tail before a deadline.
 
@@ -250,7 +300,13 @@ class StageRunner:
         """
         self.driver = driver
         self.clock = clock or time.perf_counter
+        self.clock_cpu = cpu_clock or time.process_time
         self.sleeper = sleeper or time.sleep
+        if session_open_rate <= 0:
+            raise ValueError(
+                f"session_open_rate must be positive, got {session_open_rate}"
+            )
+        self.session_open_rate = session_open_rate
         self._spin_wait_s = spin_wait_s
         self._calibrated_tail_ms: float | None = None
 
@@ -268,10 +324,7 @@ class StageRunner:
         if worker_count < 1:
             raise ValueError(f"workers must be positive, got {worker_count}")
 
-        sessions = [
-            self.driver.open_session(tenants[index % len(tenants)])
-            for index in range(worker_count)
-        ]
+        sessions = self._open_sessions(tenants, worker_count)
         schedule = _Schedule(spec.total_ticks)
         buffers = [_WorkerBuffer() for _ in range(worker_count)]
         interval = spec.interval_ms
@@ -280,6 +333,7 @@ class StageRunner:
         # ticks late and drop them (measured: 9 dropped ticks at 20 rps).
         tail_ms = self._tail_ms(interval / 1000.0 * worker_count)
         started = self.clock()
+        cpu_before = self.clock_cpu()
         warmup_ms = spec.warmup_s * 1000.0
 
         def worker(worker_id: int) -> None:
@@ -348,7 +402,30 @@ class StageRunner:
             reinitialisations=sum(buffer.reinitialisations for buffer in buffers),
             warmup_ticks=len(records) - len(measured),
             spin_tail_ms=tail_ms,
+            cpu_s=self.clock_cpu() - cpu_before,
         )
+
+    def _open_sessions(
+        self, tenants: Sequence[str], worker_count: int
+    ) -> list[McpSession]:
+        """Open one session per worker, paced so the handshakes are not a burst.
+
+        Pacing lives here rather than in a driver because it is a property of the
+        generator, not of the layer: whatever is being measured, opening a wide
+        pool in a tight loop spends a rate budget the stage has not started using
+        yet. Sessions are opened sequentially in one thread, which is also what
+        makes the pacing meaningful.
+        """
+        minimum_gap = 1.0 / self.session_open_rate
+        started = self.clock()
+        sessions: list[McpSession] = []
+        for index in range(worker_count):
+            due = index * minimum_gap
+            spent = self.clock() - started
+            if spent < due:
+                self.sleeper(due - spent)
+            sessions.append(self.driver.open_session(tenants[index % len(tenants)]))
+        return sessions
 
     def _wait_until(self, deadline_ms: float, started: float, tail_ms: float) -> None:
         """Sleep up to the deadline, then hold the tail by waiting.

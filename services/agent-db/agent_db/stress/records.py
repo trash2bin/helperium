@@ -149,9 +149,29 @@ class StageStats:
     def error_rate(self) -> float:
         return self.errors / self.count if self.count else 0.0
 
-    def meets(self, t_budget_ms: float, max_error_rate: float = 0.01) -> bool:
-        """Capacity criterion (§7): p95 within budget and errors under 1%."""
-        return self.p95 <= t_budget_ms and self.error_rate <= max_error_rate
+    def meets(
+        self,
+        t_budget_ms: float,
+        max_error_rate: float = 0.01,
+        *,
+        target_rps: float | None = None,
+    ) -> bool:
+        """The capacity criterion (§7): p95 within budget and errors under 1%.
+
+        The percentile is the CO-compensated one, because this is an open-loop
+        test: a generator that fell behind would otherwise understate latency and
+        the knee would look better than it is (§2). When ``target_rps`` is given
+        the stage must also have achieved 98% of it, which is the other half of
+        the same criterion - a rung that silently ran fewer turns than asked is
+        not evidence that the rate was held.
+        """
+        if self.compensated_p95 > t_budget_ms:
+            return False
+        if self.error_rate > max_error_rate:
+            return False
+        if target_rps is not None and self.achieved_rps < 0.98 * target_rps:
+            return False
+        return True
 
 
 def summarise(records: Sequence[RawRequestRecord], duration_s: float) -> StageStats:

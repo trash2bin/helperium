@@ -1,0 +1,426 @@
+"""Report rendering: fixed columns, an ASCII knee chart, stated caveats (§10).
+
+The columns are fixed so two runs can be compared by eye instead of by retelling:
+``profile | scope | target rps | achieved | p50 | p95 | p99 | err% |
+platform_overhead p95 | platform_overhead_model p95 | stub queue_wait p95 |
+mcp_lock_wait p95 | prompt_tokens p50 | terminator mix | SUT CPU | generator CPU |
+lag p99 | verdict | environment hash``.
+
+A column the layer cannot produce is printed as ``n/a`` with a reason rather than
+dropped: L1 has no stub, no lock wait and no prompt tokens, and a reader comparing
+an L1 table with an L3 table has to see that the difference is the layer, not a
+missing measurement. Nothing here invents a value, and the notes section carries
+the interpretation caveats that make an otherwise correct number misleading -
+starting with the one §1 insists on, that an L1 knee is not MCP-session
+serialization because the per-tenant ``call_lock`` lives in api-service.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Sequence
+
+from .ladder import LadderResult, StageOutcome
+from .manifest import RunManifest
+
+COLUMNS: tuple[str, ...] = (
+    "profile",
+    "scope",
+    "target_rps",
+    "achieved_rps",
+    "p50",
+    "p95",
+    "p99",
+    "err_pct",
+    "platform_overhead_p95",
+    "platform_overhead_model_p95",
+    "stub_queue_wait_p95",
+    "mcp_lock_wait_p95",
+    "prompt_tokens_p50",
+    "terminator_mix",
+    "sut_cpu",
+    "generator_cpu",
+    "lag_p99",
+    "verdict",
+    "environment_hash",
+)
+
+# Metrics a layer cannot produce in phase 1, and why. Kept next to the columns so
+# the reason travels with the empty cell.
+UNAVAILABLE_PHASE_1: dict[str, str] = {
+    "platform_overhead_model_p95": "nominal LLM latencies need the stub (phase 2)",
+    "stub_queue_wait_p95": "the stub reports its own timings from phase 2 on",
+    "mcp_lock_wait_p95": "mcp_lock_wait_seconds is scraped from api-service /metrics",
+    "sut_cpu": "server CPU comes from cgroup slices, collected separately",
+    "generator_cpu": "cpu time is measured per stage by the harness",
+    "platform_overhead_p95": "needs LLM timings to subtract (phase 2)",
+}
+
+# Columns whose emptiness is a property of the layer, not of the tooling.
+LAYER_UNAVAILABLE: dict[str, dict[str, str]] = {
+    "L1": {
+        "platform_overhead_model_p95": "L1 does not call the LLM",
+        "stub_queue_wait_p95": "L1 has no stub",
+        "mcp_lock_wait_p95": "api-service is not on the L1 path",
+        "prompt_tokens_p50": "L1 has no prompt",
+        "terminator_mix": "L1 turns are not terminated by the agent loop",
+    }
+}
+
+
+def stage_row(
+    stage: StageOutcome,
+    *,
+    profile: str,
+    scope: str,
+    environment_hash: str,
+    layer: str,
+    platform_overhead_p95: float | None = None,
+) -> dict[str, Any]:
+    """One table row, with ``None`` where the layer has no such quantity."""
+    stats = stage.stats
+    unavailable = LAYER_UNAVAILABLE.get(layer, {})
+    row: dict[str, Any] = {
+        "profile": profile,
+        "scope": scope,
+        "target_rps": stage.target_rps,
+        "achieved_rps": round(stats.achieved_rps, 2),
+        "p50": round(stats.p50, 2),
+        "p95": round(stats.p95, 2),
+        "p99": round(stats.p99, 2),
+        "err_pct": round(stats.error_rate * 100, 3),
+        # On L1 there is no LLM latency to subtract, so platform_overhead *is* the
+        # compensated turn latency (§1). Asserting that here, instead of relying on
+        # a caller to pass the same number, keeps the identity in one place.
+        "platform_overhead_p95": (
+            round(platform_overhead_p95, 2)
+            if platform_overhead_p95 is not None
+            else (round(stats.compensated_p95, 2) if layer == "L1" else None)
+        ),
+        "platform_overhead_model_p95": None,
+        "stub_queue_wait_p95": None,
+        "mcp_lock_wait_p95": None,
+        "prompt_tokens_p50": (
+            round(stats.prompt_tokens_p50, 1)
+            if stats.prompt_tokens_p50 is not None
+            else None
+        ),
+        "terminator_mix": dict(stats.terminator_mix) or None,
+        "sut_cpu": None,
+        # The generator is part of the instrument, so its own CPU is measured
+        # rather than assumed: a rung bought with a saturated generator is a
+        # number about the generator.
+        "generator_cpu": (
+            round(stage.cpu_s / stage.measured_duration_s * 100, 2)
+            if stage.cpu_s and stage.measured_duration_s
+            else None
+        ),
+        "lag_p99": round(stage.tick_lag_p99, 3),
+        "verdict": stage.verdict,
+        "environment_hash": environment_hash,
+    }
+    for column in unavailable:
+        row[column] = None
+    return row
+
+
+def unavailable_reasons(row: dict[str, Any], *, layer: str) -> dict[str, str]:
+    """Why each ``None`` cell is empty. Emptiness is an assertion too."""
+    layer_reasons = LAYER_UNAVAILABLE.get(layer, {})
+    reasons: dict[str, str] = {}
+    for column in COLUMNS:
+        if row.get(column) is not None:
+            continue
+        reasons[column] = layer_reasons.get(
+            column, UNAVAILABLE_PHASE_1.get(column, "not measured by any driver yet")
+        )
+    return reasons
+
+
+def interpretation_notes(result: LadderResult, manifest: RunManifest) -> list[str]:
+    """What a reader must know so a correct number is not misread."""
+    notes: list[str] = []
+    layer = result.target_layer
+    if layer == "L1":
+        notes.append(
+            "L1 knee measures mcp-gateway + data-service + the tenant DB: the "
+            "per-tenant call_lock lives in api-service, which is not on this path "
+            "(§1). MCP-session serialization is only observable on L2/L3."
+        )
+    if result.plan.repeats < 2:
+        notes.append(
+            f"single run (repeats={result.plan.repeats}): §2 publishes a headline "
+            "only as the median of 2-3 runs, so this number is a shape, not a rate."
+        )
+    if manifest.environment.budget_preset != "off":
+        notes.append(
+            "budgets were not off: the rung may measure the limiter rather than the "
+            "platform (§5)."
+        )
+    blockers = manifest.publication_blockers()
+    if blockers:
+        notes.append(
+            "environment is incomplete, so this run is not publishable as capacity: "
+            + "; ".join(blockers)
+        )
+    if result.prediction is not None and result.knee and result.knee.rate:
+        predicted = result.prediction.rate
+        found = result.knee.rate
+        ratio = found / predicted if predicted else 0.0
+        notes.append(
+            f"predicted {predicted:.1f} rps, found {found:.1f} rps (ratio {ratio:.2f}): "
+            "a ratio near 1 supports the per-tenant serialization model, a large "
+            "miss means some other ceiling dominates (§3)."
+        )
+    for stage in result.stages:
+        if stage.verdict == "invalid":
+            notes.append(
+                f"stage {stage.target_rps:.0f} rps was invalid after "
+                f"{stage.pool_expansions} pool expansion(s) and produced no verdict: "
+                + "; ".join(stage.invalid_reasons)
+            )
+    if result.stages and result.stages[-1].verdict == "invalid" and result.knee:
+        # The rung above the knee never produced a verdict, so the knee is the
+        # last rate that was *shown* to be held - not the last rate the platform
+        # could hold. Publishing it as the ceiling would read as a measurement of
+        # the platform when it is a measurement of the stand.
+        notes.append(
+            f"the rung above the knee ({result.stages[-1].target_rps:.0f} rps) was "
+            f"invalid, so the knee {result.knee.rate:.0f} rps is a LOWER BOUND: the "
+            "platform was never shown to fail above it"
+        )
+        if stage.valid and stage.stats.error_mix:
+            notes.append(
+                f"stage {stage.target_rps:.0f} rps errors: {stage.stats.error_mix}"
+            )
+    return notes
+
+
+def build_report(
+    *,
+    result: LadderResult,
+    manifest: RunManifest,
+    scope: str,
+    profile_path: str | None = None,
+    platform_overhead_p95: float | None = None,
+    wall_clock_s: float | None = None,
+) -> dict[str, Any]:
+    """Machine-readable verdict and evidence summary (``report.json``)."""
+    environment_hash = manifest.environment_hash(short=True)
+    rows = [
+        stage_row(
+            stage,
+            profile=result.profile_name,
+            scope=scope,
+            environment_hash=environment_hash,
+            layer=result.target_layer,
+            platform_overhead_p95=platform_overhead_p95,
+        )
+        for stage in result.stages
+    ]
+    return {
+        "report_version": 1,
+        "run_uuid": manifest.run_uuid,
+        "started_at": manifest.started_at,
+        "wall_clock_s": wall_clock_s,
+        "profile": result.profile_name,
+        "profile_path": profile_path,
+        "target_layer": result.target_layer,
+        "scope": scope,
+        "t_budget_ms": result.plan.t_budget_ms,
+        "max_error_rate": result.plan.max_error_rate,
+        "environment_hash": environment_hash,
+        "environment_hash_full": manifest.environment_hash(),
+        "code": manifest.code.as_dict(),
+        "ladder": {
+            "rates": list(result.plan.rates),
+            "status": result.status,
+            "knee_rps": result.knee.rate if result.knee else None,
+            "knee_bracket": list(result.knee.bracket)
+            if result.knee and result.knee.bracket
+            else None,
+            "tolerance": result.plan.tolerance,
+            "bisection_steps": result.knee.bisection_steps if result.knee else 0,
+            "headline": result.headline(),
+            "repeats": result.plan.repeats,
+        },
+        "prediction": result.prediction.as_dict() if result.prediction else None,
+        "columns": list(COLUMNS),
+        "rows": rows,
+        "unavailable": {
+            str(row["target_rps"]): unavailable_reasons(row, layer=result.target_layer)
+            for row in rows
+        },
+        "notes": interpretation_notes(result, manifest),
+        "blockers": manifest.publication_blockers(),
+    }
+
+
+def _fmt(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, float):
+        return f"{value:.3g}"
+    if isinstance(value, dict):
+        return ", ".join(f"{key}={val}" for key, val in value.items()) or "n/a"
+    return str(value)
+
+
+MARKDOWN_COLUMNS: tuple[str, ...] = (
+    "target_rps",
+    "achieved_rps",
+    "p50",
+    "p95",
+    "p99",
+    "err_pct",
+    "platform_overhead_p95",
+    "lag_p99",
+    "verdict",
+    "environment_hash",
+)
+
+HEADERS: dict[str, str] = {
+    "target_rps": "target rps",
+    "achieved_rps": "achieved",
+    "p50": "p50",
+    "p95": "p95",
+    "p99": "p99",
+    "err_pct": "err%",
+    "platform_overhead_p95": "overhead p95",
+    "lag_p99": "lag p99",
+    "verdict": "verdict",
+    "environment_hash": "env hash",
+}
+
+
+def render_markdown(report: dict[str, Any]) -> str:
+    """The human-readable report: table, knee chart, notes, evidence pointers."""
+    rows = report["rows"]
+    budget = report["t_budget_ms"]
+    lines: list[str] = [
+        f"# Stress report: {report['profile']} ({report['target_layer']}, "
+        f"{report['scope']})",
+        "",
+        f"- run: `{report['run_uuid']}` started {report['started_at']}",
+        f"- code: `{report['code']['commit'][:12]}` on `{report['code']['branch']}`"
+        f"{' (dirty)' if report['code']['dirty'] else ''}",
+        f"- environment hash: `{report['environment_hash']}`",
+        f"- criterion: p95 <= {budget} ms and error <= "
+        f"{report['max_error_rate'] * 100:.0f}%",
+        "",
+        "| " + " | ".join(HEADERS[c] for c in MARKDOWN_COLUMNS) + " |",
+        "|" + "|".join("---" for _ in MARKDOWN_COLUMNS) + "|",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(_fmt(row.get(column)) for column in MARKDOWN_COLUMNS)
+            + " |"
+        )
+
+    knee = report["ladder"]
+    lines += ["", "## Knee", ""]
+    if knee["knee_rps"] is not None:
+        lines.append(
+            f"- knee: **{knee['knee_rps']:.2f} rps** "
+            f"(status `{knee['status']}`, tolerance +/-{knee['tolerance'] * 100:.0f}%, "
+            f"{knee['bisection_steps']} bisection step(s))"
+        )
+    else:
+        lines.append(f"- knee: **not determined** (status `{knee['status']}`)")
+    if knee["knee_bracket"]:
+        low, high = knee["knee_bracket"]
+        lines.append(f"- bracket: {low:.2f} - {high:.2f} rps")
+    if knee["headline"]:
+        headline = knee["headline"]
+        lines.append(
+            f"- repeats: {headline['runs']:.0f}, p95 median {headline['p95_median']:.2f} ms "
+            f"(min {headline['p95_min']:.2f}, max {headline['p95_max']:.2f})"
+        )
+    if report["prediction"]:
+        lines.append(
+            f"- predicted: {report['prediction']['rate']:.2f} rps "
+            f"({report['prediction']['model']})"
+        )
+
+    lines += ["", "## Knee chart (rps to p95)", "", "```"]
+    chart = _knee_chart(rows, budget)
+    lines.extend(chart)
+    lines += ["```"]
+
+    if report["unavailable"]:
+        lines += [
+            "",
+            "## Empty cells",
+            "",
+            "| target rps | column | reason |",
+            "|---|---|---|",
+        ]
+        for rps, reasons in report["unavailable"].items():
+            for column, reason in reasons.items():
+                lines.append(f"| {rps} | {column} | {reason} |")
+
+    if report["notes"]:
+        lines += ["", "## Notes and caveats", ""]
+        lines += [f"- {note}" for note in report["notes"]]
+
+    lines += [
+        "",
+        "## Evidence",
+        "",
+        "Raw per-request records live in `raw/<stage>.jsonl`; the profile snapshot, "
+        "the manifest and this report sit next to them (§10).",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _knee_chart(
+    rows: Sequence[dict[str, Any]], budget: float, width: int = 48
+) -> list[str]:
+    """ASCII chart of p95 against the rate, with the budget as the pass line.
+
+    A chart rather than a plotting dependency: the artefact has to render in CI
+    and in a terminal, and a knee is a shape - the numbers are already in the
+    table above.
+    """
+    measured = [row for row in rows if row.get("p95") is not None]
+    if not measured:
+        return ["no measured stages"]
+    top = max(max(row["p95"] for row in measured), budget * 1.05)
+    lines = [f"budget {budget:.0f} ms at {budget / top * width:.0f} of {width}"]
+    for row in measured:
+        filled = int(round(row["p95"] / top * width))
+        marker = "PASS" if row["verdict"] == "pass" else row["verdict"].upper()
+        lines.append(
+            f"{row['target_rps']:>6.1f} rps |{'#' * filled:<{width}}| "
+            f"p95 {row['p95']:>8.2f} ms  {marker}"
+        )
+    lines.append(f"{'':>6}      +{'-' * width}+  (dashed line: budget {budget:.0f} ms)")
+    return lines
+
+
+def write_report(directory: str | Path, report: dict[str, Any]) -> tuple[Path, Path]:
+    """Write ``report.json`` and ``report-<uuid>.md`` into the run directory."""
+    target = Path(directory)
+    target.mkdir(parents=True, exist_ok=True)
+    json_path = target / "report.json"
+    json_path.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    md_path = target / f"report-{report['run_uuid']}.md"
+    md_path.write_text(render_markdown(report), encoding="utf-8")
+    return json_path, md_path
+
+
+__all__ = [
+    "COLUMNS",
+    "MARKDOWN_COLUMNS",
+    "build_report",
+    "interpretation_notes",
+    "render_markdown",
+    "stage_row",
+    "unavailable_reasons",
+    "write_report",
+]

@@ -180,6 +180,29 @@ class TestSummarise:
         )
         assert erroring.meets(t_budget_ms=50.0) is False
 
+    def test_the_criterion_uses_the_compensated_percentile(self) -> None:
+        # Twenty turns that started 300 ms late: their measured latency is 40 ms,
+        # but the platform saw them 340 ms after they were due. Judging on the
+        # uncorrected p95 would call this rung healthy (open-loop CO, §2).
+        slipping = [
+            _record(
+                planned_ms=float(i * 100),
+                started_ms=float(i * 100 + 300),
+                actual_ms=40.0,
+            )
+            for i in range(20)
+        ]
+        stats = summarise(slipping, duration_s=2.0)
+        assert stats.p95 == pytest.approx(40.0)
+        assert stats.meets(t_budget_ms=50.0) is False
+
+    def test_a_rung_that_ran_fewer_turns_than_asked_does_not_pass(self) -> None:
+        # §7: achieved >= 0.98 x target is part of the criterion, not a footnote.
+        half = summarise([_record(actual_ms=10.0) for _ in range(50)], duration_s=1.0)
+        assert half.achieved_rps == pytest.approx(50.0)
+        assert half.meets(t_budget_ms=50.0, target_rps=50.0) is True
+        assert half.meets(t_budget_ms=50.0, target_rps=100.0) is False
+
     def test_missing_llm_metrics_do_not_fabricate_zero(self) -> None:
         stats = summarise([_record()], duration_s=1.0)
         assert stats.t_complete_p95 is None

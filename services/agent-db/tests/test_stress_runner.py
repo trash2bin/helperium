@@ -217,6 +217,101 @@ class TestWorkloadPlan:
             WorkloadPlan([], scenario="sqlite-testseed")
 
 
+class TestGeneratorSaturation:
+    def test_a_cpu_starved_generator_invalidates_the_stage(self) -> None:
+        # 90% of a core spent by the instrument: the latency measured here is
+        # partly the generator's own queue, so the rung has no verdict.
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        reads = {"n": 0}
+
+        def cpu_clock() -> float:
+            # The runner reads the CPU clock once before the stage and once after.
+            reads["n"] += 1
+            return 0.0 if reads["n"] == 1 else 1.35
+
+        runner = StageRunner(
+            driver,
+            clock=clock,
+            sleeper=clock.sleep,
+            spin_wait_s=0.0,
+            cpu_clock=cpu_clock,
+        )
+        stage_spec = spec()
+        result = runner.run(stage_spec, plan(), tenants=["t-1"])
+        assert result.cpu_utilisation == pytest.approx(
+            1.35 / stage_spec.measured_duration_s, rel=0.01
+        )
+        assert result.generator_bound is True
+        assert result.is_valid is False
+        assert any("generator CPU" in reason for reason in result.invalid_reasons())
+
+    def test_a_quiet_generator_is_not_a_reason_for_invalidity(self) -> None:
+        result = virtual_runner(FakeDriver(VirtualClock()), VirtualClock()).run(
+            spec(), plan(), tenants=["t-1"]
+        )
+        assert result.generator_bound is False
+        assert result.is_valid is True
+
+
+class TestSessionOpening:
+    def test_the_pool_is_opened_at_a_paced_rate(self) -> None:
+        # Opening 20 sessions at 50/s cannot be a burst: the gaps between the
+        # openings sum to 19/50 s, and no single wait exceeds one gap.
+        clock = VirtualClock()
+        sleeps: list[float] = []
+
+        def sleeper(seconds: float) -> None:
+            sleeps.append(seconds)
+            clock.sleep(seconds)
+
+        driver = FakeDriver(clock)
+        runner = StageRunner(
+            driver,
+            clock=clock,
+            sleeper=sleeper,
+            spin_wait_s=0.0,
+            session_open_rate=50.0,
+        )
+        runner.run(
+            spec(rps=5.0, duration_s=0.4, warmup_s=0.1),
+            plan(),
+            tenants=["t-1"],
+            workers=20,
+        )
+        assert len(driver.opened) == 20
+        assert sum(sleeps[:19]) == pytest.approx(19 / 50.0, rel=0.02)
+        assert max(sleeps[:19]) <= 1 / 50.0 + 1e-9
+
+    def test_pacing_does_not_eat_the_stage_clock(self) -> None:
+        # The bug this guards against already happened twice (calibration after
+        # the start, dropped ticks at 20 rps): slow setup must finish *before* the
+        # clock the ticks are measured against.
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        runner = StageRunner(
+            driver,
+            clock=clock,
+            sleeper=clock.sleep,
+            spin_wait_s=0.0,
+            session_open_rate=10.0,
+        )
+        result = runner.run(spec(), plan(), tenants=["t-1"], workers=5)
+        assert result.tick_lag_ms[0] == pytest.approx(0.0, abs=1e-9)
+        assert result.dropped_ticks == 0
+
+    def test_an_open_rate_of_zero_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="session_open_rate"):
+            StageRunner(FakeDriver(VirtualClock()), session_open_rate=0.0)
+
+    def test_sessions_are_spread_across_tenants_in_order(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        runner = StageRunner(driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0)
+        runner.run(spec(), plan(), tenants=["t-1", "t-2"], workers=4)
+        assert driver.opened == ["t-1", "t-2", "t-1", "t-2"]
+
+
 class TestStageRun:
     def test_runs_every_tick_of_the_stage(self) -> None:
         clock = VirtualClock()
