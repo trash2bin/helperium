@@ -834,7 +834,11 @@ func MakeAuditHandler(toolName, tenantID string, inner server.ToolHandlerFunc) s
 			slog.String("tool", toolName),
 			slog.String("tenant", tenantID),
 			slog.String("args", argsStr),
-			slog.Int64("duration_ms", elapsed.Milliseconds()),
+			// Fractional, not whole milliseconds: at L1 a tool call is
+			// sub-millisecond, and Int64(elapsed.Milliseconds()) logged every
+			// one of them as 0 - the field existed and said nothing, exactly on
+			// the latencies the load harness measures.
+			slog.Float64("duration_ms", float64(elapsed.Microseconds())/1000.0),
 			slog.Int("result_size", resultSize),
 		}
 

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/trash2bin/helperium/helperium-go/config"
@@ -768,7 +770,11 @@ func TestToolCallAuditLogsDuration(t *testing.T) {
 	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
 	slog.SetDefault(slog.New(h))
 
+	// 1.5 ms on purpose: whole-millisecond logging truncates this to 1, and a
+	// sub-millisecond call to 0. The assertion has to fail for the truncated
+	// value, or the test would pass on the bug it exists to prevent.
 	handler := MakeAuditHandler("slow_tool", "t1", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		time.Sleep(1500 * time.Microsecond)
 		return mcp.NewToolResultText("done"), nil
 	})
 
@@ -778,8 +784,24 @@ func TestToolCallAuditLogsDuration(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "duration_ms") && !strings.Contains(output, "duration") {
-		t.Errorf("log output should contain duration, got: %s", output)
+	if !strings.Contains(output, "duration_ms") {
+		t.Fatalf("log output should contain duration_ms, got: %s", output)
+	}
+	_, after, found := strings.Cut(output, "duration_ms=")
+	if !found {
+		t.Fatalf("could not read the logged duration from: %s", output)
+	}
+	field := strings.Fields(after)
+	if len(field) == 0 {
+		t.Fatalf("duration field is empty in: %s", output)
+	}
+	logged, err := strconv.ParseFloat(field[0], 64)
+	if err != nil {
+		t.Fatalf("logged duration %q is not a number: %v", field[0], err)
+	}
+	if logged < 1.4 {
+		t.Errorf("logged duration = %v ms, want the real elapsed time (>=1.4): "+
+			"whole milliseconds truncate a 1.5 ms call to 1 and a sub-ms call to 0", logged)
 	}
 }
 

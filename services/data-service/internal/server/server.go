@@ -49,9 +49,10 @@ func StructuredLoggingMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
+		elapsed := time.Since(start)
 		// Prometheus metrics — entity="all" для корневого уровня
 		metrics.DataRequestsTotal.WithLabelValues("all", r.Method, strconv.Itoa(wrapped.statusCode)).Inc()
-		metrics.DataRequestDuration.WithLabelValues("all", r.Method).Observe(float64(time.Since(start).Seconds()) * 1000)
+		metrics.DataRequestDuration.WithLabelValues("all", r.Method).Observe(elapsed.Seconds() * 1000)
 
 		traceID := tracing.TraceIDFromContext(r.Context())
 		slog.Info("request",
@@ -59,7 +60,9 @@ func StructuredLoggingMiddleware(next http.Handler) http.Handler {
 			"path", r.URL.Path,
 			"query", r.URL.RawQuery,
 			"status", wrapped.statusCode,
-			"duration_ms", time.Since(start).Milliseconds(),
+			// Fractional: whole milliseconds logged every sub-millisecond query
+			// as 0, and sub-millisecond is the normal case on a local stand.
+			"duration_ms", float64(elapsed.Microseconds())/1000.0,
 			"correlation_id", correlationID,
 			"trace_id", traceID,
 		)
