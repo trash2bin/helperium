@@ -1,9 +1,11 @@
 """Stress/capacity harness for Helperium (design: doc/stress/README.md).
 
 Status: phase 1 in progress. The contract layer (profile schema, argument
-fixtures, raw request record, percentile calculator) and the L1 driver with its
-MCP transport are written. The scheduler, session pool, substrate and report are
-not, and no number produced from this package is publishable until they are.
+fixtures, raw request record, percentile calculator), the L1 driver with its MCP
+transport, and the open-loop stage scheduler with its lag accounting are
+written. The session pool semantics, the LLM substrate, the ladder and the
+report are not, and no number produced from this package is publishable until
+they are.
 """
 
 from __future__ import annotations
@@ -38,6 +40,13 @@ from .records import (
     summarise,
     write_raw_records,
 )
+from .runner import (
+    LAG_INVALID_MS,
+    StageResult,
+    StageRunner,
+    StageSpec,
+    WorkloadPlan,
+)
 from .transport import (
     McpCallOutcome,
     McpSession,
@@ -48,6 +57,7 @@ from .transport import (
 )
 
 __all__ = [
+    "LAG_INVALID_MS",
     "PRELOAD_TOOL",
     "ArgumentFixture",
     "DriverConfigurationError",
@@ -60,11 +70,15 @@ __all__ = [
     "McpTransport",
     "ProfileValidationError",
     "RawRequestRecord",
+    "StageResult",
+    "StageRunner",
+    "StageSpec",
     "StageStats",
     "ToolCallTiming",
     "TransportError",
     "TransportStats",
     "TurnExecution",
+    "WorkloadPlan",
     "canonical_tool_name",
     "effective_fixture",
     "load_fixture",

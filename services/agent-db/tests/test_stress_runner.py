@@ -1,0 +1,410 @@
+"""Stage scheduler contract tests (doc/stress/README.md §2, §3, §10).
+
+Timing is injected, so the tests are deterministic: a virtual clock advances
+only when the sleeper is called, and a slow SUT is a driver that advances the
+same clock. That makes "the generator fell behind" a reproducible input instead
+of a flake on a busy machine - which matters, because the whole point of the
+scheduler is to be able to tell a slow platform from a slow generator.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from agent_db.stress.profile import WorkloadStep
+from agent_db.stress.records import ErrorClass, RawRequestRecord
+from agent_db.stress.runner import (
+    LAG_INVALID_MS,
+    StageResult,
+    StageRunner,
+    StageSpec,
+    WorkloadPlan,
+)
+from agent_db.stress.transport import McpSession
+
+INTERVAL_MS = 200.0  # 5 rps
+
+
+class VirtualClock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def step(
+    name: str = "one_tool", weight: float = 1.0, tools: tuple[str, ...] = ("db_get",)
+) -> WorkloadStep:
+    return WorkloadStep.model_validate(
+        {"weight": weight, "name": name, "tools": list(tools), "history_turns": 0}
+    )
+
+
+class FakeDriver:
+    """Driver whose turn costs a fixed latency and advances the virtual clock."""
+
+    def __init__(
+        self, clock: VirtualClock, *, turn_ms: float = 5.0, error_every: int = 0
+    ) -> None:
+        self.clock = clock
+        self.turn_ms = turn_ms
+        self.error_every = error_every
+        self.turns: list[dict[str, Any]] = []
+        self.opened: list[str] = []
+        self.closed = 0
+
+    def open_session(self, tenant: str) -> McpSession:
+        self.opened.append(tenant)
+        return McpSession(
+            tenant,
+            None,
+            "/mcp",
+            timeout_s=5.0,
+            initialised=True,
+            session_id=f"s-{tenant}",
+        )  # type: ignore[arg-type]
+
+    def close_session(self, session: McpSession) -> None:
+        self.closed += 1
+
+    def execute_turn(
+        self,
+        session: McpSession,
+        the_step: WorkloadStep,
+        *,
+        planned_ms: float,
+        started_ms: float,
+        tenant: str,
+        scenario: str,
+    ) -> Any:
+        from agent_db.stress.driver import ToolCallTiming, TurnExecution
+
+        self.turns.append(
+            {
+                "step": the_step.name,
+                "planned_ms": planned_ms,
+                "started_ms": started_ms,
+                "tenant": tenant,
+            }
+        )
+        self.clock.sleep(self.turn_ms / 1000.0)
+        index = len(self.turns)
+        failed = bool(self.error_every) and index % self.error_every == 0
+        record = RawRequestRecord(
+            planned_ms=planned_ms,
+            started_ms=started_ms,
+            actual_ms=self.turn_ms,
+            t_complete=self.turn_ms,
+            session_id=session.session_id or "",
+            tenant=tenant,
+            scenario=scenario,
+            status="error" if failed else "ok",
+            http_status=429 if failed else 200,
+            error_class=ErrorClass.BUDGET_429 if failed else None,
+        )
+        call = ToolCallTiming(
+            index=0, tool=the_step.tools[0], elapsed_ms=self.turn_ms, http_status=200
+        )
+        return TurnExecution(record=record, calls=(call,))
+
+
+def stats_ok():
+    """A minimal valid aggregate, for tests that only need *a* stats object."""
+    from agent_db.stress.records import summarise
+
+    return summarise(
+        [RawRequestRecord(planned_ms=0.0, started_ms=0.0, actual_ms=1.0)], 1.0
+    )
+
+
+def virtual_runner(driver: FakeDriver, clock: VirtualClock) -> StageRunner:
+    """Runner on a virtual clock.
+
+    ``spin_wait_s=0`` is mandatory here: the spin tail waits for a clock that
+    advances, and a virtual clock only advances when the sleeper is called.
+    """
+    return StageRunner(driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0)
+
+
+def spec(rps: float = 5.0, duration_s: float = 1.0, warmup_s: float = 0.4) -> StageSpec:
+    return StageSpec(target_rps=rps, duration_s=duration_s, warmup_s=warmup_s)
+
+
+def plan(*steps: WorkloadStep, seed: int = 0) -> WorkloadPlan:
+    return WorkloadPlan(steps or (step(),), scenario="sqlite-testseed", seed=seed)
+
+
+class TestStageSpec:
+    def test_tick_budget(self) -> None:
+        assert spec(rps=5.0, duration_s=1.0, warmup_s=0.4).total_ticks == 5
+        assert spec(rps=0.5, duration_s=3.0, warmup_s=0.0).total_ticks == 2
+        assert spec(rps=5.0, duration_s=1.0, warmup_s=0.4).warmup_ticks == 2
+
+    def test_interval(self) -> None:
+        assert spec(rps=5.0).interval_ms == pytest.approx(INTERVAL_MS)
+
+    def test_measured_duration_excludes_warmup(self) -> None:
+        assert spec(
+            rps=5.0, duration_s=10.0, warmup_s=2.0
+        ).measured_duration_s == pytest.approx(8.0)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"target_rps": 0.0, "duration_s": 1.0, "warmup_s": 0.0},
+            {"target_rps": 1.0, "duration_s": 0.0, "warmup_s": 0.0},
+            {"target_rps": 1.0, "duration_s": 10.0, "warmup_s": 10.0},
+            {"target_rps": 1.0, "duration_s": 10.0, "warmup_s": 11.0},
+            {"target_rps": 1.0, "duration_s": 10.0, "warmup_s": -1.0},
+        ],
+    )
+    def test_impossible_stages_are_refused(self, kwargs: dict[str, float]) -> None:
+        with pytest.raises(ValueError):
+            StageSpec(**kwargs)
+
+
+class TestWorkloadPlan:
+    def test_single_step_always_wins(self) -> None:
+        the_plan = plan()
+        assert the_plan.step_for(0).name == "one_tool"
+        assert the_plan.step_for(999).name == "one_tool"
+
+    def test_weights_are_respected(self) -> None:
+        the_plan = plan(step("heavy", 0.2), step("light", 0.8), seed=7)
+        counts = the_plan.step_counts(1000)
+        assert counts["light"] > counts["heavy"]
+        assert 0.7 < counts["light"] / 1000 < 0.9
+
+    def test_assignment_is_deterministic_for_an_index(self) -> None:
+        # Two runs of the same profile have to schedule the same workload on the
+        # same tick, whatever the thread interleaving.
+        first = plan(step("a", 0.5), step("b", 0.5), seed=3)
+        second = plan(step("a", 0.5), step("b", 0.5), seed=3)
+        assert [first.step_for(i).name for i in range(50)] == [
+            second.step_for(i).name for i in range(50)
+        ]
+
+    def test_seed_changes_the_workload(self) -> None:
+        first = plan(step("a", 0.5), step("b", 0.5), seed=1)
+        second = plan(step("a", 0.5), step("b", 0.5), seed=2)
+        assert [first.step_for(i).name for i in range(50)] != [
+            second.step_for(i).name for i in range(50)
+        ]
+
+    def test_from_profile_carries_the_scenario(self) -> None:
+        from agent_db.stress import load_profile
+        from pathlib import Path
+
+        profile = load_profile(
+            Path(__file__).resolve().parents[1]
+            / "agent_db"
+            / "stress"
+            / "profiles"
+            / "mcp-tool-call-l1.json"
+        )
+        the_plan = WorkloadPlan.from_profile(profile, seed=1)
+        assert the_plan.scenario == profile.fixture
+        assert the_plan.step_for(0).name in {s.name for s in profile.workload}
+
+    def test_empty_workload_is_refused(self) -> None:
+        with pytest.raises(ValueError):
+            WorkloadPlan([], scenario="sqlite-testseed")
+
+
+class TestStageRun:
+    def test_runs_every_tick_of_the_stage(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        result = virtual_runner(driver, clock).run(spec(), plan(), tenants=["t-1"])
+        assert len(result.records) == 5
+        assert result.dropped_ticks == 0
+        assert result.accounted_ticks == result.spec.total_ticks
+        assert result.is_valid
+        assert result.invalid_reasons() == []
+
+    def test_planned_offsets_follow_the_rate(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        result = virtual_runner(driver, clock).run(spec(), plan(), tenants=["t-1"])
+        assert [record.planned_ms for record in result.records] == [
+            0.0,
+            200.0,
+            400.0,
+            600.0,
+            800.0,
+        ]
+        assert [turn["planned_ms"] for turn in driver.turns] == [
+            0.0,
+            200.0,
+            400.0,
+            600.0,
+            800.0,
+        ]
+
+    def test_warmup_is_excluded_from_the_statistics_but_kept_in_raw(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        result = virtual_runner(driver, clock).run(
+            spec(warmup_s=0.4), plan(), tenants=["t-1"]
+        )
+        assert result.warmup_ticks == 2
+        assert result.stats.count == 3
+        assert len(result.records) == 5
+        # achieved rps is measured over the measured window only.
+        assert result.stats.achieved_rps == pytest.approx(3 / 0.6)
+
+    def test_sessions_are_opened_per_worker_and_closed(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        virtual_runner(driver, clock).run(
+            spec(), plan(), tenants=["t-1", "t-2"], workers=3
+        )
+        assert driver.opened == ["t-1", "t-2", "t-1"]
+        assert driver.closed == 3
+
+    def test_tenants_are_distributed_round_robin(self) -> None:
+        # Real time on purpose: a virtual clock only advances when someone
+        # sleeps, so one worker would take every ticket and the second tenant
+        # would never be exercised. The point here is the schedule, not physics.
+        driver = FakeDriver(VirtualClock(), turn_ms=5.0)
+        result = StageRunner(driver).run(
+            spec(rps=20.0, duration_s=0.5, warmup_s=0.1),
+            plan(),
+            tenants=["a", "b"],
+            workers=2,
+        )
+        assert {record.tenant for record in result.records} == {"a", "b"}
+        assert result.dropped_ticks == 0
+
+    def test_turns_run_concurrently_across_workers(self) -> None:
+        # A turn slower than the interval is fine while workers are free: the
+        # stage must not silently degrade to a sequential loop. Real time again:
+        # with a shared virtual clock the workers would drift apart and the
+        # second one would look late though it is only waiting its turn.
+        driver = FakeDriver(VirtualClock(), turn_ms=150.0)
+        result = StageRunner(driver).run(
+            spec(rps=10.0, duration_s=0.6, warmup_s=0.1),
+            plan(),
+            tenants=["t-1", "t-2"],
+            workers=2,
+        )
+        assert result.dropped_ticks == 0
+        assert len(result.records) == 6
+        # Deliberately no is_valid assert: this runs on whatever machine the
+        # suite runs on, and tick lag above 5 ms there says something about the
+        # machine, not about the scheduler. The lag gate is exercised elsewhere.
+
+    def test_a_too_small_pool_drops_ticks_and_invalidates_the_stage(self) -> None:
+        # One worker, a turn four times the interval: the generator cannot keep
+        # the schedule, which must be reported as dropped ticks, not hidden.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=800.0)
+        result = virtual_runner(driver, clock).run(
+            spec(rps=5.0, duration_s=1.0, warmup_s=0.2),
+            plan(),
+            tenants=["t-1"],
+            workers=1,
+        )
+        assert result.dropped_ticks > 0
+        assert result.is_valid is False
+        assert any("dropped tick" in reason for reason in result.invalid_reasons())
+        assert result.accounted_ticks == result.spec.total_ticks
+
+    def test_verdict_refuses_an_invalid_stage_even_with_good_latency(self) -> None:
+        # An invalid stage has no verdict at all: a fast p95 measured while the
+        # generator was dropping ticks describes the generator, not the SUT.
+        invalid = StageResult(spec=spec(), stats=stats_ok(), dropped_ticks=1)
+        assert invalid.stats.p95 <= 50.0
+        assert invalid.meets(t_budget_ms=50.0) is False
+
+    def test_error_rate_is_measured_from_the_records(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=1.0, error_every=2)
+        result = virtual_runner(driver, clock).run(
+            spec(rps=5.0, duration_s=2.0, warmup_s=0.0), plan(), tenants=["t-1"]
+        )
+        assert result.stats.error_rate == pytest.approx(0.5)
+        assert result.stats.error_mix == {"429_budget": 5}
+        assert result.meets(t_budget_ms=50.0, max_error_rate=0.01) is False
+
+    def test_decomposition_is_collected_for_every_turn(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        result = virtual_runner(driver, clock).run(spec(), plan(), tenants=["t-1"])
+        assert len(result.calls) == len(result.records) == 5
+        assert result.calls[0].tool == "db_get"
+
+    def test_generator_lag_is_reported_and_can_invalidate_a_stage(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=1.0)
+        result = virtual_runner(driver, clock).run(spec(), plan(), tenants=["t-1"])
+        # An on-schedule generator has no lag at all under a virtual clock.
+        assert max(abs(value) for value in result.tick_lag_ms) < 1e-6
+        assert result.tick_lag_p99 == pytest.approx(0.0, abs=1e-6)
+
+        lagging = StageResult(
+            spec=spec(),
+            stats=result.stats,
+            tick_lag_ms=[1.0, 2.0, LAG_INVALID_MS + 1.0],
+        )
+        assert lagging.is_valid is False
+        assert any("lag" in reason for reason in lagging.invalid_reasons())
+
+    def test_calibrated_tail_keeps_the_generator_close_to_the_deadline(self) -> None:
+        # Real time, and deliberately so: sleep granularity is what the tail
+        # exists for and a virtual clock cannot express it. The tail is
+        # calibrated rather than guessed - a 1 ms guess left this host 4 ms late
+        # and a 10 ms guess burned 30% of a core. The median is asserted instead
+        # of the max so one hiccup on a shared machine is not a flake.
+        driver = FakeDriver(VirtualClock(), turn_ms=1.0)
+        result = StageRunner(driver).run(
+            spec(rps=20.0, duration_s=0.5, warmup_s=0.1), plan(), tenants=["t-1"]
+        )
+        median_lag = sorted(abs(value) for value in result.tick_lag_ms)[
+            len(result.tick_lag_ms) // 2
+        ]
+        assert result.spin_tail_ms > 0
+        assert median_lag < 2.0
+        assert result.dropped_ticks == 0
+
+    def test_an_explicit_tail_is_used_as_given(self) -> None:
+        # No virtual clock here: with a pinned tail the runner spins until the
+        # clock says the deadline has come, and a virtual clock only advances
+        # when the sleeper is called.
+        driver = FakeDriver(VirtualClock(), turn_ms=1.0)
+        result = StageRunner(driver, spin_wait_s=0.003).run(
+            spec(rps=20.0, duration_s=0.3, warmup_s=0.1), plan(), tenants=["t-1"]
+        )
+        assert result.spin_tail_ms == pytest.approx(3.0)
+
+        zero_tail = virtual_runner(FakeDriver(VirtualClock()), VirtualClock()).run(
+            spec(), plan(), tenants=["t-1"]
+        )
+        assert zero_tail.spin_tail_ms == 0.0
+
+    def test_unaccounted_ticks_are_reported(self) -> None:
+        result = StageResult(spec=spec(), stats=stats_ok(), records=[])
+        assert any("unaccounted" in reason for reason in result.invalid_reasons())
+
+    def test_a_stage_without_measured_ticks_is_refused(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock)
+        # warm-up covers every tick: nothing is left to measure.
+        with pytest.raises(ValueError, match="no measured ticks"):
+            virtual_runner(driver, clock).run(
+                spec(rps=1.0, duration_s=1.0, warmup_s=0.5), plan(), tenants=["t-1"]
+            )
+
+    def test_tenants_and_workers_are_validated(self) -> None:
+        clock = VirtualClock()
+        runner = virtual_runner(FakeDriver(clock), clock)
+        with pytest.raises(ValueError, match="tenant"):
+            runner.run(spec(), plan(), tenants=[])
+        with pytest.raises(ValueError, match="workers"):
+            runner.run(spec(), plan(), tenants=["t-1"], workers=0)
