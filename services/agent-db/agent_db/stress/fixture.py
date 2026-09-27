@@ -79,11 +79,16 @@ def load_fixture(name_or_path: str | Path) -> ArgumentFixture:
 def validate_fixture_covers(profile: LoadProfile, fixture: ArgumentFixture) -> None:
     """Refuse a profile whose workload has a tool the fixture cannot feed.
 
+    Coverage is checked against :meth:`LoadProfile.called_tools`, so the
+    platform's per-turn schema preload counts too: it is not in the profile but
+    it is in every turn, and a fixture that feeds only the declared tools would
+    fail on the first turn instead of during preflight.
+
     Extra fixture entries are allowed on purpose: one fixture is shared by
     several profiles and may carry arguments for tools a given profile never
     calls.
     """
-    missing = [name for name in profile.tool_names() if name not in fixture.arguments]
+    missing = [name for name in profile.called_tools() if name not in fixture.arguments]
     if missing:
         raise FixtureValidationError(
             f"fixture {fixture.name!r} has no arguments for "
@@ -93,5 +98,9 @@ def validate_fixture_covers(profile: LoadProfile, fixture: ArgumentFixture) -> N
 
 
 def effective_fixture(fixture: ArgumentFixture, profile: LoadProfile) -> ToolArguments:
-    """Arguments actually used by one profile, in the profile's tool order."""
-    return {name: fixture.arguments[name] for name in profile.tool_names()}
+    """Arguments one turn of this profile uses, preload first.
+
+    The order matches the calls a turn makes, so a driver can consume the two
+    without re-deriving anything.
+    """
+    return {name: fixture.arguments[name] for name in profile.called_tools()}

@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from agent_db.stress import (
+    ArgumentFixture,
     FixtureValidationError,
     LoadProfile,
     effective_fixture,
@@ -152,10 +153,32 @@ class TestCoverage:
         # tools a given profile never calls.
         validate_fixture_covers(_profile(["db_map"]), load_fixture("sqlite-testseed"))
 
+    def test_fixture_without_the_preload_tool_is_refused(self) -> None:
+        # Every turn prefetches the schema before the profile's calls (§3), so a
+        # fixture that feeds only the declared tools still cannot run a stage:
+        # the preload call would have no arguments at all.
+        fixture = ArgumentFixture.model_validate(
+            {
+                "fixture_version": 1,
+                "name": "no-preload",
+                "scenario": "sqlite-testseed",
+                "arguments": {"db_get": {"entity": "group", "id": "g1"}},
+            }
+        )
+        with pytest.raises(FixtureValidationError, match="db_map"):
+            validate_fixture_covers(_profile(["db_get"]), fixture)
+
+    def test_effective_fixture_starts_with_the_preload(self) -> None:
+        # The order matches what a turn does, so a caller can zip the two.
+        effective = effective_fixture(
+            load_fixture("sqlite-testseed"), _profile(["db_get"])
+        )
+        assert list(effective) == ["db_map", "db_get"]
+
     def test_effective_fixture_keeps_the_profile_tool_order(self) -> None:
-        profile = _profile(["db_search", "db_map"])
+        profile = _profile(["db_search", "db_get"])
         effective = effective_fixture(load_fixture("sqlite-testseed"), profile)
-        assert list(effective) == ["db_search", "db_map"]
+        assert list(effective) == ["db_map", "db_search", "db_get"]
         assert effective["db_search"]["pattern"] == "Петров"
 
 

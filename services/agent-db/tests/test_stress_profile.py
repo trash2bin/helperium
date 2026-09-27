@@ -225,7 +225,15 @@ class TestToolValidation:
 
     def test_matching_manifest_passes(self) -> None:
         profile = _profile()
-        validate_tools_against_manifest(profile, ["db_get", "db_search"])
+        validate_tools_against_manifest(profile, ["db_map", "db_get", "db_search"])
+
+    def test_manifest_missing_the_preload_tool_is_refused(self) -> None:
+        # The turn prefetches the schema before the profile's calls, so the
+        # preload has to exist in the live manifest even though no profile names
+        # it. Otherwise the first turn fails instead of the preflight.
+        profile = _profile()
+        with pytest.raises(ProfileValidationError, match="db_map"):
+            validate_tools_against_manifest(profile, ["db_get", "db_search"])
 
     def test_composite_prefixes_are_stripped_before_comparison(self) -> None:
         assert canonical_tool_name("tenant-a__db_get") == "db_get"
@@ -243,7 +251,7 @@ class TestToolValidation:
         payload["tenants"]["scope"] = "composite"
         profile = LoadProfile.model_validate(payload)
         validate_tools_against_manifest(
-            profile, ["tenant-a__db_get", "tenant-b__db_get"]
+            profile, ["tenant-a__db_get", "tenant-b__db_get", "tenant-a__db_map"]
         )
 
 

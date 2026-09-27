@@ -28,3 +28,11 @@ MAX_USER_TURNS_PER_SESSION = 50
 # A generator faster than this per session meets the abuse gate, not the
 # platform: the run would measure our own limiter instead of the SUT.
 SERVER_MIN_INTERVAL_MS = 1000
+
+# The schema preload every turn makes before the first model call. Fixed by the
+# platform, not by a profile: orchestrator.py calls ``mcp.call_tool("db_map", {})``
+# and pastes the result into the transcript as an authoritative system message.
+# It sits outside the loop's tool-call budget (the call happens before the loop
+# starts), so it adds a call to a turn without consuming AGENT_MAX_TOOL_CALLS - and
+# it is part of the fixed per-turn prefix in the analytic knee model (§3).
+PRELOAD_TOOL = "db_map"

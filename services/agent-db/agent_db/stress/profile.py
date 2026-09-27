@@ -24,6 +24,7 @@ from .constants import (
     AGENT_MAX_TOOL_CALLS,
     DEMO_HISTORY_TURNS,
     MAX_USER_TURNS_PER_SESSION,
+    PRELOAD_TOOL,
     SERVER_MIN_INTERVAL_MS,
 )
 
@@ -188,6 +189,20 @@ class LoadProfile(BaseModel):
                 seen.setdefault(name, None)
         return list(seen)
 
+    def called_tools(self, *, preload_tool: str | None = PRELOAD_TOOL) -> list[str]:
+        """Every tool a turn actually calls: the platform's preload, then the profile's.
+
+        The preload is not part of the profile, but it is part of the load: the
+        orchestrator fetches the schema before the first model call on every
+        turn. Anything that has to be true of the tools a turn touches - fixture
+        coverage, presence in the live manifest - has to include it, or the run
+        fails on the first turn instead of during preflight.
+        """
+        tools = self.tool_names()
+        if preload_tool and preload_tool not in tools:
+            return [preload_tool, *tools]
+        return tools
+
     def expected_calls_per_turn(self) -> float:
         """Weighted mean of planned tool calls per turn."""
         return sum(step.weight * step.planned_calls() for step in self.workload)
@@ -235,7 +250,9 @@ def validate_tools_against_manifest(
                 f"{COMPOSITE_SEPARATOR!r}-prefixed tools"
             )
     missing = [
-        name for name in profile.tool_names() if canonical_tool_name(name) not in known
+        name
+        for name in profile.called_tools()
+        if canonical_tool_name(name) not in known
     ]
     if missing:
         details = "; ".join(f"{name}:{_suggest(name, known)}" for name in missing)
