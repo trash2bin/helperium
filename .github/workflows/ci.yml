@@ -114,6 +114,18 @@ jobs:
         run: uv run pytest services/rag/tests/benchmark/ -v --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}
+      - name: Run agent-db contract tests
+        run: uv run pytest services/agent-db/tests/contract/ -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+      - name: Run agent-db bench tests
+        run: uv run pytest services/agent-db/tests/test_bench_core.py -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+      - name: Run repo maintenance script tests
+        run: uv run pytest scripts/test_cleanup_stale_tenants.py -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}/scripts
 
   lint-go:
     name: Go lint

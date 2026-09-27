@@ -34,6 +34,7 @@ ci-test-py:
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/rag/tests/unit/ -v --tb=short
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/helperium-sdk/tests/ -v --tb=short
 	PYTHONPATH=$(PWD) uv run -- python -m pytest services/agent-db/tests/contract/ -v --tb=short
+	PYTHONPATH=$(PWD) uv run -- python -m pytest services/agent-db/tests/test_bench_core.py -v --tb=short
 	PYTHONPATH=$(PWD)/scripts uv run -- python -m pytest scripts/test_cleanup_stale_tenants.py -v --tb=short
 
 GO_SERVICES := ./services/data-service/... ./services/mcp-gateway/... ./services/admin-dashboard/... ./services/helperium-go/...
