@@ -62,7 +62,7 @@ class _MCP:
         return []
 
 
-class _Backlog:
+class _Recorder:
     def record_llm_call(self, *_args: Any, **_kwargs: Any) -> None:
         return None
 
@@ -145,7 +145,7 @@ def build_loop(
         guard_checker=None,
         spending=spending,
         reservations=reservations,
-        backlog=_Backlog(),
+        recorder=_Recorder(),
         session_id="session-1",
         turn_id="turn-1",
         tenant_ids=("tenant-a", "tenant-b"),

@@ -104,7 +104,7 @@ class _Spending:
         return True, ""
 
 
-class _Backlog:
+class _Recorder:
     def record_llm_call(self, *_args, **kwargs):
         pass
 
@@ -131,7 +131,7 @@ def _make_loop(
         ),
         guard_checker=guard_checker or GuardChecker(),
         spending=_Spending(),
-        backlog=_Backlog(),
+        recorder=_Recorder(),
         session_id="session",
         turn_id="turn",
         tenant_ids=("tenant-a",),

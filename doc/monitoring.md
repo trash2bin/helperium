@@ -230,6 +230,8 @@ Go (data, mcp, admin) ──┘                          │
 | `reports_total` | Counter | `status` | Жалобы из виджета, принятые в стор (`accepted`) |
 | `report_store_errors_total` | Counter | — | Ошибки записи жалобы в SQLite |
 | `mcp_tool_timeouts_total` | Counter | `tenants` | MCP tool-вызовы, упёршиеся в hard deadline (сигнал zombie-эскалации) |
+| `mcp_lock_wait_seconds` | Histogram | `tenants` | Ожидание per-tenant call lock — сериализация одновременных ходов одного tenant |
+| `mcp_lock_timeouts_total` | Counter | `tenants` | Лок не взят за `MCP_LOCK_ACQUIRE_TIMEOUT`: насыщение нашего планировщика, **не** отказ зависимости (в отличие от `mcp_tool_timeouts_total`) |
 | `mcp_connection_quarantines_total` | Counter | `tenants` | Принудительно закрытые zombie-подозрительные соединения |
 | `mcp_reconnects_total` | Counter | `tenants` | MCP reconnects после неудачного вызова |
 | `mcp_circuit_breaker_trips_total` | Counter | `tenants` | Переходы circuit breaker closed→open (один inc на trip) |

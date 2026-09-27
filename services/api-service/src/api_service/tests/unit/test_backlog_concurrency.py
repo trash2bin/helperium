@@ -121,7 +121,7 @@ def test_concurrent_writes_to_same_session(backlog_tmpdir):
 def test_concurrent_asyncio_writes_to_same_session(backlog_tmpdir):
     """Same as test_concurrent_writes_to_same_session but using asyncio.
 
-    In the asyncio path, the backlog writes happen via _AsyncBacklogWriter
+    In the asyncio path, the backlog writes happen via _BacklogRecorder
     which calls backlog._write() synchronously on the event loop. Without
     a per-session lock, concurrent asyncio.Tasks writing to the same file
     will interleave at the OS level, producing the same corruption pattern

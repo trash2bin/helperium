@@ -264,6 +264,7 @@ class ModelBacklog:
         """Record an LLM call with token usage and cost."""
         record: dict[str, Any] = {
             "type": RECORD_LLM_CALL,
+            "session_id": session_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "model": model,
             "provider": provider,

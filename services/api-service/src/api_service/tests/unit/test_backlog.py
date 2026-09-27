@@ -257,6 +257,32 @@ def test_recent_errors_extracts_message_from_error_event(backlog_tmpdir):
     assert errors[0]["model"] == ""
 
 
+def test_llm_call_record_is_joinable_to_its_session(backlog_tmpdir):
+    """llm_call records must carry session_id, not only the file name.
+
+    Capacity/stress evidence joins per-turn LLM latency against the harness
+    plan by session (platform_overhead = t_complete - sum(llm_call.duration_ms)).
+    The store is one file per session, so a consumer that only has aggregated
+    records (evidence bundle, exported JSONL, per-session stats) cannot
+    reconstruct the session from the file name alone.
+    """
+    backlog_tmpdir.record_llm_call(
+        "session-1",
+        model="scripted/test",
+        provider="scripted",
+        duration_ms=123.4,
+        turn_id="turn-1",
+    )
+
+    records = backlog_tmpdir._read_records("session-1")
+
+    assert records[0]["session_id"] == "session-1"
+    assert records[0]["duration_ms"] == 123.4
+    # turn_id is half of the documented join key (session file, turn_id) and
+    # travels through backlog.record_llm_call(**extra): assert it survives.
+    assert records[0]["turn_id"] == "turn-1"
+
+
 def test_successful_llm_calls_are_not_counted_as_errors(backlog_tmpdir):
     """Backlog error aggregation excludes normal successful LLM completions."""
     backlog_tmpdir.record_llm_call(

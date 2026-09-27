@@ -89,7 +89,7 @@ class _Spending:
         return True, ""
 
 
-class _Backlog:
+class _Recorder:
     def __init__(self) -> None:
         self.llm_calls: list[dict[str, Any]] = []
 
@@ -121,7 +121,7 @@ def _loop(
     mcp: _MCP,
     *,
     limits: LoopLimits | None = None,
-    backlog: _Backlog | None = None,
+    recorder: _Recorder | None = None,
 ):
     return AppendOnlyLoop(
         provider=provider,
@@ -135,7 +135,7 @@ def _loop(
         ),
         guard_checker=_Guard(),
         spending=_Spending(),
-        backlog=backlog or _Backlog(),
+        recorder=recorder or _Recorder(),
         session_id="session",
         turn_id="turn",
         tenant_ids=("tenant-a",),
@@ -537,6 +537,46 @@ async def test_answer_wrapped_in_json_envelope_is_unwrapped_not_leaked_raw() -> 
 
 
 @pytest.mark.asyncio
+async def test_llm_call_records_measured_latency_and_live_llm_metrics() -> None:
+    """Per-call LLM latency must be a real measurement, not a zero placeholder.
+
+    Capacity evidence (platform_overhead = t_complete - sum of LLM latency)
+    subtracts llm_call.duration_ms from the turn duration, and nothing else in
+    the runtime records server-side LLM latency: the llm_duration_ms histogram
+    existed but was never observed. With a hard-coded 0 the subtraction is a
+    no-op and every derived capacity number silently collapses into t_complete.
+    """
+    provider = ScriptedLLMProvider(
+        [
+            {
+                "content": "ok",
+                "delay_ms": 30,
+                "cost": 0.002,
+                "usage": {
+                    "prompt_tokens": 11,
+                    "completion_tokens": 7,
+                    "total_tokens": 18,
+                },
+            }
+        ]
+    )
+    mcp = _MCP()
+    recorder = _Recorder()
+
+    await _events(_loop(provider, mcp, recorder=recorder), _run(provider, mcp))
+
+    assert len(recorder.llm_calls) == 1
+    recorded = recorder.llm_calls[0]
+    # 30 ms of scripted provider delay must be visible in the recorded latency.
+    assert recorded["duration_ms"] >= 10.0
+    assert recorded["prompt_tokens"] == 11
+    assert recorded["completion_tokens"] == 7
+    assert recorded["total_tokens"] == 18
+    assert recorded["cost"] == 0.002
+    assert recorded["tenant_ids"] == ["tenant-a"]
+
+
+@pytest.mark.asyncio
 async def test_tool_result_telemetry_is_recorded_at_the_loop_boundary() -> None:
     provider = ScriptedLLMProvider(
         [
@@ -551,12 +591,12 @@ async def test_tool_result_telemetry_is_recorded_at_the_loop_boundary() -> None:
         ]
     )
     mcp = _MCP({"search": _Result('{"items":["Bosch"]}')})
-    backlog = _Backlog()
+    recorder = _Recorder()
 
-    await _events(_loop(provider, mcp, backlog=backlog), _run(provider, mcp))
+    await _events(_loop(provider, mcp, recorder=recorder), _run(provider, mcp))
 
     assert [
-        call["untrusted_tool_results_in_context"] for call in backlog.llm_calls
+        call["untrusted_tool_results_in_context"] for call in recorder.llm_calls
     ] == [
         0,
         1,

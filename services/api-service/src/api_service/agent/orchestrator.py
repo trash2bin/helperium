@@ -9,13 +9,12 @@ from typing import Any, cast
 
 from helperium_sdk.settings import settings
 
-from api_service.backlog import backlog
 from api_service.error_messages import classify_error
 from api_service.guardrails import get_guard_checker
 
 from .adapters import (
-    _AsyncBacklogWriter,
     _AsyncSpendingTracker,
+    build_turn_recorder,
     resolve_reservations,
 )
 from .conversation import ConversationManager
@@ -23,6 +22,7 @@ from .factory import _create_env_provider, _pool, resolve_llm
 from .loop import AppendOnlyLoop, LoopLimits, LoopRun, Transcript
 from .mcp_client import MCPClient
 from .prompts import DEFAULT_SYSTEM_PROMPT
+from .protocols import TurnRecorderPort
 from .types import AgentEvent, SessionId, TurnMessages
 
 logger = logging.getLogger("api_service.agent.orchestrator")
@@ -63,7 +63,10 @@ class LLMAgent:
         del correlation_id  # kept only for the stable public route signature
         session_id = self.conversation_manager.normalize_session_id(session_id)
         resolved_tenants = tuple(tenant_ids or ())
-        turn_id = backlog.turn_start(session_id, user_message)
+        # One recorder per turn: the same object writes turn evidence and the
+        # per-call telemetry, so there is a single path to the sink.
+        recorder = build_turn_recorder()
+        turn_id = recorder.turn_start(session_id, user_message)
         started = time.monotonic()
         run: LoopRun | None = None
         error_message = ""
@@ -132,7 +135,7 @@ class LLMAgent:
                         guard_checker=get_guard_checker(),
                         spending=_AsyncSpendingTracker(),
                         reservations=resolve_reservations(),
-                        backlog=_AsyncBacklogWriter(),
+                        recorder=recorder,
                         session_id=session_id,
                         turn_id=turn_id,
                         tenant_ids=resolved_tenants,
@@ -146,7 +149,7 @@ class LLMAgent:
                         yield event
                 if run.outcome is not None and run.outcome.kind != "answer":
                     error_message = run.outcome.message
-                    backlog.error(
+                    recorder.error(
                         session_id,
                         turn_id,
                         run.metrics.model_calls,
@@ -159,7 +162,7 @@ class LLMAgent:
             except Exception as exc:
                 error_message = str(exc)
                 logger.exception("[AGENT] turn failed for session %s", session_id)
-                backlog.error(
+                recorder.error(
                     session_id, turn_id, run.metrics.model_calls if run else 0, str(exc)
                 )
                 yield AgentEvent("error", {"message": classify_error(exc, lang)})
@@ -174,10 +177,13 @@ class LLMAgent:
                         logger.exception(
                             "[AGENT] failed to persist turn for %s", session_id
                         )
-                self._close_backlog(session_id, turn_id, started, run, error_message)
+                self._record_turn_end(
+                    recorder, session_id, turn_id, started, run, error_message
+                )
 
-    def _close_backlog(
+    def _record_turn_end(
         self,
+        recorder: TurnRecorderPort,
         session_id: str,
         turn_id: str,
         started: float,
@@ -187,7 +193,7 @@ class LLMAgent:
         metrics = run.metrics if run else None
         outcome = run.outcome.kind if run and run.outcome else "provider_error"
         final_text = run.outcome.final_text if run and run.outcome else ""
-        backlog.turn_end(
+        recorder.turn_end(
             session_id=session_id,
             turn_id=turn_id,
             duration_ms=(time.monotonic() - started) * 1000,

@@ -38,6 +38,8 @@ from mcp.client.streamable_http import streamable_http_client
 from api_service.prometheus_metrics import (
     mcp_circuit_breaker_trips_total,
     mcp_connection_quarantines_total,
+    mcp_lock_timeouts_total,
+    mcp_lock_wait_seconds,
     mcp_reconnects_total,
     mcp_tool_timeouts_total,
 )
@@ -1091,11 +1093,24 @@ class MCPClient:
         # (shorter) lock timeout, silently capping every tool run at
         # mcp_lock_acquire_timeout and making MCP_TOOL_EXECUTION_TIMEOUT
         # unreachable.
+        #
+        # The wait is measured on both outcomes: contention on our own
+        # per-tenant lock is capacity evidence, not a dependency failure, and
+        # must not be confused with the execution timeout below.
+        lock_wait_label = ",".join(tenant_ids) or "(default)"
+        lock_started = time.monotonic()
         try:
             async with asyncio.timeout(settings.mcp_lock_acquire_timeout):
                 await conn.call_lock.acquire()
         except TimeoutError:
+            mcp_lock_wait_seconds.labels(lock_wait_label).observe(
+                time.monotonic() - lock_started
+            )
+            mcp_lock_timeouts_total.labels(lock_wait_label).inc()
             raise
+        mcp_lock_wait_seconds.labels(lock_wait_label).observe(
+            time.monotonic() - lock_started
+        )
 
         try:
             logger.info(

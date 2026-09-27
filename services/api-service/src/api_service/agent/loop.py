@@ -38,7 +38,12 @@ from .messages import (
 )
 from .models import CompletionRequest, CompletionResponse, ToolCall
 from .pricing import PricingConfigurationError, estimate_reservation_cost
-from .protocols import LLMProvider, MCPToolSession, SpendingReservationPort
+from .protocols import (
+    LLMProvider,
+    LoopRecorderPort,
+    MCPToolSession,
+    SpendingReservationPort,
+)
 from .types import AgentEvent
 from api_service.spending import BudgetExceeded, ReservationConflict
 
@@ -139,7 +144,7 @@ class AppendOnlyLoop:
         limits: LoopLimits,
         guard_checker: Any,
         spending: Any,
-        backlog: Any,
+        recorder: LoopRecorderPort,
         session_id: str,
         turn_id: str,
         tenant_ids: tuple[str, ...],
@@ -153,7 +158,7 @@ class AppendOnlyLoop:
         self._limits = limits
         self._guard_checker = guard_checker
         self._spending = spending
-        self._backlog = backlog
+        self._recorder = recorder
         self._session_id = session_id
         self._turn_id = turn_id
         self._tenant_ids = tenant_ids
@@ -247,6 +252,7 @@ class AppendOnlyLoop:
                         yield self._finish(run, admission)
                         return
                     reservation_id = admission
+                provider_started = time.monotonic()
                 try:
                     response = await self._provider.complete(
                         CompletionRequest(
@@ -259,13 +265,20 @@ class AppendOnlyLoop:
                     if reservation_id is not None and reservations is not None:
                         await reservations.release(reservation_id)
                     raise
+                # Measured around the single provider call: this is the only
+                # record of server-side LLM latency, and capacity decomposition
+                # (turn duration minus LLM time) subtracts exactly this value.
+                provider_duration_ms = (time.monotonic() - provider_started) * 1000
                 if reservation_id is not None and reservations is not None:
                     await reservations.commit(reservation_id, response.cost)
                     # Admission is authoritative for blocking, but per-tenant
                     # usage must stay visible to the admin spending API.
                     await self._record_tenant_spending(response.cost)
                 self._record_provider_response(
-                    run.metrics, response, untrusted_tool_results_in_context
+                    run.metrics,
+                    response,
+                    untrusted_tool_results_in_context,
+                    duration_ms=provider_duration_ms,
                 )
                 if reservations is None:
                     spending = await self._check_spending(response.cost)
@@ -363,7 +376,7 @@ class AppendOnlyLoop:
                 )
                 return
             run.metrics.tool_calls += 1
-            self._backlog.tool_call(
+            self._recorder.tool_call(
                 self._session_id,
                 self._turn_id,
                 run.metrics.model_calls,
@@ -405,7 +418,7 @@ class AppendOnlyLoop:
                         "content": content,
                     }
                 )
-                self._backlog.tool_result(
+                self._recorder.tool_result(
                     self._session_id,
                     self._turn_id,
                     run.metrics.model_calls,
@@ -457,7 +470,7 @@ class AppendOnlyLoop:
                     "content": content,
                 }
             )
-            self._backlog.tool_result(
+            self._recorder.tool_result(
                 self._session_id,
                 self._turn_id,
                 run.metrics.model_calls,
@@ -559,19 +572,26 @@ class AppendOnlyLoop:
         metrics: LoopMetrics,
         response: CompletionResponse,
         untrusted_tool_results_in_context: int,
+        *,
+        duration_ms: float,
     ) -> None:
         usage = response.usage
-        metrics.prompt_tokens += usage.prompt_tokens if usage else 0
-        metrics.completion_tokens += usage.completion_tokens if usage else 0
+        prompt_tokens = usage.prompt_tokens if usage else 0
+        completion_tokens = usage.completion_tokens if usage else 0
+        total_tokens = usage.total_tokens if usage else 0
+
+        metrics.prompt_tokens += prompt_tokens
+        metrics.completion_tokens += completion_tokens
         metrics.total_cost += response.cost
-        self._backlog.record_llm_call(
+
+        self._recorder.record_llm_call(
             self._session_id,
             model=self._provider.model,
             provider=self._provider.model.split("/", 1)[0],
-            duration_ms=0,
-            prompt_tokens=usage.prompt_tokens if usage else 0,
-            completion_tokens=usage.completion_tokens if usage else 0,
-            total_tokens=usage.total_tokens if usage else 0,
+            duration_ms=duration_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
             cost=response.cost,
             status="success",
             tenant_ids=list(self._tenant_ids),

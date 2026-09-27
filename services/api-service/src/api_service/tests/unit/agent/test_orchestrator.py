@@ -99,8 +99,25 @@ class _Backlog:
     def turn_start(self, *_args):
         return "turn"
 
-    def error(self, *args, **kwargs):
-        self.errors.append((args, kwargs))
+    def error(
+        self,
+        session_id: str,
+        turn_id: str,
+        iteration: int,
+        error: str,
+        context: dict | None = None,
+    ) -> None:
+        # Bind by name so the assertion is about content, not about whether the
+        # seam forwarded ``context`` positionally or as a keyword.
+        self.errors.append(
+            {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "iteration": iteration,
+                "error": error,
+                "context": context,
+            }
+        )
         return None
 
     def turn_end(self, *_args, **_kwargs):
@@ -122,7 +139,6 @@ async def test_orchestrator_uses_one_scoped_append_only_loop(monkeypatch) -> Non
     import api_service.agent.orchestrator as orchestrator
 
     fake_backlog = _Backlog()
-    monkeypatch.setattr(orchestrator, "backlog", fake_backlog)
     monkeypatch.setattr(adapters, "backlog", fake_backlog)
     monkeypatch.setattr(orchestrator, "get_guard_checker", lambda: _Guard())
 
@@ -183,7 +199,6 @@ async def test_orchestrator_records_recovery_exhaustion_in_backlog(monkeypatch) 
     import api_service.agent.orchestrator as orchestrator
 
     fake_backlog = _Backlog()
-    monkeypatch.setattr(orchestrator, "backlog", fake_backlog)
     monkeypatch.setattr(adapters, "backlog", fake_backlog)
     monkeypatch.setattr(orchestrator, "get_guard_checker", lambda: _Guard())
 
@@ -205,13 +220,14 @@ async def test_orchestrator_records_recovery_exhaustion_in_backlog(monkeypatch) 
 
     assert [event.type for event in events] == ["tool_call", "tool_result", "error"]
     assert fake_backlog.errors == [
-        (
-            (
-                "s",
-                "turn",
-                4,
-                "Не удалось получить содержательный ответ. Уточните запрос и попробуйте ещё раз.",
+        {
+            "session_id": "s",
+            "turn_id": "turn",
+            "iteration": 4,
+            "error": (
+                "Не удалось получить содержательный ответ. Уточните запрос "
+                "и попробуйте ещё раз."
             ),
-            {"context": {"outcome": "needs_clarification", "retryable": False}},
-        )
+            "context": {"outcome": "needs_clarification", "retryable": False},
+        }
     ]

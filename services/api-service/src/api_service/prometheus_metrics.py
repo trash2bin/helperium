@@ -130,6 +130,23 @@ mcp_tool_timeouts_total = Counter(
     ["tenants"],
 )
 
+# The per-tenant connection keeps one call lock, so concurrent turns for the
+# same tenant serialize on it. That wait is a first-class capacity signal and
+# is deliberately separate from the execution timeout above: a lock wait is
+# saturation of our own scheduler, not a slow or hung dependency.
+mcp_lock_wait_seconds = Histogram(
+    "mcp_lock_wait_seconds",
+    "Time spent waiting for the per-tenant MCP call lock",
+    ["tenants"],
+    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
+)
+
+mcp_lock_timeouts_total = Counter(
+    "mcp_lock_timeouts_total",
+    "Tool calls that failed to acquire the per-tenant MCP call lock in time",
+    ["tenants"],
+)
+
 mcp_connection_quarantines_total = Counter(
     "mcp_connection_quarantines_total",
     "Connections force-closed after repeated timed-out tool calls",

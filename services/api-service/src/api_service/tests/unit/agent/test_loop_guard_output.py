@@ -36,7 +36,7 @@ class _Spending:
         return None
 
 
-class _Backlog:
+class _Recorder:
     def record_llm_call(self, *_args, **kwargs):
         pass
 
@@ -59,7 +59,7 @@ def _loop(provider: ScriptedLLMProvider) -> AppendOnlyLoop:
         ),
         guard_checker=GuardChecker(),
         spending=_Spending(),
-        backlog=_Backlog(),
+        recorder=_Recorder(),
         session_id="session",
         turn_id="turn",
         tenant_ids=("tenant-a",),
