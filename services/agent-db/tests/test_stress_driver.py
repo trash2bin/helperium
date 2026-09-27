@@ -103,6 +103,26 @@ def run_turn(
     )
 
 
+class TestCallRecordsCarryAWallClock:
+    def test_a_call_is_stamped_with_absolute_time(self):
+        # The turn record's clock starts at zero for the stage, so a call cannot
+        # be located in the services' logs without an absolute stamp: a report
+        # reader otherwise has "call 14 of the 80 rps stage" and 25 MB of
+        # wall-clock log lines.
+        transport = FakeTransport(ok(1.0), ok(1.0))
+        ticks = iter([1_790_000_000.0, 1_790_000_000.25])
+        drv = McpToolDriver(
+            transport, arguments=FIXTURE_ARGS, wall_clock=lambda: next(ticks)
+        )
+        execution = run_turn(drv, transport, step(tools=["db_get"]))
+        stamps = [call.started_wall_ms for call in execution.calls]
+        assert stamps == [1_790_000_000_000.0, 1_790_000_000_250.0]
+        assert execution.calls[0].as_dict()["started_wall_ms"] == 1_790_000_000_000.0
+        # The stamp is on the call, not on the turn: per-call timings are what a
+        # slow tool has to be found by.
+        assert [call.tool for call in execution.calls] == ["db_map", "db_get"]
+
+
 class TestPlanCalls:
     def test_preload_leads_then_tools_then_repeat(self) -> None:
         planned = plan_calls(step(tools=["db_search", "db_get"], repeat={"db_get": 2}))
@@ -250,6 +270,11 @@ class TestTurnExecution:
         lines = execution.calls_jsonl()
         assert len(lines) == 2
         payload = json.loads(lines[0])
+        # The wall-clock stamp is what places the call in the services' logs, so
+        # it has to survive the round trip; its value is a clock reading, checked
+        # for plausibility rather than pinned.
+        stamp = payload.pop("started_wall_ms")
+        assert stamp > 1_700_000_000_000  # epoch ms, not seconds or a relative
         assert payload == {
             "index": 0,
             "tool": "db_map",

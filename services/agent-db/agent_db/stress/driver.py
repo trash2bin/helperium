@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .constants import PRELOAD_TOOL
 from .profile import WorkloadStep
@@ -48,6 +48,12 @@ class ToolCallTiming:
     error_class: ErrorClass | None = None
     is_error: bool = False
     preload: bool = False
+    # Wall-clock epoch milliseconds. The turn record is on a monotonic clock
+    # that starts at zero, so without this a call cannot be placed in the
+    # services' logs at all: only "14 calls into the 80 rps stage" is known, and
+    # the gateway and data-service log in wall-clock time. With it, one record
+    # picks the log window to read.
+    started_wall_ms: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -58,6 +64,7 @@ class ToolCallTiming:
             "error_class": self.error_class.value if self.error_class else None,
             "is_error": self.is_error,
             "preload": self.preload,
+            "started_wall_ms": round(self.started_wall_ms, 3),
         }
 
     def as_jsonl(self) -> str:
@@ -105,10 +112,13 @@ class McpToolDriver:
         *,
         arguments: Mapping[str, Mapping[str, Any]],
         preload_tool: str | None = PRELOAD_TOOL,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self.transport = transport
         self.arguments = {name: dict(args) for name, args in arguments.items()}
         self.preload_tool = preload_tool
+        # Injectable so a test can pin the wall clock a call records.
+        self.wall_clock = wall_clock
 
     # ── sessions ───────────────────────────────────────────────────────────
 
@@ -162,6 +172,7 @@ class McpToolDriver:
                 raise DriverConfigurationError(
                     f"no fixture arguments for {tool!r} in step {step.name!r}"
                 )
+            call_started_wall_ms = self.wall_clock() * 1000.0
             outcome = self.transport.call_tool(session, tool, arguments)
             calls.append(
                 ToolCallTiming(
@@ -172,6 +183,7 @@ class McpToolDriver:
                     error_class=outcome.error_class,
                     is_error=outcome.is_error,
                     preload=is_preload,
+                    started_wall_ms=call_started_wall_ms,
                 )
             )
             if outcome.is_error:
