@@ -27,7 +27,7 @@ import math
 import random
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Protocol, Sequence
 
 from .driver import ToolCallTiming, TurnExecution
@@ -187,6 +187,10 @@ class StageResult:
     # transport error would otherwise lose its remaining tickets and quietly
     # shrink the sample (the accounting check in ``is_valid`` is the net).
     worker_failures: list[str] = field(default_factory=list)
+    # The §7 llm-derivation refused this stage's records (mixed stamping): the
+    # compensated numbers stand, but the stage is invalid until the join is
+    # fixed - the reason travels in the report instead of killing the ladder.
+    derivation_failure: str | None = None
 
     @property
     def tick_lag_p99(self) -> float:
@@ -228,6 +232,8 @@ class StageResult:
             return False
         if self.worker_failures:
             return False
+        if self.derivation_failure:
+            return False
         if self.dropped_ticks:
             return False
         if self.tick_lag_p99 >= LAG_INVALID_MS:
@@ -247,6 +253,8 @@ class StageResult:
             reasons.extend(
                 f"worker failure: {failure}" for failure in self.worker_failures
             )
+        if self.derivation_failure:
+            reasons.append(f"llm latency derivation: {self.derivation_failure}")
         if self.dropped_ticks:
             reasons.append(f"{self.dropped_ticks} dropped tick(s)")
         if self.tick_lag_p99 >= LAG_INVALID_MS:
@@ -268,6 +276,17 @@ class StageResult:
         return self.is_valid and self.stats.meets(
             t_budget_ms, max_error_rate, target_rps=self.spec.target_rps
         )
+
+    @property
+    def has_platform_overhead(self) -> bool:
+        """Whether the judged metric was computable from this stage's records.
+
+        False on a driver that supplied no per-request model timings: on L1 that
+        is by design (§7 allows the identity there), on L3 it means the stage
+        cannot be judged at all and the ladder says so instead of judging the
+        turn latency as if the model had not happened.
+        """
+        return self.stats.platform_overhead_p95 is not None
 
 
 class WorkloadPlan:
@@ -402,6 +421,22 @@ class StageRunner:
         self.session_open_rate = session_open_rate
         self._spin_wait_s = spin_wait_s
         self._calibrated_tail_ms: float | None = None
+        # Abort support: when the run is interrupted mid-stage, the CLI stops
+        # the workers BEFORE it releases the lock and writes the terminal
+        # status - otherwise a successor run measures the dead run's leftover
+        # traffic, which is the exact contamination the lock exists to prevent.
+        self._stop = threading.Event()
+        self._threads: list[threading.Thread] = []
+
+    def stop(self) -> None:
+        """Ask every worker to finish after its current tick."""
+        self._stop.set()
+
+    def join_workers(self, timeout_s: float = 10.0) -> None:
+        """Join the current stage's workers, bounded so an abort cannot wedge."""
+        for thread in self._threads:
+            thread.join(timeout=timeout_s)
+        self._threads = []
 
     def run(
         self,
@@ -441,6 +476,8 @@ class StageRunner:
             gate.wait()
             try:
                 while True:
+                    if self._stop.is_set():
+                        return
                     index = schedule.next_index()
                     if index is None:
                         return
@@ -480,10 +517,16 @@ class StageRunner:
         gate = threading.Event()
         threads = [
             threading.Thread(
-                target=worker, args=(index,), name=f"stress-worker-{index}"
+                target=worker,
+                args=(index,),
+                name=f"stress-worker-{index}",
+                # Daemon so an interrupted process can still die: the stop flag
+                # is the polite path, daemonhood is the seatbelt.
+                daemon=True,
             )
             for index in range(worker_count)
         ]
+        self._threads = list(threads)
         for thread in threads:
             thread.start()
         started = self.clock()
@@ -513,9 +556,25 @@ class StageRunner:
                 f"warm-up covers {spec.warmup_ticks} of {spec.total_ticks} ticks"
             )
 
+        try:
+            stats = summarise(measured, spec.measured_window_s)
+            derivation_failure = None
+        except ValueError as exc:
+            # The all-or-nothing llm derivation refused: subtracting a partial
+            # sum would wear §7's column name while meaning something else.
+            # One bad rung invalidates itself with the named reason - killing
+            # the whole ladder here would also discard the rungs already
+            # measured, which is evidence, not garbage.
+            stats = summarise(
+                [replace(record, llm_latency_ms=None) for record in measured],
+                spec.measured_window_s,
+            )
+            derivation_failure = str(exc)
+
         return StageResult(
             spec=spec,
-            stats=summarise(measured, spec.measured_window_s),
+            stats=stats,
+            derivation_failure=derivation_failure,
             records=records,
             calls=calls,
             tick_lag_ms=lag,

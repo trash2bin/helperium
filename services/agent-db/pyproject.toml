@@ -23,6 +23,7 @@ dev = [
 
 [project.scripts]
 agent-db = "agent_db.cli:cli"
+agent-db-stress = "agent_db.stress.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent_db"]

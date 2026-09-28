@@ -21,7 +21,7 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from .ladder import LadderResult, StageOutcome
+from .ladder import JUDGED_METRIC_READY_LAYERS, LAYER_RULE, LadderResult, StageOutcome
 from .manifest import RunManifest
 
 COLUMNS: tuple[str, ...] = (
@@ -70,8 +70,10 @@ UNAVAILABLE_PHASE_1: dict[str, str] = {
 # Layers whose turns contain no model latency, so the platform overhead *is* the
 # compensated turn latency (§1 for L1; §7 explicitly allows t_complete on L2,
 # where the stub is instant). On any other layer the value has to come from
-# per-request LLM timings, and an empty cell says so instead of guessing.
-LAYER_HAS_NO_LLM_IN_TURN = ("L1", "L2")
+# per-request LLM timings, and the metric exists exactly when the substrate
+# reported them - never as a silent fallback to the turn latency (§7: an honest
+# 2.5 s model must not be reported as a platform failure).
+LAYER_HAS_NO_LLM_IN_TURN = JUDGED_METRIC_READY_LAYERS
 
 # Columns whose emptiness is a property of the layer, not of the tooling.
 LAYER_UNAVAILABLE: dict[str, dict[str, str]] = {
@@ -181,6 +183,15 @@ def interpretation_notes(result: LadderResult, manifest: RunManifest) -> list[st
             "per-tenant call_lock lives in api-service, which is not on this path "
             "(§1). MCP-session serialization is only observable on L2/L3."
         )
+    if result.status == "unjudgeable":
+        # §7's metric is uncomputable on this layer without per-request model
+        # timings, and the run stopped before producing a number that would have
+        # been about the model, not the platform.
+        notes.append(
+            f"no verdict: §7 judges platform_overhead p95 on {layer}, and the "
+            "substrate reported no per-request service time, so the model's own "
+            "latency could not be separated from the platform's work"
+        )
     if result.plan.repeats < 2:
         notes.append(
             f"single run (repeats={result.plan.repeats}): §2 publishes a headline "
@@ -195,8 +206,7 @@ def interpretation_notes(result: LadderResult, manifest: RunManifest) -> list[st
     if blockers:
         notes.append(
             "the manifest is incomplete, so this run is not publishable as "
-            "capacity: "
-            + "; ".join(blockers)
+            "capacity: " + "; ".join(blockers)
         )
     if result.prediction is not None and result.knee and result.knee.rate:
         predicted = result.prediction.rate
@@ -275,6 +285,14 @@ def build_report(
         )
         for stage in result.stages
     ]
+    if result.status == "unjudgeable":
+        # The run stopped because §7 judges platform_overhead p95 on this
+        # layer and the substrate brought no per-request timings. The rung's
+        # fallback number decided nothing, so printing its verdict would put
+        # the exact cell §7 forbids into the table.
+        for row in rows:
+            if row.get("verdict") is not None and row.get("verdict") != "invalid":
+                row["verdict"] = None
     return {
         "report_version": 1,
         "run_uuid": manifest.run_uuid,
@@ -283,6 +301,7 @@ def build_report(
         "profile": result.profile_name,
         "profile_path": profile_path,
         "target_layer": result.target_layer,
+        "layer_rule": LAYER_RULE.get(result.target_layer),
         "scope": scope,
         "t_budget_ms": result.plan.t_budget_ms,
         "max_error_rate": result.plan.max_error_rate,
@@ -367,6 +386,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- code: `{report['code']['commit'][:12]}` on `{report['code']['branch']}`"
         f"{' (dirty)' if report['code']['dirty'] else ''}",
         f"- environment hash: `{report['environment_hash']}`",
+        f"- judged metric: {report.get('layer_rule') or 'unstated'}",
         f"- criterion: p95 <= {budget} ms and error <= "
         f"{report['max_error_rate'] * 100:.0f}%",
         "",

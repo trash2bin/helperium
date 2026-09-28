@@ -60,7 +60,7 @@ Admin flow: `admin-dashboard → api-service/data-service`; tenant onboarding и
 | CI, local failures и E2E | `doc/agents/testing-guide.md` → `doc/agents/ci-cd.md` → `Makefile` |
 | Зависимости / uv lock / аудит CVE | `doc/dependency-index-traps.md` → `pyproject.toml` → `Makefile` (ci-audit, ci-e2e) |
 | Benchmark / answer quality | `doc/benchmark/README.md` → `doc/benchmark/core-benchmark.md` → `doc/benchmark/runs/README.md` |
-| Нагрузка, ёмкость, stress/soak | `doc/stress/README.md` (дизайн + контрактный слой `agent_db/stress`; драйвера и лестницы нет — чисел нет) → `doc/benchmark/README.md` (как устроен бенч-харнесс: lock, evidence, report) |
+| Нагрузка, ёмкость, stress/soak | `doc/stress/README.md` (дизайн) + `doc/stress/RUNBOOK.md` (эксплуатация: CLI `agent-db-stress`; первый сквозной L1-прогон был, но непубликуем — чисел по §6 нет; L2/L3 — код есть, на стенде не гонялся) → `doc/benchmark/README.md` (как устроен бенч-харнесс: lock, evidence, report) |
 | Остатки демо-аудита / follow-up | `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md` → локальный untracked todo-файл в корне репозитория (рабочий список для агента-исполнителя, в git не входит) |
 | Operations / monitoring | `doc/agents/operations.md` → `doc/monitoring.md` → `infra/scripts/dev.sh` |
 | Product/demo readiness | Current code + recent CI/E2E evidence, затем dated audits (`doc/archive/product-demo-readiness-audit-2026-08-28-head-53a3172.md`, `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md`, `doc/archive/widget-demo-readiness-2026-09-01-head-f094429.md`) and `doc/archive/remediation-plan-2026-08-18.md` as historical context |
@@ -114,7 +114,7 @@ ADMIN_TOKEN=ci-admin-token VIEWER_TOKEN=ci-viewer-token CORS_ALLOW_ORIGINS=http:
 | Admin, web и operations | `services/admin-dashboard/README.md`, `doc/agents/tenant-lifecycle.md`, `doc/agents/web-service.md`, `doc/agents/operations.md`, `doc/agents/reports-triage.md`, `doc/agents/ci-cd.md`, `doc/agents/testing-guide.md` |
 | RAG, demos и E2E | `services/rag/README.md`, `services/agent-db/README.md`, `services/agent-db/agent_db/bench/README.md`, `services/agent-db/tests/e2e/README.md`, `services/agent-db/tests/e2e-llm/README.md`, `services/agent-db/tests/external/README.md`, `demo/README.md`, `demo/web/README.md`, `demo/autoparts-store/README.md` |
 | Benchmark live docs | `doc/benchmark/README.md`, `doc/benchmark/core-benchmark.md`, `doc/benchmark/runs/README.md` |
-| Stress / capacity | `doc/stress/README.md` |
+| Stress / capacity | `doc/stress/README.md`, `doc/stress/RUNBOOK.md` |
 | Benchmark archives | `doc/archive/2026-08-05-data-service-audit.md` |
 | Product/audit archives | `doc/archive/2026-08-01-data-service-refactor-audit.md`, `doc/archive/product-readiness-audit-2026-08-18-head-14d3758.md`, `doc/archive/production-resilience-audit-2026-08-18-head-bd5adb5.md`, `doc/archive/product-demo-readiness-audit-2026-08-28-head-53a3172.md`, `doc/archive/demo-readiness-followup-2026-08-31-head-f094429.md`, `doc/archive/widget-demo-readiness-2026-09-01-head-f094429.md`, `doc/archive/remediation-plan-2026-08-18.md`, `doc/archive/pentest-live-2026-09-12.md`, `doc/archive/security-pentest-2026-09-13-head-aa9c04e.md` |
 

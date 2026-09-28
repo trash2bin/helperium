@@ -40,16 +40,27 @@ LAYER_T_BUDGET_MS: dict[str, float] = {"L1": 50.0, "L2": 500.0, "L3": 500.0}
 # §2: 5 -> 10 -> 20 -> 40 -> 80, doubling.
 DEFAULT_RATES: tuple[float, ...] = (5.0, 10.0, 20.0, 40.0, 80.0)
 
-# Layers whose judged percentile this harness can actually compute today.
+# Layers whose judged percentile this harness can compute, and what the verdict
+# rests on when the overhead could not be separated from the model (§7).
 #
 # §7 judges ``platform_overhead p95`` - the turn without the model's own latency -
 # and says a stage must not fail because the model was slow. On L1 there is no LLM
 # inside the turn, so the overhead is the compensated turn latency and the metric
-# exists. On L2 the stub is ~0-latency and §7 explicitly allows t_complete there.
-# On L3 the overhead is uncomputable until the substrate reports per-request
-# timings: judging an L3 rung on the turn latency would report "below_first_rung"
-# for an honest 2.5 s model, which is a verdict about the wrong thing. So the
-# ladder refuses L3 rather than producing it.
+# exists by identity. On L2 the stub is ~0-latency and §7 explicitly allows
+# ``t_complete`` as the criterion. On L3 the model is real and slow, so the overhead
+# is the only honest criterion - and it is computable exactly when the substrate
+# reports its own per-request service time (§4). Those layers therefore do not
+# need a fence, they need a substrate: a driver that supplies no model timings
+# produces a stage whose judged metric is absent, and the ladder refuses *that*
+# instead of judging an honest 2.5 s model as a platform failure.
+LAYER_RULE: dict[str, str] = {
+    "L1": "compensated turn latency (no LLM inside the turn)",
+    "L2": "compensated turn latency (stub is ~0-latency; seconds are not a criterion)",
+    "L3": "platform overhead (requires per-request substrate timings)",
+    "L4": "platform overhead (requires per-request substrate timings)",
+}
+
+# The historical name for the layers whose verdict can never need a substrate.
 JUDGED_METRIC_READY_LAYERS = ("L1", "L2")
 
 
@@ -166,13 +177,10 @@ class LadderPlan:
                 f"{profile.budget_preset!r}; a knee ladder is only meaningful with "
                 "the budgets off (§5), otherwise the rung measures slowapi"
             )
-        if profile.target_layer not in JUDGED_METRIC_READY_LAYERS:
+        if profile.target_layer not in LAYER_RULE:
             raise LadderError(
-                f"layer {profile.target_layer} cannot be judged yet: §7's criterion is "
-                "platform_overhead p95, and on this layer the harness cannot separate "
-                "the platform's work from the model's latency (the substrate reports "
-                "no per-request timings before phase 2). Judging it on the turn "
-                "latency would fail an honest model - refusing is the honest option"
+                f"layer {profile.target_layer} has no judged-metric rule: add one "
+                "to LAYER_RULE before running a ladder on it"
             )
         budget = t_budget_ms
         if budget is None:
@@ -241,6 +249,11 @@ class StageOutcome:
             return False
         cpu_measured = self.cpu_measured_s if self.cpu_measured_s else self.cpu_s
         return cpu_measured >= GENERATOR_CPU_LIMIT * self.measured_window_s
+
+    @property
+    def has_platform_overhead(self) -> bool:
+        """True when §7's judged percentile was computable for this rung."""
+        return self.stats.platform_overhead_p95 is not None
 
     @property
     def judged_p95(self) -> float:
@@ -335,9 +348,9 @@ class LadderResult:
     knee: KneeEstimate | None = None
     repeats: list[StageOutcome] = field(default_factory=list)
     prediction: Prediction | None = None
-    status: Literal["knee_found", "below_first_rung", "invalid", "budget_preset_on"] = (
-        "knee_found"
-    )
+    status: Literal[
+        "knee_found", "below_first_rung", "invalid", "budget_preset_on", "unjudgeable"
+    ] = "knee_found"
 
     def stage_at(self, rps: float) -> StageOutcome | None:
         for stage in self.stages:
@@ -435,15 +448,10 @@ def run_ladder(
             f"profile {profile.name!r} has budget_preset={profile.budget_preset!r}: "
             "the ladder is only defined with the budgets off (§5)"
         )
-    if profile.target_layer not in JUDGED_METRIC_READY_LAYERS:
-        # The same fence as ``LadderPlan.for_profile``, repeated where the run
-        # actually starts: a hand-built plan bypassed it, and the result was
-        # exactly the outcome the fence exists to prevent - an honest 2.5 s model
-        # reported as a platform failure.
+    if profile.target_layer not in LAYER_RULE:
         raise LadderError(
-            f"layer {profile.target_layer} cannot be judged yet: §7's criterion is "
-            "platform_overhead p95, and this layer's turns contain model latency "
-            "the harness cannot yet separate out (phase 2)"
+            f"layer {profile.target_layer} has no judged-metric rule: add one to "
+            "LAYER_RULE before running a ladder on it"
         )
     result = LadderResult(
         plan=plan,
@@ -454,6 +462,11 @@ def run_ladder(
 
     passing: float | None = None
     failing: float | None = None
+    # Layers judged on the platform overhead need it on every rung: a substrate
+    # that reports no per-request service time leaves §7's metric uncomputable,
+    # and the honest answer is to refuse the run, not to judge the model's own
+    # 2.5 s as a platform failure (§7).
+    layer_needs_overhead = profile.target_layer not in JUDGED_METRIC_READY_LAYERS
     for rps in plan.rates:
         outcome = _run_rung(
             runner=runner,
@@ -466,6 +479,15 @@ def run_ladder(
             on_stage=on_stage,
         )
         result.stages.append(outcome)
+        if (
+            layer_needs_overhead
+            and outcome.verdict != "invalid"
+            and (not outcome.has_platform_overhead)
+        ):
+            # Nothing above this rung would be measurable either, and a knee
+            # computed from the turn latency would be a verdict about the model.
+            result.status = "unjudgeable"
+            return result
         if outcome.verdict == "pass":
             passing = rps
             continue
@@ -478,6 +500,9 @@ def run_ladder(
             if passing is None:
                 result.status = "invalid"
                 return result
+            # The passing rungs below were already shown to carry the judged
+            # metric (the check above returns otherwise), so a lower bound here
+            # rests on measurements §7 accepts.
             result.status = "knee_found"
             result.knee = KneeEstimate(
                 rate=passing, bracket=None, tolerance=plan.tolerance, bisection_steps=0

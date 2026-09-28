@@ -1,0 +1,48 @@
+{
+  "profile_version": 3,
+  "name": "chat-zero-latency-l2",
+  "target_layer": "L2",
+  "fixture": "sqlite-testseed",
+  "tenants": {
+    "count": 2,
+    "distribution": "round_robin",
+    "scope": "separate"
+  },
+  "sessions": {
+    "pool_size": 64,
+    "recycle_after_turns": 40,
+    "recycle_after_seconds": 1800,
+    "min_interval_ms": 1200
+  },
+  "arrival": {
+    "model": "constant",
+    "rps": 5,
+    "duration_s": 120,
+    "warmup_s": 20
+  },
+  "clients": {
+    "source_ips": 1,
+    "generators": 1
+  },
+  "llm": {
+    "substrate": "stub",
+    "provider_concurrency": 256,
+    "p50_ms": 1,
+    "p95_ms": 5
+  },
+  "workload": [
+    {
+      "weight": 0.5,
+      "name": "one_tool",
+      "tools": ["db_get"],
+      "history_turns": 0
+    },
+    {
+      "weight": 0.5,
+      "name": "search_get",
+      "tools": ["db_search", "db_get"],
+      "history_turns": 3
+    }
+  ],
+  "budget_preset": "off"
+}

@@ -73,8 +73,13 @@ class ArrivalSpec(BaseModel):
 
     model: Literal["constant"] = "constant"
     rps: float = Field(gt=0)
-    duration_s: int = Field(gt=0)
-    warmup_s: int = Field(ge=0)
+    # Fractional stages are legal because §7's own worked example needs one
+    # (D = 4 s, warm-up 1.5 s, 5 rps): on a short stage the warm-up is counted in
+    # whole ticks, and the difference between a floored and a ceiled count was
+    # enough to fail a rung that executed every tick on schedule. A JSON integer
+    # remains valid here.
+    duration_s: float = Field(gt=0)
+    warmup_s: float = Field(ge=0)
 
     @model_validator(mode="after")
     def _warmup_fits_inside_the_stage(self) -> ArrivalSpec:
@@ -219,8 +224,22 @@ class LoadProfile(BaseModel):
 
 
 def load_profile(path: str | Path) -> LoadProfile:
-    """Read a profile from disk, reporting validation errors as refusals."""
-    raw: Any = json.loads(Path(path).read_text(encoding="utf-8"))
+    """Read a profile from disk, reporting validation errors as refusals.
+
+    An unreadable file is a refusal like any other: the CLI's contract is that a
+    bad path produces a named message rather than a traceback, and a caller that
+    catches :class:`ProfileValidationError` should not also have to catch OSError.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ProfileValidationError(f"cannot read profile {path}: {exc}") from exc
+    try:
+        raw: Any = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ProfileValidationError(
+            f"profile {path} is not valid JSON: {exc}"
+        ) from exc
     try:
         return LoadProfile.model_validate(raw)
     except ValidationError as exc:

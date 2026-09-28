@@ -1,0 +1,3 @@
+{"tool": "db_map", "arguments": {}}
+{"tool": "db_search", "arguments": {"entity": "student", "pattern": "Петров", "limit": 5}}
+{"tool": "db_get", "arguments": {"entity": "group", "id": "g1"}}

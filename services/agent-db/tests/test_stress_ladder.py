@@ -37,12 +37,18 @@ def make_result(
     lag_ms: float = 0.2,
     cpu_s: float = 0.0,
     cpu_measured_s: float | None = None,
+    llm_latency_ms: float | None = None,
 ) -> StageResult:
     """A synthetic stage where every planned tick ran, warm-up included.
 
     Records cover the whole stage because that is what the runner returns and
     what the §3 accounting check verifies; the measured subset is derived from
     the same warm-up definition the runner uses.
+
+    ``llm_latency_ms`` is the model's share of each turn. Left ``None`` the
+    stage looks like an L1/L2 turn (no model inside it); set it and the stage
+    carries per-request substrate timings, which is what makes §7's
+    ``platform_overhead`` computable on an L3/L4 rung.
     """
     ran = spec.total_ticks - dropped
     records = []
@@ -54,6 +60,7 @@ def make_result(
                 started_ms=planned,
                 actual_ms=latency_ms,
                 t_complete=latency_ms,
+                llm_latency_ms=llm_latency_ms,
             )
         )
     measured = [r for r in records if r.planned_ms >= spec.warmup_s * 1000.0]
@@ -84,11 +91,16 @@ class FakeRunner:
         latency_for=None,
         always_dropping: bool = False,
         error_rate_above: float | None = None,
+        llm_latency_ms: float | None = None,
     ) -> None:
         self.passing_rps = passing_rps
         self.latency_for = latency_for
         self.always_dropping = always_dropping
         self.error_rate_above = error_rate_above
+        # When set, the fake speaks for a substrate that reports its own
+        # per-request service time (the stub of §4), which is what makes an
+        # L3/L4 rung judgeable at all.
+        self.llm_latency_ms = llm_latency_ms
         self.calls: list[tuple[float, int]] = []
 
     def run(self, spec, plan, *, tenants, workers=None) -> StageResult:
@@ -105,7 +117,8 @@ class FakeRunner:
         errors = 0
         if self.error_rate_above is not None and rps > self.error_rate_above:
             errors = max(1, int(spec.total_ticks * 0.2))
-        return make_result(spec, latency_ms=latency, errors=errors, cpu_s=cpu)
+        return make_result(spec, latency_ms=latency, errors=errors, cpu_s=cpu,
+                           llm_latency_ms=self.llm_latency_ms)
 
 
 def plan(**kwargs) -> LadderPlan:
@@ -152,25 +165,30 @@ class TestLadderPlanValidation:
         assert ladder.t_budget_ms == LAYER_T_BUDGET_MS["L1"] == 50.0
         assert ladder.duration_s == profile.arrival.duration_s
 
-    def test_a_layer_without_a_judged_metric_is_refused(self, profile):
-        # §7 judges platform_overhead, and on L3 the harness cannot separate the
-        # platform's work from the model's response time. Judging an L3 rung on
-        # the turn latency would fail an honest 2.5 s model and call it a
-        # platform verdict, so the ladder refuses instead of producing it.
+    def test_l3_is_plannable_now_that_the_substrate_can_report_timings(self, profile):
+        # §7 judges platform_overhead, which on L3 is computable exactly when the
+        # substrate reports its own per-request service time (§4). The fence is
+        # therefore about the metric being computable, not about the layer name:
+        # planning is allowed, and a run whose stages carry no model timings is
+        # refused where the run actually starts (TestLayerFence).
         layer_three = profile.model_copy(update={"target_layer": "L3"})
-        with pytest.raises(LadderError, match="cannot be judged yet"):
-            LadderPlan.for_profile(layer_three)
+        assert LadderPlan.for_profile(layer_three).t_budget_ms == 500.0
 
-    def test_l4_is_refused_even_with_an_explicit_budget(self, profile):
-        # L4 additionally has no documented T; the metric is the more fundamental
-        # obstacle, so that is the refusal the caller sees.
+    def test_l4_is_plannable_only_with_an_explicit_budget(self, profile):
+        # L4 has no documented T: an invented budget would be a verdict with no
+        # basis, so the refusal the caller sees is about the missing budget.
         layer_four = profile.model_copy(update={"target_layer": "L4"})
-        with pytest.raises(LadderError, match="cannot be judged yet"):
-            LadderPlan.for_profile(layer_four, t_budget_ms=3000.0)
+        with pytest.raises(LadderError, match="no default T"):
+            LadderPlan.for_profile(layer_four)
+        assert (
+            LadderPlan.for_profile(layer_four, t_budget_ms=3000.0).t_budget_ms
+            == 3000.0
+        )
 
     def test_l2_is_accepted_because_its_substrate_is_instant(self, profile):
         layer_two = profile.model_copy(update={"target_layer": "L2"})
         assert LadderPlan.for_profile(layer_two).t_budget_ms == 500.0
+        assert "L2" in JUDGED_METRIC_READY_LAYERS
 
     def test_budget_preset_on_refuses_a_ladder(self, profile):
         with pytest.raises(LadderError, match="budget_preset"):
@@ -340,21 +358,50 @@ class TestGeneratorSaturation:
 
 
 class TestLayerFence:
-    def test_a_hand_built_plan_cannot_run_an_unjudgeable_layer(self, profile):
-        # The fence in LadderPlan.for_profile is not enough: a CLI or soak driver
-        # builds LadderPlan directly, and the outcome was the one the fence exists
-        # to prevent - an honest 2.5 s model reported as a platform failure.
+    def test_a_layer_judged_on_overhead_stops_when_the_stages_carry_no_model_time(
+        self, profile
+    ):
+        # The plan is buildable now, so this is the fence that matters: a hand
+        # built plan (the CLI, a soak driver) must not judge an honest 2.5 s
+        # model as a platform failure. The run stops with a named status instead
+        # of returning a number about the model, and no rung gets a verdict.
         layer_three = profile.model_copy(update={"target_layer": "L3"})
-        with pytest.raises(LadderError, match="cannot be judged yet"):
-            run_ladder(
-                runner=FakeRunner(passing_rps=1000.0),
-                plan=LadderPlan(
-                    rates=(5.0,), t_budget_ms=500.0, duration_s=2.0, warmup_s=0.5
-                ),
-                workload=WorkloadPlan.from_profile(profile),
-                profile=layer_three,
-                tenants=["t-1"],
-            )
+        result = run_ladder(
+            runner=FakeRunner(passing_rps=1000.0),
+            plan=LadderPlan(
+                rates=(5.0, 10.0), t_budget_ms=500.0, duration_s=2.0, warmup_s=0.5
+            ),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=layer_three,
+            tenants=["t-1"],
+        )
+        assert result.status == "unjudgeable"
+        assert result.knee is None
+        assert all(stage.has_platform_overhead is False for stage in result.stages)
+
+    def test_the_same_layer_runs_when_the_driver_supplies_model_timings(self, profile):
+        # The stub's per-request service time is the difference between a refused
+        # run and a measured one - and the judged column is the overhead, not the
+        # turn: 3000 ms turns with 2500 ms of model are 500 ms of platform work.
+        layer_three = profile.model_copy(update={"target_layer": "L3"})
+        runner = FakeRunner(
+            passing_rps=1000.0,
+            latency_for=lambda rps: 3000.0,
+            llm_latency_ms=2500.0,
+        )
+        result = run_ladder(
+            runner=runner,
+            plan=LadderPlan(
+                rates=(5.0,), t_budget_ms=500.0, duration_s=2.0, warmup_s=0.5
+            ),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=layer_three,
+            tenants=["t-1"],
+        )
+        assert result.status == "knee_found"
+        assert result.stages[0].has_platform_overhead is True
+        assert result.stages[0].stats.t_complete_p95 == pytest.approx(3000.0)
+        assert result.stages[0].judged_p95 == pytest.approx(500.0)
 
     def test_a_budget_preset_of_on_is_still_refused_at_run_time(self, profile):
         with pytest.raises(LadderError, match="budget_preset"):
@@ -366,7 +413,10 @@ class TestLayerFence:
                 tenants=["t-1"],
             )
 
-    def test_l3_keeps_its_documented_budget_for_the_day_it_becomes_plannable(self):
+    def test_l3_keeps_its_documented_budget_and_its_overhead_rule(self):
+        # L3 is judged on the platform overhead, never on the turn latency: the
+        # budget stays documented for the day the substrate reports timings, and
+        # the layer is not in the fallback set whose identity §7 allows.
         assert LAYER_T_BUDGET_MS["L3"] == 500.0
         assert "L3" not in JUDGED_METRIC_READY_LAYERS
 

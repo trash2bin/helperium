@@ -27,6 +27,7 @@ class ErrorClass(str, Enum):
 
     # transport / budgets
     BUDGET_429 = "429_budget"
+    AUTH_401 = "401_auth"
     TIMEOUT_CLIENT = "timeout_client"
     TIMEOUT_SERVER = "timeout_server"
     SERVER_5XX = "5xx"
@@ -54,6 +55,12 @@ class RawRequestRecord:
     ttfe_tool: float | None = None
     t_complete: float | None = None
     prompt_tokens: int | None = None
+    # The model's own share of ``t_complete``, summed over the turn's rounds.
+    # It is what turns §7's judged metric from an identity into a measurement:
+    # ``platform_overhead = t_complete - llm_latency``. A driver on a layer whose
+    # turns contain no model latency leaves it ``None`` - an absent source is not
+    # a zero, and a zero would silently turn the fallback into a lie.
+    llm_latency_ms: float | None = None
     history_turns: int = 0
     session_id: str = ""
     tenant: str = ""
@@ -72,6 +79,10 @@ class RawRequestRecord:
     @property
     def is_error(self) -> bool:
         return self.status != "ok"
+
+    @property
+    def has_llm_latency(self) -> bool:
+        return self.llm_latency_ms is not None
 
     def compensated_ms(self) -> float:
         """Latency from the intended start, but never better than measured.
@@ -207,11 +218,30 @@ def summarise(
     wearing the right column name. Layers where the identity is known to hold
     (``L1``, ``L2``) fall back to the compensated percentile in ``meets`` and say
     so in the layer rule of :mod:`agent_db.stress.report`.
+
+    A driver that already knows the model's share per turn puts it on the record
+    (``RawRequestRecord.llm_latency_ms``) and needs no separate sequence: a stub
+    logs its own service time per request, so the L2/L3 driver reads it back from
+    the stub's log. Deriving it from the records is all-or-nothing - a stage where
+    only some records carry a model timing would subtract a partial amount and
+    report the remainder as platform work, which is worse than reporting nothing.
     """
     if not records:
         raise ValueError("cannot summarise an empty stage")
     if duration_s <= 0:
         raise ValueError("duration_s must be positive")
+    if llm_latency_ms is None and any(r.has_llm_latency for r in records):
+        missing = sum(1 for r in records if not r.has_llm_latency)
+        if missing:
+            raise ValueError(
+                f"{missing} of {len(records)} records carry no llm_latency_ms: a "
+                "stage must supply the model's share for every request or for "
+                "none, otherwise the remainder is neither platform overhead nor "
+                "a turn"
+            )
+        llm_latency_ms = [
+            r.llm_latency_ms for r in records if r.llm_latency_ms is not None
+        ]
     if llm_latency_ms is not None and len(llm_latency_ms) != len(records):
         raise ValueError(
             f"llm_latency_ms has {len(llm_latency_ms)} entries for {len(records)} "

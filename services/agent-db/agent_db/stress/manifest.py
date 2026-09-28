@@ -199,9 +199,7 @@ def collect_binaries(
     for spec in specs:
         binary = Path(spec.path)
         if not binary.is_file():
-            raise ManifestError(
-                f"runtime binary {spec.label!r} not found at {binary}"
-            )
+            raise ManifestError(f"runtime binary {spec.label!r} not found at {binary}")
         raw = binary.read_bytes()
         digest = hashlib.sha256(raw).hexdigest()
 

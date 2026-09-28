@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import time
 import pytest
+from dataclasses import replace
 
 from agent_db.stress.profile import WorkloadStep
 from agent_db.stress.records import ErrorClass, RawRequestRecord
@@ -44,6 +46,40 @@ def step(
     return WorkloadStep.model_validate(
         {"weight": weight, "name": name, "tools": list(tools), "history_turns": 0}
     )
+
+
+class _RealLatencyDriver:
+    """A driver whose turns take real wall time, for abort-path tests."""
+
+    def __init__(self, *, latency_s: float) -> None:
+        self.latency_s = latency_s
+        self.turns = 0
+
+    def open_session(self, tenant: str) -> McpSession:
+        return McpSession(
+            tenant, None, "/mcp", timeout_s=5.0, initialised=True, session_id="s"
+        )  # type: ignore[arg-type]
+
+    def close_session(self, session: McpSession) -> None:
+        return
+
+    def execute_turn(self, session, the_step, *, planned_ms, started_ms, tenant, scenario):
+        from agent_db.stress.driver import TurnExecution
+
+        time.sleep(self.latency_s)
+        self.turns += 1
+        return TurnExecution(
+            record=RawRequestRecord(
+                planned_ms=planned_ms,
+                started_ms=started_ms,
+                actual_ms=self.latency_s * 1000.0,
+                t_complete=self.latency_s * 1000.0,
+                session_id=session.session_id or "",
+                tenant=tenant,
+                scenario=scenario,
+            ),
+            calls=(),
+        )
 
 
 class FakeDriver:
@@ -218,6 +254,69 @@ class TestWorkloadPlan:
 
 
 class TestAccounting:
+    def test_a_mixed_llm_stamp_invalidates_the_rung_not_the_ladder(self) -> None:
+        # The §7 derivation is all-or-nothing: a stage where some turns carry
+        # the model's share and others do not must wear the refusal as an
+        # invalidity reason - the ladder keeps going and the evidence survives.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=1.0)
+        original = driver.execute_turn
+
+        def half_stamped(session, step, **kwargs):
+            execution = original(session, step, **kwargs)
+            if len(driver.turns) % 2 == 0:
+                return replace(
+                    execution,
+                    record=replace(execution.record, llm_latency_ms=0.5),
+                )
+            return execution
+
+        driver.execute_turn = half_stamped  # type: ignore[method-assign]
+        result = StageRunner(
+            driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0
+        ).run(spec(), plan(), tenants=["t-1", "t-1"], workers=2)
+        assert result.derivation_failure is not None
+        assert result.is_valid is False
+        assert any(
+            "llm latency derivation" in reason for reason in result.invalid_reasons()
+        )
+        # The compensated numbers still stand - the rung is invalid, not empty.
+        assert result.stats.p95 > 0
+
+    def test_stop_ends_a_running_stage_promptly(self) -> None:
+        # An interrupted run must stop making load BEFORE the CLI releases the
+        # lock: otherwise a successor run measures this run's leftover traffic.
+        # Real time here on purpose: the point is that stop() bounds the exit,
+        # not that the virtual schedule agrees.
+        import threading as threading_module
+        import time as time_module
+
+        driver = _RealLatencyDriver(latency_s=0.05)
+        runner = StageRunner(
+            driver, clock=time_module.perf_counter, sleeper=time_module.sleep,
+            spin_wait_s=0.0,
+        )
+        done = threading_module.Event()
+
+        def stage() -> None:
+            try:
+                runner.run(spec(rps=5.0, duration_s=30.0, warmup_s=0.0), plan(), tenants=["t-1"])
+            except ValueError:
+                # A stopped stage has unclaimed ticks: the CLI's abort handler
+                # turns this into the run's abort_reason.
+                pass
+            finally:
+                done.set()
+
+        thread = threading_module.Thread(target=stage, daemon=True)
+        thread.start()
+        time_module.sleep(0.4)  # real time: let the stage get going
+        runner.stop()
+        runner.join_workers(timeout_s=5.0)
+        assert done.is_set()
+        # Unstopped, this stage runs 30 s; the stop must end it in seconds.
+        assert driver.turns < 20
+
     def test_a_worker_that_dies_does_not_look_like_a_finished_stage(self) -> None:
         # A raised driver error used to lose the worker's remaining tickets
         # silently, and the accounting check that reports them was not part of
