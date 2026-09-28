@@ -131,8 +131,8 @@ agent-db-stress stub \
 | `run-manifest.json` | environment/code split; `publication_blockers()` пуст → прогон публикуем |
 | `preflight.json` | что проверено до первого тика (фикстуры, тенанты, бюджеты, quiet-host) |
 | `status.json` | `running/completed/failed/aborted` + `abort_reason` |
-| `raw/<stage>.jsonl` | **канонический источник перцентилей** (по записи на ход, CO-компенсация) |
-| `raw/<stage>.calls.jsonl` | подекомпозиция по вызовам (без собственных плановых смещений) |
+| `raw/<rps>rps-run<k>-attempt<n>.jsonl` | **канонический источник перцентилей** (по записи на ход, CO-компенсация); имя — билет стадии: повторные прогоны knee и попытки расширения пула не смешиваются в одном файле |
+| `raw/<rps>rps-run<k>-attempt<n>.calls.jsonl` | подекомпозиция по вызовам (без собственных плановых смещений) |
 | `generator/<stage>.json` | CPU/лаг/дропы/хвост генератора: валидность стадии |
 | `stub/*.jsonl` | тайминги стаба (для L2/L3) |
 

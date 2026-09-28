@@ -12,8 +12,10 @@ and :mod:`agent_db.stress.records` is the only calculator.
       preflight.json       # what was checked before the first tick
       profile.json         # the profile exactly as it was run
       status.json          # running | completed | failed | aborted (+ reason)
-      raw/<stage>.jsonl    # one record per request, warm-up included
-      raw/<stage>.calls.jsonl  # per-call decomposition, no planned offsets of its own
+      raw/<ticket>.jsonl   # one record per request, warm-up included; the ticket
+                           # is <rps>rps-run<k>-attempt<n> (repeats and pool-expansion
+                           # attempts land in their own files, not one mixed stage file)
+      raw/<ticket>.calls.jsonl  # per-call decomposition, no planned offsets of its own
       generator/<stage>.json  # generator CPU, lag, dropped ticks, pool width
       server/<service>.json   # /metrics snapshots taken around the run
       host/<service>.json     # container CPU/RAM from `docker stats`, when available
