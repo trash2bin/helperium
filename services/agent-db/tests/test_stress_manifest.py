@@ -60,7 +60,10 @@ class TestEnvironmentHonesty:
 
     def test_the_interpreter_host_is_always_described(self, profile):
         env = environment(profile)
-        assert env.cpu_cores == 8
+        # The contract (manifest.py) is cpu_cores=os.cpu_count(): the interpreter
+        # host is always described, with whatever the interpreter sees - not with
+        # the core count of the machine this test was written on.
+        assert env.cpu_cores == os.cpu_count()
         assert env.kernel
 
     def test_supplied_facts_survive_without_probing(self, profile):

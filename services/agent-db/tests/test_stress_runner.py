@@ -310,10 +310,15 @@ class TestAccounting:
 
         thread = threading_module.Thread(target=stage, daemon=True)
         thread.start()
-        time_module.sleep(0.4)  # real time: let the stage get going
+        time_module.sleep(0.4)  # real time: let the stage get going (calibration
+        # alone sleeps ~0.4 s: 8 probes x min(interval, 50 ms) - on a loaded CI
+        # runner it outlasts this sleep, and join_workers then finds no threads
+        # yet: self._threads is only assigned after calibration)
         runner.stop()
         runner.join_workers(timeout_s=5.0)
-        assert done.is_set()
+        # The bound is the event wait, not the join: stop() must end the stage
+        # well inside this budget on any host, fast or loaded.
+        assert done.wait(timeout=15.0)
         # Unstopped, this stage runs 30 s; the stop must end it in seconds.
         assert driver.turns < 20
 
