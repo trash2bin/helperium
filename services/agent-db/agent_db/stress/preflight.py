@@ -348,29 +348,6 @@ def budget_overrides_from(
             )
         overrides[name] = value.strip()
     return overrides
-    """Parse ``name=value`` overrides for §5's budget table.
-
-    The harness usually runs outside the services' environment, so the values in
-    effect on the stand have to be supplied explicitly; ``collect_budgets`` then
-    labels them ``origin: stand`` instead of printing a documented default next
-    to a limiter that was raised (§5).
-    """
-    from .manifest import BUDGET_TABLE
-
-    known = {spec.name for spec in (specs or BUDGET_TABLE)}
-    overrides: dict[str, str] = {}
-    for item in raw or ():
-        name, sep, value = item.partition("=")
-        if not sep or not name.strip():
-            raise ValueError(f"budget override {item!r} is not NAME=VALUE")
-        name = name.strip()
-        if name not in known:
-            raise ValueError(
-                f"budget override {name!r} is not in the §5 table; a budget "
-                "outside the table cannot be compared between runs"
-            )
-        overrides[name] = value.strip()
-    return overrides
 
 
 def budgets_for_run(

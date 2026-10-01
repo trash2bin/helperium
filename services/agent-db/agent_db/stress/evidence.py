@@ -104,6 +104,18 @@ class RunLayout:
     def stub_path(self, label: str) -> Path:
         return self.root / "stub" / f"{label}.jsonl"
 
+    def clear_gap_marker(self, name: str) -> None:
+        """Drop a gap marker once the directory it describes has real data.
+
+        The marker says "not collected yet (phase 1)". Leaving it next to a
+        collected slice would put two contradictory claims in one artefact, and
+        the reader has no way to tell which one is current. Collection is per
+        run, so the marker is removed only when this run actually wrote there.
+        """
+        marker = self.root / name / "GAP.md"
+        if marker.exists():
+            marker.unlink()
+
 
 def stage_summary(
     stage: StageResult, outcome: StageOutcome, ticket: StageTicket
@@ -131,7 +143,17 @@ def stage_summary(
         "workers": outcome.workers,
         "pool_expansions": outcome.pool_expansions,
         "dropped_ticks": stage.dropped_ticks,
+        # The judged half next to the whole-stage count, for the same reason
+        # cpu_measured_s sits next to cpu_s: a tick dropped during warm-up is
+        # not in the sample, the rate or the latency, so it is evidence about the
+        # generator's cold start rather than a verdict on the rung.
+        "measured_dropped_ticks": stage.gating_dropped_ticks,
+        "warmup_dropped_ticks": stage.warmup_dropped_ticks,
         "tick_lag_p99_ms": stage.tick_lag_p99,
+        # The whole-stage figure next to the judged one, for the same reason
+        # cpu_s sits next to cpu_measured_s: a gap between them says the
+        # generator needed its warm-up, which is not a defect of the rung.
+        "stage_lag_p99_ms": stage.stage_lag_p99,
         "spin_tail_ms": stage.spin_tail_ms,
         "cpu_s": stage.cpu_s,
         "cpu_measured_s": stage.cpu_measured_s,

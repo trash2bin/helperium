@@ -13,7 +13,9 @@ an injected clock.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +25,7 @@ import pytest
 from typer.testing import CliRunner
 
 from agent_db.stress import cli as stress_cli
+from agent_db.stress.metrics_scrape import MetricsCollector
 
 L1_PROFILE = (
     Path(__file__).resolve().parents[1]
@@ -143,7 +146,12 @@ def repo(tmp_path: Path) -> Path:
 def _profile(tmp_path: Path, *, tenants: int = 2, rates: str = "5,10") -> Path:
     payload = json.loads(L1_PROFILE.read_text(encoding="utf-8"))
     payload["tenants"]["count"] = tenants
-    payload["arrival"] = {"model": "constant", "rps": 5, "duration_s": 2, "warmup_s": 0.5}
+    payload["arrival"] = {
+        "model": "constant",
+        "rps": 5,
+        "duration_s": 2,
+        "warmup_s": 0.5,
+    }
     path = tmp_path / "profile.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
@@ -190,7 +198,13 @@ class TestRateParsing:
     def test_default_ladder_is_used_when_no_rates_are_given(self, tmp_path):
         from agent_db.stress.profile import load_profile
 
-        assert stress_cli._rates_for(load_profile(L1_PROFILE), "") == (5, 10, 20, 40, 80)
+        assert stress_cli._rates_for(load_profile(L1_PROFILE), "") == (
+            5,
+            10,
+            20,
+            40,
+            80,
+        )
 
     def test_explicit_rates_are_parsed(self):
         from agent_db.stress.profile import load_profile
@@ -198,11 +212,45 @@ class TestRateParsing:
         assert stress_cli._rates_for(load_profile(L1_PROFILE), "2.5, 5") == (2.5, 5.0)
 
     def test_a_non_numeric_rate_is_a_refusal(self):
-        from agent_db.stress.profile import LoadProfile, ProfileValidationError, load_profile
+        from agent_db.stress.profile import (
+            LoadProfile,
+            ProfileValidationError,
+            load_profile,
+        )
 
         profile: LoadProfile = load_profile(L1_PROFILE)
         with pytest.raises(ProfileValidationError, match="rates must be numbers"):
             stress_cli._rates_for(profile, "10,fast")
+
+
+class TestBinarySpecParsing:
+    """§6: on a native stand the binary is the only runtime artefact there is."""
+
+    def test_a_label_and_path_imply_the_conventional_source_root(self):
+        (spec,) = stress_cli._binaries_from(["mcp-gateway=/tmp/stand/mcp-gateway"])
+        assert spec.label == "mcp-gateway"
+        assert spec.path == "/tmp/stand/mcp-gateway"
+        # The pairing the freshness check is about, not a free-form string.
+        assert spec.source_root == "services/mcp-gateway"
+
+    def test_an_explicit_source_root_wins(self):
+        (spec,) = stress_cli._binaries_from(
+            ["data-service=/tmp/stand/ds:services/data-service/cmd/server"]
+        )
+        assert spec.source_root == "services/data-service/cmd/server"
+
+    def test_several_binaries_are_kept_in_order(self):
+        specs = stress_cli._binaries_from(["a=/tmp/a", "b=/tmp/b"])
+        assert [spec.label for spec in specs] == ["a", "b"]
+
+    def test_nothing_given_is_no_specs_rather_than_an_error(self):
+        # The flag is optional: a container stand records digests instead.
+        assert stress_cli._binaries_from(None) == []
+
+    @pytest.mark.parametrize("bad", ["mcp-gateway", "=/tmp/x", "mcp-gateway="])
+    def test_a_malformed_spec_is_a_refusal_naming_the_form(self, bad):
+        with pytest.raises(ValueError, match="LABEL=PATH"):
+            stress_cli._binaries_from([bad])
 
 
 class TestRunCommand:
@@ -261,7 +309,9 @@ class TestRunCommand:
         )
 
         raw_files = sorted(
-            path for path in (run_dir / "raw").glob("*.jsonl") if ".calls." not in path.name
+            path
+            for path in (run_dir / "raw").glob("*.jsonl")
+            if ".calls." not in path.name
         )
         calls_files = sorted((run_dir / "raw").glob("*.calls.jsonl"))
         assert len(raw_files) == 1
@@ -289,9 +339,262 @@ class TestRunCommand:
         report = json.loads((run_dir / "report.json").read_text())
         assert report["profile"] == "mcp-tool-call-l1"
         assert report["target_layer"] == "L1"
-        assert report["layer_rule"] == "compensated turn latency (no LLM inside the turn)"
+        assert (
+            report["layer_rule"] == "compensated turn latency (no LLM inside the turn)"
+        )
         assert len(report["rows"]) == 1
         assert (run_dir / f"report-{report['run_uuid']}.md").is_file()
+
+        # One run, one identity. The guard mints the uuid when it takes the lock
+        # and names the evidence directory with it; the manifest used to default
+        # its own, so the directory, the manifest and report-<uuid>.md carried two
+        # different uuids and could not be correlated - which is the join §10
+        # rests on ("a number without its run manifest is not evidence").
+        manifest = json.loads((run_dir / "run-manifest.json").read_text())
+        assert manifest["run_uuid"] == run_dir.name
+        assert report["run_uuid"] == run_dir.name
+
+    def test_the_progress_line_prints_the_overhead_the_report_will_hold(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        """The console must not call a good L1 rung ``nan``.
+
+        On L1 no LLM runs inside the turn, so §7 allows the compensated
+        percentile to *be* the platform overhead - which is what report.json
+        records. The live progress line read ``platform_overhead_p95`` alone and
+        printed ``nan`` for every rung, so an operator watching a healthy run saw
+        a failed measurement while the artefact held the number.
+        """
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+        result = self._run(runner, tmp_path, stand, repo)
+        assert result.exit_code == 0, result.stdout
+
+        # The progress line, not the markdown table that also says "overhead".
+        progress = [
+            line
+            for line in result.stdout.splitlines()
+            if "overhead" in line and "rps  " in line
+        ]
+        assert len(progress) == 1, result.stdout
+        assert "nan" not in progress[0]
+
+        # And it is the report's number, not a second computation of its own.
+        report = json.loads((_run_dir(tmp_path) / "report.json").read_text())
+        overhead = report["rows"][0]["platform_overhead_p95"]
+        assert overhead is not None
+        assert f"{overhead:.2f}" in progress[0]
+
+    def test_a_declared_binary_is_recorded_and_clears_the_artefact_blocker(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        """§6: a native run had no way to become publishable.
+
+        The manifest could already hash a binary and refuse a stale one, but no
+        CLI flag reached ``collect_code``, so ``binaries`` stayed empty and every
+        native run carried "no runtime artefact is recorded" forever - a blocker
+        the operator could not clear no matter what they did.
+        """
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+
+        source_root = repo / "services" / "mcp-gateway"
+        source_root.mkdir(parents=True)
+        (source_root / "main.go").write_text("package main\n", encoding="utf-8")
+        binary = tmp_path / "stand" / "mcp-gateway"
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"ELF-ish\n")
+
+        result = self._run(
+            runner,
+            tmp_path,
+            stand,
+            repo,
+            "--binary",
+            f"mcp-gateway={binary}:{source_root}",
+        )
+        assert result.exit_code == 0, result.stdout
+
+        manifest = json.loads((_run_dir(tmp_path) / "run-manifest.json").read_text())
+        recorded = manifest["code"]["binaries"]["mcp-gateway"]
+        assert recorded["path"] == str(binary)
+        assert recorded["sha256"] == hashlib.sha256(b"ELF-ish\n").hexdigest()
+        # Built after its sources, so the numbers are attributable to this tree.
+        assert recorded["freshness"] == "fresh"
+        assert recorded["newest_source"] == "main.go"
+        assert "no runtime artefact is recorded" not in result.stdout
+
+    def test_a_binary_older_than_its_sources_is_still_refused(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        """The flag must not become a way to rubber-stamp a stale stand.
+
+        This happened once already (it is why BinarySpec exists): a gateway
+        binary months older than the tree answered a load run and the numbers
+        were attributed to HEAD.
+        """
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+
+        source_root = repo / "services" / "mcp-gateway"
+        source_root.mkdir(parents=True)
+        binary = tmp_path / "stand" / "mcp-gateway"
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"old\n")
+        os.utime(binary, (1_000_000_000, 1_000_000_000))
+        # Edited after the build, which is exactly the stale case.
+        (source_root / "main.go").write_text("package main\n", encoding="utf-8")
+
+        result = self._run(
+            runner,
+            tmp_path,
+            stand,
+            repo,
+            "--binary",
+            f"mcp-gateway={binary}:{source_root}",
+        )
+        assert result.exit_code == 0, result.stdout
+
+        manifest = json.loads((_run_dir(tmp_path) / "run-manifest.json").read_text())
+        assert manifest["code"]["binaries"]["mcp-gateway"]["freshness"] == "stale"
+        assert "is older than its" in result.stdout
+
+    def test_a_binary_path_that_names_nothing_is_not_silently_a_gap(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        """The operator said the stand ran it, so a missing file is their mistake.
+
+        Recording it as "unchecked" would produce a run whose provenance looks
+        collected and is not.
+        """
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+
+        result = self._run(
+            runner,
+            tmp_path,
+            stand,
+            repo,
+            "--binary",
+            f"mcp-gateway={tmp_path / 'absent'}",
+        )
+
+        # collect_code refuses, provenance is recorded empty with the reason, and
+        # the run stays unpublishable - §6 wants the gap named, not a crash.
+        assert "code provenance unreadable" in result.output
+        manifest = json.loads((_run_dir(tmp_path) / "run-manifest.json").read_text())
+        assert manifest["code"]["binaries"] == {}
+        assert manifest["code"]["commit"] == ""
+
+    def test_a_malformed_binary_flag_refuses_before_taking_the_lock(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+        result = self._run(runner, tmp_path, stand, repo, "--binary", "mcp-gateway")
+        assert result.exit_code == 2, result.stdout
+        # Refused while parsing arguments, before the guard took the lock: the
+        # evidence root was never even created, so no half-run tree is left for
+        # the next reader to interpret.
+        assert not (tmp_path / "evidence").exists()
+
+    def test_an_unreachable_metrics_endpoint_is_a_gap_and_costs_the_run_nothing(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        """Collection is an observation of the run, never a gate on it.
+
+        The scripted stand has no listener behind its url, so the scrape is
+        refused - which must be recorded as a named gap rather than as a zero,
+        and must leave the ladder and its verdict untouched.
+        """
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+        result = self._run(runner, tmp_path, stand, repo, "--metrics-interval-s", "60")
+        assert result.exit_code == 0, result.stdout
+
+        run_dir = _run_dir(tmp_path)
+        payload = json.loads((run_dir / "server" / "mcp-gateway.json").read_text())
+        assert payload["scrapes"] == payload["gap_count"] > 0
+        assert payload["gap_reasons"], payload
+        # A gap, not a zero: no series were invented for the refusal.
+        assert all("series" not in item for item in payload["slices"])
+        # And the report is still a report.
+        assert json.loads((run_dir / "status.json").read_text())["status"] == (
+            "completed"
+        )
+
+    def test_collected_slices_replace_the_gap_marker_they_contradict(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        """§10's directories carry "not collected yet (phase 1)" until they do.
+
+        Leaving that marker beside real slices would put two contradictory
+        claims in one artefact with no way to tell which is current.
+        """
+        from agent_db.stress.metrics_scrape import MetricSample, ScrapeSlice
+
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+
+        real = MetricsCollector
+
+        def collector_with_a_live_server(targets, **kwargs):
+            def scraper(target):
+                return ScrapeSlice(
+                    wall_ms=1.0,
+                    monotonic_ms=1.0,
+                    samples=[
+                        MetricSample(
+                            "mcp_tool_calls_total",
+                            {"tool": "db_map", "tenant": "t-1", "status": "ok"},
+                            17.0,
+                        )
+                    ],
+                )
+
+            return real(targets, scraper=scraper, **kwargs)
+
+        monkeypatch.setattr(
+            stress_cli, "MetricsCollector", collector_with_a_live_server
+        )
+        result = self._run(runner, tmp_path, stand, repo, "--metrics-interval-s", "60")
+        assert result.exit_code == 0, result.stdout
+
+        run_dir = _run_dir(tmp_path)
+        assert not (run_dir / "server" / "GAP.md").exists()
+        payload = json.loads((run_dir / "server" / "mcp-gateway.json").read_text())
+        assert payload["gap_count"] == 0
+        # Bracketed: one slice before the first tick and one after the last, so a
+        # stage's counter delta is computable from the artefact alone.
+        assert payload["scrapes"] >= 2
+        series = payload["slices"][0]["series"]
+        assert series[0]["name"] == "mcp_tool_calls_total"
+        assert series[0]["labels"]["tool"] == "db_map"
+        # host/ was not collected, so its marker must still be there.
+        assert (run_dir / "host" / "GAP.md").is_file()
+
+    def test_opting_out_keeps_the_gap_marker_and_writes_no_slices(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+        result = self._run(runner, tmp_path, stand, repo, "--no-server-metrics")
+        assert result.exit_code == 0, result.stdout
+
+        run_dir = _run_dir(tmp_path)
+        assert (run_dir / "server" / "GAP.md").is_file()
+        assert list((run_dir / "server").glob("*.json")) == []
+
+    def test_a_malformed_metrics_target_refuses_the_run(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        stand = FakeStand()
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+        result = self._run(
+            runner, tmp_path, stand, repo, "--metrics-target", "data-service"
+        )
+        assert result.exit_code == 2, result.stdout
+        assert "SERVICE=URL" in result.output
 
     def test_a_ladder_crash_or_ctrl_c_leaves_a_truthful_tree(
         self, runner, tmp_path, repo, monkeypatch
@@ -335,7 +638,9 @@ class TestRunCommand:
         locks = list((tmp_path / "evidence" / ".stress-locks").glob("*.lock"))
         assert locks == []
 
-    def test_a_stub_log_is_copied_into_the_run_evidence(self, runner, tmp_path, repo, monkeypatch):
+    def test_a_stub_log_is_copied_into_the_run_evidence(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
         stand = FakeStand()
         monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
         log = tmp_path / "stub-timings.jsonl"
@@ -346,7 +651,9 @@ class TestRunCommand:
         assert copied.is_file()
         assert "service_ms" in copied.read_text(encoding="utf-8")
 
-    def test_a_missing_stub_log_refuses_instead_of_lying(self, runner, tmp_path, repo, monkeypatch):
+    def test_a_missing_stub_log_refuses_instead_of_lying(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
         stand = FakeStand()
         monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
         result = self._run(
@@ -438,7 +745,9 @@ class TestRunCommand:
 
 
 class TestCheckCommand:
-    def test_a_runnable_stand_is_reported_as_runnable(self, runner, tmp_path, monkeypatch):
+    def test_a_runnable_stand_is_reported_as_runnable(
+        self, runner, tmp_path, monkeypatch
+    ):
         stand = FakeStand()
         monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
         result = _invoke(

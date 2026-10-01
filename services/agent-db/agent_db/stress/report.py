@@ -50,6 +50,7 @@ COLUMNS: tuple[str, ...] = (
     # action" record of §2 leaves no trace in the artefact.
     "pool_expansions",
     "dropped_ticks",
+    "measured_dropped_ticks",
     "spin_tail_ms",
 )
 
@@ -64,6 +65,7 @@ UNAVAILABLE_PHASE_1: dict[str, str] = {
     "platform_overhead_p95": "needs LLM timings to subtract (phase 2)",
     "pool_expansions": "pool growth is recorded per rung",
     "dropped_ticks": "tick accounting is recorded per rung",
+    "measured_dropped_ticks": "tick accounting is recorded per rung",
     "spin_tail_ms": "the calibrated tail is recorded per rung",
 }
 
@@ -148,6 +150,10 @@ def stage_row(
         ),
         "pool_expansions": stage.pool_expansions,
         "dropped_ticks": stage.dropped_ticks,
+        # The judged half next to the whole-stage count: a rung can show dropped
+        # ticks and still pass when all of them fell inside the warm-up, so the
+        # reader needs both numbers to tell that case from a real drop (§3).
+        "measured_dropped_ticks": stage.measured_dropped_ticks,
         "spin_tail_ms": (
             round(stage.spin_tail_ms, 3) if stage.spin_tail_ms is not None else None
         ),
@@ -370,6 +376,7 @@ HEADERS: dict[str, str] = {
     "environment_hash": "env hash",
     "pool_expansions": "pool x",
     "dropped_ticks": "dropped",
+    "measured_dropped_ticks": "dropped (measured)",
     "spin_tail_ms": "spin tail ms",
 }
 

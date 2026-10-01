@@ -166,8 +166,25 @@ class StageResult:
     stats: StageStats
     records: list[RawRequestRecord] = field(default_factory=list)
     calls: list[ToolCallTiming] = field(default_factory=list)
+    # Every tick's lateness, warm-up included: the generator's whole-stage
+    # behaviour, kept as evidence so a reader can rebuild either figure.
     tick_lag_ms: list[float] = field(default_factory=list)
+    # Lateness of the measured ticks only - the half that judges validity, for
+    # the same reason ``cpu_measured_s`` exists: a warm-up absorbs cold pools,
+    # thread starts and first-touch page faults, and charging their lateness to
+    # the gate would invalidate a rung whose measured window ran exactly on
+    # schedule (and then answer it with the pool doubling that cannot help).
+    measured_lag_ms: list[float] = field(default_factory=list)
     dropped_ticks: int = 0
+    # Dropped ticks inside the measured window only - the half that judges
+    # validity, for the same reason ``cpu_measured_s`` and ``measured_lag_ms``
+    # exist. A tick dropped during warm-up costs nothing: it is not in the
+    # sample, not in the achieved rate and not in the latency, so charging it to
+    # the gate invalidates a rung whose measured window is whole and on
+    # schedule - and the ladder answers that by doubling the pool, which cannot
+    # help a cold start that has already ended. ``None`` means "never split",
+    # so a hand-built result keeps judging on the whole-stage count.
+    measured_dropped_ticks: int | None = None
     reinitialisations: int = 0
     warmup_ticks: int = 0
     # The busy-wait tail this run used, in ms: a number the report prints rather
@@ -194,6 +211,22 @@ class StageResult:
 
     @property
     def tick_lag_p99(self) -> float:
+        """Lag p99 over the *measured* ticks - the quantity §10's gate is about.
+
+        Falls back to the whole-stage samples when no measured window was
+        recorded, so a hand-built result (and a stage with no warm-up, where the
+        two are the same list) reads exactly as before.
+        """
+        samples = self.measured_lag_ms or self.tick_lag_ms
+        return percentile(samples, 0.99) if samples else 0.0
+
+    @property
+    def stage_lag_p99(self) -> float:
+        """Lag p99 over every tick including warm-up: evidence, never a verdict.
+
+        A big gap between this and :attr:`tick_lag_p99` is the signature of a
+        generator that needed its warm-up, which is what a warm-up is for.
+        """
         return percentile(self.tick_lag_ms, 0.99) if self.tick_lag_ms else 0.0
 
     @property
@@ -217,8 +250,33 @@ class StageResult:
 
     @property
     def accounted_ticks(self) -> int:
-        """Ticks that either ran or were counted as dropped."""
+        """Ticks that either ran or were counted as dropped.
+
+        Deliberately the whole-stage count: every planned tick must be accounted
+        for, warm-up included, or a worker died and the sample silently shrank.
+        """
         return len(self.records) + self.dropped_ticks
+
+    @property
+    def gating_dropped_ticks(self) -> int:
+        """Dropped ticks the verdict is about - the measured window's.
+
+        Falls back to the whole-stage count when no split was recorded, so a
+        hand-built result (and a stage with no warm-up, where the two are equal)
+        reads exactly as before.
+        """
+        if self.measured_dropped_ticks is None:
+            return self.dropped_ticks
+        return self.measured_dropped_ticks
+
+    @property
+    def warmup_dropped_ticks(self) -> int:
+        """Ticks dropped during warm-up: evidence, never a verdict.
+
+        A non-zero value here with a valid stage is the signature of a generator
+        that needed its warm-up, which is what a warm-up is for.
+        """
+        return self.dropped_ticks - self.gating_dropped_ticks
 
     @property
     def is_valid(self) -> bool:
@@ -234,7 +292,7 @@ class StageResult:
             return False
         if self.derivation_failure:
             return False
-        if self.dropped_ticks:
+        if self.gating_dropped_ticks:
             return False
         if self.tick_lag_p99 >= LAG_INVALID_MS:
             return False
@@ -255,8 +313,10 @@ class StageResult:
             )
         if self.derivation_failure:
             reasons.append(f"llm latency derivation: {self.derivation_failure}")
-        if self.dropped_ticks:
-            reasons.append(f"{self.dropped_ticks} dropped tick(s)")
+        if self.gating_dropped_ticks:
+            reasons.append(
+                f"{self.gating_dropped_ticks} dropped tick(s) in the measured window"
+            )
         if self.tick_lag_p99 >= LAG_INVALID_MS:
             reasons.append(
                 f"generator lag p99 {self.tick_lag_p99:.1f} ms >= {LAG_INVALID_MS} ms"
@@ -335,7 +395,9 @@ class _WorkerBuffer:
     records: list[RawRequestRecord] = field(default_factory=list)
     calls: list[ToolCallTiming] = field(default_factory=list)
     lag_ms: list[float] = field(default_factory=list)
+    measured_lag_ms: list[float] = field(default_factory=list)
     dropped: int = 0
+    measured_dropped: int = 0
     reinitialisations: int = 0
     failures: list[str] = field(default_factory=list)
 
@@ -486,13 +548,22 @@ class StageRunner:
                     if wait > 0:
                         self._wait_until(planned_ms, started, tail_ms)
                     now_ms = (self.clock() - started) * 1000.0
-                    buffer.lag_ms.append(now_ms - planned_ms)
-                    if now_ms - planned_ms >= interval:
+                    lateness_ms = now_ms - planned_ms
+                    buffer.lag_ms.append(lateness_ms)
+                    if planned_ms >= warmup_ms:
+                        # Split at the same boundary the record filter and the CPU
+                        # sample use, so all three describe one window.
+                        buffer.measured_lag_ms.append(lateness_ms)
+                    if lateness_ms >= interval:
                         # Running this tick now would re-time the stage: the slot
                         # is gone, and calling it "late but fine" would hide the
                         # fact that the generator, not the platform, set the
                         # ceiling.
                         buffer.dropped += 1
+                        if planned_ms >= warmup_ms:
+                            # Same boundary as the record filter, the CPU sample
+                            # and the lag split, so all four describe one window.
+                            buffer.measured_dropped += 1
                         continue
                     boundary.note(planned_ms)
                     execution = self.driver.execute_turn(
@@ -543,6 +614,8 @@ class StageRunner:
         calls = [call for buffer in buffers for call in buffer.calls]
         lag = [value for buffer in buffers for value in buffer.lag_ms]
         lag.sort()
+        measured_lag = [value for buffer in buffers for value in buffer.measured_lag_ms]
+        measured_lag.sort()
         measured = [record for record in records if record.planned_ms >= warmup_ms]
         if not measured:
             if worker_errors:
@@ -578,7 +651,9 @@ class StageRunner:
             records=records,
             calls=calls,
             tick_lag_ms=lag,
+            measured_lag_ms=measured_lag,
             dropped_ticks=sum(buffer.dropped for buffer in buffers),
+            measured_dropped_ticks=sum(buffer.measured_dropped for buffer in buffers),
             reinitialisations=sum(buffer.reinitialisations for buffer in buffers),
             warmup_ticks=len(records) - len(measured),
             spin_tail_ms=tail_ms,

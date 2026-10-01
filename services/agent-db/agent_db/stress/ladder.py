@@ -224,6 +224,11 @@ class StageOutcome:
     tick_lag_p99: float
     dropped_ticks: int
     t_budget_ms: float
+    # Ticks dropped inside the measured window - the half the verdict is about.
+    # The whole-stage ``dropped_ticks`` stays next to it so a reader can tell a
+    # rung that dropped ticks while warming up from one that dropped them while
+    # being measured; only the latter invalidates (§3).
+    measured_dropped_ticks: int = 0
     cpu_s: float = 0.0
     cpu_measured_s: float = 0.0
     # The window the measured ticks span, ``(total_ticks - warmup_ticks) / rps``:
@@ -298,6 +303,7 @@ class StageOutcome:
             stats=result.stats,
             tick_lag_p99=result.tick_lag_p99,
             dropped_ticks=result.dropped_ticks,
+            measured_dropped_ticks=result.gating_dropped_ticks,
             cpu_s=result.cpu_s,
             cpu_measured_s=result.cpu_measured_s,
             measured_window_s=result.spec.measured_window_s,

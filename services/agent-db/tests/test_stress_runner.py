@@ -63,7 +63,9 @@ class _RealLatencyDriver:
     def close_session(self, session: McpSession) -> None:
         return
 
-    def execute_turn(self, session, the_step, *, planned_ms, started_ms, tenant, scenario):
+    def execute_turn(
+        self, session, the_step, *, planned_ms, started_ms, tenant, scenario
+    ):
         from agent_db.stress.driver import TurnExecution
 
         time.sleep(self.latency_s)
@@ -293,14 +295,20 @@ class TestAccounting:
 
         driver = _RealLatencyDriver(latency_s=0.05)
         runner = StageRunner(
-            driver, clock=time_module.perf_counter, sleeper=time_module.sleep,
+            driver,
+            clock=time_module.perf_counter,
+            sleeper=time_module.sleep,
             spin_wait_s=0.0,
         )
         done = threading_module.Event()
 
         def stage() -> None:
             try:
-                runner.run(spec(rps=5.0, duration_s=30.0, warmup_s=0.0), plan(), tenants=["t-1"])
+                runner.run(
+                    spec(rps=5.0, duration_s=30.0, warmup_s=0.0),
+                    plan(),
+                    tenants=["t-1"],
+                )
             except ValueError:
                 # A stopped stage has unclaimed ticks: the CLI's abort handler
                 # turns this into the run's abort_reason.
@@ -455,6 +463,171 @@ class TestGeneratorSaturation:
         )
         assert result.generator_bound is False
         assert result.is_valid is True
+
+
+class TestWarmupLag:
+    """Lateness is judged over the measured window, like generator CPU is.
+
+    A warm-up exists to absorb cold pools, thread starts and first-touch page
+    faults, and that is precisely when a generator is late. Charging that
+    lateness to the gate in §10 invalidated rungs whose measured window ran
+    exactly on schedule - and the ladder answers an invalid rung that is not
+    generator-bound by doubling the pool and re-running it, so the cost was two
+    wasted rungs and a knee reported as a lower bound for a reason that had
+    already passed.
+    """
+
+    class _ColdStartDriver(FakeDriver):
+        """Late only while inside the warm-up, exactly on schedule afterwards."""
+
+        def __init__(
+            self, clock: VirtualClock, *, stall_ms: float, until_ms: float
+        ) -> None:
+            super().__init__(clock, turn_ms=1.0)
+            self.stall_ms = stall_ms
+            self.until_ms = until_ms
+
+        def execute_turn(self, session, the_step, **kwargs):  # type: ignore[no-untyped-def]
+            if kwargs["planned_ms"] < self.until_ms:
+                # Overrun the tick's own slot, so the next tick starts late.
+                self.clock.sleep(self.stall_ms / 1000.0)
+            return super().execute_turn(session, the_step, **kwargs)
+
+    def _cold_start_stage(self):
+        # 5 rps / 200 ms interval, 4 s stage, 2 s warm-up = 10 warm-up ticks.
+        stage_spec = spec(rps=5.0, duration_s=4.0, warmup_s=2.0)
+        clock = VirtualClock()
+        driver = self._ColdStartDriver(clock, stall_ms=210.0, until_ms=1000.0)
+        result = StageRunner(
+            driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0
+        ).run(stage_spec, plan(), tenants=["t-1"])
+        return stage_spec, result
+
+    def test_lateness_confined_to_the_warmup_keeps_the_stage_valid(self) -> None:
+        stage_spec, result = self._cold_start_stage()
+
+        # The premise: the measured window is whole and ran on time.
+        assert result.dropped_ticks == 0
+        assert result.stats.count == stage_spec.total_ticks - stage_spec.warmup_ticks
+        assert result.stats.achieved_rps == pytest.approx(5.0)
+        assert max(result.measured_lag_ms) < 1.0
+
+        # So the gate, which reads that window, lets the rung stand.
+        assert result.tick_lag_p99 < LAG_INVALID_MS
+        assert result.is_valid is True
+        assert result.invalid_reasons() == []
+
+    def test_the_whole_stage_lag_is_still_reported_as_evidence(self) -> None:
+        _, result = self._cold_start_stage()
+        # Not lost, just not a verdict: the gap between the two figures is the
+        # signature of a generator that needed its warm-up.
+        assert result.stage_lag_p99 > LAG_INVALID_MS
+        assert result.stage_lag_p99 > result.tick_lag_p99
+        assert len(result.tick_lag_ms) > len(result.measured_lag_ms)
+
+    def test_lateness_inside_the_measured_window_still_invalidates(self) -> None:
+        # The gate must keep catching what it exists for: the same stall, but
+        # reaching past the warm-up boundary.
+        stage_spec = spec(rps=5.0, duration_s=4.0, warmup_s=2.0)
+        clock = VirtualClock()
+        driver = self._ColdStartDriver(clock, stall_ms=205.0, until_ms=3000.0)
+        result = StageRunner(
+            driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0
+        ).run(stage_spec, plan(), tenants=["t-1"])
+
+        assert max(result.measured_lag_ms) >= LAG_INVALID_MS
+        assert result.tick_lag_p99 >= LAG_INVALID_MS
+        assert result.is_valid is False
+        assert any("lag" in reason for reason in result.invalid_reasons())
+
+    def test_a_hand_built_result_still_reads_its_only_lag_list(self) -> None:
+        # Callers that build a StageResult directly (the ladder's tests do) pass
+        # tick_lag_ms alone; the gate must not silently pass them.
+        lagging = StageResult(
+            spec=spec(),
+            stats=stats_ok(),
+            tick_lag_ms=[1.0, 2.0, LAG_INVALID_MS + 1.0],
+        )
+        assert lagging.tick_lag_p99 >= LAG_INVALID_MS
+        assert lagging.is_valid is False
+
+
+class TestWarmupDroppedTicks:
+    """A dropped tick is judged over the measured window, like lag and CPU are.
+
+    A tick dropped during warm-up costs the rung nothing: it is not in the
+    sample, not in the achieved rate and not in the latency. Charging it to the
+    gate invalidated stages whose measured window was whole and exactly on
+    schedule - and because such a stage is not generator-bound, the ladder's
+    answer was to double the pool and re-run, which cannot help a cold start
+    that has already ended.
+    """
+
+    class _ColdDropDriver(FakeDriver):
+        """Blows a whole tick slot inside the warm-up, perfect afterwards."""
+
+        def __init__(
+            self, clock: VirtualClock, *, stall_ms: float, until_ms: float
+        ) -> None:
+            super().__init__(clock, turn_ms=1.0)
+            self.stall_ms = stall_ms
+            self.until_ms = until_ms
+
+        def execute_turn(self, session, the_step, **kwargs):  # type: ignore[no-untyped-def]
+            if kwargs["planned_ms"] < self.until_ms:
+                self.clock.sleep(self.stall_ms / 1000.0)
+            return super().execute_turn(session, the_step, **kwargs)
+
+    def _cold_drop_stage(self, *, until_ms: float):
+        # 5 rps / 200 ms interval, 4 s stage, 2 s warm-up. A 450 ms turn overruns
+        # its own slot by more than one interval, so the next tick is dropped.
+        stage_spec = spec(rps=5.0, duration_s=4.0, warmup_s=2.0)
+        clock = VirtualClock()
+        driver = self._ColdDropDriver(clock, stall_ms=450.0, until_ms=until_ms)
+        result = StageRunner(
+            driver, clock=clock, sleeper=clock.sleep, spin_wait_s=0.0
+        ).run(stage_spec, plan(), tenants=["t-1"])
+        return stage_spec, result
+
+    def test_ticks_dropped_in_the_warmup_keep_the_stage_valid(self) -> None:
+        stage_spec, result = self._cold_drop_stage(until_ms=600.0)
+
+        # The premise: ticks really were dropped, and the measured window is
+        # nonetheless whole, on schedule and at the target rate.
+        assert result.dropped_ticks > 0
+        assert result.stats.count == stage_spec.total_ticks - stage_spec.warmup_ticks
+        assert result.stats.achieved_rps == pytest.approx(5.0)
+
+        # The verdict, asserted before the new fields so that a revert fails
+        # here on semantics rather than on a missing attribute.
+        assert result.is_valid is True
+        assert result.invalid_reasons() == []
+
+        assert result.warmup_dropped_ticks == result.dropped_ticks
+        assert result.gating_dropped_ticks == 0
+
+    def test_ticks_dropped_in_the_measured_window_still_invalidate(self) -> None:
+        # The gate must keep catching what it exists for: the same stall, but
+        # reaching past the warm-up boundary.
+        _, result = self._cold_drop_stage(until_ms=3000.0)
+
+        assert result.is_valid is False
+        assert any("dropped tick" in reason for reason in result.invalid_reasons())
+        assert result.gating_dropped_ticks > 0
+
+    def test_every_planned_tick_is_still_accounted_for(self) -> None:
+        # Splitting the verdict must not weaken the accounting invariant: a
+        # worker that died would still shrink the sample, and that is the net.
+        _, result = self._cold_drop_stage(until_ms=600.0)
+        assert result.accounted_ticks == result.spec.total_ticks
+        assert len(result.records) + result.dropped_ticks == result.spec.total_ticks
+
+    def test_a_hand_built_result_still_judges_on_its_only_count(self) -> None:
+        # Callers that build a StageResult directly (the ladder's tests do) pass
+        # dropped_ticks alone; the gate must not silently pass them.
+        dropped = StageResult(spec=spec(), stats=stats_ok(), dropped_ticks=1)
+        assert dropped.gating_dropped_ticks == 1
+        assert dropped.is_valid is False
 
 
 class TestSessionOpening:

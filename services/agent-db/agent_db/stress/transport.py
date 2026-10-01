@@ -21,11 +21,18 @@ JSON-RPC envelope. Message text is never parsed - it is localized ru/en - and a
 body excerpt is kept only for failures, since a successful tool call carries
 tenant rows that must not reach an artifact.
 
-What the live gateway does (verified 2026-09-27 on the isolated stand):
+What the live gateway does (verified 2026-09-27, re-checked on a native stand
+2026-09-29):
 
-- ``initialize`` answers 200 with **no** ``Mcp-Session-Id``: ``/mcp`` is
-  stateless, so there is no MCP session to keep or recycle, and the replay path
-  below is a guard against a stateful deployment rather than a live code path.
+- ``initialize`` answers 200 **with** an ``Mcp-Session-Id``: ``cmd/main.go`` builds
+  the transport with ``server.WithStateful(true)``, so ``mcp-go`` stamps the header
+  on the initialize response and every later request must carry it back. The ids
+  observed on the stand look like ``mcp-session-<uuid>`` - literally the
+  ``idPrefix`` of ``InsecureStatefulSessionIdManager``. The replay-on-404 path
+  below is therefore the live guard against a session the server forgot, not a
+  defence against a hypothetical deployment. (An earlier note here claimed the
+  endpoint was stateless; the code always handled both, but the description was
+  wrong and a reader would mis-read a reinitialisation count because of it.)
 - ``tools/call`` answers ``application/json``, not ``text/event-stream``: the
   JSON branch is the live one and the SSE branch is defence against a
   negotiation change.

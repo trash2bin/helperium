@@ -49,13 +49,15 @@ from .fixture import effective_fixture, load_fixture
 from .guard import StressRunGuard, StressRunInProgressError, write_json_atomic
 from .ladder import (
     DEFAULT_RATES,
+    JUDGED_METRIC_READY_LAYERS,
     LAYER_RULE,
     LadderPlan,
     Prediction,
     predict_tenant_ceiling_rps,
     run_ladder,
 )
-from .manifest import RunManifest, collect_code, collect_environment
+from .manifest import BinarySpec, RunManifest, collect_code, collect_environment
+from .metrics_scrape import MetricsCollector, targets_from
 from .preflight import (
     budget_overrides_from,
     budgets_for_run,
@@ -194,7 +196,44 @@ def _prediction_for(
     )
 
 
-def _collect_code_safely(repo_root: Path, *, api_workers: int):
+def _binaries_from(raw: Sequence[str] | None) -> list[BinarySpec]:
+    """Parse ``label=path[:source_root]`` into the manifest's §6 binary specs.
+
+    On a native stand the binary is the only runtime artefact there is: no image
+    digest exists, so without this the manifest has nothing tying the numbers to
+    a build and refuses to call the run publishable - correctly, but with no way
+    for the operator to fix it. ``source_root`` defaults to the conventional
+    service directory for the label, because that is the pairing the freshness
+    check exists for; passing it explicitly covers a stand that built from
+    somewhere else.
+    """
+    specs: list[BinarySpec] = []
+    for item in raw or ():
+        label, sep, rest = item.partition("=")
+        label = label.strip()
+        if not sep or not label or not rest.strip():
+            raise ValueError(
+                f"binary {item!r} is not LABEL=PATH[:SOURCE_ROOT] (for example "
+                "mcp-gateway=/tmp/stand/mcp-gateway)"
+            )
+        path_text, _, source_text = rest.partition(":")
+        if not path_text.strip():
+            raise ValueError(f"binary {item!r} names no path")
+        source_root = (
+            source_text.strip() if source_text.strip() else f"services/{label}"
+        )
+        specs.append(
+            BinarySpec(label=label, path=path_text.strip(), source_root=source_root)
+        )
+    return specs
+
+
+def _collect_code_safely(
+    repo_root: Path,
+    *,
+    api_workers: int,
+    binaries: Sequence[BinarySpec] | None = None,
+):
     """Read the repository provenance, or record why it could not be read.
 
     A capacity run happens on a stand, and the stand is not always a checkout:
@@ -207,7 +246,7 @@ def _collect_code_safely(repo_root: Path, *, api_workers: int):
     from .manifest import CodeInfo
 
     try:
-        return collect_code(repo_root, api_workers=api_workers)
+        return collect_code(repo_root, api_workers=api_workers, binaries=binaries)
     except Exception as exc:  # noqa: BLE001 - provenance is evidence, not a gate
         typer.echo(
             f"⚠️  code provenance unreadable in {repo_root}: {exc}. "
@@ -215,6 +254,35 @@ def _collect_code_safely(repo_root: Path, *, api_workers: int):
             err=True,
         )
         return CodeInfo(commit="", branch="", dirty=True, api_workers=api_workers)
+
+
+def _write_server_metrics(
+    layout: Any, collector: MetricsCollector, *, quiet: bool
+) -> None:
+    """Write ``server/<service>.json`` and drop the gap marker it contradicts.
+
+    Writing is best-effort by design: this runs on the abort path, where the run
+    already has a reason to report, and a failure to persist an observation must
+    not replace that reason with an IO error from the observer.
+    """
+    try:
+        payloads = collector.payloads()
+        if not payloads:
+            return
+        for service, payload in payloads.items():
+            write_json_atomic(layout.server_path(service), payload)
+        # The marker says "not collected yet (phase 1)"; leaving it beside real
+        # slices would put two contradictory claims in one artefact.
+        layout.clear_gap_marker("server")
+        if not quiet:
+            for service, payload in sorted(payloads.items()):
+                gaps = payload["gap_count"]
+                detail = f"{payload['scrapes']} scrape(s)"
+                if gaps:
+                    detail += f", {gaps} gap(s): {'; '.join(payload['gap_reasons'])}"
+                typer.echo(f"metrics  {service}: {detail}")
+    except Exception as exc:  # noqa: BLE001 - an observation, not the run
+        typer.echo(f"⚠️  server metrics not written: {exc}", err=True)
 
 
 @app.command("check")
@@ -340,6 +408,13 @@ def run_cmd(
     budget: list[str] = typer.Option(
         None, "--budget", help="§5 budget in effect on the stand, NAME=VALUE"
     ),
+    binary: list[str] = typer.Option(
+        None,
+        "--binary",
+        help="Runtime artefact the stand ran, LABEL=PATH[:SOURCE_ROOT] (§6). "
+        "Required for a publishable native run, where no image digest exists; "
+        "a binary older than its sources is refused as stale",
+    ),
     generator_host: str = typer.Option(
         "same-host", help="Where this generator runs, relative to the SUT (§6)"
     ),
@@ -354,6 +429,27 @@ def run_cmd(
         "--no-host-probe",
         help="Skip host probes (governor, lsblk, docker); the manifest then "
         "records them as gaps and the run is not publishable",
+    ),
+    admin_token: str = typer.Option(
+        "",
+        envvar="ADMIN_TOKEN",
+        help="Bearer for /metrics on data-service and api-service (fail-closed "
+        "behind the same token as /admin/*)",
+    ),
+    metrics_target: list[str] = typer.Option(
+        None,
+        "--metrics-target",
+        help="Extra /metrics endpoint to slice, SERVICE=URL. data-service is "
+        "never derived: the harness does not talk to it directly",
+    ),
+    metrics_interval_s: float = typer.Option(
+        5.0, help="How often server /metrics is sliced into server/<service>.json"
+    ),
+    no_server_metrics: bool = typer.Option(
+        False,
+        "--no-server-metrics",
+        help="Do not scrape server /metrics; server/ keeps its gap marker and "
+        "the run's numbers stay self-checked",
     ),
     timeout_s: float = typer.Option(30.0, help="Per-call timeout (seconds)"),
     skip_probe: bool = typer.Option(
@@ -376,6 +472,7 @@ def run_cmd(
         fixture = load_fixture(profile.fixture)
         tenant_ids = _tenants_for(profile, tenants)
         overrides = budget_overrides_from(budget)
+        binary_specs = _binaries_from(binary)
         plan = _build_plan(
             profile,
             rates=rates,
@@ -405,6 +502,10 @@ def run_cmd(
     # lets a successor measure the corpse's traffic.
     stopped: _RunStopped | None = None
     runner: StageRunner | None = None
+    collector: MetricsCollector | None = None
+    # Pre-bound because the finally block reads it: if RunLayout.create itself
+    # fails, an unbound name there would replace the real cause with a NameError.
+    layout: RunLayout | None = None
     try:
         layout = RunLayout.create(context.run_dir)
         budgets = budgets_for_run(overrides)
@@ -501,7 +602,16 @@ def run_cmd(
                 budget_values=overrides,
                 probe_host=not no_host_probe,
             ),
-            code=_collect_code_safely(repo_root, api_workers=api_workers),
+            code=_collect_code_safely(
+                repo_root, api_workers=api_workers, binaries=binary_specs
+            ),
+            # The run has ONE identity: the uuid the guard minted when it took the
+            # lock and named the evidence directory. Letting RunManifest default
+            # its own would print a second uuid into the manifest and into
+            # report-<uuid>.md, so the lock record, the directory and the report
+            # could not be correlated - and §10 rests on exactly that join
+            # ("a number without its run manifest is not evidence").
+            run_uuid=context.run_uuid,
         )
         write_json_atomic(layout.manifest_path, json.loads(manifest.to_json()))
 
@@ -514,13 +624,44 @@ def run_cmd(
         sink = StageEvidenceSink(layout)
         runner = StageRunner(driver)
 
+        # Server-side slices run alongside the ladder: without them every number
+        # in the report is checked only against the harness's own records, which
+        # is arithmetic rather than corroboration (§10). Collection never gates
+        # the run - an unreachable endpoint becomes a named gap.
+        if not no_server_metrics:
+            try:
+                scrape_targets = targets_from(
+                    endpoints,
+                    api_key=api_key,
+                    admin_token=admin_token,
+                    extra=metrics_target or (),
+                )
+            except ValueError as exc:
+                raise _fail(str(exc)) from exc
+            if scrape_targets:
+                collector = MetricsCollector(
+                    scrape_targets, interval_s=metrics_interval_s
+                )
+                collector.start()
+
         def on_stage(outcome: Any, stage: Any, ticket: Any) -> None:
             sink(outcome, stage, ticket)
             if not quiet:
+                # The same §7 rule the report applies, not a second one: where the
+                # turn contains no model call the overhead *is* the compensated
+                # percentile (L1, and L2 where the stub is instant), and where it
+                # is genuinely unknown the cell says so. Printing ``nan`` made a
+                # correct L1 rung look like a failed measurement on the console
+                # while report.json held the number.
+                if outcome.has_platform_overhead:
+                    overhead = f"{outcome.stats.platform_overhead_p95:>8.2f} ms"
+                elif profile.target_layer in JUDGED_METRIC_READY_LAYERS:
+                    overhead = f"{outcome.stats.compensated_p95:>8.2f} ms"
+                else:
+                    overhead = f"{'n/a':>8}   "
                 typer.echo(
                     f"  {outcome.target_rps:>6.1f} rps  {outcome.verdict:<7} "
-                    f"p95 {outcome.p95:>8.2f} ms  overhead "
-                    f"{(outcome.stats.platform_overhead_p95 if outcome.has_platform_overhead else float('nan')):>8.2f} ms  "
+                    f"p95 {outcome.p95:>8.2f} ms  overhead {overhead}  "
                     f"err {outcome.stats.error_rate * 100:>5.2f}%  "
                     f"gen {(outcome.cpu_measured_s or outcome.cpu_s) / outcome.measured_window_s * 100 if outcome.measured_window_s else 0:>5.1f}%  "
                     f"lag p99 {outcome.tick_lag_p99:>6.2f} ms"
@@ -605,6 +746,14 @@ def run_cmd(
         if runner is not None:
             runner.stop()
             runner.join_workers()
+        # Then the observer, and only then write what it saw: the last slice is
+        # taken after the final tick, so a stage's delta is bracketed on both
+        # sides. This runs on the abort path too - a partial window with its
+        # gaps named is evidence, while discarding it would leave a run that
+        # measured the server and recorded nothing about it.
+        if collector is not None and layout is not None:
+            collector.stop()
+            _write_server_metrics(layout, collector, quiet=quiet)
         if stopped is not None:
             assert layout is not None  # noqa: S101 - layout precedes every stop
             write_status(layout, stopped.status, abort_reason=stopped.reason)
