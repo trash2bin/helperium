@@ -225,6 +225,7 @@ def mcp_preflight(
 def chat_preflight(
     *,
     profile: LoadProfile,
+    fixture: ArgumentFixture,
     transport: Any,
     driver: Any,
     tenants: Sequence[str],
@@ -237,6 +238,12 @@ def chat_preflight(
     The turn is the only honest check that the agent the profile names exists,
     resolves a provider, and answers over SSE - and it is the check that catches
     a stand where the stub was never registered, before that reads as a knee.
+
+    ``fixture`` is accepted so both preflights share one call shape (the CLI
+    dispatches between them with the same kwargs, and a layer that refused one
+    would crash before measuring anything - the drift that kept L2/L3 from ever
+    running live). On the chat path the tool arguments come from the stub
+    script, not the fixture, so it is deliberately not consumed here.
     """
     from urllib.request import urlopen
 

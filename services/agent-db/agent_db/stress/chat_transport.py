@@ -147,6 +147,19 @@ class ChatTransport:
         self.calls = 0
         self.failures = 0
 
+    @property
+    def base_url(self) -> str:
+        """Origin (``scheme://host:port``) for probes like ``/health``.
+
+        The parsed pieces keep the connection honest, but the preflight needs
+        the origin string back - and a caller that handed over an ``/api/chat``
+        URL must not have that path leak into a health probe.
+        """
+        default = 443 if self.scheme == "https" else 80
+        if self.port == default:
+            return f"{self.scheme}://{self.host}"
+        return f"{self.scheme}://{self.host}:{self.port}"
+
     # ── sessions ───────────────────────────────────────────────────────────
 
     def open_session(self, tenant: str) -> ChatSession:

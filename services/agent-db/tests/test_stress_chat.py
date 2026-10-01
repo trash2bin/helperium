@@ -425,3 +425,93 @@ class TestChatDriver:
         # unique per turn of a session.
         assert first != second
         driver.close_session(session)
+
+
+class TestChatPreflightContract:
+    """``chat_preflight`` probes ``transport.base_url + "/health"`` first.
+
+    A live L2 run found that ``ChatTransport`` parsed its base URL into
+    scheme/host/port and discarded the string, so the preflight - the very
+    first step of any chat-layer run - died on an ``AttributeError`` before
+    measuring anything. The origin is the contract between the two.
+    """
+
+    def test_the_transport_exposes_the_origin_the_preflight_probes(self):
+        transport = ChatTransport("http://127.0.0.1:8081", timeout_s=10.0)
+        assert transport.base_url == "http://127.0.0.1:8081"
+
+    def test_a_chat_path_does_not_leak_into_the_probed_origin(self):
+        # The health endpoint lives at the origin; a caller that hands over the
+        # full /api/chat URL must not send the probe to /api/chat/health.
+        transport = ChatTransport("http://127.0.0.1:8081/api/chat", timeout_s=10.0)
+        assert transport.base_url == "http://127.0.0.1:8081"
+
+    def test_the_health_probe_reaches_the_stand(self, stand):
+        from agent_db.stress.chat_driver import ChatDriver
+        from agent_db.stress.fixture import ArgumentFixture
+        from agent_db.stress.preflight import chat_preflight
+        from agent_db.stress.profile import LoadProfile
+
+        profile = LoadProfile.model_validate(
+            {
+                "profile_version": 3,
+                "name": "preflight-contract",
+                "target_layer": "L3",
+                "fixture": "sqlite-testseed",
+                "tenants": {
+                    "count": 1,
+                    "distribution": "round_robin",
+                    "scope": "separate",
+                },
+                "sessions": {
+                    "pool_size": 1,
+                    "recycle_after_turns": 40,
+                    "recycle_after_seconds": 1800,
+                    "min_interval_ms": 1200,
+                },
+                "arrival": {
+                    "model": "constant",
+                    "rps": 1,
+                    "duration_s": 60,
+                    "warmup_s": 10,
+                },
+                "clients": {"source_ips": 1, "generators": 1},
+                "llm": {
+                    "substrate": "stub",
+                    "provider_concurrency": 256,
+                    "p50_ms": 800,
+                    "p95_ms": 2500,
+                },
+                "workload": [
+                    {
+                        "weight": 1.0,
+                        "name": "one_tool",
+                        "tools": ["db_get"],
+                        "history_turns": 0,
+                    }
+                ],
+                "budget_preset": "off",
+            }
+        )
+        fixture = ArgumentFixture.model_validate(
+            {
+                "fixture_version": 1,
+                "name": "preflight-contract",
+                "scenario": "sqlite-testseed",
+                "arguments": {"db_get": {"entity": "group", "id": "g1"}},
+            }
+        )
+        transport = ChatTransport(stand.base_url, timeout_s=10.0)
+        result = chat_preflight(
+            profile=profile,
+            fixture=fixture,
+            transport=transport,
+            driver=ChatDriver(transport),
+            tenants=["t-1"],
+            top_rps=1.0,
+            budgets={},
+            probe_tenants=False,
+        )
+        assert result.ok, result.refusals
+        health = [c for c in result.checks if c["check"] == "health"]
+        assert health and health[0]["status"] == "ok"

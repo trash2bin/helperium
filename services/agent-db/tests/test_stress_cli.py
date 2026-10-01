@@ -744,6 +744,49 @@ class TestRunCommand:
         assert len(_run_dirs(tmp_path)) == 2
 
 
+class TestPreflightDispatchContract:
+    """The CLI picks one preflight per layer but calls it with one shape.
+
+    ``_driver_stack`` returns either :func:`mcp_preflight` (L1) or
+    :func:`chat_preflight` (L2+), and both call sites (``check`` and ``run``)
+    pass the *same* keyword set. If the two functions drift apart, the chat
+    layers crash at preflight before a single tick - which is exactly how L2/L3
+    came to be described in the docs as "never run on a live stand" while the
+    code looked complete. This pins the shared call shape so that drift is a
+    test failure, not a live-stand surprise.
+    """
+
+    # Exactly the kwargs check_cmd/run_cmd pass to the chosen preflight.
+    CALL_SHAPE = {
+        "profile": None,
+        "fixture": None,
+        "transport": None,
+        "driver": None,
+        "tenants": (),
+        "top_rps": 1.0,
+        "budgets": {},
+        "probe_tenants": False,
+    }
+
+    @pytest.mark.parametrize(
+        "preflight_fn",
+        [
+            pytest.param(stress_cli.mcp_preflight, id="mcp_preflight"),
+            pytest.param(stress_cli.chat_preflight, id="chat_preflight"),
+        ],
+    )
+    def test_every_preflight_accepts_the_unified_cli_call_shape(self, preflight_fn):
+        import inspect
+
+        sig = inspect.signature(preflight_fn)
+        # TypeError here is the bug: one layer refuses a kwarg the CLI always
+        # sends, so the dispatch crashes before it can measure anything.
+        try:
+            sig.bind(**self.CALL_SHAPE)
+        except TypeError as exc:  # pragma: no cover - fails only on regression
+            pytest.fail(f"{preflight_fn.__name__} rejects the CLI call shape: {exc}")
+
+
 class TestCheckCommand:
     def test_a_runnable_stand_is_reported_as_runnable(
         self, runner, tmp_path, monkeypatch
