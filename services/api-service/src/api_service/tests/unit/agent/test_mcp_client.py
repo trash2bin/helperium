@@ -28,22 +28,18 @@ from api_service.agent.mcp_client import (
 def _make_conn() -> MagicMock:
     """Build a mock _TenantConnection with a mock session.
 
-    Both ``call_lock`` and ``list_lock`` are mocked so that
-    ``async with`` context-manager calls succeed immediately.
+    Lock doubles are real ``asyncio.Lock``s: a non-blocking MagicMock cannot
+    reproduce contention, so a serialization regression would pass unnoticed.
     """
     conn = MagicMock()
     conn.tenant_id = "test-tenant"
     conn.session = AsyncMock()
-    # Locks use acquire()/release() (bounded lock wait is separate from tool
-    # execution), not async-with protocol.
-    conn.call_lock = MagicMock()
-    conn.call_lock.acquire = AsyncMock(return_value=True)
-    conn.call_lock.release = MagicMock()
-    conn.list_lock = MagicMock()
-    # Production takes list_lock via acquire()/release() with split budgets
-    # (same pattern as call_lock), not async-with.
-    conn.list_lock.acquire = AsyncMock(return_value=True)
-    conn.list_lock.release = MagicMock()
+    # Real locks, as production builds them (dataclass default_factory): a
+    # MagicMock double cannot block, so it would silently turn every lock
+    # regression into a passing test. Both use acquire()/release() (the lock
+    # budget is separate from the tool-execution budget), not async-with.
+    conn.call_lock = asyncio.Lock()
+    conn.list_lock = asyncio.Lock()
     conn.consecutive_tool_timeouts = 0
     return conn
 
@@ -418,6 +414,80 @@ class TestCallTool:
         tr = await mcp_client.call_tool(session, "greet", {"who": "world"})
 
         assert "plain text response" in tr.tool_content
+
+
+class TestCallLockGranularity:
+    """The tool-call lock belongs to the conversation, not to the connection.
+
+    Measured regression (Arch stand, 20 chat-rps × 3 tools/turn, single tenant):
+    one lock per tenant-set connection made the lock — not the CPU — the
+    ceiling. ``mcp_lock_wait_seconds`` reached ~5s and cores idled at 25%,
+    capping the stand at ~11 chat-rps. Tool order inside a turn is already
+    guaranteed by the sequential loop in ``_run_tool_calls``, so the lock only
+    has to serialize one session; independent sessions sharing a connection
+    must overlap.
+    """
+
+    @pytest.mark.asyncio
+    async def test_independent_sessions_share_a_connection_concurrently(
+        self, mcp_client: MCPClient
+    ):
+        """Two sessions on one tenant connection must overlap, not queue."""
+        conn = _make_conn()
+        entered = 0
+        both_inside = asyncio.Event()
+
+        async def overlapping_call(_name, _arguments):
+            nonlocal entered
+            entered += 1
+            if entered == 2:
+                both_inside.set()
+            # A connection-wide lock admits only one call, so this wait
+            # expires on the first call and gather returns a failed result.
+            await asyncio.wait_for(both_inside.wait(), timeout=1.0)
+            return _mock_result([{"type": "text", "text": '{"ok": true}'}])
+
+        conn.session.call_tool = AsyncMock(side_effect=overlapping_call)
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+
+        first = _SessionProxy(mcp_client, tenant_ids=["stress-1"])
+        second = _SessionProxy(mcp_client, tenant_ids=["stress-1"])
+        results = await asyncio.gather(
+            mcp_client.call_tool(first, "db_get", {"id": 1}),
+            mcp_client.call_tool(second, "db_get", {"id": 2}),
+        )
+
+        assert entered == 2, "the second session never reached the transport"
+        assert all(r.ok for r in results), [r.error for r in results]
+
+    @pytest.mark.asyncio
+    async def test_calls_within_one_session_stay_serialized(
+        self, mcp_client: MCPClient
+    ):
+        """One session, one in-flight tool call: a turn's calls stay ordered."""
+        conn = _make_conn()
+        inside = 0
+        max_inside = 0
+
+        async def tracked_call(_name, _arguments):
+            nonlocal inside, max_inside
+            inside += 1
+            max_inside = max(max_inside, inside)
+            await asyncio.sleep(0.05)
+            inside -= 1
+            return _mock_result([{"type": "text", "text": '{"ok": true}'}])
+
+        conn.session.call_tool = AsyncMock(side_effect=tracked_call)
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+
+        session = _SessionProxy(mcp_client, tenant_ids=["stress-1"])
+        results = await asyncio.gather(
+            mcp_client.call_tool(session, "db_get", {"id": 1}),
+            mcp_client.call_tool(session, "db_get", {"id": 2}),
+        )
+
+        assert max_inside == 1, "a single session must not overlap tool calls"
+        assert all(r.ok for r in results), [r.error for r in results]
 
 
 class TestReconnectRace:

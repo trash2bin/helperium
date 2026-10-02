@@ -189,7 +189,6 @@ class TestLockWaitObservability:
         lock = asyncio.Lock()
         await lock.acquire()
         conn = _conn(tenant)
-        conn.call_lock = lock
         conn.session.call_tool = AsyncMock(
             return_value=MagicMock(
                 content=[MagicMock(type="text", text='{"ok": true}')],
@@ -205,10 +204,12 @@ class TestLockWaitObservability:
             lock.release()
 
         releaser = asyncio.create_task(_release_after_wait())
+        # The tool-call lock is session-scoped, so the contention to measure is
+        # a second call inside the same session.
+        session = _SessionProxy(client, [tenant])
+        session.call_lock = lock
         try:
-            result = await client.call_tool(
-                _SessionProxy(client, [tenant]), "db_get", {"id": 1}
-            )
+            result = await client.call_tool(session, "db_get", {"id": 1})
         finally:
             await releaser
 
@@ -224,7 +225,6 @@ class TestLockWaitObservability:
         lock = asyncio.Lock()
         await lock.acquire()
         conn = _conn(tenant)
-        conn.call_lock = lock
         conn.session.call_tool = AsyncMock()
         client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
 
@@ -232,9 +232,9 @@ class TestLockWaitObservability:
         exec_before = _counter_value(mcp_tool_timeouts_total, {"tenants": tenant})
         wait_before = _histogram_count(mcp_lock_wait_seconds, tenant)
 
-        result = await client.call_tool(
-            _SessionProxy(client, [tenant]), "db_get", {"id": 1}
-        )
+        session = _SessionProxy(client, [tenant])
+        session.call_lock = lock
+        result = await client.call_tool(session, "db_get", {"id": 1})
 
         assert result.ok is False
         assert (

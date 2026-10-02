@@ -18,13 +18,12 @@ from api_service.agent.mcp_client import MCPClient
 
 
 def _make_conn(
-    call_lock: asyncio.Lock | None = None,
     list_lock: asyncio.Lock | None = None,
 ) -> MagicMock:
-    """Build a mock _TenantConnection with controlled locks."""
+    """Build a mock _TenantConnection with a real list lock."""
     conn = MagicMock()
     conn.tenant_id = "test-tenant"
-    conn.call_lock = call_lock or asyncio.Lock()
+    conn.call_lock = asyncio.Lock()
     conn.list_lock = list_lock or asyncio.Lock()
     conn.session = AsyncMock()
     return conn
@@ -47,14 +46,16 @@ async def test_call_tool_lock_timeout():
     """call_tool should return error ToolResult when lock cannot be acquired."""
     client = MCPClient()
 
-    # A lock that is already held → acquire() blocks → triggers timeout on LOCK_ACQUIRE_TIMEOUT
+    # The tool-call lock is session-scoped (one proxy == one chat turn); hold
+    # it as if another call in this turn were still in flight.
     held_lock = asyncio.Lock()
     await held_lock.acquire()
 
-    conn = _make_conn(call_lock=held_lock)
+    conn = _make_conn()
     client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
 
     session = await _session_proxy(client)
+    session.call_lock = held_lock
     result = await client.call_tool(session, "test_tool", {"arg": 1})
 
     assert result.ok is False

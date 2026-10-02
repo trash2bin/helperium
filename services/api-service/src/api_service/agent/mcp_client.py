@@ -15,8 +15,12 @@ optional service Bearer credential to every transport request. The gateway
 creates a separate stateful handler for each tenant set; generated tool
 closures retain the resolved tenant identity when calling data-service.
 
-One persistent v2 Client connection is kept per tenant set. A lock serializes
-tool calls per connection so conversation-level tool ordering remains stable.
+One persistent v2 Client connection is kept per tenant set. Tool calls are
+serialized per *session* (one chat turn), not per connection: the sequential
+await loop in ``_run_tool_calls`` already orders the tools of a single turn,
+while independent turns sharing one tenant connection must be able to run
+concurrently — a connection-wide lock there caps throughput well below the
+CPU limit.
 """
 
 from __future__ import annotations
@@ -1071,6 +1075,7 @@ class MCPClient:
         tenant_ids: list[str],
         *,
         context_label: str = "",
+        call_lock: asyncio.Lock | None = None,
     ) -> Any:
         """Acquire the call lock and execute a single tool call.
 
@@ -1080,6 +1085,8 @@ class MCPClient:
             arguments: Tool arguments.
             tenant_ids: Tenant IDs for logging.
             context_label: Extra label for log (e.g. 'after reconnect').
+            call_lock: The session-scoped lock to serialize on. Falls back to
+                the connection lock so a lock-free caller still gets ordering.
 
         Returns:
             Raw MCP CallToolResult.
@@ -1098,10 +1105,11 @@ class MCPClient:
         # per-tenant lock is capacity evidence, not a dependency failure, and
         # must not be confused with the execution timeout below.
         lock_wait_label = ",".join(tenant_ids) or "(default)"
+        lock = call_lock if call_lock is not None else conn.call_lock
         lock_started = time.monotonic()
         try:
             async with asyncio.timeout(settings.mcp_lock_acquire_timeout):
-                await conn.call_lock.acquire()
+                await lock.acquire()
         except TimeoutError:
             mcp_lock_wait_seconds.labels(lock_wait_label).observe(
                 time.monotonic() - lock_started
@@ -1169,7 +1177,7 @@ class MCPClient:
             )
             return result
         finally:
-            conn.call_lock.release()
+            lock.release()
 
     # -- public API -------------------------------------------------------------
 
@@ -1231,7 +1239,11 @@ class MCPClient:
 
         try:
             result = await self._execute_tool_call(
-                conn, name, arguments, session.tenant_ids
+                conn,
+                name,
+                arguments,
+                session.tenant_ids,
+                call_lock=session.call_lock,
             )
             self._mark_success(conn)
         except TimeoutError:
@@ -1291,6 +1303,7 @@ class MCPClient:
                     arguments,
                     session.tenant_ids,
                     context_label="after reconnect",
+                    call_lock=session.call_lock,
                 )
                 self._mark_success(conn)
             except TimeoutError:
@@ -1464,6 +1477,10 @@ class _SessionProxy:
         # ``[]`` is a valid MCP tool set, so the agent needs an explicit
         # signal when list_tools returned it because discovery failed.
         self.list_tools_failed = False
+        # Session-scoped tool-call ordering. One proxy == one chat turn, so
+        # this serializes calls within a turn (matching the sequential tool
+        # loop) without queuing independent turns behind each other.
+        self.call_lock = asyncio.Lock()
 
     async def list_tools(self) -> list[dict[str, Any]]:
         return await self.client.list_tools(self)

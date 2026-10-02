@@ -52,18 +52,17 @@ from api_service.agent.mcp_client import (
 def _make_conn() -> MagicMock:
     """Build a mock _TenantConnection with a mock session.
 
-    Both ``call_lock`` and ``list_lock`` use ``acquire()`` / ``release()``
-    (split-budget protocol), not ``async with``.
+    Lock doubles are real ``asyncio.Lock``s: a non-blocking MagicMock cannot
+    reproduce contention, so a serialization regression would pass unnoticed.
+    Both use ``acquire()`` / ``release()``; the tool-call path takes the
+    session lock (falling back to the connection lock), the listing path takes
+    ``list_lock``.
     """
     conn = MagicMock()
     conn.tenant_id = "test-tenant"
     conn.session = AsyncMock()
-    conn.call_lock = MagicMock()
-    conn.call_lock.acquire = AsyncMock(return_value=True)
-    conn.call_lock.release = MagicMock()
-    conn.list_lock = MagicMock()
-    conn.list_lock.acquire = AsyncMock(return_value=True)
-    conn.list_lock.release = MagicMock()
+    conn.call_lock = asyncio.Lock()
+    conn.list_lock = asyncio.Lock()
     conn.consecutive_tool_timeouts = 0
     return conn
 
