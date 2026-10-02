@@ -205,8 +205,17 @@ class _DisconnectWatch:
 
     async def _watch(self) -> None:
         try:
+            # Event-driven, not a poll: uvicorn posts ``http.disconnect`` on
+            # the transport channel exactly when the client leaves, so a single
+            # blocking receive is both sufficient and cheap. The previous
+            # 250 ms poll of ``request.is_disconnected()`` funneled every probe
+            # through Starlette's BaseHTTPMiddleware ``receive_or_disconnect``
+            # wrapper, which creates an anyio task group per call — at 40 rps
+            # that alone held ~60% of the GIL.
+            replayed = 0
             while not self._event.is_set():
-                if await self._request.is_disconnected():
+                message = await self._request._receive()
+                if message.get("type") == "http.disconnect":
                     self._event.set()
                     logger.warning(
                         "[SSE] client disconnected, latching stream cancel "
@@ -214,7 +223,14 @@ class _DisconnectWatch:
                         correlation_id_var.get() or "unknown",
                     )
                     return
-                await asyncio.sleep(0.25)
+                # The route already read the body, so any further
+                # ``http.request`` is a transport replay. A real server blocks
+                # on the next read, but never spin without yielding: that would
+                # starve stop() and the whole event loop. Back off as replays
+                # continue so a chatty transport cannot become a busy loop.
+                replayed += 1
+                if replayed > 1:
+                    await asyncio.sleep(min(0.05 * replayed, 0.5))
         except asyncio.CancelledError:
             # Writer task is being torn down — that itself means the response
             # is finished; treat as potential disconnect only if cancelled from
