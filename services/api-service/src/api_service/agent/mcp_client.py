@@ -38,6 +38,7 @@ import httpx
 import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 
 from api_service.prometheus_metrics import (
     mcp_circuit_breaker_trips_total,
@@ -51,6 +52,40 @@ from api_service.prometheus_metrics import (
 from helperium_sdk.settings import settings
 
 logger = logging.getLogger("api_service.agent.mcp_client")
+
+# JSON-RPC error codes that mean the *transport* died or hung (no peer answer),
+# as opposed to an application-level refusal where the peer answered normally.
+# ``mcp_types`` (the SDK's protocol constants) is the source of truth.
+#   CONNECTION_CLOSED  = -32000  transport tore down / dispatcher shut down
+#   REQUEST_TIMEOUT    = -32001  peer did not answer within the read timeout
+# A gateway 429 (rate limit) surfaces as INTERNAL_ERROR = -32603 with a plain
+# "Server returned an error response" message — the peer answered, it just
+# refused this one request, so it must not open the circuit breaker.
+try:  # pragma: no cover - import is exercised by every real call path
+    from mcp_types import CONNECTION_CLOSED as _MCP_CONNECTION_CLOSED
+    from mcp_types import REQUEST_TIMEOUT as _MCP_REQUEST_TIMEOUT
+except ImportError:  # pragma: no cover - only if the SDK package is not installed
+    _MCP_CONNECTION_CLOSED = -32000
+    _MCP_REQUEST_TIMEOUT = -32001
+
+_TRANSPORT_MCP_ERROR_CODES = frozenset({_MCP_CONNECTION_CLOSED, _MCP_REQUEST_TIMEOUT})
+
+
+def _is_transport_mcp_error(exc: Exception) -> bool:
+    """True when an ``MCPError`` means the transport died/hung, not a refusal.
+
+    The SDK raises ``MCPError`` for both: a peer that answered with a JSON-RPC
+    error (e.g. the gateway's 429 → INTERNAL_ERROR) and a peer that never
+    answered (CONNECTION_CLOSED / REQUEST_TIMEOUT). Only the latter is a
+    dependency failure that should feed the circuit breaker and trigger a
+    reconnect; the former means the session is alive and a retry on the same
+    connection is the right move.
+    """
+    return (
+        isinstance(exc, MCPError)
+        and getattr(exc, "code", None) in _TRANSPORT_MCP_ERROR_CODES
+    )
+
 
 # All MCP client constants are managed via env vars through settings.
 # See helperium_sdk.settings.DemoSettings for the full list:
@@ -1027,6 +1062,31 @@ class MCPClient:
         )
 
     @staticmethod
+    def _gateway_refusal_result(name: str, exc: Exception) -> ToolResult:
+        """Sanitised refusal for a JSON-RPC error answer (peer alive, request refused).
+
+        Covers the gateway's rate-limit 429 mapped to ``INTERNAL_ERROR`` and any
+        other application-level JSON-RPC error. The session is still usable, so
+        the message must stay retryable and must not leak internal hosts, DSNs,
+        paths, or the raw SDK message (which the SDK fills with generic text,
+        but a future revision could echo request internals).
+        """
+        message = "The tool request was refused; retry shortly."
+        return ToolResult(
+            tool_content=json.dumps(
+                {"ok": False, "error": message, "error_code": "GATEWAY_REFUSED"},
+                ensure_ascii=False,
+            ),
+            reminder=(
+                f"Инструмент {name} временно недоступен (сервис отклонил запрос). "
+                "Не повторяй тот же вызов сразу; сообщи пользователю, что данные временно недоступны."
+            ),
+            ok=False,
+            error=message,
+            error_code="GATEWAY_REFUSED",
+        )
+
+    @staticmethod
     def _consume_background_task_result(task: asyncio.Task[Any]) -> None:
         """Consume a detached timed-out MCP task to avoid unhandled warnings."""
         with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -1274,6 +1334,21 @@ class MCPClient:
             self._mark_failure(conn)
             return self._connection_interrupted_result(name)
         except Exception as exc:
+            if isinstance(exc, MCPError) and not _is_transport_mcp_error(exc):
+                # The peer answered with a JSON-RPC error (e.g. the gateway's
+                # HTTP 429 → INTERNAL_ERROR). The session is alive and only
+                # this request was refused: no breaker failure, no reconnect.
+                # A retry on the same connection is the correct next move, so
+                # surface a sanitised refusal instead of tearing the session
+                # down and reconnecting for nothing.
+                logger.warning(
+                    "[MCP] call_tool %s refused by gateway for tenants=%s "
+                    "(code=%s), not reconnecting",
+                    name,
+                    session.tenant_ids,
+                    getattr(exc, "code", None),
+                )
+                return self._gateway_refusal_result(name, exc)
             if "Tool not found" in str(exc):
                 logger.warning(
                     "[MCP] Tool %s not found for tenants=%s, not reconnecting",
@@ -1330,6 +1405,18 @@ class MCPClient:
                 self._mark_failure(conn)
                 return self._connection_interrupted_result(name)
             except Exception as exc2:
+                if isinstance(exc2, MCPError) and not _is_transport_mcp_error(exc2):
+                    # Same soft-refusal contract as the first attempt: a JSON-RPC
+                    # error response means the peer answered; a reconnect already
+                    # happened, so no second one and no breaker increment.
+                    logger.warning(
+                        "[MCP] call_tool %s refused by gateway after reconnect "
+                        "for tenants=%s (code=%s)",
+                        name,
+                        session.tenant_ids,
+                        getattr(exc2, "code", None),
+                    )
+                    return self._gateway_refusal_result(name, exc2)
                 self._mark_failure(conn)
                 logger.exception(
                     "[MCP] call_tool %s failed after reconnect, tenants=%s",

@@ -416,6 +416,151 @@ class TestCallTool:
         assert "plain text response" in tr.tool_content
 
 
+class TestMCPErrorDoesNotTripBreaker:
+    """A completed JSON-RPC error (the peer answered) is not a dead dependency.
+
+    The Streamable HTTP transport maps an HTTP 429 from the gateway (its
+    per-IP ``MCP_RATE_LIMIT_RPS`` token bucket) to an ``MCPError`` carrying
+    ``INTERNAL_ERROR`` — the gateway is alive and answered, it just refused
+    this one request. Counting that as a breaker failure turns a rate limit
+    into a total outage: three 429s open the circuit, and every subsequent
+    ``list_tools``/``call_tool`` fast-fails for the whole cooldown window.
+
+    Measured on the Arch stand: 13 gateway rate-limit hits → 594/600 turns
+    failed with ``DATA_SERVICE_UNAVAILABLE`` because the breaker opened once
+    and stayed open through the rung.
+    """
+
+    @staticmethod
+    def _store_failures(client: MCPClient, key: str) -> int:
+        return client._breaker_state.get(key, (0, 0.0))[0]
+
+    @pytest.mark.asyncio
+    async def test_mcp_error_does_not_count_as_breaker_failure(
+        self, mcp_client: MCPClient
+    ):
+        """MCPError (peer answered with a JSON-RPC error) must not trip the breaker."""
+        from mcp.shared.exceptions import MCPError
+
+        conn = _make_conn()
+        conn.tenant_id = "rate-limited"
+        conn.session.call_tool = AsyncMock(
+            side_effect=MCPError(
+                code=-32603, message="Server returned an error response"
+            )
+        )
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+        mcp_client._reconnect = AsyncMock()  # type: ignore[method-assign]
+
+        session = _SessionProxy(mcp_client, tenant_ids=["rate-limited"])
+        tr = await mcp_client.call_tool(session, "db_search", {"pattern": "x"})
+
+        assert tr.ok is False
+        # No reconnect: the session is alive, only this request was refused.
+        mcp_client._reconnect.assert_not_awaited()  # type: ignore[attr-defined]
+        # No breaker evidence: the dependency did not die.
+        assert self._store_failures(mcp_client, "rate-limited") == 0
+
+    @pytest.mark.asyncio
+    async def test_mcp_error_still_returns_sanitised_result(
+        self, mcp_client: MCPClient
+    ):
+        """The refusal must surface as a retryable tool result, not a raw exception."""
+        from mcp.shared.exceptions import MCPError
+
+        conn = _make_conn()
+        conn.tenant_id = "rate-limited-2"
+        conn.session.call_tool = AsyncMock(
+            side_effect=MCPError(
+                code=-32603, message="Server returned an error response"
+            )
+        )
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+
+        session = _SessionProxy(mcp_client, tenant_ids=["rate-limited-2"])
+        tr = await mcp_client.call_tool(session, "db_search", {"pattern": "x"})
+
+        assert tr.ok is False
+        assert tr.error is not None and tr.error != ""
+        assert "127.0.0.1" not in (tr.error or "")
+        assert "127.0.0.1" not in tr.tool_content
+        assert tr.error_code == "GATEWAY_REFUSED"
+
+    @pytest.mark.asyncio
+    async def test_transport_error_still_counts_as_breaker_failure(
+        self, mcp_client: MCPClient
+    ):
+        """A real transport break (no JSON-RPC answer) must still count and reconnect."""
+        conn = _make_conn()
+        conn.tenant_id = "transport-broken"
+        conn.session.call_tool = AsyncMock(side_effect=ConnectionError("reset"))
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+        retry_conn = _make_conn()
+        retry_conn.tenant_id = "transport-broken"
+        retry_conn.session.call_tool = AsyncMock(
+            return_value=_mock_result([{"type": "text", "text": "retried"}])
+        )
+        mcp_client._reconnect = AsyncMock(return_value=retry_conn)  # type: ignore[method-assign]
+
+        session = _SessionProxy(mcp_client, tenant_ids=["transport-broken"])
+        tr = await mcp_client.call_tool(session, "db_search", {"pattern": "x"})
+
+        assert tr.ok is True
+        mcp_client._reconnect.assert_awaited_once()  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_connection_closed_mcp_error_still_trips_breaker(
+        self, mcp_client: MCPClient
+    ):
+        """An MCPError carrying CONNECTION_CLOSED is a transport death, not a refusal."""
+        from mcp.shared.exceptions import MCPError
+
+        conn = _make_conn()
+        conn.tenant_id = "conn-closed"
+        conn.session.call_tool = AsyncMock(
+            side_effect=MCPError(code=-32000, message="Connection closed")
+        )
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+        retry_conn = _make_conn()
+        retry_conn.tenant_id = "conn-closed"
+        retry_conn.session.call_tool = AsyncMock(
+            return_value=_mock_result([{"type": "text", "text": "retried"}])
+        )
+        mcp_client._reconnect = AsyncMock(return_value=retry_conn)  # type: ignore[method-assign]
+
+        session = _SessionProxy(mcp_client, tenant_ids=["conn-closed"])
+        tr = await mcp_client.call_tool(session, "db_search", {"pattern": "x"})
+
+        assert tr.ok is True
+        mcp_client._reconnect.assert_awaited_once()  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_request_timeout_mcp_error_still_trips_breaker(
+        self, mcp_client: MCPClient
+    ):
+        """An MCPError carrying REQUEST_TIMEOUT is a hung peer, not a refusal."""
+        from mcp.shared.exceptions import MCPError
+
+        conn = _make_conn()
+        conn.tenant_id = "req-timeout"
+        conn.session.call_tool = AsyncMock(
+            side_effect=MCPError(code=-32001, message="Request 'tools/call' timed out")
+        )
+        mcp_client._get_connection = AsyncMock(return_value=conn)  # type: ignore[method-assign]
+        retry_conn = _make_conn()
+        retry_conn.tenant_id = "req-timeout"
+        retry_conn.session.call_tool = AsyncMock(side_effect=ConnectionError("reset"))
+        mcp_client._reconnect = AsyncMock(return_value=retry_conn)  # type: ignore[method-assign]
+
+        session = _SessionProxy(mcp_client, tenant_ids=["req-timeout"])
+        await mcp_client.call_tool(session, "db_search", {"pattern": "x"})
+
+        mcp_client._reconnect.assert_awaited_once()  # type: ignore[attr-defined]
+        # Both the initial refusal-in-disguise and the retry's transport break
+        # count: the dependency stopped answering, the breaker must accumulate.
+        assert self._store_failures(mcp_client, "req-timeout") >= 1
+
+
 class TestCallLockGranularity:
     """The tool-call lock belongs to the conversation, not to the connection.
 
