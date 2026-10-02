@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,9 @@ class FakeStand:
     requests: list[tuple[str, str, dict[str, Any] | None]] = field(default_factory=list)
     tool_is_error: bool = False
     fail_manifest: bool = False
+    #: Seconds each tool call burns. A stand that answers instantly always
+    #: passes the L1 budget, so a rung that must *fail* needs the delay.
+    tool_delay_s: float = 0.0
 
     def connection(self) -> FakeConnection:
         return FakeConnection(stand=self)  # one connection per MCP session
@@ -97,6 +101,8 @@ class FakeConnection:
         elif payload.get("method") == "notifications/initialized":
             self.response = FakeResponse(202, {}, b"")
         else:
+            if self.stand.tool_delay_s:
+                time.sleep(self.stand.tool_delay_s)
             result: dict[str, Any] = {"content": [{"type": "text", "text": "ok"}]}
             if self.stand.tool_is_error:
                 result["isError"] = True
@@ -353,6 +359,28 @@ class TestRunCommand:
         manifest = json.loads((run_dir / "run-manifest.json").read_text())
         assert manifest["run_uuid"] == run_dir.name
         assert report["run_uuid"] == run_dir.name
+
+    def test_a_run_that_finds_no_knee_is_not_reported_as_completed(
+        self, runner, tmp_path, repo, monkeypatch
+    ):
+        """A dead first rung must not exit 0 as a "completed" capacity run.
+
+        The stand answers instantly on preflight probes, then every tool call
+        takes 200 ms - well past the L1 budget (50 ms). The first rung fails
+        and the ladder returns ``below_first_rung`` with no knee. Before the
+        fix the CLI mapped every non-``unjudgeable`` status to "completed" and
+        EXIT_OK, so automation read a ladder that measured nothing as a
+        successful run - exactly what happened live on the Arch stand.
+        """
+        stand = FakeStand(tool_delay_s=0.2)
+        monkeypatch.setattr(stress_cli, "McpTransport", _transport_for(stand))
+        result = self._run(runner, tmp_path, stand, repo)
+
+        assert result.exit_code != 0, "a run without a knee is not a success"
+        run_dir = _run_dir(tmp_path)
+        status = json.loads((run_dir / "status.json").read_text())
+        assert status["status"] == "failed"
+        assert status["ladder_status"] == "below_first_rung"
 
     def test_the_progress_line_prints_the_overhead_the_report_will_hold(
         self, runner, tmp_path, repo, monkeypatch

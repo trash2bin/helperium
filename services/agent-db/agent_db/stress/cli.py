@@ -77,6 +77,9 @@ app = typer.Typer(
 EXIT_OK = 0
 EXIT_REFUSED = 2
 EXIT_ABORTED = 3
+# A ladder that produced no knee (first rung already over budget,
+# or generator-saturated there) is a measured failure, not a success.
+EXIT_FAILED = 4
 
 
 def _driver_stack(
@@ -699,12 +702,23 @@ def run_cmd(
                 "aborted", f"ladder crashed: {type(exc).__name__}: {exc}", EXIT_ABORTED
             ) from exc
 
-        status = "completed" if result.status != "unjudgeable" else "aborted"
-        abort_reason = (
-            "the judged metric could not be computed"
-            if result.status == "unjudgeable"
-            else None
-        )
+        if result.status == "unjudgeable":
+            status = "aborted"
+            exit_code = EXIT_ABORTED
+            abort_reason = "the judged metric could not be computed"
+        elif result.knee is None:
+            # No knee: the first rung was already over budget (below_first_rung)
+            # or the generator saturated there (invalid). Nothing was measured
+            # that could be published, so "completed" + exit 0 would let
+            # automation read a dead ladder as a successful capacity run -
+            # that exact lie is what a live L2 run showed on the Arch stand.
+            status = "failed"
+            exit_code = EXIT_FAILED
+            abort_reason = f"the ladder produced no knee ({result.status})"
+        else:
+            status = "completed"
+            exit_code = EXIT_OK
+            abort_reason = None
         write_status(
             layout,
             status,
@@ -723,9 +737,7 @@ def run_cmd(
             typer.echo("⛔ not publishable as capacity:")
             for blocker in blockers:
                 typer.echo(f"   - {blocker}")
-        if result.status == "unjudgeable":
-            raise typer.Exit(EXIT_ABORTED)
-        raise typer.Exit(EXIT_OK)
+        raise typer.Exit(exit_code)
     except typer.Exit:
         raise
     except _RunStopped as stopped_run:
