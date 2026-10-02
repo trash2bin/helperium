@@ -290,6 +290,7 @@ def main() -> None:
         host=settings.api_host,
         port=settings.api_port,
         reload=False,
+        timeout_keep_alive=120,
         # Pentest H3: uvicorn's default proxy_headers=True rewrites
         # request.client from X-Forwarded-For for any peer in the default
         # forwarded_allow_ips ("127.0.0.1"). That lets a client on the host
