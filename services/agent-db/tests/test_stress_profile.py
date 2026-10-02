@@ -239,6 +239,22 @@ class TestToolValidation:
         assert canonical_tool_name("tenant-a__db_get") == "db_get"
         assert canonical_tool_name("db_get") == "db_get"
 
+    def test_composite_prefixes_are_added_for_a_tenant(self) -> None:
+        # The forward map is the inverse of the strip above and the one piece the
+        # stub was missing: it lives next to canonical_tool_name so both share a
+        # single COMPOSITE_SEPARATOR and cannot drift apart.
+        from agent_db.stress.profile import composite_tool_name
+
+        assert composite_tool_name("tenant-a", "db_get") == "tenant-a__db_get"
+        assert composite_tool_name("tenant-a", "db_map") == "tenant-a__db_map"
+        # Round-trips through the existing inverse.
+        assert canonical_tool_name(composite_tool_name("tenant-a", "db_get")) == (
+            "db_get"
+        )
+        assert composite_tool_name("tenant-a", "db_map") != composite_tool_name(
+            "tenant-b", "db_map"
+        )
+
     def test_composite_scope_requires_prefixed_manifest_tools(self) -> None:
         payload = json.loads(json.dumps(BASE))
         payload["tenants"]["scope"] = "composite"

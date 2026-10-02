@@ -223,6 +223,79 @@ class TestToolCallEmission:
         ]
 
 
+class TestCompositeToolResolution:
+    """A script's logical tool name resolves to the advertised (possibly
+    composite) name.
+
+    A named agent spanning several tenants gets composite tools from the gateway
+    (``{tenant}__db_map``: ``tools.go:177``), but the shipped script and the
+    profiles carry logical names (``db_map``). The stub used to compare names
+    exactly and so refused every composite turn - the L2 failure. It now reuses
+    ``canonical_tool_name``/``composite_tool_name`` (``profile.py``) to resolve
+    logical -> advertised, the same rule the manifest validation already applies.
+    """
+
+    @staticmethod
+    def _request(*tools: str):
+        return parse_chat_request(
+            {
+                "model": "stub",
+                "messages": [],
+                "tools": [
+                    {"type": "function", "function": {"name": name}}
+                    for name in tools
+                ],
+            }
+        )
+
+    def test_a_logical_script_tool_resolves_to_the_composite_advertised_name(self):
+        request = self._request("stress-1__db_map")
+        response = build_response(
+            request, script=[{"tool": "db_map", "arguments": {}}], script_index=0
+        )
+        call = response["choices"][0]["message"]["tool_calls"][0]
+        assert call["function"]["name"] == "stress-1__db_map"
+
+    def test_a_script_step_selects_the_tenant_under_composite_scope(self):
+        request = self._request("stress-1__db_map", "stress-2__db_map")
+        response = build_response(
+            request,
+            script=[{"tool": "db_map", "tenant": "stress-2", "arguments": {}}],
+            script_index=0,
+        )
+        call = response["choices"][0]["message"]["tool_calls"][0]
+        assert call["function"]["name"] == "stress-2__db_map"
+
+    def test_an_ambiguous_logical_tool_under_composite_needs_a_tenant(self):
+        # Two tenants expose the same canonical tool and the step names no
+        # tenant: silently funnelling every turn to one tenant would report a
+        # two-tenant load that is really one. Refusing names the real cause.
+        request = self._request("stress-1__db_map", "stress-2__db_map")
+        with pytest.raises(ValueError, match="ambiguous"):
+            build_response(
+                request, script=[{"tool": "db_map", "arguments": {}}], script_index=0
+            )
+
+    def test_a_truly_unadvertised_tool_is_still_refused(self):
+        # The guard is preserved: resolution never invents a tool the agent did
+        # not advertise (db_map is not db_get under any prefix).
+        request = self._request("stress-1__db_get")
+        with pytest.raises(ValueError, match="not advertised"):
+            build_response(
+                request, script=[{"tool": "db_map", "arguments": {}}], script_index=0
+            )
+
+    def test_an_already_composite_script_name_is_emitted_verbatim(self):
+        request = self._request("stress-1__db_map")
+        response = build_response(
+            request,
+            script=[{"tool": "stress-1__db_map", "arguments": {}}],
+            script_index=0,
+        )
+        call = response["choices"][0]["message"]["tool_calls"][0]
+        assert call["function"]["name"] == "stress-1__db_map"
+
+
 class TestHttpSurface:
     """The server end to end, on a real socket on loopback."""
 

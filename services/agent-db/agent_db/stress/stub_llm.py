@@ -43,6 +43,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .profile import canonical_tool_name, composite_tool_name
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_DONE_TEXT = "Готово. Я всё проверил в базе данных."
@@ -213,6 +215,49 @@ def parse_chat_request(payload: Any) -> ChatRequest:
     )
 
 
+def _resolve_tool_name(
+    name: str, tenant: str | None, advertised: Sequence[str], script_index: int
+) -> str:
+    """Resolve a script step's logical tool name to the advertised name.
+
+    A named agent spanning several tenants gets composite tools (``{tenant}__
+    db_map``: ``tools.go``), while scripts and profiles carry logical names
+    (``db_map``). This bridges the two with ``canonical_tool_name``/
+    ``composite_tool_name`` - the same rule the manifest validation already
+    applies - instead of the exact string equality that refused every composite
+    turn (the L2 failure). It never invents a tool: an unadvertised name is
+    still refused, and an ambiguous one (several tenants expose the same
+    canonical tool and the step names none) is refused too, so a shared script
+    cannot silently funnel a multi-tenant load onto a single tenant.
+    """
+    if not advertised:
+        return name
+    if name in advertised:
+        return name
+    if tenant:
+        candidate = composite_tool_name(tenant, name)
+        if candidate in advertised:
+            return candidate
+        raise ValueError(
+            f"script step {script_index} calls {name!r} for tenant {tenant!r}, "
+            f"which is not advertised in this request's tools ({list(advertised)})"
+        )
+    canonical = canonical_tool_name(name)
+    matches = [t for t in advertised if canonical_tool_name(t) == canonical]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(
+            f"script step {script_index} calls {name!r}, which is ambiguous under "
+            f"composite scope ({matches}); add a 'tenant' field to the step or use "
+            f"the prefixed tool name"
+        )
+    raise ValueError(
+        f"script step {script_index} calls {name!r}, which is not advertised "
+        f"in this request's tools ({list(advertised)})"
+    )
+
+
 def build_response(
     request: ChatRequest,
     *,
@@ -223,10 +268,13 @@ def build_response(
 ) -> dict[str, Any]:
     """The OpenAI body for one round of one turn.
 
-    A scripted tool the request did not advertise is refused rather than sent:
-    ``LiteLLMProvider`` would raise a protocol error on it and the agent loop
-    would abort the turn, which reads as a platform failure and sends whoever
-    debugs it to the wrong service.
+    A scripted tool name is first resolved to the advertised name (logical
+    ``db_map`` -> composite ``{tenant}__db_map``) via :func:`_resolve_tool_name`,
+    so one script drives both separate and composite scopes. A tool the request
+    did not advertise is still refused rather than sent: ``LiteLLMProvider``
+    would raise a protocol error on it and the agent loop would abort the turn,
+    which reads as a platform failure and sends whoever debugs it to the wrong
+    service.
     """
     prompt_tokens = request.prompt_tokens()
     tool_calls: list[dict[str, Any]] = []
@@ -238,10 +286,9 @@ def build_response(
             raise ValueError(f"script step {script_index} has no tool name")
         if not isinstance(arguments, Mapping):
             raise ValueError(f"script step {script_index} arguments must be an object")
-        if request.tools and name not in request.tool_names():
-            raise ValueError(
-                f"script step {script_index} calls {name!r}, which is not advertised "
-                f"in this request's tools ({request.tool_names()})"
+        if request.tools:
+            name = _resolve_tool_name(
+                name, step.get("tenant"), request.tool_names(), script_index
             )
         tool_calls.append(
             {

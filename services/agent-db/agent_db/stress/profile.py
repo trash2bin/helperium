@@ -252,6 +252,17 @@ def canonical_tool_name(name: str) -> str:
     return tail if sep and head and tail else name
 
 
+def composite_tool_name(tenant_id: str, name: str) -> str:
+    """Prefix a logical tool name for composite scope.
+
+    Inverse of :func:`canonical_tool_name`, and the only forward mapping on the
+    caller side - the gateway mints the same shape internally (``tools.go``
+    ``registeredToolName``) but never publishes it, so a caller that must build
+    a composite name does it here rather than re-deriving the separator.
+    """
+    return f"{tenant_id}{COMPOSITE_SEPARATOR}{name}"
+
+
 def validate_tools_against_manifest(
     profile: LoadProfile, available_tools: Iterable[str]
 ) -> None:
