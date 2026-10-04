@@ -629,3 +629,97 @@ class TestEndToEndResolution:
         assert isinstance(result, AnswerNormalizer)
         assert isinstance(result.inner, LiteLLMProvider)
         assert "mistral" in result.model
+
+
+# ── Direct transport selection (LLM_PROVIDER_TRANSPORT) ──────────────────
+
+
+class TestDirectTransportSelection:
+    """The factory must honor LLM_PROVIDER_TRANSPORT=direct.
+
+    Regression guard: the LiteLLM-backed transport is a per-config choice,
+    not a hard-wired single implementation.  When the environment selects
+    ``direct``, every configured/pool/env path must return the lightweight
+    httpx adapter instead of ``LiteLLMProvider``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_llm_config_uses_direct_transport_when_selected(self):
+        with (
+            _patch_scripted(return_value=None),
+            _patch_pool(None),
+            patch("helperium_sdk.settings.settings.llm_provider_transport", "direct"),
+        ):
+            from api_service.agent.factory import resolve_llm
+
+            result = await resolve_llm(
+                llm_config={
+                    "model": "openai/deepseek-v4-flash",
+                    "provider": "openai",
+                    "api_base": "https://polza.ai/api/v1",
+                    "api_key": "pza_test-key",
+                },
+            )
+
+        from api_service.agent.providers.openai_compatible import (
+            OpenAICompatibleProvider,
+        )
+
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, OpenAICompatibleProvider)
+        assert not isinstance(result.inner, LiteLLMProvider)
+
+    @pytest.mark.asyncio
+    async def test_provider_priority_uses_direct_transport_when_selected(self):
+        providers = {
+            "ollama": {
+                "model": "qwen2.5:0.5b",
+                "api_key": "",
+                "api_base": "http://localhost:11434",
+                "enabled": True,
+                "provider": "ollama",
+            }
+        }
+        with (
+            _patch_scripted(return_value=None),
+            _patch_store(providers),
+            _patch_pool(None),
+            patch("helperium_sdk.settings.settings.llm_provider_transport", "direct"),
+        ):
+            from api_service.agent.factory import resolve_llm
+
+            result = await resolve_llm(provider_priority=["ollama"])
+
+        from api_service.agent.providers.openai_compatible import (
+            OpenAICompatibleProvider,
+        )
+
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, OpenAICompatibleProvider)
+        assert not isinstance(result.inner, LiteLLMProvider)
+
+    @pytest.mark.asyncio
+    async def test_default_transport_remains_litellm(self):
+        with (
+            _patch_scripted(return_value=None),
+            _patch_pool(None),
+            patch("helperium_sdk.settings.settings.llm_provider_transport", "litellm"),
+        ):
+            from api_service.agent.factory import resolve_llm
+
+            result = await resolve_llm(
+                llm_config={
+                    "model": "openai/deepseek-v4-flash",
+                    "provider": "openai",
+                    "api_base": "https://polza.ai/api/v1",
+                    "api_key": "pza_test-key",
+                },
+            )
+
+        from api_service.agent.providers.openai_compatible import (
+            OpenAICompatibleProvider,
+        )
+
+        assert isinstance(result, AnswerNormalizer)
+        assert isinstance(result.inner, LiteLLMProvider)
+        assert not isinstance(result.inner, OpenAICompatibleProvider)

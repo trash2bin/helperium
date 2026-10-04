@@ -25,10 +25,34 @@ from litellm.exceptions import (
     Timeout,
 )
 
+import httpx
+
 
 logger = logging.getLogger("api_service.agent.completion_retry")
 
 RetryCategory = Literal["throttled", "transient"]
+
+
+class TransientHTTPError(RuntimeError):
+    """A retriable 5xx/408 from the direct (non-LiteLLM) provider."""
+
+    def __init__(
+        self, status_code: int, body: str = "", retry_after: float | None = None
+    ) -> None:
+        super().__init__(f"transient HTTP {status_code}: {body[:200]}")
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
+class ThrottledHTTPError(RuntimeError):
+    """A retriable 429 from the direct (non-LiteLLM) provider."""
+
+    def __init__(
+        self, status_code: int, body: str = "", retry_after: float | None = None
+    ) -> None:
+        super().__init__(f"throttled HTTP {status_code}: {body[:200]}")
+        self.status_code = status_code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -56,7 +80,7 @@ class CompletionRetryPolicy:
 
 def retry_category(exc: Exception) -> RetryCategory | None:
     """Return an approved retry category, never retrying unknown failures."""
-    if isinstance(exc, RateLimitError):
+    if isinstance(exc, (RateLimitError, ThrottledHTTPError)):
         return "throttled"
     if isinstance(
         exc,
@@ -66,6 +90,8 @@ def retry_category(exc: Exception) -> RetryCategory | None:
             BadGatewayError,
             InternalServerError,
             ServiceUnavailableError,
+            TransientHTTPError,
+            httpx.TransportError,
             asyncio.TimeoutError,
         ),
     ):
@@ -91,6 +117,10 @@ def retry_after_seconds(exc: Exception, now: datetime | None = None) -> float | 
         if headers is not None
         else None
     )
+    if raw is None and isinstance(exc, (TransientHTTPError, ThrottledHTTPError)):
+        retry_after = getattr(exc, "retry_after", None)
+        if isinstance(retry_after, (int, float)):
+            return max(0.0, float(retry_after))
     if not raw:
         return None
     try:

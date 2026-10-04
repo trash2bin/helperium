@@ -148,6 +148,9 @@ class DemoSettings:
         # Internal LLM completion retry policy. This stays process-wide because
         # retry is a transport reliability policy, not public per-agent config.
         self.llm_max_attempts: int = int(os.environ.get("LLM_MAX_ATTEMPTS", "3"))
+        self.llm_provider_transport: str = os.environ.get(
+            "LLM_PROVIDER_TRANSPORT", "litellm"
+        )
         self.llm_retry_max_elapsed_seconds: float = float(
             os.environ.get("LLM_RETRY_MAX_ELAPSED_SECONDS", "60.0")
         )

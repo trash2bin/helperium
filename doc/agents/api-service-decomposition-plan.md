@@ -260,6 +260,14 @@ retry/fallback и `provider_priority`. Выкинуть её целиком не
   модели).
 - **Стенд:** L2 knee растёт; при 40+ rps p95 падает до сотен мс; ошибок 0%.
 
+**Статус (2026-10-04): код готов, замер не прогнан.** `OpenAICompatibleProvider`
+реализован (`providers/openai_compatible.py`), фабрика выбирает транспорт через
+`LLM_PROVIDER_TRANSPORT=direct|litellm` (дефолт `litellm`, откат без revert), HTTP-ошибки
+поднимаются в `ThrottledHTTPError`/`TransientHTTPError` внутри `completion_attempt`, чтобы
+общий `CompletionRetryExecutor` решал retry. 8 тестов провайдера + 3 теста выбора
+транспорта в фабрике; полный api-service набор 855 passed / 1 skipped. Живой замер L2
+с `LLM_PROVIDER_TRANSPORT=direct` не прогонялся — вклад в knee не измерен.
+
 ### Трек 3 — вынести состояние из процесса + multi-worker
 
 **Почему:** «одно ядро» — это не свойство Python, а один процесс. Ядер 8. Блокирует

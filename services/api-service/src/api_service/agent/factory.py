@@ -14,14 +14,55 @@ from typing import Any
 from helperium_sdk.settings import settings
 
 from .providers.litellm_provider import LiteLLMProvider
+from .providers.openai_compatible import OpenAICompatibleProvider
 from .provider_pool import FallbackProvider, ProviderPool
+
+
+def _create_provider(
+    *,
+    model: str,
+    provider: str | None,
+    api_base: str | None,
+    api_key: str | None,
+    timeout: float,
+    temperature: float,
+    max_tokens_thinking: int,
+    enable_thinking: bool,
+) -> LiteLLMProvider | OpenAICompatibleProvider:
+    """Build a provider using the configured transport.
+
+    ``LLM_PROVIDER_TRANSPORT=direct`` selects the lightweight httpx adapter
+    that bypasses LiteLLM; ``litellm`` (default) keeps the existing
+    LiteLLM-backed transport.
+    """
+    if settings.llm_provider_transport == "direct":
+        return OpenAICompatibleProvider(
+            model=model,
+            provider=provider,
+            api_base=api_base,
+            api_key=api_key,
+            timeout=timeout,
+            temperature=temperature,
+            max_tokens_thinking=max_tokens_thinking,
+            enable_thinking=enable_thinking,
+        )
+    return LiteLLMProvider(
+        model=model,
+        provider=provider,
+        api_base=api_base,
+        api_key=api_key,
+        timeout=timeout,
+        temperature=temperature,
+        max_tokens_thinking=max_tokens_thinking,
+        enable_thinking=enable_thinking,
+    )
 
 
 # Module-level ProviderPool singleton for fallback + health checks.
 _pool = ProviderPool()
 
 
-def _create_env_provider() -> LiteLLMProvider:
+def _create_env_provider() -> LiteLLMProvider | OpenAICompatibleProvider:
     """Create a provider from environment variables as a last-resort fallback."""
     for key, value in os.environ.items():
         if not key.endswith("_API_KEY") or not value:
@@ -32,20 +73,22 @@ def _create_env_provider() -> LiteLLMProvider:
         model = os.environ.get(f"{prefix}_MODEL", "")
         if not model:
             continue
-        return LiteLLMProvider(
+        return _create_provider(
             model=model,
             provider=prefix.lower(),
             api_base=os.environ.get(f"{prefix}_API_BASE", "") or None,
+            api_key=value,
             timeout=settings.request_timeout,
             temperature=settings.agent_temperature,
             max_tokens_thinking=settings.agent_max_tokens_thinking,
             enable_thinking=settings.think_mode,
         )
 
-    return LiteLLMProvider(
+    return _create_provider(
         model=settings.ollama_model,
         provider="ollama",
         api_base=settings.ollama_url.rstrip("/") if settings.ollama_url else None,
+        api_key=None,
         timeout=settings.request_timeout,
         temperature=settings.agent_temperature,
         max_tokens_thinking=settings.agent_max_tokens_thinking,
@@ -53,7 +96,7 @@ def _create_env_provider() -> LiteLLMProvider:
     )
 
 
-async def _resolve_pool_or_env() -> LiteLLMProvider:
+async def _resolve_pool_or_env() -> LiteLLMProvider | OpenAICompatibleProvider:
     """Try ProviderPool first, then build an environment fallback."""
     try:
         worker = await _pool.get_any_worker()
@@ -62,7 +105,7 @@ async def _resolve_pool_or_env() -> LiteLLMProvider:
     except Exception:
         pass
     warnings.warn(
-        "ProviderPool is empty or unavailable — falling back to env-based LiteLLMProvider",
+        "ProviderPool is empty or unavailable — falling back to env-based provider",
         RuntimeWarning,
         stacklevel=2,
     )
@@ -71,11 +114,11 @@ async def _resolve_pool_or_env() -> LiteLLMProvider:
 
 def _create_configured_provider(
     config: dict, *, strip_api_base: bool = False
-) -> LiteLLMProvider:
-    """Build one LiteLLM transport from a persisted or per-agent config."""
+) -> LiteLLMProvider | OpenAICompatibleProvider:
+    """Build one provider transport from a persisted or per-agent config."""
     model = config.get("model") or settings.ollama_model
     api_base = config.get("api_base") or settings.ollama_url
-    return LiteLLMProvider(
+    return _create_provider(
         model=model,
         provider=config.get("provider"),
         api_base=api_base.rstrip("/")
@@ -127,7 +170,7 @@ async def resolve_llm(
     if llm_client:
         return llm_client
 
-    candidates: list[LiteLLMProvider] = []
+    candidates: list[LiteLLMProvider | OpenAICompatibleProvider] = []
     candidate_identities: set[tuple[str, str, str]] = set()
 
     if llm_config:
