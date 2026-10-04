@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import os
 import re
-
-from api_service.prometheus_metrics import abuse_blocked_total
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+from api_service.prometheus_metrics import abuse_blocked_total
 
 
 # Eviction bounds for attacker-influenced in-memory state. Session IDs and
@@ -129,18 +130,195 @@ def load_ip_bucket_config() -> AbuseConfig:
 # ── Token Bucket Rate Limiter ──
 
 
+class BucketBackend(Protocol):
+    """Shared storage boundary for token buckets (Трек 3).
+
+    One atomic consume per request. A backend must be process-safe: N workers
+    share ONE bucket per key, so the total rate limit across workers equals the
+    limit a single worker would enforce. The in-memory backend is the default
+    (rollback by omitting the config flag); Redis is opt-in via env.
+    """
+
+    def consume(self, key: str, *, rps: float, burst: int) -> tuple[bool, float | None]:
+        """Atomically consume one token.
+
+        Returns ``(allowed, retry_after_seconds | None)``.
+        """
+        ...
+
+
+class InMemoryBucketBackend:
+    """Per-process token bucket storage (the pre-Track-3 behaviour).
+
+    Uses ``time.monotonic()`` so the refill clock is immune to wall-clock
+    jumps. Not shared across processes: with ``--workers N`` every worker keeps
+    its own bucket, which over-admits by a factor of N. That is the honest
+    trade-off of the default backend — and exactly why Redis exists as an
+    opt-in.
+    """
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, dict] = {}  # key -> {tokens, last_time, last_seen}
+        self._lock = threading.Lock()
+        self._inserts_since_scan = 0
+
+    def consume(self, key: str, *, rps: float, burst: int) -> tuple[bool, float | None]:
+        now = time.monotonic()
+        with self._lock:
+            bucket = self._buckets.get(key)
+            if bucket is None:
+                bucket = {
+                    "tokens": float(burst),
+                    "last_time": now,
+                    "last_seen": now,
+                }
+                self._buckets[key] = bucket
+                self._maybe_evict_locked(now)
+            else:
+                bucket["last_seen"] = now
+
+            elapsed = now - bucket["last_time"]
+            bucket["last_time"] = now
+
+            bucket["tokens"] += elapsed * rps
+            if bucket["tokens"] > burst:
+                bucket["tokens"] = float(burst)
+
+            if bucket["tokens"] >= 1.0:
+                bucket["tokens"] -= 1.0
+                return True, None
+
+            deficit = 1.0 - bucket["tokens"]
+            retry_after = deficit / rps if rps > 0 else 1.0
+            return False, max(0.1, retry_after)
+
+    def _maybe_evict_locked(self, now: float) -> None:
+        """Lazy eviction, called on new-bucket inserts while holding the lock."""
+        self._inserts_since_scan += 1
+        if self._inserts_since_scan >= TOKEN_BUCKET_EVICT_SCAN_INTERVAL:
+            self._inserts_since_scan = 0
+            idle_cutoff = now - TOKEN_BUCKET_IDLE_SECONDS
+            stale = [
+                k for k, b in self._buckets.items() if b["last_seen"] < idle_cutoff
+            ]
+            for k in stale:
+                del self._buckets[k]
+
+        if len(self._buckets) > TOKEN_BUCKET_MAX_ENTRIES:
+            ordered = sorted(self._buckets.items(), key=lambda kv: kv[1]["last_seen"])
+            excess = len(self._buckets) - TOKEN_BUCKET_MAX_ENTRIES
+            for k, _ in ordered[:excess]:
+                del self._buckets[k]
+
+    def advance_time(self, key_prefix: str, ms: int) -> None:
+        """Test helper: move the refill clock back by ``ms`` for matching keys."""
+        delta = ms / 1000.0
+        with self._lock:
+            for key, bucket in self._buckets.items():
+                if key.startswith(key_prefix):
+                    bucket["last_time"] -= delta
+
+
+class RedisBucketBackend:
+    """Redis-backed token bucket, shared across processes.
+
+    Atomicity without Lua: ``WATCH``/``MULTI``/``EXEC`` optimistic locking —
+    the refill-and-decrement is a read-modify-write, and a conflicting writer
+    aborts the transaction (``WatchError``), after which we retry. This is what
+    keeps the sum limit at N workers equal to one worker, and it is testable
+    with fakeredis (which implements WATCH/MULTI, no ``lupa`` needed).
+
+    The clock is wall time (``time.time()``): every worker shares the same
+    domain, and a backwards jump is clamped to zero elapsed so a NTP step does
+    not mint extra tokens.
+    """
+
+    _TTL_SECONDS = 3600
+    _MAX_RETRIES = 4
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    @staticmethod
+    def _token_key(key: str) -> str:
+        return f"abuse:tokens:{key}"
+
+    @staticmethod
+    def _last_key(key: str) -> str:
+        return f"abuse:last:{key}"
+
+    def consume(self, key: str, *, rps: float, burst: int) -> tuple[bool, float | None]:
+        now = time.time()
+        token_key = self._token_key(key)
+        last_key = self._last_key(key)
+        # Lazy import: redis is only needed when this backend is actually
+        # selected, so the default in-memory path (and the whole module) never
+        # requires the redis dependency to be installed.
+        from redis.exceptions import WatchError
+
+        for _ in range(self._MAX_RETRIES):
+            try:
+                with self._client.pipeline() as pipe:
+                    pipe.watch(token_key, last_key)
+                    raw_tokens = pipe.get(token_key)
+                    raw_last = pipe.get(last_key)
+                    tokens = (
+                        float(raw_tokens) if raw_tokens is not None else float(burst)
+                    )
+                    last_time = float(raw_last) if raw_last is not None else now
+                    elapsed = max(0.0, now - last_time)
+                    tokens = min(float(burst), tokens + elapsed * rps)
+                    if tokens >= 1.0:
+                        tokens -= 1.0
+                        allowed = True
+                        retry_after = None
+                    else:
+                        allowed = False
+                        retry_after = max(0.1, (1.0 - tokens) / rps) if rps > 0 else 1.0
+                    pipe.multi()
+                    pipe.set(token_key, tokens, ex=self._TTL_SECONDS)
+                    pipe.set(last_key, now, ex=self._TTL_SECONDS)
+                    pipe.execute()
+                    return allowed, retry_after
+            except WatchError:
+                continue
+        # Exhausted retries under contention: deny rather than over-admit. The
+        # honest limit is the one that errs toward blocking, never toward
+        # minting extra budget.
+        return False, 1.0
+
+
+def build_token_bucket_backend() -> BucketBackend:
+    """Select the token-bucket storage backend from configuration (Трек 3).
+
+    ``ABUSE_STORAGE_URI`` (a Redis URL, e.g. ``redis://127.0.0.1:6379/0``) opts
+    into the shared Redis backend; unset/empty keeps the in-memory default, so
+    rollback is by omission (no revert needed). The Redis client is created
+    once here and shared by every bucket, so all buckets — global, per-IP,
+    per-agent — see one store.
+    """
+    uri = os.environ.get("ABUSE_STORAGE_URI", "").strip()
+    if not uri:
+        return InMemoryBucketBackend()
+    import redis
+
+    return RedisBucketBackend(redis.Redis.from_url(uri))
+
+
 class TokenBucket:
     """Per-session token bucket rate limiter.
 
     Each unique (session_id, ip, user_agent_hash) tuple gets its own bucket.
     Tokens refill at `config.rps` per second. Burst capacity = `config.burst`.
+    Storage is delegated to a :class:`BucketBackend` so the backend can be
+    swapped by configuration (in-memory default, Redis opt-in).
     """
 
-    def __init__(self, config: AbuseConfig) -> None:
+    def __init__(
+        self, config: AbuseConfig, backend: BucketBackend | None = None
+    ) -> None:
         self.config = config
-        self._buckets: dict[str, dict] = {}  # key -> {tokens, last_time, last_seen}
-        self._lock = threading.Lock()
-        self._inserts_since_scan = 0
+        self._backend: BucketBackend = backend or InMemoryBucketBackend()
 
     def _key(self, session_id: str, ip: str, user_agent: str) -> str:
         """Composite key: session + IP + UA hash prevents bypass via IP switching."""
@@ -166,73 +344,23 @@ class TokenBucket:
 
     def _allow_key(self, key: str) -> tuple[bool, dict]:
         """Shared bucket logic for allow() and allow_ip()."""
-        now = time.monotonic()
-
-        with self._lock:
-            bucket = self._buckets.get(key)
-            if bucket is None:
-                bucket = {
-                    "tokens": float(self.config.burst),
-                    "last_time": now,
-                    "last_seen": now,
-                }
-                self._buckets[key] = bucket
-                self._maybe_evict_locked(now)
-            else:
-                bucket["last_seen"] = now
-
-            elapsed = now - bucket["last_time"]
-            bucket["last_time"] = now
-
-            # Refill tokens
-            bucket["tokens"] += elapsed * self.config.rps
-            if bucket["tokens"] > self.config.burst:
-                bucket["tokens"] = float(self.config.burst)
-
-            if bucket["tokens"] >= 1.0:
-                bucket["tokens"] -= 1.0
-                return True, {}
-
-            # Calculate retry-after
-            deficit = 1.0 - bucket["tokens"]
-            retry_after = deficit / self.config.rps if self.config.rps > 0 else 1.0
-            return False, {"retry_after": max(0.1, retry_after)}
-
-    def _maybe_evict_locked(self, now: float) -> None:
-        """Lazy eviction, called on new-bucket inserts while holding the lock.
-
-        Idle eviction runs at most once per TOKEN_BUCKET_EVICT_SCAN_INTERVAL
-        inserts. The hard cap is enforced on every insert that would exceed
-        it (O(n) over the map only when the cap is actually crossed).
-        """
-        self._inserts_since_scan += 1
-        if self._inserts_since_scan >= TOKEN_BUCKET_EVICT_SCAN_INTERVAL:
-            self._inserts_since_scan = 0
-            idle_cutoff = now - TOKEN_BUCKET_IDLE_SECONDS
-            stale = [
-                k for k, b in self._buckets.items() if b["last_seen"] < idle_cutoff
-            ]
-            for k in stale:
-                del self._buckets[k]
-
-        if len(self._buckets) > TOKEN_BUCKET_MAX_ENTRIES:
-            # Drop least-recently-seen buckets until back under the cap.
-            ordered = sorted(self._buckets.items(), key=lambda kv: kv[1]["last_seen"])
-            excess = len(self._buckets) - TOKEN_BUCKET_MAX_ENTRIES
-            for k, _ in ordered[:excess]:
-                del self._buckets[k]
+        allowed, retry_after = self._backend.consume(
+            key, rps=self.config.rps, burst=self.config.burst
+        )
+        if allowed:
+            return True, {}
+        return False, {"retry_after": retry_after if retry_after is not None else 1.0}
 
     def _advance_time(self, key_prefix: str, ms: int) -> None:
         """Test helper: advance time for all buckets matching key_prefix.
 
-        This moves last_time BACKWARD by `ms` milliseconds, effectively
-        simulating that time has passed without using time.sleep().
+        Only meaningful for the in-memory backend (it owns the monotonic clock).
+        Redis buckets are keyed on wall time; tests that need refill there wait
+        for real time instead.
         """
-        delta = ms / 1000.0
-        with self._lock:
-            for key, bucket in self._buckets.items():
-                if key.startswith(key_prefix):
-                    bucket["last_time"] -= delta
+        backend = self._backend
+        if isinstance(backend, InMemoryBucketBackend):
+            backend.advance_time(key_prefix, ms)
 
 
 # ── Anti-Abuse Checker ──

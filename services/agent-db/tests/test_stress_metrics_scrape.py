@@ -341,6 +341,30 @@ class TestTargetDerivation:
         )
         assert target.bearer == "adm"
 
+    def test_the_api_service_bearer_is_the_api_bearer_not_the_admin_token(self):
+        """Трек 0 плана: /metrics api-service отдавал 403 на токене харнесса.
+
+        Харнесс шлёт один и тот же bearer на все таргеты (admin_token), а
+        /metrics api-service за тем же bearer'ом, что и /admin/* — то есть
+        API_BEARER_TOKEN, а не ADMIN_TOKEN. С admin_token скрейп получал
+        403 и записывал gap (132 скрейпа в прогоне 2026-10-03), из-за чего
+        CPU api-service и mcp_lock_wait_p95 отсутствовали в отчёте.
+        """
+        (target,) = targets_from(
+            {"chat_url": "http://127.0.0.1:8081"},
+            api_key="",
+            admin_token="adm",
+            api_bearer="api-key",
+        )
+        assert target.bearer == "api-key"
+
+    def test_without_an_api_bearer_the_admin_token_is_still_sent(self):
+        """Откат: если API_BEARER_TOKEN не задан, поведение прежнее (admin)."""
+        (target,) = targets_from(
+            {"chat_url": "http://127.0.0.1:8081"}, api_key="", admin_token="adm"
+        )
+        assert target.bearer == "adm"
+
     def test_data_service_is_only_known_when_declared(self):
         # The harness never talks to data-service directly, so deriving its
         # address would be a guess printed as provenance.

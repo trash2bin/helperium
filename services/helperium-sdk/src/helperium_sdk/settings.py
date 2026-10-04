@@ -33,6 +33,14 @@ class DemoSettings:
     def __init__(self) -> None:
         self.api_host: str = os.environ.get("DEMO_API_HOST", "127.0.0.1")
         self.api_port: int = int(os.environ.get("DEMO_API_PORT", "8081"))
+        # Number of uvicorn worker processes (Трек 3). 1 = the historical
+        # single-process deployment; >1 runs N event loops so the GIL/LLM-client
+        # overhead stops serialising every turn behind one core. Per-process
+        # singletons (agent, provider pool) re-initialise per worker — they are
+        # stateless by design. Rate limit / abuse buckets must be shared via
+        # RATE_LIMIT_STORAGE_URI / ABUSE_STORAGE_URI for the sum limit to stay
+        # honest across workers.
+        self.api_workers: int = int(os.environ.get("API_WORKERS", "1"))
         self.web_host: str = os.environ.get("DEMO_WEB_HOST", "127.0.0.1")
         self.web_port: int = int(os.environ.get("DEMO_WEB_PORT", "8080"))
         self.web_origin: str = os.environ.get("WEB_ORIGIN", "http://localhost:8080")

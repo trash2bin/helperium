@@ -18,6 +18,7 @@ from .anti_abuse import (
     AbuseConfig,
     AntiAbuseChecker,
     TokenBucket,
+    build_token_bucket_backend,
     load_abuse_config,
     load_ip_bucket_config,
 )
@@ -120,13 +121,21 @@ class LiveAbuseProvider:
             ),
         )
         self._full_config = self._load()
+        # Pentest H2: shared backend for cross-worker abuse bucket (Track 3).
+        # One backend = one budget envelope; without it every worker has its
+        # own bucket and the sum limit is N × the configured rate.
+        self._bucket_backend = build_token_bucket_backend()
         self._anti_abuse_checker = AntiAbuseChecker(
             self._full_config.to_anti_abuse_config()
         )
-        self._token_bucket = TokenBucket(self._full_config.to_anti_abuse_config())
+        self._token_bucket = TokenBucket(
+            self._full_config.to_anti_abuse_config(), backend=self._bucket_backend
+        )
         # Pentest H2: global per-IP budget, independent of session_id and
         # per-agent overrides (rotating session_id must not reset it).
-        self._ip_bucket = TokenBucket(load_ip_bucket_config())
+        self._ip_bucket = TokenBucket(
+            load_ip_bucket_config(), backend=self._bucket_backend
+        )
         self._agent_enforcers: dict[str, tuple[AntiAbuseChecker, TokenBucket]] = {}
         self._rwlock = threading.RLock()
 
@@ -204,7 +213,10 @@ class LiveAbuseProvider:
                 anti_cfg = self.get_effective_config(
                     agent_abuse_config
                 ).to_anti_abuse_config()
-                enforcers = (AntiAbuseChecker(anti_cfg), TokenBucket(anti_cfg))
+                enforcers = (
+                    AntiAbuseChecker(anti_cfg),
+                    TokenBucket(anti_cfg, backend=self._bucket_backend),
+                )
                 self._agent_enforcers[key] = enforcers
             return enforcers
 
@@ -214,8 +226,10 @@ class LiveAbuseProvider:
             self._full_config = self._load()
             anti_cfg = self._full_config.to_anti_abuse_config()
             self._anti_abuse_checker = AntiAbuseChecker(anti_cfg)
-            self._token_bucket = TokenBucket(anti_cfg)
-            self._ip_bucket = TokenBucket(load_ip_bucket_config())
+            self._token_bucket = TokenBucket(anti_cfg, backend=self._bucket_backend)
+            self._ip_bucket = TokenBucket(
+                load_ip_bucket_config(), backend=self._bucket_backend
+            )
             self._agent_enforcers = {}
             logger.info("Abuse config reloaded from %s", self._config_path)
         return self.get_config()

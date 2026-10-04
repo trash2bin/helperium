@@ -37,12 +37,20 @@ class SessionRepository(Protocol):
 
 
 def create_sqlite_connection(db_path: str | Path) -> sqlite3.Connection:
-    """Create one SQLite connection with the session-store invariants."""
+    """Create one SQLite connection with the session-store invariants.
+
+    ``busy_timeout`` is set explicitly, not left to ``sqlite3.connect``'s
+    default ``timeout=5.0``: under ``--workers N`` several processes write to
+    one WAL database, and a writer that cannot wait for the lock raises
+    ``database is locked`` instead of queueing. This matches the spending
+    ledger's invariant (30000) so the session store degrades the same way.
+    """
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 

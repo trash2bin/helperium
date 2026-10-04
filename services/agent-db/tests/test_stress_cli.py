@@ -229,6 +229,72 @@ class TestRateParsing:
             stress_cli._rates_for(profile, "10,fast")
 
 
+class TestPlanPoolSizing:
+    """Трек 0 плана: разгрузка генератора размером пула воркеров.
+
+    Пул считается как ``rps x (T + margin) x headroom`` (§2); дефолтный
+    margin=1.0 на 160 rps даёт 168 потоков, каждый со своим spin-tail'ом —
+    на этом упирался генератор L1 (gen CPU >= 80%, §0.4). Флаги в CLI —
+    чтобы это можно было обойти не трогая код харнесса.
+    """
+
+    def test_default_pool_sizing_is_unchanged(self):
+        from agent_db.stress.profile import load_profile
+
+        plan = stress_cli._build_plan(
+            load_profile(L1_PROFILE),
+            rates="80,160",
+            duration_s=None,
+            warmup_s=None,
+            repeats=None,
+            t_budget_ms=50.0,
+            tolerance=None,
+            max_pool_expansions=None,
+        )
+        # §2: ceil(160 x (0.05 + 1.0)) = 168 — как и до флагов.
+        assert plan.workers_for(160.0) == 168
+        assert plan.max_pool_expansions == 2
+
+    def test_pool_margin_and_headroom_reach_the_plan(self):
+        from agent_db.stress.profile import load_profile
+
+        plan = stress_cli._build_plan(
+            load_profile(L1_PROFILE),
+            rates="80,160",
+            duration_s=None,
+            warmup_s=None,
+            repeats=None,
+            t_budget_ms=50.0,
+            tolerance=None,
+            max_pool_expansions=0,
+            pool_margin_s=0.05,
+            pool_headroom=1.0,
+        )
+        # ceil(160 x (0.05 + 0.05)) = 16 воркеров вместо 168: spin-tail'ы
+        # воркеров съедают генератор пропорционально числу потоков.
+        assert plan.workers_for(160.0) == 16
+        # Даблинг пула на invalid-стадии удваивает и число хвостов — он
+        # обязан выключаться тем же набором флагов.
+        assert plan.max_pool_expansions == 0
+
+    def test_a_negative_margin_is_a_refusal(self):
+        from agent_db.stress.profile import load_profile
+        import pytest
+
+        with pytest.raises(ValueError, match="pool_margin_s"):
+            stress_cli._build_plan(
+                load_profile(L1_PROFILE),
+                rates="80",
+                duration_s=None,
+                warmup_s=None,
+                repeats=None,
+                t_budget_ms=None,
+                tolerance=None,
+                max_pool_expansions=None,
+                pool_margin_s=-0.1,
+            )
+
+
 class TestBinarySpecParsing:
     """§6: on a native stand the binary is the only runtime artefact there is."""
 

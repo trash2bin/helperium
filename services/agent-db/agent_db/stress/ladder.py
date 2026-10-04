@@ -158,6 +158,14 @@ class LadderPlan:
             raise LadderError(
                 f"max_pool_expansions must not be negative, got {self.max_pool_expansions}"
             )
+        if self.pool_margin_s < 0:
+            raise LadderError(
+                f"pool_margin_s must not be negative, got {self.pool_margin_s}"
+            )
+        if self.pool_headroom <= 0:
+            raise LadderError(
+                f"pool_headroom must be positive, got {self.pool_headroom}"
+            )
 
     @classmethod
     def for_profile(

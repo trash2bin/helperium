@@ -15,6 +15,16 @@ rate_limit = os.environ.get("CHAT_RATE_LIMIT", "30/minute")
 # budget is much tighter than chat and independent of chat's bucket.
 reports_rate_limit = os.environ.get("REPORTS_RATE_LIMIT", "5/minute")
 
+# Shared rate-limit storage (Трек 3): with ``--workers N`` the slowapi
+# limiter must live in one store, otherwise every worker enforces its own
+# 30/minute and the sum limit becomes N × 30/minute (the false ceiling §5
+# RUNBOOK forbids). ``RATE_LIMIT_STORAGE_URI`` opts into a shared backend
+# (e.g. ``redis://127.0.0.1:6379/0``); unset keeps slowapi's in-memory
+# default, so rollback is by omission. The strategy is fixed-window, matching
+# the ``n/minute`` limits slowapi already interprets.
+rate_limit_storage_uri = os.environ.get("RATE_LIMIT_STORAGE_URI") or None
+rate_limit_strategy = os.environ.get("RATE_LIMIT_STRATEGY", "fixed-window")
+
 
 def _trusted_proxies() -> set[str]:
     """TRUSTED_PROXIES env: comma-separated peers trusted to set X-Forwarded-For.
@@ -73,4 +83,9 @@ def get_client_ip(request: Request) -> str:
     return peer
 
 
-limiter = Limiter(key_func=get_client_ip, default_limits=[rate_limit])
+limiter = Limiter(
+    key_func=get_client_ip,
+    default_limits=[rate_limit],
+    storage_uri=rate_limit_storage_uri,
+    strategy=rate_limit_strategy,
+)

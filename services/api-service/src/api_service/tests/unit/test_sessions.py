@@ -270,6 +270,30 @@ def test_concurrent_writes(store):
     assert len(turns) <= 5
 
 
+def test_create_sqlite_connection_sets_busy_timeout(session_db_path):
+    """Трек 3: multi-process доступ к сессиям остаётся в SQLite WAL.
+
+    WAL разрешает один писатель на файл; без ``busy_timeout`` второй процесс
+    получает ``database is locked`` немедленно (дефолт SQLite = 0), и при
+    ``--workers N`` воркеры начнут ронять ходы при любой гонке за лок. Воркер
+    обязан ждать, а не падать. Производственный spending.py уже ставит
+    30000 — сессионное хранилище должно вести себя так же.
+    """
+    from api_service.session_repository import create_sqlite_connection
+
+    conn = create_sqlite_connection(session_db_path)
+    try:
+        timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    finally:
+        conn.close()
+    # Явный инвариант, не дефолт sqlite3.connect(timeout=5.0). Под N воркерами
+    # 5 секунд — мало: сессионные записи короткие, но под одновременным
+    # наплывом пишущих воркеров окно блокировки может превысить дефолт, и
+    # воркер упадёт с ``database is locked`` вместо ожидания. spending.py
+    # держит тот же инвариант (30000) — хранилище сессий обязано совпадать.
+    assert timeout >= 30000, f"busy_timeout={timeout}, expected >= 30000"
+
+
 # --- Anti-abuse session state ---
 
 

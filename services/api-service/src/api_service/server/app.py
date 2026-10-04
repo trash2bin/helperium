@@ -289,6 +289,7 @@ def main() -> None:
         "api_service.server:app",
         host=settings.api_host,
         port=settings.api_port,
+        workers=settings.api_workers,
         reload=False,
         timeout_keep_alive=120,
         # Pentest H3: uvicorn's default proxy_headers=True rewrites

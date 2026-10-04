@@ -18,6 +18,7 @@ dependencies = [
     "prometheus-client>=0.25.0",
     "opentelemetry-instrumentation-fastapi>=0.52b0",
     "jsonschema>=4.25.1",
+    "redis>=8.0.1",
 ]
 
 [project.optional-dependencies]

@@ -195,8 +195,9 @@ class TestTokenBucketEviction:
         for i in range(TOKEN_BUCKET_MAX_ENTRIES + 100):
             tb.allow_ip(f"10.0.0.{i % 255}")
 
-        # Must not have grown unbounded
-        bucket_count = len(tb._buckets)
+        # Must not have grown unbounded. The default backend is in-memory;
+        # eviction is a storage concern and lives on the backend (Трек 3).
+        bucket_count = len(tb._backend._buckets)
         assert bucket_count <= TOKEN_BUCKET_MAX_ENTRIES, (
             f"Token bucket map grew to {bucket_count}, cap is {TOKEN_BUCKET_MAX_ENTRIES}"
         )
@@ -214,22 +215,23 @@ class TestTokenBucketEviction:
 
         cfg = AbuseConfig(rps=0, burst=1)
         tb = TokenBucket(cfg)
+        backend = tb._backend  # default is InMemoryBucketBackend
         # Create a bucket
         tb.allow_ip("10.0.0.1")
-        assert "ip:10.0.0.1" in tb._buckets
+        assert "ip:10.0.0.1" in backend._buckets
 
         # Directly set last_seen to be old (simulating passage of time)
         # The eviction checks if last_seen < now - IDLE_SECONDS
         old_time = time.monotonic() - TOKEN_BUCKET_IDLE_SECONDS - 10
-        with tb._lock:
-            tb._buckets["ip:10.0.0.1"]["last_seen"] = old_time
+        with backend._lock:
+            backend._buckets["ip:10.0.0.1"]["last_seen"] = old_time
 
         # Force eviction scan by creating enough new entries
         for i in range(TOKEN_BUCKET_EVICT_SCAN_INTERVAL + 1):
             tb.allow_ip(f"10.0.1.{i % 255}")
 
         # The old bucket should now be evicted
-        assert "ip:10.0.0.1" not in tb._buckets, "Idle bucket should be evicted"
+        assert "ip:10.0.0.1" not in backend._buckets, "Idle bucket should be evicted"
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ class TestTokenBucketCap:
         tb = TokenBucket(AbuseConfig())
         for i in range(TOKEN_BUCKET_MAX_ENTRIES + 50):
             tb.allow(f"churn-{i}", "10.0.0.1", _UA)
-        assert len(tb._buckets) <= TOKEN_BUCKET_MAX_ENTRIES
+        assert len(tb._backend._buckets) <= TOKEN_BUCKET_MAX_ENTRIES
 
     def test_rate_limiting_works_after_cap_eviction(self):
         tb = TokenBucket(AbuseConfig())
@@ -46,7 +46,7 @@ class TestTokenBucketIdleEviction:
         tb = TokenBucket(AbuseConfig())
         tb.allow("old-session", "10.0.0.1", _UA)
         old_key = tb._key("old-session", "10.0.0.1", _UA)
-        assert old_key in tb._buckets
+        assert old_key in tb._backend._buckets
 
         future = time.monotonic() + TOKEN_BUCKET_IDLE_SECONDS + 10
         monkeypatch.setattr(
@@ -57,8 +57,8 @@ class TestTokenBucketIdleEviction:
         for i in range(TOKEN_BUCKET_EVICT_SCAN_INTERVAL):
             tb.allow(f"warm-{i}", "10.0.0.1", _UA)
 
-        assert old_key not in tb._buckets
-        assert len(tb._buckets) <= TOKEN_BUCKET_MAX_ENTRIES
+        assert old_key not in tb._backend._buckets
+        assert len(tb._backend._buckets) <= TOKEN_BUCKET_MAX_ENTRIES
 
     def test_active_buckets_survive_idle_scan(self, monkeypatch):
         tb = TokenBucket(AbuseConfig())
@@ -75,7 +75,7 @@ class TestTokenBucketIdleEviction:
         for i in range(TOKEN_BUCKET_EVICT_SCAN_INTERVAL):
             tb.allow(f"later-{i}", "10.0.0.1", _UA)
 
-        assert tb._key("warm-5", "10.0.0.1", _UA) in tb._buckets
+        assert tb._key("warm-5", "10.0.0.1", _UA) in tb._backend._buckets
 
 
 class TestRecentMessagesCap:

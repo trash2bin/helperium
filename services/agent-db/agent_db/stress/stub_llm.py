@@ -331,6 +331,20 @@ def build_response(
     }
 
 
+def _split_bytes(body: bytes, chunks: int) -> list[bytes]:
+    """Split a response body into at most ``chunks`` non-empty pieces.
+
+    HTTP chunked framing has no empty chunk before the terminator (a zero-length
+    chunk *ends* the message), so a body shorter than the requested chunk count
+    yields fewer pieces — declared "at most" for exactly that reason.
+    """
+    count = min(chunks, len(body))
+    if count <= 1:
+        return [body]
+    size = (len(body) + count - 1) // count  # ceil, so no piece is empty
+    return [body[index : index + size] for index in range(0, len(body), size)]
+
+
 class _Handler(BaseHTTPRequestHandler):
     """One HTTP request. ``server`` is the :class:`StubServer` owner."""
 
@@ -342,11 +356,35 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode()
+        owner: StubServer | None = getattr(self.server, "owner", None)
+        chunks = owner.response_chunks if owner is not None else 1
+        delay_s = (owner.chunk_delay_ms / 1000.0) if owner is not None else 0.0
+        if chunks <= 1:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        # Realistic delivery (Трек 0 плана api-service): the body arrives in
+        # ``chunks`` pieces with ``chunk_delay_ms`` pauses, so the client pays
+        # for reading a response over time instead of one local write. The
+        # JSON is unchanged — chunking is transport, not semantics — and the
+        # non-streamed contract holds: this is still one HTTP response.
+        pieces = _split_bytes(body, chunks)
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
-        self.wfile.write(body)
+        for index, piece in enumerate(pieces):
+            if index and delay_s > 0:
+                time.sleep(delay_s)
+            self.wfile.write(f"{len(piece):X}\r\n".encode("ascii"))
+            self.wfile.write(piece)
+            self.wfile.write(b"\r\n")
+            self.wfile.flush()
+        self.wfile.write(b"0\r\n\r\n")
+        self.wfile.flush()
 
     def do_GET(self) -> None:  # noqa: N802 - http.server's naming
         if self.path.rstrip("/") == "/health":
@@ -427,19 +465,33 @@ class _Handler(BaseHTTPRequestHandler):
                 )
                 return
 
-            owner.record(
-                arrival_ms=arrival_ms,
-                service_start_ms=service_start_ms,
-                service_ms=latency_ms,
-                prompt_tokens=payload["usage"]["prompt_tokens"],
-                correlation_id=correlation_id,
-                outcome="ok",
-                tool_calls=[
-                    call["function"]["name"]
-                    for call in payload["choices"][0]["message"].get("tool_calls", [])
-                ],
-            )
-            self._send_json(200, payload)
+            # §7: the stream time is the stub's own service time, not the
+            # platform's overhead. The harness subtracts service_ms from
+            # t_complete, so a chunked delivery billed to nobody would appear as
+            # platform overhead — the exact lie a zero-latency stub would
+            # otherwise make of this profile. Send first, then record: the
+            # elapsed send is what must land in service_ms, and ``finally``
+            # keeps the row even when the client hangs up mid-chunk (a client
+            # abort is a measurement, not a reason to lose the record).
+            send_started_ms = time.time() * 1000.0
+            try:
+                self._send_json(200, payload)
+            finally:
+                send_ms = (time.time() * 1000.0) - send_started_ms
+                owner.record(
+                    arrival_ms=arrival_ms,
+                    service_start_ms=service_start_ms,
+                    service_ms=latency_ms + max(send_ms, 0.0),
+                    prompt_tokens=payload["usage"]["prompt_tokens"],
+                    correlation_id=correlation_id,
+                    outcome="ok",
+                    tool_calls=[
+                        call["function"]["name"]
+                        for call in payload["choices"][0]["message"].get(
+                            "tool_calls", []
+                        )
+                    ],
+                )
 
     def do_DELETE(self) -> None:  # noqa: N802 - http.server's naming
         self._send_json(404, {"error": {"message": "no route"}})
@@ -466,17 +518,29 @@ class StubServer:
         host: str = "127.0.0.1",
         port: int = 0,
         content_when_done: str = DEFAULT_DONE_TEXT,
+        response_chunks: int = 1,
+        chunk_delay_ms: float = 0.0,
     ) -> None:
         if concurrency < 1:
             raise ValueError(f"concurrency must be positive, got {concurrency}")
         if queue_timeout_s <= 0:
             raise ValueError(f"queue_timeout_s must be positive, got {queue_timeout_s}")
+        if response_chunks < 1:
+            raise ValueError(
+                f"response_chunks must be at least 1, got {response_chunks}"
+            )
+        if chunk_delay_ms < 0:
+            raise ValueError(
+                f"chunk_delay_ms must not be negative, got {chunk_delay_ms}"
+            )
         self.latency = latency
         self.script = list(script)
         self.log_path = Path(log_path)
         self.concurrency = concurrency
         self.queue_timeout_s = queue_timeout_s
         self.content_when_done = content_when_done
+        self.response_chunks = response_chunks
+        self.chunk_delay_ms = chunk_delay_ms
 
         self._sema = threading.BoundedSemaphore(concurrency)
         self._log_lock = threading.Lock()

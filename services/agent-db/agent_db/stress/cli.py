@@ -163,6 +163,8 @@ def _build_plan(
     t_budget_ms: float | None,
     tolerance: float | None,
     max_pool_expansions: int | None,
+    pool_margin_s: float | None = None,
+    pool_headroom: float | None = None,
 ) -> LadderPlan:
     overrides: dict[str, Any] = {}
     if repeats is not None:
@@ -171,6 +173,13 @@ def _build_plan(
         overrides["tolerance"] = tolerance
     if max_pool_expansions is not None:
         overrides["max_pool_expansions"] = max_pool_expansions
+    # Pool sizing knobs (Трек 0 плана api-service-decomposition-plan.md: снять
+    # потолок генератора, а не платформы). None = дефолт §2 (margin 1.0 s),
+    # то есть поведение лестницы без этих флагов не меняется.
+    if pool_margin_s is not None:
+        overrides["pool_margin_s"] = pool_margin_s
+    if pool_headroom is not None:
+        overrides["pool_headroom"] = pool_headroom
     return LadderPlan.for_profile(
         profile,
         rates=_rates_for(profile, rates),
@@ -405,6 +414,19 @@ def run_cmd(
     no_expand_pool: bool = typer.Option(
         False, "--no-expand-pool", help="Do not widen the pool on an invalid stage"
     ),
+    pool_margin_s: float = typer.Option(
+        None,
+        "--pool-margin-s",
+        help="Pool size margin in seconds (§2: workers = rps x (T + margin) x "
+        "headroom). Lower it to relieve the generator: every worker carries a "
+        "busy-wait tail, so a wide pool burns the generator's core before the "
+        "platform is reached (default: 1.0 s from §2)",
+    ),
+    pool_headroom: float = typer.Option(
+        None,
+        "--pool-headroom",
+        help="Multiplier on the computed pool size (§2, default 1.0)",
+    ),
     tool_p95_ms: float = typer.Option(
         None, help="Measured p95 tool latency, for §3's analytic forecast"
     ),
@@ -436,8 +458,17 @@ def run_cmd(
     admin_token: str = typer.Option(
         "",
         envvar="ADMIN_TOKEN",
-        help="Bearer for /metrics on data-service and api-service (fail-closed "
-        "behind the same token as /admin/*)",
+        help="Bearer for /metrics on data-service (fail-closed behind the same "
+        "token as /admin/*)",
+    ),
+    api_bearer_token: str = typer.Option(
+        "",
+        envvar="API_BEARER_TOKEN",
+        help="Bearer for /metrics on api-service. /metrics there sits behind the "
+        "same dependency as /admin/* (private_router), so it answers to "
+        "API_BEARER_TOKEN, not ADMIN_TOKEN: with the admin token the scrape "
+        "gets a 403 and the run's server-side CPU/lock evidence becomes a gap "
+        "(Трек 0 плана api-service-decomposition-plan.md, п.0.3)",
     ),
     metrics_target: list[str] = typer.Option(
         None,
@@ -485,6 +516,8 @@ def run_cmd(
             t_budget_ms=t_budget_ms,
             tolerance=tolerance,
             max_pool_expansions=max_pool_expansions,
+            pool_margin_s=pool_margin_s,
+            pool_headroom=pool_headroom,
         )
     except (ProfileValidationError, ValueError) as exc:
         raise _fail(str(exc)) from exc
@@ -637,6 +670,7 @@ def run_cmd(
                     endpoints,
                     api_key=api_key,
                     admin_token=admin_token,
+                    api_bearer=api_bearer_token,
                     extra=metrics_target or (),
                 )
             except ValueError as exc:
@@ -794,6 +828,20 @@ def stub_cmd(
     ),
     host: str = typer.Option("0.0.0.0", help="Bind address"),
     port: int = typer.Option(9099, help="Port"),
+    response_chunks: int = typer.Option(
+        1,
+        "--response-chunks",
+        help="Deliver the response body in N chunked-encoding pieces (1 = one "
+        "Content-Length body, the default and the pre-Track-0 behaviour). The "
+        "payload is unchanged: chunking is transport realism for L2, not a new "
+        "response contract",
+    ),
+    chunk_delay_ms: float = typer.Option(
+        0.0,
+        "--chunk-delay-ms",
+        help="Pause between response chunks. Adds to service_ms so §7 does not "
+        "charge the platform for the stub's own delivery time",
+    ),
 ) -> None:
     """Run the stub LLM (§4): OpenAI-compatible, non-streaming, scripted tool calls.
 
@@ -827,9 +875,16 @@ def stub_cmd(
         concurrency=concurrency,
         host=host,
         port=port,
+        response_chunks=response_chunks,
+        chunk_delay_ms=chunk_delay_ms,
     )
     server.start()
     typer.echo(f"stub llm on {server.base_url}/v1 (log: {log})")
+    if response_chunks > 1 or chunk_delay_ms > 0:
+        typer.echo(
+            f"chunked delivery: {response_chunks} chunk(s), "
+            f"{chunk_delay_ms:g} ms between them"
+        )
     typer.echo("press Ctrl+C to stop")
     try:
         while True:

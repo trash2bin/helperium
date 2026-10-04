@@ -26,9 +26,12 @@ without a reachable ``/metrics`` still produces a valid ladder, with the gap
 named in the artefact.
 
 Authentication is required, not optional: ``/metrics`` is behind the same bearer
-as ``/admin/*`` on data-service (pentest M1) and behind the API key on the
-gateway, so an unauthenticated scrape gets a 401 - which is recorded as a gap
-with the status, because a 401 is a stand configuration fact worth reading.
+as ``/admin/*`` on data-service (pentest M1), behind the API control-plane bearer
+(``API_BEARER_TOKEN``) on api-service — its ``private_router`` guards ``/metrics``
+and ``/admin/*`` with one dependency, so ``ADMIN_TOKEN`` gets a 403 there — and
+behind the API key on the gateway, so an unauthenticated scrape gets a 401 -
+which is recorded as a gap with the status, because a 401 is a stand
+configuration fact worth reading.
 
 **The observer is part of what it observes.** data-service counts every request
 in ``StructuredLoggingMiddleware`` (``internal/server/server.go``), and
@@ -399,6 +402,7 @@ def targets_from(
     *,
     api_key: str | None,
     admin_token: str | None,
+    api_bearer: str | None = None,
     extra: Sequence[str] = (),
 ) -> list[MetricsTarget]:
     """Derive ``/metrics`` targets from the endpoints the run already talks to.
@@ -420,11 +424,18 @@ def targets_from(
         )
     chat_url = endpoints.get("chat_url")
     if isinstance(chat_url, str) and chat_url:
+        # /metrics on api-service sits behind require_api_bearer on the same
+        # private_router as /admin/* (server/app.py), so it answers to the API
+        # control-plane bearer (API_BEARER_TOKEN) — NOT to ADMIN_TOKEN, which
+        # belongs to data-service. Sending the admin token here got a 403 for
+        # every scrape of run 2026-10-03 (132 gaps: no server-side CPU, no
+        # mcp_lock_wait in the report). Fallback keeps the old behaviour when
+        # the operator has not declared an API bearer (rollback by omission).
         targets.append(
             MetricsTarget(
                 service="api-service",
                 url=_metrics_url(chat_url),
-                bearer=admin_token or None,
+                bearer=(api_bearer or admin_token) or None,
             )
         )
     for item in extra:

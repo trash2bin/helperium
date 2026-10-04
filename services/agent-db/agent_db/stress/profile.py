@@ -102,6 +102,14 @@ class LlmSpec(BaseModel):
     provider_concurrency: int = Field(ge=1)
     p50_ms: int = Field(gt=0)
     p95_ms: int = Field(gt=0)
+    # Delivery shape of the stub's response body (Трек 0 плана
+    # api-service-decomposition-plan.md). They document what the stub process
+    # must be started with — the profile cannot enforce it, the stub is a
+    # separate process — and land in the manifest so a reader of a slow-L2 run
+    # can see the delivery it measured. 1 chunk / 0 ms = the pre-Track-0
+    # single-body response.
+    response_chunks: int = Field(default=1, ge=1)
+    chunk_delay_ms: float = Field(default=0.0, ge=0.0)
 
     @model_validator(mode="after")
     def _p95_is_not_below_p50(self) -> LlmSpec:

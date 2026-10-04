@@ -441,3 +441,187 @@ class TestHttpSurface:
         ]
         assert len(entries) == 3
         assert max(entry["queue_wait_ms"] for entry in entries) > 30.0
+
+
+class TestChunkedResponse:
+    """Трек 0 плана api-service: реалистичный L2-стаб.
+
+    Нулевой стаб (один мгновенный JSON) скрывает стоимость разбора тела ответа
+    и держит все ходы лёгкими, из-за чего микробенч по litellm не сходится с
+    профилем (31% против 55% GIL). Ответ, приходящий многими чанками с
+    паузами, приближает провайдерский путь к живому LLM. Контракт для
+    api-service остаётся прежним (не-стриминговый JSON), поэтому:
+
+    - тело обязано собраться в тот же валидный JSON — чанки это транспорт,
+      а не новая семантика ответа;
+    - задержка между чанками обязана попадать в ``service_ms``: харнесс
+      вычитает ``service_ms`` из ``t_complete`` (§7), и время стрима,
+      оставленное вне ``service_ms``,_TO_ превратилось бы в мнимый
+      платформенный оверхед;
+    - без флагов поведение ровно прежнее (Content-Length, без пауз) — это и
+      есть откат без revert.
+    """
+
+    def _payload(self) -> dict:
+        return {
+            "model": "stub",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [],
+        }
+
+    def _post(self, url: str, payload: dict) -> tuple[int, dict]:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (stress-harness)",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read().decode())
+
+    def test_the_body_is_split_into_the_declared_number_of_chunks(
+        self, tmp_path
+    ):
+        """Ответ приходит N чанками и при этом остаётся тем же JSON."""
+        import http.client
+
+        instance = StubServer(
+            latency=LatencyModel(p50_ms=1.0),
+            script=[],
+            log_path=tmp_path / "stub.jsonl",
+            response_chunks=16,
+            chunk_delay_ms=1.0,
+        )
+        instance.start()
+        try:
+            host, port = instance._host, instance._port
+            connection = http.client.HTTPConnection(host, port, timeout=10)
+            body = json.dumps(self._payload())
+            connection.request(
+                "POST",
+                "/v1/chat/completions",
+                body=body,
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            # chunked Transfer-Encoding, а не Content-Length — иначе клиент
+            # получает тело одним куском и разбор чанков не меряется.
+            assert (
+                response.getheader("Transfer-Encoding") == "chunked"
+            ), f"headers: {response.getheaders()}"
+            raw = response.read()
+            connection.close()
+        finally:
+            instance.stop()
+
+        parsed = json.loads(raw.decode("utf-8"))
+        assert parsed["object"] == "chat.completion"
+
+    def test_the_default_is_a_single_content_length_response(self, tmp_path):
+        """Откат: без флагов — прежний ответ, ни стрима, ни пауз."""
+        import http.client
+
+        instance = StubServer(
+            latency=LatencyModel(p50_ms=1.0),
+            script=[],
+            log_path=tmp_path / "stub.jsonl",
+        )
+        instance.start()
+        try:
+            connection = http.client.HTTPConnection(
+                instance._host, instance._port, timeout=10
+            )
+            connection.request(
+                "POST",
+                "/v1/chat/completions",
+                body=json.dumps(self._payload()),
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            assert response.getheader("Content-Length") is not None
+            assert response.getheader("Transfer-Encoding") is None
+            connection.close()
+        finally:
+            instance.stop()
+
+    def test_the_chunk_delay_is_billed_to_service_ms_not_the_platform(
+        self, tmp_path
+    ):
+        """§7: время стрима входит в service_ms, иначе это ложный оверхед.
+
+        8 чанков x 5 мс = 35 мс минимум задержки (между чанками 7 пауз, не 8):
+        если провайдерское время не включит стрим, харнесс припишет его
+        платформе как оверхед.
+        """
+        instance = StubServer(
+            latency=LatencyModel(p50_ms=1.0),
+            script=[],
+            log_path=tmp_path / "stub.jsonl",
+            response_chunks=8,
+            chunk_delay_ms=5.0,
+        )
+        instance.start()
+        try:
+            _, body = self._post(
+                f"{instance.base_url}/v1/chat/completions", self._payload()
+            )
+        finally:
+            instance.stop()
+        assert body["object"] == "chat.completion"
+
+        entries = [
+            json.loads(line)
+            for line in (tmp_path / "stub.jsonl").read_text().splitlines()
+        ]
+        assert len(entries) == 1
+        # 7 пауз по 5 мс между 8 чанками; с запасом на сетевой цикл.
+        assert entries[0]["service_ms"] >= 30.0
+
+    def test_a_chunked_response_still_holds_the_latency_model(self, tmp_path):
+        """Чанки не должны вылезать за p95: стрим — доставка, а не латентность.
+
+        p50=1 мс против 40 мс чанков — если бы стрим не считался в
+        ``latency``, разброс ответов перестал бы соответствовать профилю.
+        Здесь проверяется обратное: ``service_ms`` честно растёт, а сам
+        ответ приходит вовремя и в том же количестве записей.
+        """
+        instance = StubServer(
+            latency=LatencyModel(p50_ms=1.0),
+            script=[],
+            log_path=tmp_path / "stub.jsonl",
+            response_chunks=4,
+            chunk_delay_ms=2.0,
+        )
+        instance.start()
+        try:
+            for _ in range(3):
+                status, _ = self._post(
+                    f"{instance.base_url}/v1/chat/completions", self._payload()
+                )
+                assert status == 200
+        finally:
+            instance.stop()
+        entries = [
+            json.loads(line)
+            for line in (tmp_path / "stub.jsonl").read_text().splitlines()
+        ]
+        assert len(entries) == 3
+        assert all(entry["outcome"] == "ok" for entry in entries)
+
+    @pytest.mark.parametrize(
+        ("chunks", "delay_ms"),
+        [(0, 1.0), (-1, 1.0), (2, -0.5)],
+    )
+    def test_a_nonsensical_stream_config_is_refused(self, chunks, delay_ms):
+        """Ошибочная конфигурация стаба — отказ до старта, а не тихий фикс."""
+        with pytest.raises(ValueError):
+            StubServer(
+                latency=LatencyModel(p50_ms=1.0),
+                script=[],
+                log_path="unused.jsonl",
+                response_chunks=chunks,
+                chunk_delay_ms=delay_ms,
+            )
