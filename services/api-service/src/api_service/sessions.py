@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from copy import deepcopy
 from typing import Any
@@ -136,10 +137,33 @@ class SessionStore:
         return isinstance(value, list) and all(isinstance(item, dict) for item in value)
 
 
-session_store = SessionStore(
-    repository=SQLiteSessionRepository(
+def _build_repository() -> SessionRepository:
+    """Select the session persistence backend from configuration.
+
+    ``SESSION_STORAGE_URI`` (a Redis URL, e.g. ``redis://127.0.0.1:6379/0``)
+    opts into the Redis backend; unset/empty keeps SQLite (rollback by
+    omission). Redis removes SQLite WAL from the per-turn hot path — the
+    dominant multi-worker contention point measured on the Linux stand.
+    """
+    uri = os.environ.get("SESSION_STORAGE_URI", "").strip()
+    if uri:
+        from .redis_session_repository import RedisSessionRepository
+
+        import redis
+
+        logger.info("Session store backend: Redis (%s)", uri)
+        return RedisSessionRepository(
+            redis.Redis.from_url(uri),
+            max_turns=settings.history_turns,
+        )
+    logger.info("Session store backend: SQLite (%s)", settings.session_db_path)
+    return SQLiteSessionRepository(
         connection_factory=lambda: create_sqlite_connection(settings.session_db_path),
         max_turns=settings.history_turns,
-    ),
+    )
+
+
+session_store = SessionStore(
+    repository=_build_repository(),
     max_content_chars=settings.history_content_chars,
 )
