@@ -186,6 +186,11 @@ class StageResult:
     # so a hand-built result keeps judging on the whole-stage count.
     measured_dropped_ticks: int | None = None
     reinitialisations: int = 0
+    # Sessions retired mid-stage because one of §3's limits came due. Counted
+    # separately from ``reinitialisations``: that one is a reactive replay after
+    # the server forgot a session, this one is the generator's own declared
+    # rotation, and a reader needs to tell them apart.
+    session_recycles: int = 0
     warmup_ticks: int = 0
     # The busy-wait tail this run used, in ms: a number the report prints rather
     # than a hidden knob, because it is part of how the generator behaved.
@@ -399,7 +404,35 @@ class _WorkerBuffer:
     dropped: int = 0
     measured_dropped: int = 0
     reinitialisations: int = 0
+    session_recycles: int = 0
     failures: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SessionRecycle:
+    """When a pool slot must hand its session over to a fresh one (§3).
+
+    Both limits are the profile's, and both exist because the per-session quota
+    in api-service is per session: a stage that outlives either one is measured
+    against the abuse gate instead of the platform. ``None`` disables that half
+    of the rule, so a caller can rotate on turns alone or on age alone.
+    """
+
+    turns: int | None = None
+    seconds: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.turns is None and self.seconds is None:
+            raise ValueError("a recycle rule needs at least one limit")
+        if self.turns is not None and self.turns < 1:
+            raise ValueError(f"turns must be positive, got {self.turns}")
+        if self.seconds is not None and self.seconds <= 0:
+            raise ValueError(f"seconds must be positive, got {self.seconds}")
+
+    def due(self, *, turns: int, age_s: float) -> bool:
+        if self.turns is not None and turns >= self.turns:
+            return True
+        return self.seconds is not None and age_s >= self.seconds
 
 
 class _WarmupBoundary:
@@ -507,6 +540,7 @@ class StageRunner:
         *,
         tenants: Sequence[str],
         workers: int | None = None,
+        recycle: SessionRecycle | None = None,
     ) -> StageResult:
         if not tenants:
             raise ValueError("a stage needs at least one tenant")
@@ -515,6 +549,16 @@ class StageRunner:
             raise ValueError(f"workers must be positive, got {worker_count}")
 
         sessions = self._open_sessions(tenants, worker_count)
+        # The pool is opened before the stage clock starts, so its handshakes are
+        # not charged to any tick; §3's age limit is measured from that moment.
+        # Sampling here makes the reference point earlier than the true one, so a
+        # session can only rotate *sooner* than declared, never later - the
+        # direction that cannot walk into the server's quota.
+        opened_at = [self.clock()] * worker_count
+        # What each worker holds when it stops. A rotation replaces the session,
+        # and closing the pool list instead would retire the original twice and
+        # leave the live one open.
+        live_sessions = list(sessions)
         schedule = _Schedule(spec.total_ticks)
         buffers = [_WorkerBuffer() for _ in range(worker_count)]
         interval = spec.interval_ms
@@ -529,6 +573,8 @@ class StageRunner:
         def worker(worker_id: int) -> None:
             session = sessions[worker_id]
             buffer = buffers[worker_id]
+            turns_on_session = 0
+            session_opened_at = opened_at[worker_id]
             # Workers are created before the stage clock starts and released only
             # after it is read: with a 168-worker pool, starting threads inside
             # the stage would spend 20-30 ms of it, and at 160 rps that lateness
@@ -543,6 +589,21 @@ class StageRunner:
                     index = schedule.next_index()
                     if index is None:
                         return
+                    if recycle is not None and recycle.due(
+                        turns=turns_on_session,
+                        age_s=self.clock() - session_opened_at,
+                    ):
+                        # Rotate here, *between* claiming a ticket and waiting for
+                        # its slot: the handshake costs what it costs, but a
+                        # worker that is early can absorb it without pushing its
+                        # own tick late. The tenant is preserved - rotating onto
+                        # another one would rewrite the profile's tenant mix.
+                        self.driver.close_session(session)
+                        session = self.driver.open_session(session.tenant)
+                        live_sessions[worker_id] = session
+                        turns_on_session = 0
+                        session_opened_at = self.clock()
+                        buffer.session_recycles += 1
                     planned_ms = index * interval
                     wait = planned_ms - (self.clock() - started) * 1000.0
                     if wait > 0:
@@ -577,6 +638,7 @@ class StageRunner:
                     buffer.records.append(execution.record)
                     buffer.calls.extend(execution.calls)
                     buffer.reinitialisations += execution.reinitialisations
+                    turns_on_session += 1
             except BaseException as exc:  # noqa: BLE001 - reported as invalidity
                 # A worker that dies must not look like a stage that finished:
                 # its remaining tickets would simply never be claimed, and the
@@ -606,7 +668,7 @@ class StageRunner:
         for thread in threads:
             thread.join()
         cpu_after = self.clock_cpu()
-        for session in sessions:
+        for session in live_sessions:
             self.driver.close_session(session)
 
         records = [record for buffer in buffers for record in buffer.records]
@@ -655,6 +717,7 @@ class StageRunner:
             dropped_ticks=sum(buffer.dropped for buffer in buffers),
             measured_dropped_ticks=sum(buffer.measured_dropped for buffer in buffers),
             reinitialisations=sum(buffer.reinitialisations for buffer in buffers),
+            session_recycles=sum(buffer.session_recycles for buffer in buffers),
             warmup_ticks=len(records) - len(measured),
             spin_tail_ms=tail_ms,
             cpu_s=cpu_after - cpu_before,

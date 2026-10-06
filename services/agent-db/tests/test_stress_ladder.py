@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,6 +15,7 @@ from agent_db.stress.ladder import (
     LadderPlan,
     predict_tenant_ceiling_rps,
     run_ladder,
+    session_recycle_for,
 )
 from agent_db.stress.profile import load_profile
 from agent_db.stress.records import ErrorClass, RawRequestRecord, summarise
@@ -102,10 +104,14 @@ class FakeRunner:
         # L3/L4 rung judgeable at all.
         self.llm_latency_ms = llm_latency_ms
         self.calls: list[tuple[float, int]] = []
+        # What §3 rotation the ladder asked for on each rung, so the wiring that
+        # turns a profile field into an executed policy is itself testable.
+        self.recycles: list[Any] = []
 
-    def run(self, spec, plan, *, tenants, workers=None) -> StageResult:
+    def run(self, spec, plan, *, tenants, workers=None, recycle=None) -> StageResult:
         assert workers is not None
         self.calls.append((spec.target_rps, workers))
+        self.recycles.append(recycle)
         rps = spec.target_rps
         # 1.5% of one core inside the measured window, the gate's denominator.
         cpu = round(spec.measured_window_s * 0.015, 6)
@@ -117,8 +123,13 @@ class FakeRunner:
         errors = 0
         if self.error_rate_above is not None and rps > self.error_rate_above:
             errors = max(1, int(spec.total_ticks * 0.2))
-        return make_result(spec, latency_ms=latency, errors=errors, cpu_s=cpu,
-                           llm_latency_ms=self.llm_latency_ms)
+        return make_result(
+            spec,
+            latency_ms=latency,
+            errors=errors,
+            cpu_s=cpu,
+            llm_latency_ms=self.llm_latency_ms,
+        )
 
 
 def plan(**kwargs) -> LadderPlan:
@@ -181,14 +192,43 @@ class TestLadderPlanValidation:
         with pytest.raises(LadderError, match="no default T"):
             LadderPlan.for_profile(layer_four)
         assert (
-            LadderPlan.for_profile(layer_four, t_budget_ms=3000.0).t_budget_ms
-            == 3000.0
+            LadderPlan.for_profile(layer_four, t_budget_ms=3000.0).t_budget_ms == 3000.0
         )
 
     def test_l2_is_accepted_because_its_substrate_is_instant(self, profile):
         layer_two = profile.model_copy(update={"target_layer": "L2"})
         assert LadderPlan.for_profile(layer_two).t_budget_ms == 500.0
         assert "L2" in JUDGED_METRIC_READY_LAYERS
+
+    @pytest.mark.parametrize("layer", ["L2", "L3", "L4"])
+    def test_the_declared_rotation_is_applied_on_the_chat_layers(self, profile, layer):
+        # §3 declares both limits because api-service counts user turns per
+        # session. A harness that validates the field and never applies it turns
+        # the quota into a false ceiling, so the wiring is a contract of its own.
+        chat = profile.model_copy(update={"target_layer": layer})
+        recycle = session_recycle_for(chat)
+        assert recycle is not None
+        assert recycle.turns == chat.sessions.recycle_after_turns
+        assert recycle.seconds == float(chat.sessions.recycle_after_seconds)
+
+    def test_an_l1_rung_does_not_rotate_sessions(self, profile):
+        # L1 never reaches the chat quota, and an MCP handshake costs
+        # mapping/schema plus list_tools - work §1 counts as warm-up. Rotating
+        # mid-stage would put that cost inside the measured window.
+        assert profile.target_layer == "L1"
+        assert session_recycle_for(profile) is None
+
+    def test_the_ladder_hands_the_rotation_to_the_runner(self, profile):
+        layer_two = profile.model_copy(update={"target_layer": "L2"})
+        runner = FakeRunner(passing_rps=40.0)
+        run(layer_two, runner)
+        assert all(recycle is not None for recycle in runner.recycles)
+        assert runner.recycles[0].turns == layer_two.sessions.recycle_after_turns
+
+    def test_an_l1_ladder_hands_the_runner_no_rotation(self, profile):
+        runner = FakeRunner(passing_rps=40.0)
+        run(profile, runner)
+        assert all(recycle is None for recycle in runner.recycles)
 
     def test_budget_preset_on_refuses_a_ladder(self, profile):
         with pytest.raises(LadderError, match="budget_preset"):
@@ -284,7 +324,7 @@ class TestInvalidStages:
 
     def test_a_stage_that_recovers_after_expansion_keeps_its_verdict(self, profile):
         class RecoveringRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if len(self.calls) == 0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=1)
@@ -303,7 +343,7 @@ class TestInvalidStages:
 
     def test_an_invalid_rung_after_a_pass_is_a_lower_bound_only(self, profile):
         class HalfBrokenRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if spec.target_rps > 5.0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=2)
@@ -325,7 +365,7 @@ class TestGeneratorSaturation:
         # another busy-wait tail. Measured live: 672 workers, 117% of a core,
         # 19 dropped ticks.
         class SaturatedRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 self.calls.append((spec.target_rps, workers))
                 return make_result(
                     spec,
@@ -345,7 +385,7 @@ class TestGeneratorSaturation:
 
     def test_an_undersized_pool_is_still_answered_with_more_workers(self, profile):
         class StarvedRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if len(self.calls) == 0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=4, cpu_s=0.1)
@@ -447,7 +487,7 @@ class TestEvidenceSink:
         labels: list[str] = []
 
         class StarvedRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if len(self.calls) == 0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=4, cpu_s=0.1)
@@ -488,7 +528,7 @@ class TestRepeats:
         # before repeating: the headline would rest on a single run while
         # report.json advertised repeats=3.
         class HalfBrokenRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if spec.target_rps > 5.0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=2, cpu_s=0.5)

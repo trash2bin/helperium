@@ -280,7 +280,7 @@ class TestNotes:
         self, profile, manifest
     ):
         class HalfBrokenRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if spec.target_rps > 5.0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=2, cpu_s=0.5)
@@ -303,7 +303,7 @@ class TestNotes:
         # §2: an invalid stage is an action, so a rung that passed only after the
         # pool grew is not the same evidence as one that held at the nominal width.
         class StarvedRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if len(self.calls) == 0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=4, cpu_s=0.1)
@@ -342,7 +342,7 @@ class TestNotes:
 
     def test_discarded_knee_runs_are_reported_not_hidden(self, profile, manifest):
         class HalfBrokenRunner(FakeRunner):
-            def run(self, spec, plan_, *, tenants, workers=None):
+            def run(self, spec, plan_, *, tenants, workers=None, recycle=None):
                 if spec.target_rps > 5.0:
                     self.calls.append((spec.target_rps, workers))
                     return make_result(spec, dropped=2, cpu_s=0.5)

@@ -163,6 +163,10 @@ def stage_summary(
         "invalid_reasons": list(outcome.invalid_reasons),
         "verdict": outcome.verdict,
         "reinitialisations": stage.reinitialisations,
+        # The generator's own §3 rotation, next to the reactive replay above and
+        # deliberately not merged with it: one is the profile's declared policy,
+        # the other is the server having forgotten a session.
+        "session_recycles": stage.session_recycles,
         "worker_failures": list(stage.worker_failures),
         "step_counts": outcome.step_counts,
         "stats": {

@@ -19,6 +19,7 @@ from agent_db.stress.profile import WorkloadStep
 from agent_db.stress.records import ErrorClass, RawRequestRecord
 from agent_db.stress.runner import (
     LAG_INVALID_MS,
+    SessionRecycle,
     StageResult,
     StageRunner,
     StageSpec,
@@ -150,6 +151,137 @@ class FakeDriver:
             index=0, tool=the_step.tools[0], elapsed_ms=self.turn_ms, http_status=200
         )
         return TurnExecution(record=record, calls=(call,))
+
+
+class TestSessionRecycling:
+    """§3's pool rotation has to be executed, not just declared.
+
+    The profile declares ``recycle_after_turns`` precisely because the server
+    refuses a session past ``ABUSE_MAX_USER_TURNS``. A harness that validates
+    the field and never applies it turns that quota into a false ceiling: the
+    run's tail is measured against the abuse gate instead of the platform, and
+    the gate's fast refusals read as platform errors.
+    """
+
+    def test_sessions_are_replaced_after_the_declared_turn_count(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=5.0)
+        # 5 ticks at 200 ms; a limit of 2 turns means a fresh session before
+        # ticks 3 and 5 - so three sessions are opened and two are retired.
+        result = virtual_runner(driver, clock).run(
+            spec(),
+            plan(),
+            tenants=["t-1"],
+            workers=1,
+            recycle=SessionRecycle(turns=2, seconds=None),
+        )
+        assert len(driver.opened) == 3
+        # Every session retired exactly once: the rotation closes as it goes, and
+        # the stage closes whatever each worker still holds - not the pool list,
+        # which would retire the first session twice and leak the live one.
+        assert driver.closed == len(driver.opened) == 3
+        assert result.session_recycles == 2
+
+    def test_no_recycle_when_the_runner_is_not_told(self) -> None:
+        # The default must stay "open once per worker": an un-declared rotation
+        # would change every archived rung's meaning.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=5.0)
+        result = virtual_runner(driver, clock).run(
+            spec(), plan(), tenants=["t-1"], workers=1
+        )
+        assert len(driver.opened) == 1
+        assert driver.closed == 1
+        assert result.session_recycles == 0
+
+    def test_a_session_is_not_replaced_after_the_last_tick(self) -> None:
+        # The rotation is checked *after* a ticket is claimed, so a stage that
+        # ends exactly on the limit does not pay for a handshake it will never
+        # use - a wasted open would also show up as load the platform never got.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=5.0)
+        result = virtual_runner(driver, clock).run(
+            spec(rps=2.0, duration_s=1.0, warmup_s=0.0),
+            plan(),
+            tenants=["t-1"],
+            workers=1,
+            recycle=SessionRecycle(turns=2, seconds=None),
+        )
+        assert result.stats.count == 2
+        assert len(driver.opened) == 1
+        assert result.session_recycles == 0
+
+    def test_sessions_are_replaced_after_the_declared_age(self) -> None:
+        # A stage long enough to age out a session must rotate it even when the
+        # turn count is nowhere near the limit: the quota is per session, and a
+        # slow stage reaches it by wall clock rather than by turns.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=5.0)
+        result = virtual_runner(driver, clock).run(
+            spec(),
+            plan(),
+            tenants=["t-1"],
+            workers=1,
+            recycle=SessionRecycle(turns=None, seconds=0.5),
+        )
+        # Ticks land at 0, 200, 400, 600, 800 ms: only the last one is past 500 ms.
+        assert len(driver.opened) == 2
+        assert result.session_recycles == 1
+
+    def test_a_turn_count_of_zero_does_not_recycle_forever(self) -> None:
+        # Guards the boundary: a limit that is reached on the very first check
+        # must still run the tick it claimed, not hand back its ticket.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=5.0)
+        result = virtual_runner(driver, clock).run(
+            spec(rps=5.0, duration_s=1.0, warmup_s=0.0),
+            plan(),
+            tenants=["t-1"],
+            workers=1,
+            recycle=SessionRecycle(turns=1, seconds=None),
+        )
+        assert result.stats.count == 5
+        # One session for the first tick, then one per remaining tick.
+        assert len(driver.opened) == 5
+        assert driver.closed == 5
+
+    def test_each_worker_recycles_its_own_session(self) -> None:
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=5.0)
+        result = virtual_runner(driver, clock).run(
+            spec(rps=5.0, duration_s=1.0, warmup_s=0.0),
+            plan(),
+            tenants=["t-1", "t-1"],
+            workers=2,
+            recycle=SessionRecycle(turns=1, seconds=None),
+        )
+        # Five tickets over two workers, one turn per session. Which worker
+        # claims which ticket is not deterministic (a virtual clock hands them
+        # all to whoever wins the race), so the assertion is the invariant: each
+        # worker's first session is free, every later turn buys a new one, and
+        # every session is retired exactly once.
+        assert result.stats.count == 5
+        assert result.dropped_ticks == 0
+        assert result.session_recycles == len(driver.opened) - 2
+        assert driver.closed == len(driver.opened)
+
+    def test_a_recycled_session_stays_with_its_tenant(self) -> None:
+        # The replacement is a new session for the *same* tenant: rotating onto
+        # a different tenant would silently rewrite the profile's tenant mix.
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=5.0)
+        virtual_runner(driver, clock).run(
+            spec(rps=5.0, duration_s=1.0, warmup_s=0.0),
+            plan(),
+            tenants=["t-a", "t-b"],
+            workers=2,
+            recycle=SessionRecycle(turns=1, seconds=None),
+        )
+        assert set(driver.opened) == {"t-a", "t-b"}
+        # A worker that never claimed a ticket still holds its session, and that
+        # one has to be retired too - otherwise a rotation would trade a leak in
+        # the measured window for a leak at the end of it.
+        assert driver.closed == len(driver.opened)
 
 
 def stats_ok():

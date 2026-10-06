@@ -26,7 +26,13 @@ from typing import Any, Literal, Protocol, Sequence
 
 from .profile import LoadProfile
 from .records import StageStats
-from .runner import GENERATOR_CPU_LIMIT, StageResult, StageSpec, WorkloadPlan
+from .runner import (
+    GENERATOR_CPU_LIMIT,
+    SessionRecycle,
+    StageResult,
+    StageSpec,
+    WorkloadPlan,
+)
 
 # §7 defaults. L4 is a soak/overload layer whose budget depends on the scenario,
 # so it has no default: an invented T would be a verdict with no basis.
@@ -116,7 +122,28 @@ class StageRunnerPort(Protocol):
         *,
         tenants: Sequence[str],
         workers: int | None = None,
+        recycle: SessionRecycle | None = None,
     ) -> StageResult: ...
+
+
+def session_recycle_for(profile: LoadProfile) -> SessionRecycle | None:
+    """§3's rotation for this profile, or ``None`` where it does not apply.
+
+    The limits exist because api-service counts user turns per session and
+    refuses the ones past ``ABUSE_MAX_USER_TURNS``. That gate is on the chat
+    path, so it is L2 and above that have to rotate: an L1 rung never reaches it.
+    Rotating L1 sessions anyway would be worse than useless, because opening an
+    MCP session costs ``GET mapping/schema`` and ``list_tools`` - work §1 counts
+    as warm-up. Mid-stage it would land inside the measured window and buy a
+    knee with schema fetches, not with tool calls.
+    """
+    if profile.target_layer not in {"L2", "L3", "L4"}:
+        return None
+    sessions = profile.sessions
+    return SessionRecycle(
+        turns=sessions.recycle_after_turns,
+        seconds=float(sessions.recycle_after_seconds),
+    )
 
 
 @dataclass(frozen=True)
@@ -688,9 +715,12 @@ def _run_rung(
     """
     workers = plan.workers_for(rps, floor=profile.sessions.pool_size)
     spec = plan.spec_for(rps)
+    recycle = session_recycle_for(profile)
     expansions = 0
     while True:
-        stage = runner.run(spec, workload, tenants=tenants, workers=workers)
+        stage = runner.run(
+            spec, workload, tenants=tenants, workers=workers, recycle=recycle
+        )
         attempt = expansions
         # §2 says an invalid stage is answered with a bigger pool, but that rule
         # assumes the invalidity came from too few slots. When the generator ran
