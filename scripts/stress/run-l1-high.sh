@@ -20,4 +20,5 @@ exec uv run --package agent-db agent-db-stress run services/agent-db/agent_db/st
   --duration-s 120 --warmup-s 30 \
   --t-budget-ms 50 \
   --admin-token "$ADMIN_TOKEN" \
-  --metrics-target data-service=http://127.0.0.1:8084/metrics
+  --metrics-target data-service=http://127.0.0.1:8084/metrics \
+  "$@"

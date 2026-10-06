@@ -18,4 +18,5 @@ exec uv run --package agent-db agent-db-stress run services/agent-db/agent_db/st
   --t-budget-ms 500 \
   --repeats 2 \
   --admin-token "$ADMIN_TOKEN" \
-  --metrics-target data-service=http://127.0.0.1:8084/metrics
+  --metrics-target data-service=http://127.0.0.1:8084/metrics \
+  "$@"

@@ -36,4 +36,5 @@ exec uv run --package agent-db agent-db-stress run services/agent-db/agent_db/st
   --pool-margin-s 0.05 \
   --max-pool-expansions 0 \
   --admin-token "$ADMIN_TOKEN" \
-  --metrics-target data-service=http://127.0.0.1:8084/metrics
+  --metrics-target data-service=http://127.0.0.1:8084/metrics \
+  "$@"

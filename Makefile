@@ -1,4 +1,4 @@
-.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed build-admin ci-docs ci-e2e ci-test-js ci-test-storefront ci-trivy ci-admin
+.PHONY: ci ci-lint-py ci-test-py ci-lint-go ci-test-go ci-audit ci-all ci-test-embed build-embed build-admin ci-docs ci-e2e ci-test-js ci-test-storefront ci-trivy ci-admin stress-up stress-down stress-check stress-l1 stress-l1-high stress-l2 stress-l2-realistic
 
 ci-lint-py:
 	uv run ruff check services/api-service/src/
@@ -128,6 +128,38 @@ build-embed:
 build-admin: ## rebuild admin-dashboard assets (partials + bundle); required before docker build
 	cd services/admin-dashboard && bash build.sh
 	@echo "✅ Admin dashboard assets rebuilt"
+
+# --- Stress stand (нативный; числа ёмкости) ---
+# Не входит в `ci`: требует поднятого стенда и отдельной машины. Карта —
+# scripts/stress/README.md, эксплуатация и грабли — doc/stress/RUNBOOK.md.
+# Переменные стенда (API_WORKERS, *_STORAGE_URI, LLM_PROVIDER_TRANSPORT) api-service
+# читает при старте, поэтому задавай их в той же командной строке, что и stress-up:
+#   API_WORKERS=8 LLM_PROVIDER_TRANSPORT=direct make stress-up
+# Если задать после, стенд поднимется на прежних значениях, а прогон будет
+# выдавать себя за другую конфигурацию.
+stress-up: ## поднять нативный стенд (идемпотентно; падает, если preflight отказал)
+	./scripts/stress/start-stand.sh
+
+stress-down: ## погасить нативный стенд
+	./scripts/stress/stop-stand.sh
+
+stress-check: ## preflight без прогона: способен ли стенд прогнать профиль
+	uv run --package agent-db agent-db-stress check \
+	  services/agent-db/agent_db/stress/profiles/chat-zero-latency-l2.json \
+	  --chat-url http://127.0.0.1:8081 --agent stress-agent \
+	  --tenants stress-1,stress-2
+
+stress-l1: ## L1: MCP → gateway → data-service, без LLM (rates 5..80)
+	./scripts/stress/run-l1.sh
+
+stress-l1-high: ## L1: поиск потолка платформы (rates 80..1280)
+	./scripts/stress/run-l1-high.sh
+
+stress-l2: ## L2: чат через api-service, стаб ~0 мс (главный метрик плана)
+	./scripts/stress/run-l2.sh
+
+stress-l2-realistic: ## L2: чат с реалистичной задержкой стаба (секунды + чанки)
+	./scripts/stress/run-l2-realistic.sh
 
 ci: ci-lint-py ci-audit ci-test-py ci-lint-go ci-test-go ci-lint-js ci-test-js ci-test-storefront ci-admin ci-test-embed ci-docs
 	@echo "✅ CI passed locally"
