@@ -41,4 +41,39 @@
 Основной клиент — embed-виджет, который ходит напрямую в api-service (:8081).
 Админка (admin-dashboard) ходит напрямую в свои бэкенды, минуя demo-web.
 ---
-**Last verified:** 2026-08-20 (commit `0337712`) — структура клиентов, Streamable HTTP lifecycle, explicit SDK negotiation mode и таймауты сверены с кодом и live native MCP turns.
+## api-service → LLM endpoint (direct transport)
+
+`services/api-service/src/api_service/agent/providers/openai_compatible.py`
+(выбирается через `LLM_PROVIDER_TRANSPORT=direct`; альтернатива — LiteLLM):
+
+- `POST {api_base}/v1/chat/completions` через `httpx.AsyncClient`, собственный парсинг
+  OpenAI wire format; тот же `CompletionRequest`/`CompletionResponse` контракт, что и у
+  `LiteLLMProvider`, поэтому агентный цикл не отличает транспорты.
+- **Один пул соединений на event loop**, а не клиент на попытку. Провайдер строится на
+  каждый ход (`factory.resolve_llm`), поэтому клиент на инстансе всё равно пересоздавался
+  бы каждый ход и оставлял прежний churn сокетов. На Linux-стенде это измерялось как
+  9188 TIME_WAIT на порту стаба (формула `rps × 2.5 LLM-вызовов/ход × 60с` при 61.7 rps).
+- `httpx.Limits` — пул ограничен (`LLM_HTTP_MAX_CONNECTIONS` 100,
+  `LLM_HTTP_MAX_KEEPALIVE_CONNECTIONS` 20, `LLM_HTTP_KEEPALIVE_EXPIRY_S` 30):
+  небольшой пул ставит запросы в очередь вместо открытия сокетов, что видно как
+  задержку, а не как ошибку. Отсюда щедрый запас относительно доли одного воркера.
+- **Таймаут остаётся на запросе**, а не на пуле: `CompletionRetryExecutor` передаёт
+  в каждую попытку `min(provider_timeout, remaining)`, и один долгий провайдер не
+  должен старить общий пул. `asyncio.wait_for` в `completion_retry.py` — вторая
+  страховка на случай зависшего DNS/TLS.
+- `get_shared_http_client()` / `aclose_shared_http_client()` — хук освобождения для
+  shutdown приложения и изоляции тестов. Пул привязан к event loop: при его смене
+  (рестарт uvicorn worker, завершение теста) старый пул закрывается best-effort.
+- **Откат без revert:** `LLM_HTTP_CLIENT_REUSE=false` возвращает прежний жизненный
+  цикл «клиент на попытку» (таймаут на клиенте) для конкретного upstream, который
+  плохо живёт с общим пулом.
+
+> Health-check в `services/api-service/src/api_service/agent/provider_pool.py` тоже
+> создаёт `httpx.AsyncClient`, но это фоновая проверка раз в `HEALTH_INTERVAL_S` (30 с)
+> на воркер, а не горячий путь. Оставлено как есть; переносить на общий пул — отдельное
+> решение с учётом того, что health-check не должен делить судьбу с трафиком.
+
+**Last verified:** 2026-10-06 (commit pending) — пул прямого LLM-транспорта, таймаут на запросе и
+`LLM_HTTP_CLIENT_REUSE` сверены с тестами `test_openai_compatible_provider.py`. 2026-08-20 (commit `0337712`) —
+структура клиентов, Streamable HTTP lifecycle, explicit SDK negotiation mode и таймауты
+сверены с кодом и live native MCP turns.

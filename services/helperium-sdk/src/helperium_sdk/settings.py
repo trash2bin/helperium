@@ -151,6 +151,13 @@ class DemoSettings:
         self.llm_provider_transport: str = os.environ.get(
             "LLM_PROVIDER_TRANSPORT", "litellm"
         )
+        # The direct transport pools its HTTP connections. Providers are built
+        # per turn, so without pooling every LLM attempt opens and abandons a
+        # socket. Set to "false" to restore the per-attempt client if the pooled
+        # one misbehaves against a particular upstream.
+        self.llm_http_client_reuse: bool = os.environ.get(
+            "LLM_HTTP_CLIENT_REUSE", "true"
+        ).lower() in ("true", "1", "yes")
         self.llm_retry_max_elapsed_seconds: float = float(
             os.environ.get("LLM_RETRY_MAX_ELAPSED_SECONDS", "60.0")
         )

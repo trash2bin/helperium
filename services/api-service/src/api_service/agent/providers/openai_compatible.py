@@ -8,8 +8,10 @@ agent loop, factory and scripted-fixture path cannot tell the difference.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -34,6 +36,68 @@ from .base import BaseLLMProvider
 
 
 logger = logging.getLogger("api_service.agent.providers.openai_compatible")
+
+# Pool sizing for the shared client. Deliberately generous relative to one
+# worker's share of concurrent turns: a too-small pool queues requests instead
+# of opening sockets, which shows up as latency rather than as an error.
+_MAX_CONNECTIONS = int(os.environ.get("LLM_HTTP_MAX_CONNECTIONS", "100"))
+_MAX_KEEPALIVE_CONNECTIONS = int(
+    os.environ.get("LLM_HTTP_MAX_KEEPALIVE_CONNECTIONS", "20")
+)
+_KEEPALIVE_EXPIRY_S = float(os.environ.get("LLM_HTTP_KEEPALIVE_EXPIRY_S", "30.0"))
+
+SHARED_HTTP_LIMITS = httpx.Limits(
+    max_connections=_MAX_CONNECTIONS,
+    max_keepalive_connections=_MAX_KEEPALIVE_CONNECTIONS,
+    keepalive_expiry=_KEEPALIVE_EXPIRY_S,
+)
+
+_shared_http_client: httpx.AsyncClient | None = None
+_shared_http_client_loop: asyncio.AbstractEventLoop | None = None
+
+
+async def get_shared_http_client() -> httpx.AsyncClient:
+    """Return one pooled client for the running event loop.
+
+    The pool must outlive the provider: ``factory.resolve_llm`` builds a new
+    provider on every turn, so a client owned by the instance would still be
+    rebuilt per turn. Keying on the event loop keeps one pool per uvicorn
+    worker process and keeps the pool off a closed loop after a restart.
+    """
+    global _shared_http_client, _shared_http_client_loop
+
+    loop = asyncio.get_running_loop()
+    stale: httpx.AsyncClient | None = None
+    if _shared_http_client is not None and _shared_http_client_loop is not loop:
+        # Different loop (uvicorn worker restart, test teardown): the old loop
+        # is gone, so its connections are not reusable here.
+        stale, _shared_http_client = _shared_http_client, None
+        _shared_http_client_loop = None
+    if _shared_http_client is None:
+        _shared_http_client = httpx.AsyncClient(limits=SHARED_HTTP_LIMITS)
+        _shared_http_client_loop = loop
+    if stale is not None:
+        await _close_quietly(stale)
+    return _shared_http_client
+
+
+async def aclose_shared_http_client() -> None:
+    """Release the pooled client (application shutdown and test isolation)."""
+    global _shared_http_client, _shared_http_client_loop
+
+    client, _shared_http_client = _shared_http_client, None
+    _shared_http_client_loop = None
+    if client is not None:
+        await _close_quietly(client)
+
+
+async def _close_quietly(client: httpx.AsyncClient) -> None:
+    try:
+        await client.aclose()
+    except Exception:  # noqa: BLE001 — teardown must never break a completion
+        # The owning loop may already be closed: its sockets went with it and
+        # httpx cannot be asked to release them from a foreign loop.
+        logger.debug("shared httpx client close skipped", exc_info=True)
 
 
 class ProviderProtocolError(ValueError):
@@ -63,6 +127,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         self.temperature = temperature
         self.max_tokens_thinking = max_tokens_thinking
         self.enable_thinking = enable_thinking
+        self._reuse_http_client = settings.llm_http_client_reuse
         self._retry_executor = retry_executor or CompletionRetryExecutor(
             CompletionRetryPolicy(
                 max_attempts=settings.llm_max_attempts,
@@ -90,8 +155,19 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         provider_label = self.provider or "inferred"
 
         async def completion_attempt(attempt_timeout: float) -> httpx.Response:
-            async with httpx.AsyncClient(timeout=attempt_timeout) as client:
-                response = await client.post(endpoint, json=payload, headers=headers)
+            if self._reuse_http_client:
+                # The pool outlives the attempt, so the deadline rides on the
+                # request: one slow provider cannot age out the shared pool.
+                client = await get_shared_http_client()
+                response = await client.post(
+                    endpoint, json=payload, headers=headers, timeout=attempt_timeout
+                )
+            else:
+                # Rollback path (LLM_HTTP_CLIENT_REUSE=0): original lifecycle.
+                async with httpx.AsyncClient(timeout=attempt_timeout) as client:
+                    response = await client.post(
+                        endpoint, json=payload, headers=headers
+                    )
             if response.status_code >= 400:
                 self._raise_for_status(response)
             return response
