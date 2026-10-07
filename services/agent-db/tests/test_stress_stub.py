@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -385,6 +386,60 @@ class TestHttpSurface:
             (tmp_path / "stub.jsonl").read_text().splitlines()[-1]
         )
         assert entry["correlation_id"] == "stress-42"
+
+    def _wait_for_log_entry(self, tmp_path, timeout_s: float = 2.0) -> dict:
+        # The stub records in ``finally`` AFTER the response is flushed: a
+        # client that reads the log immediately can race the write. Polling
+        # makes the assertion about the log's content, not about thread timing.
+        deadline = time.monotonic() + timeout_s
+        path = tmp_path / "stub.jsonl"
+        while time.monotonic() < deadline:
+            lines = path.read_text().splitlines() if path.exists() else []
+            if lines:
+                return json.loads(lines[-1])
+            time.sleep(0.05)
+        raise AssertionError("the stub's timing log stayed empty")
+
+    def test_the_timing_log_carries_the_marker_from_the_last_user_message(
+        self, server, tmp_path
+    ):
+        # api-service resends the whole stored history before the new user
+        # message, so old markers ride along in every round's request. The
+        # marker the join keys on (§4) is the current turn's - taken from the
+        # LAST user message, not from wherever it appears in the history.
+        prior = [
+            {"role": "user", "content": "[stress:s-1:one_tool:1] старый ход"},
+            {"role": "assistant", "content": "готово"},
+        ]
+        status, _ = self._post(
+            f"{server.base_url}/v1/chat/completions",
+            {
+                "model": "stub",
+                "messages": [
+                    *prior,
+                    {"role": "user", "content": "[stress:s-1:one_tool:2] новый ход"},
+                ],
+                "tools": [],
+            },
+        )
+        assert status == 200
+        entry = self._wait_for_log_entry(tmp_path)
+        assert entry["marker"] == "stress:s-1:one_tool:2"
+
+    def test_a_request_without_a_marker_logs_none(self, server, tmp_path):
+        # Real provider traffic (no harness marker) must not be joined to
+        # anything: the marker field stays unset rather than guessing (§7).
+        status, _ = self._post(
+            f"{server.base_url}/v1/chat/completions",
+            {
+                "model": "stub",
+                "messages": [{"role": "user", "content": "привет"}],
+                "tools": [],
+            },
+        )
+        assert status == 200
+        entry = self._wait_for_log_entry(tmp_path)
+        assert entry["marker"] is None
 
     def test_an_unknown_path_is_a_404_and_an_unreadable_body_a_400(self, server):
         with pytest.raises(urllib.error.HTTPError) as not_found:

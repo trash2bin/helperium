@@ -417,6 +417,55 @@ class TestAccounting:
         # The compensated numbers still stand - the rung is invalid, not empty.
         assert result.stats.p95 > 0
 
+    def test_the_runner_joins_stub_timings_when_given_a_log(self, tmp_path) -> None:
+        # The substrate's per-request service time is what turns L3's judged
+        # metric from an identity into a measurement (§4): the runner joins the
+        # stub's log into the records before summarise, so the rung is judged
+        # on ``platform_overhead`` instead of being refused as unjudgeable.
+        import json as json_module
+
+        clock = VirtualClock()
+        driver = FakeDriver(clock, turn_ms=1.0)
+        original = driver.execute_turn
+
+        def marked(session, the_step, **kwargs):
+            execution = original(session, the_step, **kwargs)
+            number = len(driver.turns)
+            return replace(
+                execution,
+                record=replace(
+                    execution.record,
+                    marker=f"stress:{session.session_id}:{the_step.name}:{number}",
+                ),
+            )
+
+        driver.execute_turn = marked  # type: ignore[method-assign]
+        log = tmp_path / "stub.jsonl"
+        log.write_text(
+            "\n".join(
+                json_module.dumps(
+                    {
+                        "service_ms": 0.4,
+                        "correlation_id": "",
+                        "marker": f"stress:s-t-1:one_tool:{number}",
+                        "outcome": "ok",
+                    }
+                )
+                for number in range(1, 6)
+            )
+            + "\n"
+        )
+        result = StageRunner(
+            driver,
+            clock=clock,
+            sleeper=clock.sleep,
+            spin_wait_s=0.0,
+            stub_timings_path=log,
+        ).run(spec(), plan(), tenants=["t-1"], workers=1)
+        assert result.derivation_failure is None
+        assert result.stats.platform_overhead_p95 is not None
+        assert any(record.has_llm_latency for record in result.records)
+
     def test_stop_ends_a_running_stage_promptly(self) -> None:
         # An interrupted run must stop making load BEFORE the CLI releases the
         # lock: otherwise a successor run measures this run's leftover traffic.

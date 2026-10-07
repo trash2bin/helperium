@@ -14,6 +14,7 @@ import pytest
 from agent_db.stress import (
     ErrorClass,
     RawRequestRecord,
+    join_stub_timings,
     percentile,
     summarise,
     write_raw_records,
@@ -252,3 +253,126 @@ class TestSummarise:
             summarise([], duration_s=1.0)
         with pytest.raises(ValueError):
             summarise([_record()], duration_s=0.0)
+
+
+class TestStubTimingsJoin:
+    """The §4 join: the stub's per-request service time lands on the records.
+
+    L3's judged metric is ``platform_overhead p95`` (§7) - the turn without the
+    model's own latency. The stub logs its own service time per request; the
+    join reads it back and stamps ``llm_latency_ms`` onto the records keyed by
+    the per-turn marker, so ``summarise`` can subtract it all-or-nothing.
+    """
+
+    def test_join_sums_the_stub_service_time_over_the_turn_rounds(
+        self, tmp_path: Path
+    ) -> None:
+        # One turn is several LLM rounds, each logged with the same marker: the
+        # model's share of ``t_complete`` is the sum over the turn's rounds.
+        log = tmp_path / "stub.jsonl"
+        log.write_text(
+            json.dumps(
+                {
+                    "service_ms": 800.0,
+                    "correlation_id": "",
+                    "marker": "stress:s-1:one_tool:1",
+                    "outcome": "ok",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "service_ms": 250.0,
+                    "correlation_id": "",
+                    "marker": "stress:s-1:one_tool:1",
+                    "outcome": "ok",
+                }
+            )
+            + "\n"
+        )
+        joined = join_stub_timings([_record(marker="stress:s-1:one_tool:1")], log)
+        assert joined[0].llm_latency_ms == pytest.approx(1050.0)
+
+    def test_join_zeroes_refusals_that_never_reached_the_model(
+        self, tmp_path: Path
+    ) -> None:
+        # A turn refused before the LLM call (429, MCP lock, transport error)
+        # has no stub row and genuinely no model time: a zero there is honest,
+        # and the whole refusal time becomes platform work.
+        log = tmp_path / "stub.jsonl"
+        log.write_text(
+            json.dumps(
+                {
+                    "service_ms": 800.0,
+                    "correlation_id": "",
+                    "marker": "stress:s-1:one_tool:1",
+                    "outcome": "ok",
+                }
+            )
+            + "\n"
+        )
+        refused = _record(
+            marker="stress:s-1:one_tool:2",
+            status="error",
+            http_status=429,
+            error_class=ErrorClass.BUDGET_429,
+        )
+        joined = join_stub_timings([refused], log)
+        assert joined[0].llm_latency_ms == 0.0
+
+    def test_join_leaves_an_ok_record_without_a_stub_row_unstamped(
+        self, tmp_path: Path
+    ) -> None:
+        # A turn that claims success but has no stub row is a broken join, not
+        # a zero: stamping 0 would understate the model's share and report the
+        # difference as platform work. The all-or-nothing rule must refuse the
+        # stage instead (§7: a refusal is an answer, a silent fallback is not).
+        log = tmp_path / "stub.jsonl"
+        log.write_text("")
+        record = _record(marker="stress:s-1:one_tool:1")
+        joined = join_stub_timings([record], log)
+        assert joined[0].llm_latency_ms is None
+        # No fabrication: the metric stays unset rather than becoming a zero.
+        stats = summarise(joined, 1.0)
+        assert stats.platform_overhead_p95 is None
+
+    def test_join_ignores_records_without_markers(self, tmp_path: Path) -> None:
+        # L1-shaped records (a driver whose turns carry no marker) pass through
+        # untouched: an absent source is not a zero (§7).
+        log = tmp_path / "stub.jsonl"
+        log.write_text(
+            json.dumps(
+                {
+                    "service_ms": 800.0,
+                    "correlation_id": "",
+                    "marker": "stress:s-1:one_tool:1",
+                    "outcome": "ok",
+                }
+            )
+            + "\n"
+        )
+        record = _record()
+        joined = join_stub_timings([record], log)
+        assert joined[0].llm_latency_ms is None
+
+    def test_join_turns_platform_overhead_into_a_derived_metric(
+        self, tmp_path: Path
+    ) -> None:
+        # The end-to-end point: with the join, summarise derives
+        # ``platform_overhead`` instead of leaving it unset.
+        log = tmp_path / "stub.jsonl"
+        log.write_text(
+            json.dumps(
+                {
+                    "service_ms": 60.0,
+                    "correlation_id": "",
+                    "marker": "stress:s-1:one_tool:1",
+                    "outcome": "ok",
+                }
+            )
+            + "\n"
+        )
+        joined = join_stub_timings([_record(marker="stress:s-1:one_tool:1")], log)
+        stats = summarise(joined, 1.0)
+        assert stats.platform_overhead_p95 is not None
+        assert stats.platform_overhead_p95 == pytest.approx(40.0)

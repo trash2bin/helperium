@@ -16,7 +16,7 @@ compensated latency are then exact, not inferred.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -61,6 +61,13 @@ class RawRequestRecord:
     # turns contain no model latency leaves it ``None`` - an absent source is not
     # a zero, and a zero would silently turn the fallback into a lie.
     llm_latency_ms: float | None = None
+    # The per-turn marker the message carried (§4: "stress:<session>:<step>:<n>").
+    # It is what the stub-side join keys on: the stub logs the marker it saw in
+    # the request, the join reads its service time back and stamps
+    # ``llm_latency_ms`` here. A driver on a layer without a stub-side join
+    # leaves it ``None`` - the record then cannot be joined, and that is
+    # reported rather than papered over.
+    marker: str | None = None
     history_turns: int = 0
     session_id: str = ""
     tenant: str = ""
@@ -285,3 +292,62 @@ def summarise(
         terminator_mix=terminators,
         error_mix=errors,
     )
+
+
+def join_stub_timings(
+    records: Sequence[RawRequestRecord],
+    log_path: str | Path,
+) -> list[RawRequestRecord]:
+    """Stamp the stub's per-request service time onto records by marker (§4).
+
+    The stub logs one row per LLM call (``service_ms`` = model latency plus the
+    stream send, keyed by the marker it saw in the request). One turn is
+    several rounds, so the rows for one marker are summed - the model's share
+    of ``t_complete`` over the turn's rounds, exactly what ``llm_latency_ms``
+    means and what §7's all-or-nothing derivation subtracts.
+
+    Three rules shape the join:
+
+    - A record whose marker has stub rows gets their sum.
+    - A record refused before the LLM call (429, MCP lock, transport error) has
+      no stub row and genuinely no model time: a zero there is honest, and the
+      whole refusal time becomes platform work.
+    - A record that claims success without a stub row is a broken join, not a
+      zero: stamping 0 would understate the model's share and report the
+      remainder as platform work. It stays unstamped, so ``summarise``'s
+      all-or-nothing rule refuses the stage loudly (§7).
+
+    Records without a marker (L1-shaped, or a driver with no stub-side join)
+    pass through untouched: an absent source is not a zero.
+    """
+    service_by_marker: dict[str, float] = {}
+    with Path(log_path).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            marker = entry.get("marker")
+            if not isinstance(marker, str) or not marker:
+                continue
+            service_by_marker[marker] = service_by_marker.get(marker, 0.0) + float(
+                entry.get("service_ms") or 0.0
+            )
+
+    joined: list[RawRequestRecord] = []
+    for record in records:
+        if record.marker is None:
+            joined.append(record)
+            continue
+        if record.marker in service_by_marker:
+            joined.append(
+                replace(
+                    record,
+                    llm_latency_ms=service_by_marker[record.marker],
+                )
+            )
+        elif record.is_error:
+            joined.append(replace(record, llm_latency_ms=0.0))
+        else:
+            joined.append(record)
+    return joined

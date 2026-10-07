@@ -430,6 +430,14 @@ def run_cmd(
     tool_p95_ms: float = typer.Option(
         None, help="Measured p95 tool latency, for §3's analytic forecast"
     ),
+    stub_timings: Path = typer.Option(
+        None,
+        "--stub-timings",
+        help="The stub's timing JSONL (§4): when set, the runner joins the stub's "
+        "per-request service time into the records, which is what turns L3/L4's "
+        "judged metric (platform_overhead) into a measurement; without it L3/L4 "
+        "are refused as unjudgeable",
+    ),
     budget: list[str] = typer.Option(
         None, "--budget", help="§5 budget in effect on the stand, NAME=VALUE"
     ),
@@ -658,7 +666,7 @@ def run_cmd(
             raise typer.Exit(EXIT_OK)
 
         sink = StageEvidenceSink(layout)
-        runner = StageRunner(driver)
+        runner = StageRunner(driver, stub_timings_path=stub_timings)
 
         # Server-side slices run alongside the ladder: without them every number
         # in the report is checked only against the harness's own records, which

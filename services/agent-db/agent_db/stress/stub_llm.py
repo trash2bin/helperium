@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -126,6 +127,35 @@ def estimate_tokens(text: str) -> int:
     if not text:
         return 0
     return max(1, len(text) // CHARS_PER_TOKEN)
+
+
+def extract_marker(messages: list[dict[str, Any]]) -> str | None:
+    """The harness marker carried by the LAST user message (§4).
+
+    api-service resends the whole stored history before the new user message,
+    so old markers ride along in every round's request. The marker the join
+    keys on is the current turn's - taken from the last user-role message, not
+    from wherever it appears in the history. Real provider traffic carries no
+    marker: ``None``, not a guess (§7).
+    """
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        text = ""
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = " ".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            )
+        match = re.search(r"\[([^\]]+)\]", text)
+        if match and match.group(1).startswith("stress:"):
+            return match.group(1)
+        return None
+    return None
 
 
 @dataclass(frozen=True)
@@ -416,6 +446,7 @@ class _Handler(BaseHTTPRequestHandler):
                 prompt_tokens=0,
                 correlation_id=correlation_id,
                 outcome="bad_request",
+                marker=None,
             )
             return
 
@@ -437,6 +468,7 @@ class _Handler(BaseHTTPRequestHandler):
                     prompt_tokens=request.prompt_tokens(),
                     correlation_id=correlation_id,
                     outcome="queue_timeout",
+                    marker=extract_marker(request.messages),
                 )
                 return
             service_start_ms = time.time() * 1000.0
@@ -462,6 +494,7 @@ class _Handler(BaseHTTPRequestHandler):
                     prompt_tokens=request.prompt_tokens(),
                     correlation_id=correlation_id,
                     outcome="script_refused",
+                    marker=extract_marker(request.messages),
                 )
                 return
 
@@ -485,6 +518,7 @@ class _Handler(BaseHTTPRequestHandler):
                     prompt_tokens=payload["usage"]["prompt_tokens"],
                     correlation_id=correlation_id,
                     outcome="ok",
+                    marker=extract_marker(request.messages),
                     tool_calls=[
                         call["function"]["name"]
                         for call in payload["choices"][0]["message"].get(
@@ -627,6 +661,7 @@ class StubServer:
         correlation_id: str,
         outcome: str,
         tool_calls: list[str] | None = None,
+        marker: str | None = None,
     ) -> None:
         entry = {
             "arrival_ms": round(arrival_ms, 3),
@@ -637,6 +672,7 @@ class StubServer:
             "correlation_id": correlation_id,
             "outcome": outcome,
             "tool_calls": tool_calls or [],
+            "marker": marker,
         }
         line = json.dumps(entry, ensure_ascii=False)
         with self._log_lock:

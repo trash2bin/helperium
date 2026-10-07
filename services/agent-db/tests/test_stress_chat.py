@@ -417,13 +417,36 @@ class TestChatDriver:
     def test_the_message_carries_a_stable_marker_for_the_stub_join(self, stand):
         driver = ChatDriver(_transport(stand))
         session = driver.open_session("t-1")
+        other = driver.open_session("t-1")
         first = driver.message_for(session, _step("search_get"))
         second = driver.message_for(session, _step("search_get"))
-        assert "[stress:search_get:1]" in first
-        assert "[stress:search_get:2]" in second
-        # The marker is what a stub's timing log is joined on (§4), so it must be
-        # unique per turn of a session.
+        other_first = driver.message_for(other, _step("search_get"))
+        # The marker is what a stub's timing log is joined on (§4), so it must
+        # be unique per turn of a session AND across sessions: two sessions at
+        # the same step and number would otherwise join the same stub row, and
+        # the join would stamp one turn with another's service time.
+        assert f"stress:{session.session_id}:search_get:1" in first
+        assert f"stress:{session.session_id}:search_get:2" in second
+        assert f"stress:{other.session_id}:search_get:1" in other_first
         assert first != second
+        assert other_first != first
+        driver.close_session(session)
+        driver.close_session(other)
+
+    def test_the_turn_record_carries_the_marker_for_the_stub_join(self, stand):
+        driver = ChatDriver(_transport(stand))
+        session = driver.open_session("t-1")
+        execution = driver.execute_turn(
+            session,
+            _step("one_tool"),
+            planned_ms=10.0,
+            started_ms=0.0,
+            tenant="t-1",
+            scenario="fixture",
+        )
+        # The join reads the marker off the record, so it must be the same
+        # string the message carried (§4).
+        assert execution.record.marker == f"stress:{session.session_id}:one_tool:1"
         driver.close_session(session)
 
 

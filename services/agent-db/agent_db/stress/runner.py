@@ -28,11 +28,18 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Callable, Protocol, Sequence
 
 from .driver import ToolCallTiming, TurnExecution
 from .profile import LoadProfile, WorkloadStep
-from .records import RawRequestRecord, StageStats, percentile, summarise
+from .records import (
+    RawRequestRecord,
+    StageStats,
+    join_stub_timings,
+    percentile,
+    summarise,
+)
 from .transport import McpSession
 
 # §10: the generator's own lateness is first-class evidence, and a stage whose
@@ -488,6 +495,7 @@ class StageRunner:
         spin_wait_s: float | None = None,
         cpu_clock: Callable[[], float] | None = None,
         session_open_rate: float = SESSION_OPEN_RATE,
+        stub_timings_path: str | Path | None = None,
     ) -> None:
         """``spin_wait_s`` is the busy-wait tail before a deadline.
 
@@ -515,6 +523,12 @@ class StageRunner:
             )
         self.session_open_rate = session_open_rate
         self._spin_wait_s = spin_wait_s
+        # The stub's timing log (§4): when set, the runner joins the stub's
+        # per-request service time into the records before summarise, which is
+        # what turns L3/L4's judged metric from an identity into a measurement.
+        # None (the default) leaves the records unstamped - L1/L2 keep their
+        # identity-based criterion, L3/L4 would be refused as unjudgeable.
+        self.stub_timings_path = stub_timings_path
         self._calibrated_tail_ms: float | None = None
         # Abort support: when the run is interrupted mid-stage, the CLI stops
         # the workers BEFORE it releases the lock and writes the terminal
@@ -673,6 +687,11 @@ class StageRunner:
 
         records = [record for buffer in buffers for record in buffer.records]
         records.sort(key=lambda record: record.planned_ms)
+        if self.stub_timings_path is not None:
+            # The §4 join: the stub's service time keyed by the per-turn marker.
+            # A join that cannot stamp an ok record leaves it unstamped, and
+            # summarise's all-or-nothing rule refuses the stage loudly (§7).
+            records = join_stub_timings(records, self.stub_timings_path)
         calls = [call for buffer in buffers for call in buffer.calls]
         lag = [value for buffer in buffers for value in buffer.lag_ms]
         lag.sort()

@@ -22,9 +22,12 @@ What a turn records, and why:
   that join belongs to the backlog, which carries ``outcome`` structurally.
 
 The message text is load, not content, but it is not arbitrary either: it embeds
-a stable per-turn marker (``stress:<scenario>:<step>:<n>``), which is what a
-stub-side join keys on (§4), and it keeps the per-session turn count in the
-record's ``history_turns`` slot so a recycled session is visible in the raw file.
+a stable per-turn marker (``stress:<session>:<step>:<n>``), which is what a
+stub-side join keys on (§4). The marker carries the session id because two
+sessions at the same step and number would otherwise collide in the stub's log
+and stamp one turn with another's service time. It keeps the per-session turn
+count in the record's ``history_turns`` slot so a recycled session is visible in
+the raw file.
 """
 
 from __future__ import annotations
@@ -85,12 +88,13 @@ class ChatDriver:
         length is realistic rather than empty: an empty message is refused before
         the abuse gate, and a one-word message would understate the prompt term.
         """
-        return self._format_message(step, self._next_turn_number(session))
+        return self._format_message_for(session, step, self._next_turn_number(session))
 
     @staticmethod
-    def _format_message(step: WorkloadStep, number: int) -> str:
+    def _format_message_for(session: ChatSession, step: WorkloadStep, number: int) -> str:
+        marker = f"stress:{session.session_id}:{step.name}:{number}"
         return (
-            f"[stress:{step.name}:{number}] Покажи данные по запросу "
+            f"[{marker}] Покажи данные по запросу "
             f"{step.name} номер {number} из базы."
         )
 
@@ -108,7 +112,8 @@ class ChatDriver:
         # counter: the stub-side join keys the timing log on the marker, and a
         # number that skips after a failed turn would join the wrong rows.
         number = self._next_turn_number(session)
-        message = self._format_message(step, number)
+        message = self._format_message_for(session, step, number)
+        marker = f"stress:{session.session_id}:{step.name}:{number}"
         correlation_id = f"stress-{session.session_id}-{number}"
         calls: list[ToolCallTiming] = []
         pending: dict[str, float] = {}  # call key -> position in calls
@@ -204,6 +209,10 @@ class ChatDriver:
             # + turn order) is a separate, explicit step - a fabricated number
             # here would wear the column's name while meaning something else.
             prompt_tokens=None,
+            # The per-turn marker the message carried: the stub-side join keys
+            # the stub's service time on it (§4). The same string the message
+            # embedded - a different one would join nothing and say so loudly.
+            marker=marker,
             history_turns=step.history_turns,
             session_id=session.session_id,
             tenant=tenant,
