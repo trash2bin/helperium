@@ -168,6 +168,13 @@ class AppendOnlyLoop:
         )
         self._model_cost = model_cost
         self._max_output_tokens = max_output_tokens
+        # Токен-кэш на ход (агент создаётся на ход): транскрипт append-only по
+        # конструкции, tools берутся один раз за ход — полный пересчёт истории
+        # перед каждым model call — верхний потребитель CPU на нагрузке
+        # (py-spy 40 rps: 32.6% активных сэмплов в `encode (tiktoken/core.py)`).
+        self._msg_token_cache: int = 0
+        self._counted_messages: int = 0
+        self._tool_schema_tokens: int | None = None
 
     async def run(self, run: LoopRun) -> AsyncIterator[AgentEvent]:
         if self._input_blocked(run.transcript.messages[-1].get("content", "")):
@@ -541,31 +548,46 @@ class AppendOnlyLoop:
     def _context_token_count(
         self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
     ) -> int:
-        """Estimate the full provider request, using LiteLLM before a safe fallback."""
-        try:
-            message_tokens = litellm.token_counter(
-                model=self._provider.model,
-                messages=messages,
-            )
-        except Exception:
-            logger.warning(
-                "[AGENT] LiteLLM token counter unavailable; using character fallback",
-                exc_info=True,
-            )
-            transcript = json.dumps(
-                messages,
+        """Estimate the full provider request, using LiteLLM before a safe fallback.
+
+        Счёт кэшируется по сообщению (транскрипт append-only внутри хода) и по
+        tool-схеме (константен внутри хода): `_run_limit` вызывает этот метод
+        перед каждым model call, и полный пересчёт истории через tiktoken —
+        верхний потребитель CPU на нагрузке.
+        """
+        if len(messages) < self._counted_messages:
+            self._msg_token_cache = 0  # defensive: transcript shrank, recount all
+            self._counted_messages = 0
+        new_messages = messages[self._counted_messages :]
+        if new_messages:
+            try:
+                message_tokens = litellm.token_counter(
+                    model=self._provider.model,
+                    messages=new_messages,
+                )
+            except Exception:
+                logger.warning(
+                    "[AGENT] LiteLLM token counter unavailable; using character fallback",
+                    exc_info=True,
+                )
+                transcript = json.dumps(
+                    new_messages,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                )
+                message_tokens = len(transcript) // 4
+            self._msg_token_cache += int(message_tokens)
+            self._counted_messages += len(new_messages)
+        if self._tool_schema_tokens is None:
+            tool_schema = json.dumps(
+                tools,
                 ensure_ascii=False,
                 separators=(",", ":"),
                 default=str,
             )
-            message_tokens = len(transcript) // 4
-        tool_schema = json.dumps(
-            tools,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            default=str,
-        )
-        return int(message_tokens) + len(tool_schema) // 4
+            self._tool_schema_tokens = len(tool_schema) // 4
+        return self._msg_token_cache + self._tool_schema_tokens
 
     def _record_provider_response(
         self,

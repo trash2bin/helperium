@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any
 
+import litellm
 import pytest
 
 from api_service.agent.answer_normalizer import AnswerNormalizer
@@ -1031,3 +1033,178 @@ async def test_assistant_text_is_preserved_with_native_tool_calls() -> None:
         "final",
     ]
     assert provider.requests[1].messages[-2]["content"] == "Сначала выполню поиск."
+
+
+# --- _context_token_count caching ---------------------------------------------------
+# py-spy на нативном стенде (40 rps): 32.6% активного CPU в `encode (tiktoken/core.py)`
+# через `litellm.token_counter`, который _run_limit зовёт перед КАЖДЫМ model call
+# (~3 раза за ход) на ПОЛНОЙ истории. Транскрипт append-only по конструкции,
+# tools берутся один раз за ход — счёт кэшируется, а не пересчитывается.
+
+
+def _tools_schema_tokens(tools: list[dict[str, Any]]) -> int:
+    return (
+        len(json.dumps(tools, ensure_ascii=False, separators=(",", ":"), default=str))
+        // 4
+    )
+
+
+def _counting_loop() -> AppendOnlyLoop:
+    return _loop(ScriptedLLMProvider([]), _MCP())
+
+
+def test_context_token_count_counts_only_new_messages(monkeypatch) -> None:
+    """Литем-счётчик видит только новые сообщения; итог равен полному пересчёту."""
+    calls: list[list[dict[str, Any]]] = []
+
+    def _fake_token_counter(*, model: str, messages: list[dict[str, Any]]) -> int:
+        calls.append(messages)
+        return 10 * len(messages)
+
+    monkeypatch.setattr(litellm, "token_counter", _fake_token_counter)
+    loop = _counting_loop()
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "find Bosch"},
+    ]
+    tools = [{"type": "function", "function": {"name": "search"}}]
+
+    first = loop._context_token_count(messages, tools)
+    assert first == 20 + _tools_schema_tokens(tools)
+    assert calls == [messages]
+
+    messages.append({"role": "assistant", "content": "Found Bosch"})
+    second = loop._context_token_count(messages, tools)
+    assert calls == [messages[:2], messages[2:]]
+    assert second == first + 10
+
+
+def test_context_token_count_tool_schema_counted_once(monkeypatch) -> None:
+    """Tool-схема константен внутри хода — кодируется один раз, не на каждый вызов."""
+    dumps_targets: list[int] = []
+    real_dumps = json.dumps
+
+    def _spy_dumps(obj: Any, **kwargs: Any) -> str:
+        dumps_targets.append(id(obj))
+        return real_dumps(obj, **kwargs)
+
+    monkeypatch.setattr(json, "dumps", _spy_dumps)
+    monkeypatch.setattr(
+        litellm, "token_counter", lambda *, model, messages: 10 * len(messages)
+    )
+    loop = _counting_loop()
+    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}]
+    tools = [{"type": "function", "function": {"name": "search"}}]
+
+    loop._context_token_count(messages, tools)
+    loop._context_token_count(messages, tools)
+    loop._context_token_count(messages, tools)
+
+    assert dumps_targets.count(id(tools)) == 1
+
+
+def test_context_token_count_fallback_is_cached_per_message(monkeypatch) -> None:
+    """Откат на character-fallback при недоступности литема тоже кэшируется."""
+    calls: list[int] = []
+
+    def _broken_counter(*, model: str, messages: list[dict[str, Any]]) -> int:
+        calls.append(len(messages))
+        raise RuntimeError("counter unavailable")
+
+    monkeypatch.setattr(litellm, "token_counter", _broken_counter)
+    loop = _counting_loop()
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "find Bosch"},
+    ]
+    tools = [{"type": "function", "function": {"name": "search"}}]
+
+    first = loop._context_token_count(messages, tools)
+    assert first == len(
+        json.dumps(messages, ensure_ascii=False, separators=(",", ":"), default=str)
+    ) // 4 + _tools_schema_tokens(tools)
+
+    messages.append({"role": "assistant", "content": "Found Bosch"})
+    second = loop._context_token_count(messages, tools)
+    assert calls == [2, 1]
+    assert second > first
+
+
+def test_context_token_count_recounts_after_transcript_shrink(monkeypatch) -> None:
+    """Транскрипт append-only по конструкции; при нарушении кэш сбрасывается."""
+    calls: list[int] = []
+
+    def _fake_token_counter(*, model: str, messages: list[dict[str, Any]]) -> int:
+        calls.append(len(messages))
+        return 10 * len(messages)
+
+    monkeypatch.setattr(litellm, "token_counter", _fake_token_counter)
+    loop = _counting_loop()
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "find Bosch"},
+    ]
+    tools = [{"type": "function", "function": {"name": "search"}}]
+
+    loop._context_token_count(messages, tools)
+    messages.pop()
+    loop._context_token_count(messages, tools)
+
+    # без защитного сброса второй вызов не увидел бы ни одного сообщения (кэш
+    # покрывает 2, а сообщений стало 1); со сбросом — пересчитывает всё
+    assert calls == [2, 1]
+
+
+def test_context_token_count_cache_matches_full_recount(monkeypatch) -> None:
+    """Итог с кэшем равен пересчёту с нуля на том же финальном транскрипте."""
+    monkeypatch.setattr(
+        litellm,
+        "token_counter",
+        lambda *, model, messages: sum(
+            len(str(m.get("content", ""))) // 7 for m in messages
+        ),
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "search",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_product",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                },
+            },
+        },
+    ]
+
+    cached_loop = _counting_loop()
+    fresh_loop = _counting_loop()
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": "You are a parts assistant."},
+    ]
+    for i in range(12):
+        messages.append(
+            {"role": "user", "content": f"question {i} about brake pads and filters"}
+        )
+        cached_loop._context_token_count(messages, tools)
+        messages.append(
+            {
+                "role": "assistant",
+                "content": f"answer {i} with some details about part availability",
+            }
+        )
+        cached_loop._context_token_count(messages, tools)
+
+    assert cached_loop._context_token_count(
+        messages, tools
+    ) == fresh_loop._context_token_count(messages, tools)
