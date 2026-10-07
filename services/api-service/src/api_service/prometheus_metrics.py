@@ -10,7 +10,7 @@ Metrics are exposed at /metrics automatically.
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
 
 # ── Chat / Agent Metrics ─────────────────────────────────────────────────────
 
@@ -35,7 +35,32 @@ llm_duration_ms = Histogram(
     "llm_duration_ms",
     "LLM call duration in milliseconds",
     ["model"],
-    buckets=(500, 1000, 2000, 5000, 10000, 30000, 60000, 120000),
+    # Observed values are 27-45ms per call; the old first bucket (500ms) hid
+    # every stress-run sample. Old boundaries are kept: sum/count consumers
+    # (dashboards, alerts) are unaffected, only quantile resolution improves.
+    buckets=(
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        75,
+        100,
+        250,
+        500,
+        1000,
+        2000,
+        5000,
+        10000,
+        30000,
+        60000,
+        120000,
+    ),
 )
 
 llm_completion_attempts_total = Counter(
@@ -138,7 +163,29 @@ mcp_lock_wait_seconds = Histogram(
     "mcp_lock_wait_seconds",
     "Time spent waiting for the per-tenant MCP call lock",
     ["tenants"],
-    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
+    # Stress runs put every wait in the first bucket (<=1ms); the old boundary
+    # set could not tell sub-millisecond waits apart. Old boundaries kept.
+    buckets=(
+        0.000001,
+        0.000005,
+        0.00001,
+        0.000025,
+        0.00005,
+        0.0001,
+        0.00025,
+        0.0005,
+        0.001,
+        0.005,
+        0.01,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1,
+        2,
+        5,
+        10,
+    ),
 )
 
 mcp_lock_timeouts_total = Counter(
@@ -167,6 +214,24 @@ mcp_circuit_breaker_trips_total = Counter(
 
 
 _instrumented: bool = False
+
+
+def render_metrics() -> bytes:
+    """Render the Prometheus exposition for this process.
+
+    With PROMETHEUS_MULTIPROC_DIR set, uvicorn workers each have a private
+    registry while sharing mmap files; serve the aggregated view from all
+    worker files instead of one random worker's registry.
+    """
+    import os
+
+    from prometheus_client.multiprocess import MultiProcessCollector
+
+    if not os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+        return generate_latest()
+    registry = CollectorRegistry()
+    MultiProcessCollector(registry)
+    return generate_latest(registry)
 
 
 def init_metrics(app) -> None:

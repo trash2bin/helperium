@@ -20,6 +20,31 @@
 > `ADMIN_API_TOKEN` (rag). Без любого из них Prometheus не стартует (fail-closed).
 > RAG дополнительно принимает `X-Admin-Token: <ADMIN_API_TOKEN>`.
 
+> ⚠️ **Многопроцессный режим и достоверность /metrics:** без переменной
+> `PROMETHEUS_MULTIPROC_DIR` каждый uvicorn-воркер держит свою registry, а сокет
+> у них общий (`SO_REUSEPORT`) — при `API_WORKERS=8` одна отдача `/metrics`
+> показывает **случайный один из восьми воркеров**, и счётчики выглядят в 8 раз
+> меньше реальных. Это не гипотеза: на Linux-стенде 40 запросов подряд вернули
+> ответы трёх разных процессов (`llm_calls_total` виден только в 1 из 3 вариантов).
+>
+> Лечение — включить multiprocess storage **до старта сервиса**:
+>
+> ```bash
+> export PROMETHEUS_MULTIPROC_DIR=/path/owned/by/api-service  # каталог, только для сервиса
+> mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+> find "$PROMETHEUS_MULTIPROC_DIR" -maxdepth 1 -type f -delete  # свежий старт: очистить
+> python -m api_service.server   # uvicorn workers наследуют переменную
+> ```
+>
+> При заданной переменной `/metrics` агрегирует все воркеры через `MultiProcessCollector`
+> (`render_metrics()` в `prometheus_metrics.py`). Если переменная не задана — поведение
+> прежнее: одна registry, стандартные `process_*`-метрики.
+> **Оговорка:** в multiprocess-режиме стандартные `process_cpu_seconds_total`,
+> `process_resident_memory_bytes`, `process_open_fds` **не агрегируются** (ограничение
+> `prometheus_client`: это per-process метрики, а не mmap-backed). Для CPU/памяти по
+> каждому воркеру смотри cgroup-срезы стенда (`psutil` в `test-results/stress/<run>/generator/`)
+> или внешний node-exporter.
+
 ## Быстрый старт
 
 ```bash
@@ -155,7 +180,8 @@ Go (data, mcp, admin) ──┘                          │
 | Панель | Метрика | Ед.изм. | Норма | Тревога |
 |---|---|---|---|---|
 | LLM Calls Rate | `rate(llm_calls_total[1m])` | req/s | <1 | >5 |
-| LLM Duration (avg) | `rate(llm_duration_ms_sum[1m]) / rate(llm_duration_ms_count[1m]) / 1000` | s | <5s | >15s → >30s |
+| LLM Duration (p50/p95/p99) | `histogram_quantile(0.5/0.95/0.99, rate(llm_duration_ms_bucket[1m]))` | s | p95 <0.5s | p95 >15s → >30s |
+| MCP Lock Wait (p50/p95/p99) | `histogram_quantile(0.5/0.95/0.99, rate(mcp_lock_wait_seconds_bucket[1m]))` | s | все <1ms | p95 >10ms |
 | Token Usage Rate | `rate(llm_token_usage_total[1m])` | tok/s | — | — |
 | LLM Cost | `rate(llm_cost_total[1m])` | USD/min | <$0.01 | >$0.10 |
 | Active Chat Sessions | `max(chat_sessions_total)` | шт | — | — |
@@ -221,7 +247,7 @@ Go (data, mcp, admin) ──┘                          │
 | `chat_sessions_total` | Counter | — | Созданные сессии |
 | `chat_messages_total` | Counter | `status` | Сообщения (ok/blocked/error) |
 | `llm_calls_total` | Counter | `model, provider` | Вызовы LLM |
-| `llm_duration_ms` | Histogram | `model` | Длительность LLM-вызова |
+| `llm_duration_ms` | Histogram | `model` | Длительность LLM-вызова. Бакеты начинаются с 5 мс — типичные значения 27–45 мс резолвятся; старые границы (500мс+) сохранены, поэтому потребители `sum`/`count` не пострадали |
 | `llm_token_usage_total` | Counter | `type` | Токены (prompt/completion/total) |
 | `llm_cost_total` | Counter | `model, provider, tenant_id` | Стоимость LLM в USD |
 | `abuse_blocked_total` | Counter | `reason` | Блокировки анти-абуза |
@@ -230,7 +256,7 @@ Go (data, mcp, admin) ──┘                          │
 | `reports_total` | Counter | `status` | Жалобы из виджета, принятые в стор (`accepted`) |
 | `report_store_errors_total` | Counter | — | Ошибки записи жалобы в SQLite |
 | `mcp_tool_timeouts_total` | Counter | `tenants` | MCP tool-вызовы, упёршиеся в hard deadline (сигнал zombie-эскалации) |
-| `mcp_lock_wait_seconds` | Histogram | `tenants` | Ожидание per-tenant call lock — сериализация одновременных ходов одного tenant |
+| `mcp_lock_wait_seconds` | Histogram | `tenants` | Ожидание per-tenant call lock — сериализация одновременных ходов одного tenant. Бакеты начинаются с 1 мкс: суб-миллисекундные ожидания различимы, старые границы сохранены |
 | `mcp_lock_timeouts_total` | Counter | `tenants` | Лок не взят за `MCP_LOCK_ACQUIRE_TIMEOUT`: насыщение нашего планировщика, **не** отказ зависимости (в отличие от `mcp_tool_timeouts_total`) |
 | `mcp_connection_quarantines_total` | Counter | `tenants` | Принудительно закрытые zombie-подозрительные соединения |
 | `mcp_reconnects_total` | Counter | `tenants` | MCP reconnects после неудачного вызова |
@@ -480,7 +506,7 @@ docker-compose -f infra/docker-compose.yml up -d
 docker-compose -f infra/docker-compose.yml --profile monitoring --profile tracing up -d
 ```
 
-**Last verified:** 2026-09-10 (working tree, audit sweep) — OTEL_SDK_DISABLED added to env table + graceful-degradation note; load_gen db_filter tool reference cross-checked.
+**Last verified:** 2026-10-06 (working tree) — бакеты `llm_duration_ms`/`mcp_lock_wait_seconds` уточнены ниже реальных значений (27–45мс и суб-мс), панели «LLM Duration» и «MCP Lock Wait» переведены на p50/p95/p99, добавлено описание агрегации воркеров через `PROMETHEUS_MULTIPROC_DIR`. 2026-09-10 (working tree, audit sweep) — OTEL_SDK_DISABLED added to env table + graceful-degradation note; load_gen db_filter tool reference cross-checked.
 
 ### Генератор нагрузки для скриншотов дашборда
 

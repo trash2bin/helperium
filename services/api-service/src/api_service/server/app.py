@@ -10,14 +10,15 @@ from pathlib import Path
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.staticfiles import StaticFiles
 
-from api_service.prometheus_metrics import init_metrics
+from prometheus_client import CONTENT_TYPE_LATEST
+
+from api_service.prometheus_metrics import init_metrics, render_metrics
 from api_service.log_config import configure_logging
 from api_service.agent_repository import (
     LLMConfigUnavailableError,
@@ -259,7 +260,7 @@ private_router.include_router(voice.router)
 
 @private_router.get("/metrics", include_in_schema=False)
 async def metrics_endpoint():
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    return Response(content=render_metrics(), media_type=CONTENT_TYPE_LATEST)
 
 
 app.include_router(private_router)
