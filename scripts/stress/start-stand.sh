@@ -57,6 +57,11 @@ export ABUSE_IP_RPS ABUSE_IP_BURST ABUSE_MAX_USER_TURNS CHAT_RATE_LIMIT BACKLOG_
 export GUARDRAIL_ENABLED HEALTH_CHECK_SKIP_LLM MCP_DEV MCP_REQUIRE_AUTH
 export AGENT_MAX_TURN_TOKENS AGENT_MAX_ITERATIONS API_WORKERS
 export SESSION_STORAGE_URI LLM_PROVIDER_TRANSPORT
+# Стенд — измерительный инструмент: трейсер, ретраящий protobuf-батчи в
+# отсутствующий коллектор, меряет сам себя, а не платформу (py-spy 40 rps:
+# urlopen/putheader/_encode_span). Значение ставит stand.env; export здесь
+# пробрасывает его в процессы стенда.
+export OTEL_SDK_DISABLED
 # Rate-limit / abuse buckets: пусто = in-memory (откат). Внешнее хранилище
 # задаётся переменной окружения, а не stand.env, чтобы стенд не зависел от
 # порядка запуска E2E (см. комментарий в stand.env).
