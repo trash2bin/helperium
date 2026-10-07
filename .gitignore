@@ -121,6 +121,7 @@ reports/*/backlog/
 
 # Stress stub timing log (runtime artifact, regenerated on every run)
 stub-timings.jsonl
+stub-timings-archived.jsonl
 
 # Local working notes (self-declared untracked, see AGENTS.md)
 TODO-*.md

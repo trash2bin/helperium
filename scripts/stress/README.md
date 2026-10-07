@@ -61,6 +61,7 @@ export LLM_PROVIDER_TRANSPORT=direct
 | `run-l1-relieved.sh` | L1 | то же, но с разгруженным генератором | тот же | 80…1280 |
 | `run-l2.sh` | L2 | чат через api-service, стаб ~0 мс | `chat-zero-latency-l2` | 5…80 |
 | `run-l2-realistic.sh` | L2 | чат со «секундным» стабом и чанками | `chat-slow-l2` | 5…40 |
+| `run-l3.sh` | L3 | продуктовая форма: стаб с латентностью p50 800/p95 2.5 с; критерий `platform_overhead` через §4-джойн (`--stub-timings`) | `chat-product-l3` | 5…40 |
 | `diag-zombies.sh` | — | Живёт ли ход после отвала клиента (гипотеза зомби, опровергнута) | — | 40 |
 
 **Когда какой L1.** Начинать с `run-l1.sh`. Если верхние ступени уходят в `invalid` при
