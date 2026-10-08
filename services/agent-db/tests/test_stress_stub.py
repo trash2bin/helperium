@@ -345,10 +345,7 @@ class TestHttpSurface:
         assert body["object"] == "chat.completion"
         assert body["choices"][0]["finish_reason"] == "tool_calls"
 
-        entries = [
-            json.loads(line)
-            for line in (tmp_path / "stub.jsonl").read_text().splitlines()
-        ]
+        entries = self._wait_for_log_entries(tmp_path, count=1)
         assert len(entries) == 1
         entry = entries[0]
         # §4: the stub's own timings, so platform_overhead is exact rather than
@@ -382,22 +379,30 @@ class TestHttpSurface:
         )
         with urllib.request.urlopen(request, timeout=10):
             pass
-        entry = json.loads(
-            (tmp_path / "stub.jsonl").read_text().splitlines()[-1]
-        )
+        entry = self._wait_for_log_entry(tmp_path)
         assert entry["correlation_id"] == "stress-42"
 
-    def _wait_for_log_entry(self, tmp_path, timeout_s: float = 2.0) -> dict:
+    def _wait_for_log_entries(
+        self, tmp_path, count: int, timeout_s: float = 2.0
+    ) -> list[dict]:
         # The stub records in ``finally`` AFTER the response is flushed: a
-        # client that reads the log immediately can race the write. Polling
-        # makes the assertion about the log's content, not about thread timing.
+        # client that reads the log immediately can race the write (this exact
+        # race failed the GH CI run of 2026-10-07: assert 0 == 1 on a runner
+        # slow enough to lose the window). Polling makes the assertion about
+        # the log's content, not about thread timing. The shortage is returned
+        # to the caller to assert, not swallowed.
         deadline = time.monotonic() + timeout_s
         path = tmp_path / "stub.jsonl"
         while time.monotonic() < deadline:
             lines = path.read_text().splitlines() if path.exists() else []
-            if lines:
-                return json.loads(lines[-1])
+            if len(lines) >= count:
+                return [json.loads(line) for line in lines]
             time.sleep(0.05)
+        lines = path.read_text().splitlines() if path.exists() else []
+        return [json.loads(line) for line in lines]
+
+    def _wait_for_log_entry(self, tmp_path, timeout_s: float = 2.0) -> dict:
+        return self._wait_for_log_entries(tmp_path, count=1, timeout_s=timeout_s)[-1]
         raise AssertionError("the stub's timing log stayed empty")
 
     def test_the_timing_log_carries_the_marker_from_the_last_user_message(
