@@ -340,6 +340,54 @@ class TestNotes:
         notes = " ".join(interpretation_notes(result, manifest))
         assert "LOWER BOUND at the top of the ladder" in notes
 
+    def test_a_lower_bound_is_named_not_reported_as_a_found_knee(
+        self, profile, manifest
+    ):
+        # The da85632e run printed `knee_found` on a ladder whose top rung
+        # passed: the status contradicted the lower-bound caveat and read as
+        # "the capacity is settled". The knee block must name what the rung
+        # actually supports - a lower bound, never a found knee without a
+        # bracket.
+        result = run_ladder(
+            runner=FakeRunner(passing_rps=1000.0),
+            plan=LadderPlan(
+                rates=(5.0, 10.0), t_budget_ms=50.0, duration_s=2.0, warmup_s=0.5
+            ),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=profile,
+            tenants=["t-1"],
+        )
+        report = build_report(
+            result=result, manifest=manifest, scope="separate", profile_path="p.json"
+        )
+        assert report["ladder"]["status"] == "knee_lower_bound"
+        assert report["ladder"]["knee_bracket"] is None
+        markdown = render_markdown(report)
+        assert "knee_lower_bound" in markdown
+        assert "(status `knee_found`" not in markdown
+
+    def test_a_real_failure_still_names_the_knee_found(self, profile, manifest):
+        # The other side of the contract: a bracket from a rung that actually
+        # failed is a found knee, and renaming it would hide the one case where
+        # the ceiling is genuinely measured.
+        result = run_ladder(
+            runner=FakeRunner(passing_rps=25.0),
+            plan=LadderPlan(
+                rates=(5.0, 10.0, 20.0, 40.0),
+                t_budget_ms=50.0,
+                duration_s=2.0,
+                warmup_s=0.5,
+            ),
+            workload=WorkloadPlan.from_profile(profile),
+            profile=profile,
+            tenants=["t-1"],
+        )
+        assert result.knee.bracket is not None
+        report = build_report(
+            result=result, manifest=manifest, scope="separate", profile_path="p.json"
+        )
+        assert report["ladder"]["status"] == "knee_found"
+
     def test_discarded_knee_runs_are_reported_not_hidden(self, profile, manifest):
         class HalfBrokenRunner(FakeRunner):
             def run(self, spec, plan_, *, tenants, workers=None, recycle=None):

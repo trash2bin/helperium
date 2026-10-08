@@ -390,7 +390,12 @@ class LadderResult:
     repeats: list[StageOutcome] = field(default_factory=list)
     prediction: Prediction | None = None
     status: Literal[
-        "knee_found", "below_first_rung", "invalid", "budget_preset_on", "unjudgeable"
+        "knee_found",
+        "knee_lower_bound",
+        "below_first_rung",
+        "invalid",
+        "budget_preset_on",
+        "unjudgeable",
     ] = "knee_found"
 
     def stage_at(self, rps: float) -> StageOutcome | None:
@@ -544,7 +549,7 @@ def run_ladder(
             # The passing rungs below were already shown to carry the judged
             # metric (the check above returns otherwise), so a lower bound here
             # rests on measurements §7 accepts.
-            result.status = "knee_found"
+            result.status = "knee_lower_bound"
             result.knee = KneeEstimate(
                 rate=passing, bracket=None, tolerance=plan.tolerance, bisection_steps=0
             )
@@ -564,10 +569,15 @@ def run_ladder(
         break
 
     if failing is None:
-        # Every rung passed: nothing above the top was ever run, so the top is a
-        # lower bound and there is no bracket. A zero-width bracket would read as
-        # "the ceiling is exactly this rate", a claim no rung supports.
-        result.status = "knee_found" if passing is not None else "below_first_rung"
+        # Every rung passed: nothing above the top was ever run, so the top is
+        # a lower bound and there is no bracket. A zero-width bracket would
+        # read as "the ceiling is exactly this rate", a claim no rung supports.
+        # The status names it: "knee_found" on a ladder whose top rung passed
+        # read as "the capacity is settled" (the da85632e report did exactly
+        # that), which is the one conclusion the caveat §10 asks for forbids.
+        result.status = (
+            "knee_lower_bound" if passing is not None else "below_first_rung"
+        )
         result.knee = (
             KneeEstimate(
                 rate=passing,

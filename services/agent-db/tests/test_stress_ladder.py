@@ -297,6 +297,7 @@ class TestKneeSearch:
         # zero-width one would claim the ceiling is exactly that rate.
         runner = FakeRunner(passing_rps=1000.0)
         result = run(profile, runner, plan=plan(rates=(5.0, 10.0), repeats=2))
+        assert result.status == "knee_lower_bound"
         assert result.knee.rate == 10.0
         assert result.knee.bracket is None
         assert len(result.repeats) == 1, "the top rung is repeated like any knee"
@@ -351,7 +352,9 @@ class TestInvalidStages:
 
         runner = HalfBrokenRunner(passing_rps=100.0)
         result = run(profile, runner, plan=plan(rates=(5.0, 10.0)))
-        assert result.status == "knee_found"
+        # The platform never failed: a rung the generator drowned is not a
+        # verdict about it, so the status must not read as a found knee.
+        assert result.status == "knee_lower_bound"
         assert result.knee.rate == 5.0
         assert result.knee.bracket is None
 
@@ -438,7 +441,9 @@ class TestLayerFence:
             profile=layer_three,
             tenants=["t-1"],
         )
-        assert result.status == "knee_found"
+        # One rung that passed is a lower bound, not a found knee: no rung
+        # above it was ever run, so the status must not claim a ceiling.
+        assert result.status == "knee_lower_bound"
         assert result.stages[0].has_platform_overhead is True
         assert result.stages[0].stats.t_complete_p95 == pytest.approx(3000.0)
         assert result.stages[0].judged_p95 == pytest.approx(500.0)
@@ -539,7 +544,9 @@ class TestRepeats:
             HalfBrokenRunner(passing_rps=1000.0),
             plan=plan(rates=(5.0, 10.0), repeats=3),
         )
-        assert result.status == "knee_found"
+        # The generator drowned the rung above the knee: the platform never
+        # failed, so the status is a lower bound, not knee_found.
+        assert result.status == "knee_lower_bound"
         assert result.knee.bracket is None
         assert len(result.repeats) == 2
         assert result.headline()["runs"] == 3
